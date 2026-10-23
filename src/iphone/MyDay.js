@@ -2380,29 +2380,30 @@ async function executeAll(list) {
   if (openReport) await report()
 }
 
-// Голосовая запись: пока слушаем — танцует рыжий котик (распознавание речи внутри WebView).
-// Если WebView не умеет распознавать речь — обычная системная диктовка без котика.
+// Голосовая запись: на экране танцует рыжий котик, а поверх него открывается системная диктовка
+// (сам WebView в Scriptable микрофон не получает). Закрыть котика программно нельзя — это делает пользователь.
 async function dictate() {
+  let wv = null
   try {
-    const wv = new WebView()
-    await wv.loadHTML(catHTML(), "https://localhost/")
-    if (await wv.evaluateJavaScript("ok")) {
-      await wv.present(false)
-      const r = JSON.parse(await wv.evaluateJavaScript("JSON.stringify({ text: finalText(), err })"))
-      if (r.text || !r.err) return r.text
-    }
-  } catch (e) {}
-  try { return (await Dictation.start("ru-RU")) || "" } catch (e) { return "" }
+    wv = new WebView()
+    await wv.loadHTML(catHTML())
+    wv.present(false)
+    await new Promise(r => Timer.schedule(700, false, r))
+  } catch (e) { wv = null }
+  let text = ""
+  try { text = (await Dictation.start("ru-RU")) || "" } catch (e) {}
+  if (wv) try { await wv.evaluateJavaScript("finish()") } catch (e) {}
+  return text
 }
 
 function catHTML() {
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <style>
-  body { margin: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  body { margin: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 6vh; box-sizing: border-box;
     font: 17px -apple-system, sans-serif; background: #FAF9F5; color: #3a2a1a; -webkit-user-select: none; }
   @media (prefers-color-scheme: dark) { body { background: #1c1712; color: #f3e6d6 } }
-  svg { width: 78vw; max-width: 320px; overflow: visible }
+  svg { width: 62vw; max-width: 280px; overflow: visible }
   .hips  { transform-origin: 120px 230px; animation: hips .9s ease-in-out infinite alternate }
   .upper { transform-origin: 120px 240px; animation: upper .9s ease-in-out infinite alternate }
   .tail  { transform-origin: 150px 244px; animation: tail .9s ease-in-out infinite alternate }
@@ -2421,7 +2422,6 @@ function catHTML() {
   @keyframes think { 0%, 100% { transform: scale(.6) rotate(0); opacity: .35 } 50% { transform: scale(1) rotate(45deg); opacity: 1 } }
   .stop svg * { animation-play-state: paused }
   #st { margin-top: 18px; font-weight: 600; color: #D97757 }
-  #tx { margin: 10px 24px 0; min-height: 3em; text-align: center; font-size: 19px }
   #hint { margin-top: 14px; font-size: 14px; opacity: .6; text-align: center }
 </style></head><body>
 <svg viewBox="0 0 240 320" onclick="start()">
@@ -2472,33 +2472,14 @@ function catHTML() {
   </g>
 </svg>
 <div id="st">Слушаю…</div>
-<div id="tx"></div>
-<div id="hint">Договорите и нажмите «Закрыть»</div>
+<div id="hint">Говорите — котик пританцовывает</div>
 <script>
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-  var ok = !!SR, err = "", done = "", live = "", rec = null, on = false
-  const $ = id => document.getElementById(id)
-  function finalText() { return (done + " " + live).replace(/\\s+/g, " ").trim() }
-  function start() {
-    if (!SR || on) return
-    rec = new SR(); rec.lang = "ru-RU"; rec.continuous = true; rec.interimResults = true
-    rec.onresult = e => {
-      live = ""
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) done += " " + e.results[i][0].transcript
-        else live += e.results[i][0].transcript
-      }
-      $("tx").textContent = finalText()
-    }
-    rec.onerror = e => { if (e.error !== "no-speech" && e.error !== "aborted") err = e.error }
-    rec.onend = () => {
-      on = false; document.body.classList.add("stop")
-      $("st").textContent = finalText() ? "Готово ✓" : (err ? "Не получилось — нажмите «Закрыть»" : "Нажмите на котика, чтобы говорить")
-      $("hint").textContent = finalText() ? "Нажмите «Закрыть»" : ""
-    }
-    try { rec.start(); on = true; document.body.classList.remove("stop"); $("st").textContent = "Слушаю…" } catch (e) { err = String(e) }
+  function start() {}
+  function finish() {
+    document.body.classList.add("stop")
+    document.getElementById("st").textContent = "Готово ✓"
+    document.getElementById("hint").textContent = "Котика можно закрыть"
   }
-  start()
 </script></body></html>`
 }
 
