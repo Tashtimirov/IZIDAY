@@ -2453,30 +2453,35 @@ async function executeAll(list) {
   if (openReport) await report()
 }
 
-// Голосовая запись: на экране танцует рыжий котик, а поверх него открывается системная диктовка
-// (сам WebView в Scriptable микрофон не получает). Закрыть котика программно нельзя — это делает пользователь.
+// Голосовая запись: танцующий рыжий котик + поле ввода, говорят через микрофон клавиатуры iOS.
+// Системная диктовка Scriptable закрывает экран целиком, а сам WebView микрофон не получает,
+// поэтому котик остаётся виден только так. Текст забираем, пока окно открыто, и после «Закрыть».
 async function dictate() {
-  let wv = null
   try {
-    wv = new WebView()
+    const wv = new WebView()
     await wv.loadHTML(catHTML())
-    wv.present(false)
-    await new Promise(r => Timer.schedule(700, false, r))
-  } catch (e) { wv = null }
-  let text = ""
-  try { text = (await Dictation.start("ru-RU")) || "" } catch (e) {}
-  if (wv) try { await wv.evaluateJavaScript("finish()") } catch (e) {}
-  return text
+    let open = true, text = ""
+    const shown = wv.present(false).then(() => { open = false })
+    while (open) {
+      try { text = await wv.evaluateJavaScript("val()") } catch (e) {}
+      await Promise.race([shown, new Promise(r => Timer.schedule(300, false, r))])
+    }
+    try { text = await wv.evaluateJavaScript("val()") } catch (e) {}
+    return (text || "").trim()
+  } catch (e) {}
+  try { return (await Dictation.start("ru-RU")) || "" } catch (e) { return "" }
 }
 
 function catHTML() {
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <style>
-  body { margin: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 6vh; box-sizing: border-box;
+  body { margin: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 3vh; box-sizing: border-box;
     font: 17px -apple-system, sans-serif; background: #FAF9F5; color: #3a2a1a; -webkit-user-select: none; }
   @media (prefers-color-scheme: dark) { body { background: #1c1712; color: #f3e6d6 } }
-  svg { width: 62vw; max-width: 280px; overflow: visible }
+  svg { height: 34vh; max-width: 90vw; overflow: visible }
+  #tx { margin-top: 14px; width: calc(100vw - 40px); box-sizing: border-box; padding: 12px 14px; border-radius: 14px;
+    border: 2px solid #D97757; background: transparent; color: inherit; font: 19px -apple-system, sans-serif; resize: none; outline: none }
   .hips  { transform-origin: 120px 230px; animation: hips .9s ease-in-out infinite alternate }
   .upper { transform-origin: 120px 240px; animation: upper .9s ease-in-out infinite alternate }
   .tail  { transform-origin: 150px 244px; animation: tail .9s ease-in-out infinite alternate }
@@ -2493,8 +2498,6 @@ function catHTML() {
   @keyframes look  { 0%, 40%, 100% { transform: none } 50%, 70% { transform: translate(-5px, -2px) } }
   @keyframes spin  { to { transform: rotate(360deg) } }
   @keyframes think { 0%, 100% { transform: scale(.6) rotate(0); opacity: .35 } 50% { transform: scale(1) rotate(45deg); opacity: 1 } }
-  .stop svg * { animation-play-state: paused }
-  #st { margin-top: 18px; font-weight: 600; color: #D97757 }
   #hint { margin-top: 14px; font-size: 14px; opacity: .6; text-align: center }
 </style></head><body>
 <svg viewBox="0 0 240 320" onclick="start()">
@@ -2544,15 +2547,13 @@ function catHTML() {
     <circle cx="100" cy="114" r="1.6" fill="#4A2416"/><circle cx="106" cy="118" r="1.6" fill="#4A2416"/><circle cx="140" cy="114" r="1.6" fill="#4A2416"/><circle cx="134" cy="118" r="1.6" fill="#4A2416"/>
   </g>
 </svg>
-<div id="st">Слушаю…</div>
-<div id="hint">Говорите — котик пританцовывает</div>
+<textarea id="tx" rows="3" placeholder="Нажмите 🎤 на клавиатуре и говорите" autofocus></textarea>
+<div id="hint">Договорите и нажмите «Закрыть» вверху</div>
 <script>
-  function start() {}
-  function finish() {
-    document.body.classList.add("stop")
-    document.getElementById("st").textContent = "Готово ✓"
-    document.getElementById("hint").textContent = "Котика можно закрыть"
-  }
+  const tx = document.getElementById("tx")
+  function start() { tx.focus() }
+  function val() { return tx.value }
+  setTimeout(start, 300)
 </script></body></html>`
 }
 
