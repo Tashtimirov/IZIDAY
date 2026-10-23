@@ -64,7 +64,7 @@ const CONFIG = {
   trackerStart: "2026-10-01",    // дата во 2-й строке листа «Дни»
   // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
   health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30 },
-  large:  { today: 3, reminders: 3 },   // строк событий сегодня и напоминаний (0 — не показывать)
+  large:  { today: 3, rows: 6 },   // до 3 событий сегодня; вместе с напоминаниями — 6 строк
   medium: { events: 3, reminders: 3, weekChips: 2 },
   // Календари и списки напоминаний, которые можно назвать голосом.
   // calendar — имя календаря событий, list — имя списка напоминаний, words — как вы их называете.
@@ -525,7 +525,7 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
 
 // Большой виджет: строка из 7 дней с сегодняшнего (под числом — сколько событий) и расходы месяца справа
 function weekStrip(parent, days, events, entries) {
-  const W = 34, H = 58, today = new Date()
+  const W = 35, H = 60, today = new Date()
   const LETTERS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
   const row = parent.addStack()
   row.topAlignContent()
@@ -535,25 +535,34 @@ function weekStrip(parent, days, events, entries) {
     const weekend = day.getDay() === 0 || day.getDay() === 6
     const cell = row.addStack()
     cell.layoutVertically()
-    cell.centerAlignContent()   // по центру ячейки, без растягивания строк: иначе число обрезается до «…»
     cell.size = new Size(W, H)
+    cell.setPadding(0, 2, 0, 2)
     cell.cornerRadius = 10
     cell.backgroundColor = isToday ? C.todayBg : new Color(BRAND.gold, 0.1)
     cell.url = calshowURL(day)
-    const txt = (s, font, color) => { const t = cell.addText(s); t.font = font; t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.6; return t }
+    // каждая надпись в своей строке между двумя пружинами — так она стоит ровно по центру ячейки
+    const txt = (s, font, color) => {
+      const line = cell.addStack()
+      line.addSpacer()
+      const t = line.addText(s); t.font = font; t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.6
+      line.addSpacer()
+      return t
+    }
     cell.addSpacer()
-    txt(LETTERS[day.getDay()].toUpperCase(), Font.boldSystemFont(9), isToday ? C.todayFg : weekend ? C.gold : C.sub)
-    txt(String(day.getDate()), Font.heavyRoundedSystemFont(17), isToday ? C.todayFg : C.text)
+    txt(LETTERS[day.getDay()].toUpperCase(), Font.boldSystemFont(9.5), isToday ? C.todayFg : weekend ? C.gold : C.sub)
+    cell.addSpacer(1)
+    txt(String(day.getDate()), Font.heavyRoundedSystemFont(18), isToday ? C.todayFg : C.text)
+    cell.addSpacer(2)
     // сколько событий в этот день (ещё не закончившихся)
     const n = itemsForDay(day, events).length
     const color = n ? (isToday ? C.todayFg : C.gold) : new Color("#000000", 0)   // пустая строка той же высоты
-    txt(n ? `${n} соб.` : "·", Font.boldRoundedSystemFont(9), color)
+    txt(n ? `${n} соб` : "·", Font.boldRoundedSystemFont(9), color)
     cell.addSpacer()
   })
   row.addSpacer()
   const tile = row.addStack()
   tile.layoutVertically()
-  tile.size = new Size(64, H)
+  tile.size = new Size(66, H)
   monthTile(tile, entries)
 }
 
@@ -562,7 +571,7 @@ function todayList(parent, events, n) {
   const now = new Date()
   const evs = events.filter(e => e.endDate > now && e.startDate < new Date(startOfDay(now).getTime() + 864e5))
     .sort((a, b) => (a.isAllDay ? 0 : a.startDate) - (b.isAllDay ? 0 : b.startDate))
-  if (!evs.length) return empty(parent, "Сегодня событий больше нет")
+  if (!evs.length) { empty(parent, "Сегодня событий больше нет"); return 1 }
   const shown = evs.length > n ? n - 1 : n
   evs.slice(0, shown).forEach((e, i) => {
     if (i) parent.addSpacer(6)
@@ -593,6 +602,7 @@ function todayList(parent, events, n) {
     const m = parent.addText(`ещё ${evs.length - shown} сегодня`)
     m.font = Font.boldSystemFont(11); m.textColor = C.gold
   }
+  return Math.min(evs.length, n)
 }
 
 // Эмодзи в начале и в конце названия в узкой плашке только отнимают место
@@ -1260,13 +1270,13 @@ async function buildWidget(family, param) {
   // 2 ряда: 4 дня, затем 3 дня и расходы месяца; в дне до 3 событий
   weekStrip(w, days, weekEvents, entries)
   w.addSpacer(9)
-  todayList(w, weekEvents, CONFIG.large.today || 3)
+  // сегодняшние события и напоминания делят одно место: чем меньше событий, тем больше напоминаний
+  const used = todayList(w, weekEvents, CONFIG.large.today)
+  const remRows = Math.max(2, CONFIG.large.rows - used)
   w.addSpacer(9)
-  if (CONFIG.large.reminders) {   // 0 — календарю отдаётся всё место, напоминания в среднем виджете
-    goldDivider(w)
-    w.addSpacer(8)
-    reminderPanel(w, rems, CONFIG.large.reminders)
-  }
+  goldDivider(w)
+  w.addSpacer(8)
+  reminderPanel(w, rems, remRows)
   w.addSpacer()
   goldDivider(w)
   w.addSpacer(6)
