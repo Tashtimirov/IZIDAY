@@ -5,11 +5,13 @@
 /*
  * «Мой день» — виджет для iPhone (Scriptable)
  * Календарь на неделю + напоминания + быстрые заметки + голосовые команды
- * + учёт доходов и расходов с ежемесячным отчётом + личный трекер в Google Таблице.
+ * + учёт доходов и расходов с ежемесячным отчётом.
+ * + личный трекер в Google Таблице.   // [личное]
  *
  * Кнопки в шапке виджета (средний и большой размер):
  *   🎤 — голосовая команда   📷 — еда по фото   ฿ — расход/доход
- *   ▦ — Google Таблица денег   ✓ — личный трекер (сегодняшняя строка)   ✎ — заметка
+ *   ▦ — Google Таблица денег   ✎ — заметка
+ *   ✓ — личный трекер (сегодняшняя строка)   // [личное]
  * Нажатие на день календаря открывает его в «Календаре».
  * Нажатие на строку месяца внизу большого виджета открывает отчёт.
  *
@@ -582,10 +584,11 @@ const BUTTONS = [
   ["camera.fill", "📷", "camera"],
   [CONFIG.currencyIcon, CONFIG.currency, "money"],
   ["tablecells.fill", "▦", "sheet"],   // открыть Google Таблицу
-  ["checklist", "✓", "tracker"],       // личный трекер на сегодняшней строке
+  ["checklist", "✓", "tracker"],       // личный трекер на сегодняшней строке [личное]
   ["square.and.pencil", "✎", "note"],
-].filter(b => (b[2] !== "sheet" || CONFIG.sheetUrl) && (b[2] !== "tracker" || CONFIG.trackerUrl))
+].filter(b => b[2] !== "sheet" || CONFIG.sheetUrl)
 
+// [личное ▼]
 // Ссылка на строку сегодняшнего дня в листе «Дни» (строка 2 — trackerStart)
 function trackerLink(now = new Date()) {
   const [y, m, d] = CONFIG.trackerStart.split("-").map(Number)
@@ -594,6 +597,7 @@ function trackerLink(now = new Date()) {
   const gid = (CONFIG.trackerUrl.match(/gid=(\d+)/) || [, "0"])[1]
   return days >= 0 ? `${url}#gid=${gid}&range=A${days + 2}` : CONFIG.trackerUrl
 }
+// [личное ▲]
 
 function dateHeader(parent, size, withButtons) {
   const h = parent.addStack()
@@ -614,7 +618,9 @@ function dateHeader(parent, size, withButtons) {
     b.cornerRadius = bs / 2
     b.backgroundColor = C.btnBg
     b.centerAlignContent()
-    b.url = action === "sheet" ? CONFIG.sheetUrl : action === "tracker" ? trackerLink() : `${RUN}?action=${action}`
+    let url = action === "sheet" ? CONFIG.sheetUrl : `${RUN}?action=${action}`
+    if (action === "tracker") url = trackerLink()   // [личное]
+    b.url = url
     b.addSpacer()
     if (!symbol(b, icon, color, Math.round(bs * 0.5))) {
       const ft = b.addText(fallback)
@@ -2743,7 +2749,7 @@ async function menu() {
     ["🧾 Последние операции", manageMoney],
     ["⌨️ Команда текстом", async () => { const t = await ask("Команда", "Что сделать?", "Отправить"); if (t) await voiceCommand(t) }],
     ["🧠 Ассистент Claude", aiSettings],
-    ...(CONFIG.trackerUrl ? [["✓ Личный трекер", () => Safari.open(trackerLink())]] : []),
+    ...(CONFIG.trackerUrl ? [["✓ Личный трекер", () => Safari.open(trackerLink())]] : []),   // [личное]
     ...(CONFIG.sheetUrl ? [["▦ Google Таблица", sheetMenu]] : []),
     ["☁️ Синхронизация с Mac", syncStatus],
     ["👀 Предпросмотр виджета", preview],

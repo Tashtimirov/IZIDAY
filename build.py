@@ -7,7 +7,7 @@
 secrets.json (не хранится в git, пример — secrets.example.json):
   {"sheet_secret": "...", "sheet_hook": "https://script.google.com/macros/s/…/exec"}
 """
-import json, os, shutil, subprocess, sys, zipfile, pathlib
+import json, os, re, shutil, subprocess, sys, zipfile, pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent
 DIST = ROOT / "dist"
@@ -27,7 +27,10 @@ START, END = "// ═══ ЛИЧНЫЕ НАСТРОЙКИ (начало)", "// 
 src = (ROOT / "src/iphone/MyDay.js").read_text()
 i, j = src.index(START), src.index(END) + len(END)
 ru = src[:i] + (ROOT / "src/iphone/profile-ru.js").read_text() + src[j:]
-for private in ["docs.google.com/spreadsheets/d/1", "Prime Thai", "PTP", "Семейная группа", sec["sheet_secret"], sec["sheet_hook"]]:
+# Личное (трекер) в версию для других не попадает: строки с «[личное]» и блоки «[личное ▼] … [личное ▲]»
+ru = re.sub(r"[ \t]*// \[личное ▼\][\s\S]*?// \[личное ▲\]\n", "", ru)
+ru = "".join(l for l in ru.splitlines(True) if "[личное]" not in l)
+for private in ["docs.google.com/spreadsheets/d/1", "трекер", "tracker", "Курение", "Секс", "Алкоголь", "Prime Thai", "PTP", "Семейная группа", sec["sheet_secret"], sec["sheet_hook"]]:
     if private and private in ru:
         sys.exit(f"В MyDay-RU.js осталось личное: {private}")
 (DIST / "MyDay-RU.js").write_text(ru)
