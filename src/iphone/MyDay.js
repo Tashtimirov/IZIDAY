@@ -64,7 +64,7 @@ const CONFIG = {
   trackerStart: "2026-10-01",    // дата во 2-й строке листа «Дни»
   // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
   health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30 },
-  large:  { reminders: 4 },
+  large:  { reminders: 3 },   // календарь занимает 2 ряда по 3 события, напоминаний помещается 3
   medium: { events: 3, reminders: 3, weekChips: 2 },
   // Календари и списки напоминаний, которые можно назвать голосом.
   // calendar — имя календаря событий, list — имя списка напоминаний, words — как вы их называете.
@@ -396,7 +396,7 @@ const calshowURL = d => `calshow:${Math.floor(d.getTime() / 1000) - 978307200}`
 // extraTile(stack) — чем заполнить пустую ячейку в последней строке (итоги месяца).
 function weekGrid(parent, days, events, rems, maxChips, opts = {}) {
   const today = new Date()
-  const W = CONFIG.week.colWidth
+  const W = opts.colWidth || CONFIG.week.colWidth
   const PER_ROW = opts.perRow || 5
   const titleLines = opts.titleLines || 2
   const LETTERS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
@@ -415,12 +415,13 @@ function weekGrid(parent, days, events, rems, maxChips, opts = {}) {
         if (opts.extraTile) opts.extraTile(tile)
         continue
       }
-      dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTERS)
+      dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTERS, opts.compact)
     }
   }
 }
 
-function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTERS) {
+// compact: плашка в одну строку «18:30 Падел»; если событий больше maxChips — их число в шапке дня
+function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTERS, compact) {
   const isToday = sameDay(day, today)
   const past = day < startOfDay(today)
   const weekend = day.getDay() === 0 || day.getDay() === 6
@@ -440,19 +441,51 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
   l.font = Font.boldSystemFont(9)
   l.textColor = isToday ? C.todayFg : (past ? C.sub : weekend ? C.gold : C.sub)
   hd.addSpacer()
+  const items = itemsForDay(day, events, rems)
+  if (compact && items.length > maxChips) {
+    const b = hd.addStack()
+    b.setPadding(1, 5, 1, 5)
+    b.cornerRadius = 7
+    b.backgroundColor = isToday ? C.todayFg : new Color(BRAND.gold, 0.25)
+    const bt = b.addText(`${items.length} соб.`)
+    bt.font = Font.heavyRoundedSystemFont(9)
+    bt.textColor = isToday ? C.todayBg : C.gold
+    hd.addSpacer(4)
+  }
   const n = hd.addText(String(day.getDate()))
   n.font = Font.heavyRoundedSystemFont(14)
   n.textColor = isToday ? C.todayFg : (past ? C.sub : C.text)
   col.addSpacer(4)
 
-  const items = itemsForDay(day, events, rems)
   if (!items.length) {
     const e = col.addStack(); e.size = new Size(W, 0); e.addSpacer()
     const d = e.addText("·"); d.font = Font.boldSystemFont(12); d.textColor = new Color(BRAND.gold, 0.5)
     e.addSpacer()
   }
-  const shown = items.length > maxChips ? maxChips - 1 : maxChips   // место под «+N» не отнимает плашку зря
-  items.slice(0, items.length > maxChips ? shown : maxChips).forEach((it, k) => {
+  const shown = items.length > maxChips && !compact ? maxChips - 1 : maxChips   // место под «+N» не отнимает плашку зря
+  items.slice(0, shown).forEach((it, k) => {
+    if (compact) {
+      if (k) col.addSpacer(2)
+      const chip = col.addStack()
+      chip.size = new Size(W, 0)
+      chip.centerAlignContent()
+      chip.setPadding(3, 5, 3, 3)
+      chip.cornerRadius = 6
+      chip.backgroundColor = new Color(it.color, past ? 0.25 : 0.95)
+      if (it.time) {
+        const t = chip.addText(it.time)
+        t.font = Font.boldRoundedSystemFont(9.5)
+        t.textColor = past ? C.sub : new Color(BRAND.goldLight)
+        t.lineLimit = 1
+        chip.addSpacer(3)
+      }
+      const ti = chip.addText(stripEmoji(it.title))
+      ti.font = Font.semiboldSystemFont(10.5)
+      ti.textColor = past ? C.sub : C.chipText
+      ti.lineLimit = 1
+      chip.addSpacer()
+      return
+    }
     if (k) col.addSpacer(3)
     const chip = col.addStack()
     chip.layoutVertically()
@@ -475,7 +508,7 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
     ti.lineLimit = titleLines
     ti.minimumScaleFactor = 0.85
   })
-  if (items.length > maxChips) {
+  if (items.length > maxChips && !compact) {
     col.addSpacer(3)
     const mr = col.addStack(); mr.size = new Size(W, 0); mr.addSpacer()
     const m = mr.addText(`+${items.length - shown} ещё`)
@@ -483,48 +516,6 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
     m.textColor = C.gold
     mr.addSpacer()
   }
-}
-
-// Большой виджет: неделя списком — по строке на день, до двух событий со временем, остальные числом «+N»
-function weekAgenda(parent, days, events) {
-  const today = new Date()
-  const LETTERS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
-  days.slice(0, 7).forEach((day, i) => {
-    if (i) parent.addSpacer(3)
-    const isToday = sameDay(day, today)
-    const weekend = day.getDay() === 0 || day.getDay() === 6
-    const r = parent.addStack()
-    r.centerAlignContent()
-    r.url = calshowURL(day)
-    const pill = r.addStack()
-    pill.size = new Size(48, 17)
-    pill.cornerRadius = 8.5
-    pill.centerAlignContent()
-    pill.backgroundColor = isToday ? C.todayBg : new Color(BRAND.gold, 0.1)
-    const d = pill.addText(`${LETTERS[day.getDay()].toUpperCase()} ${day.getDate()}`)
-    d.font = Font.boldRoundedSystemFont(11)
-    d.textColor = isToday ? C.todayFg : weekend ? C.gold : C.text
-    r.addSpacer(8)
-    const items = itemsForDay(day, events)
-    if (!items.length) {
-      const e = r.addText("свободно"); e.font = Font.systemFont(11); e.textColor = C.sub
-    }
-    items.slice(0, 2).forEach((it, k) => {
-      if (k) r.addSpacer(10)
-      const bar = r.addStack(); bar.size = new Size(3, 13); bar.cornerRadius = 1.5; bar.backgroundColor = new Color(it.color)
-      r.addSpacer(5)
-      if (it.time) {
-        const t = r.addText(it.time); t.font = Font.boldRoundedSystemFont(11); t.textColor = C.gold; t.lineLimit = 1
-        r.addSpacer(4)
-      }
-      const ti = r.addText(stripEmoji(it.title)); ti.font = Font.mediumSystemFont(12); ti.textColor = C.text; ti.lineLimit = 1
-    })
-    r.addSpacer()
-    if (items.length > 2) {
-      r.addSpacer(6)
-      const m = r.addText(`+${items.length - 2}`); m.font = Font.heavyRoundedSystemFont(11); m.textColor = C.gold
-    }
-  })
 }
 
 // Эмодзи в начале и в конце названия в узкой плашке только отнимают место
@@ -537,6 +528,29 @@ function moneyShort(n) {
   if (v >= 1e6) return `${f(v / 1e6, 1)}м ${CONFIG.currency}`
   if (v >= 1e4) return `${f(v / 1e3, v >= 1e5 ? 0 : 1)}к ${CONFIG.currency}`
   return money(v)
+}
+
+// Ячейка с итогами месяца (заполняет пустое место в сетке)
+function monthTile(tile, entries) {
+  const now = new Date()
+  const t = monthTotals(entries, monthKey(now))
+  tile.url = `${RUN}?action=report`
+  tile.cornerRadius = 10
+  tile.setPadding(4, 6, 4, 4)
+  tile.backgroundColor = new Color(BRAND.gold, 0.12)
+  tile.borderColor = new Color(BRAND.gold, 0.6)
+  tile.borderWidth = 1
+  const m = tile.addText(MONTH_NOM[now.getMonth()].toUpperCase())
+  m.font = Font.boldSystemFont(8.5); m.textColor = C.gold; m.lineLimit = 1; m.minimumScaleFactor = 0.7
+  tile.addSpacer(2)
+  const lbl = (txt, col) => { const x = tile.addText(txt); x.font = Font.boldRoundedSystemFont(11); x.textColor = col; x.lineLimit = 1; x.minimumScaleFactor = 0.6 }
+  lbl(`−${moneyShort(t.expense)}`, C.expense)
+  tile.addSpacer(1)
+  lbl(`+${moneyShort(t.income)}`, C.income)
+  tile.addSpacer(2)
+  const bal = t.income - t.expense
+  const b = tile.addText(`= ${bal < 0 ? "−" : ""}${moneyShort(bal)}`)
+  b.font = Font.semiboldSystemFont(9); b.textColor = C.text; b.lineLimit = 1; b.minimumScaleFactor = 0.6
 }
 
 // Золотая линия с ромбом, как под названием в логотипе
@@ -1005,7 +1019,7 @@ function progressBar(parent, frac, width, color) {
 }
 
 // Одна строка: еда · вода · активность, каждая часть открывает своё
-function healthStrip(parent, d, entries) {
+function healthStrip(parent, d) {
   const s = parent.addStack()
   s.centerAlignContent()
   const part = (icon, text, color, action) => {
@@ -1023,11 +1037,6 @@ function healthStrip(parent, d, entries) {
   s.addSpacer()
   const a = d.act
   part(a && a.active != null ? "flame.fill" : "applewatch", a ? `${nf(a.active || 0)} ккал · ${nf(a.steps || 0)} ш.` : "часы", C.expense, "health")
-  if (entries) {   // итог месяца (большой виджет): нажатие — отчёт
-    const t = monthTotals(entries, monthKey(new Date())), bal = t.income - t.expense
-    s.addSpacer()
-    part(CONFIG.currencyIcon, `${bal < 0 ? "−" : "+"}${moneyShort(bal)}`, bal < 0 ? C.expense : C.income, "report")
-  }
 }
 
 // Средний/маленький виджет с параметром «здоровье»
@@ -1171,15 +1180,16 @@ async function buildWidget(family, param) {
   w.addSpacer(6)
   goldDivider(w)
   w.addSpacer(7)
-  weekAgenda(w, days, weekEvents)
-  w.addSpacer(9)
+  // 2 ряда: 4 дня, затем 3 дня и расходы месяца; в дне до 3 событий
+  weekGrid(w, days, weekEvents, rems, 3, { perRow: 4, colWidth: 76, compact: true, extraTile: t => monthTile(t, entries) })
+  w.addSpacer(8)
   goldDivider(w)
   w.addSpacer(8)
   reminderPanel(w, rems, CONFIG.large.reminders)
   w.addSpacer()
   goldDivider(w)
   w.addSpacer(6)
-  healthStrip(w, health, entries)
+  healthStrip(w, health)
   return w
 }
 
