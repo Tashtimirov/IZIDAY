@@ -523,47 +523,48 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
   }
 }
 
-// Большой виджет: строка из 7 дней с сегодняшнего (под числом — сколько событий) и расходы месяца справа
-function weekStrip(parent, days, events, entries) {
-  const W = 35, H = 60, today = new Date()
+// Ширина содержимого виджета (без полей 12 + 12): зависит от экрана iPhone.
+// Всё, что рисуется фиксированной ширины, должно в неё укладываться — иначе виджет съезжает и обрезается.
+function contentWidth(family) {
+  let sw = 390
+  try { const z = Device.screenSize(); sw = Math.min(z.width, z.height) } catch (e) {}
+  const w = sw >= 428 ? 364 : sw >= 414 ? 360 : sw >= 390 ? 338 : sw >= 375 ? 329 : 321   // large/medium одной ширины
+  return w - 24
+}
+
+// Большой виджет: строка из 7 дней с сегодняшнего на всю ширину; под числом — сколько событий в этот день
+function weekStrip(parent, days, events) {
+  const GAP = 4, H = 58, today = new Date()
+  const W = Math.floor((contentWidth() - GAP * 6) / 7)
   const LETTERS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
   const row = parent.addStack()
-  row.topAlignContent()
   days.slice(0, 7).forEach((day, i) => {
-    if (i) row.addSpacer()
+    if (i) row.addSpacer(GAP)
     const isToday = sameDay(day, today)
     const weekend = day.getDay() === 0 || day.getDay() === 6
     const cell = row.addStack()
     cell.layoutVertically()
     cell.size = new Size(W, H)
-    cell.setPadding(0, 2, 0, 2)
     cell.cornerRadius = 10
     cell.backgroundColor = isToday ? C.todayBg : new Color(BRAND.gold, 0.1)
     cell.url = calshowURL(day)
-    // каждая надпись в своей строке между двумя пружинами — так она стоит ровно по центру ячейки
+    // каждая надпись — в своей строке между двумя пружинами, так она стоит ровно по центру ячейки
     const txt = (s, font, color) => {
       const line = cell.addStack()
       line.addSpacer()
-      const t = line.addText(s); t.font = font; t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.6
+      const t = line.addText(s); t.font = font; t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.7
       line.addSpacer()
-      return t
     }
+    const n = itemsForDay(day, events).length   // ещё не закончившиеся события дня
     cell.addSpacer()
-    txt(LETTERS[day.getDay()].toUpperCase(), Font.boldSystemFont(9.5), isToday ? C.todayFg : weekend ? C.gold : C.sub)
+    txt(LETTERS[day.getDay()].toUpperCase(), Font.boldSystemFont(10), isToday ? C.todayFg : weekend ? C.gold : C.sub)
     cell.addSpacer(1)
     txt(String(day.getDate()), Font.heavyRoundedSystemFont(18), isToday ? C.todayFg : C.text)
     cell.addSpacer(2)
-    // сколько событий в этот день (ещё не закончившихся)
-    const n = itemsForDay(day, events).length
-    const color = n ? (isToday ? C.todayFg : C.gold) : new Color("#000000", 0)   // пустая строка той же высоты
-    txt(n ? `${n} соб` : "·", Font.boldRoundedSystemFont(9), color)
+    txt(n ? `${n} соб` : "нет", Font.semiboldRoundedSystemFont(9.5),
+      isToday ? C.todayFg : n ? C.gold : new Color(BRAND.gold, 0.35))
     cell.addSpacer()
   })
-  row.addSpacer()
-  const tile = row.addStack()
-  tile.layoutVertically()
-  tile.size = new Size(66, H)
-  monthTile(tile, entries)
 }
 
 // Под строкой дней — события только сегодняшнего дня, каждое в одну строку: название и время справа
@@ -615,29 +616,6 @@ function moneyShort(n) {
   if (v >= 1e6) return `${f(v / 1e6, 1)}м ${CONFIG.currency}`
   if (v >= 1e4) return `${f(v / 1e3, v >= 1e5 ? 0 : 1)}к ${CONFIG.currency}`
   return money(v)
-}
-
-// Ячейка с итогами месяца (заполняет пустое место в сетке)
-function monthTile(tile, entries) {
-  const now = new Date()
-  const t = monthTotals(entries, monthKey(now))
-  tile.url = `${RUN}?action=report`
-  tile.cornerRadius = 10
-  tile.setPadding(4, 6, 4, 4)
-  tile.backgroundColor = new Color(BRAND.gold, 0.12)
-  tile.borderColor = new Color(BRAND.gold, 0.6)
-  tile.borderWidth = 1
-  const m = tile.addText(MONTH_NOM[now.getMonth()].toUpperCase())
-  m.font = Font.boldSystemFont(8.5); m.textColor = C.gold; m.lineLimit = 1; m.minimumScaleFactor = 0.7
-  tile.addSpacer(2)
-  const lbl = (txt, col) => { const x = tile.addText(txt); x.font = Font.boldRoundedSystemFont(11); x.textColor = col; x.lineLimit = 1; x.minimumScaleFactor = 0.6 }
-  lbl(`−${moneyShort(t.expense)}`, C.expense)
-  tile.addSpacer(1)
-  lbl(`+${moneyShort(t.income)}`, C.income)
-  tile.addSpacer(2)
-  const bal = t.income - t.expense
-  const b = tile.addText(`= ${bal < 0 ? "−" : ""}${moneyShort(bal)}`)
-  b.font = Font.semiboldSystemFont(9); b.textColor = C.text; b.lineLimit = 1; b.minimumScaleFactor = 0.6
 }
 
 // Золотая линия с ромбом, как под названием в логотипе
@@ -1106,7 +1084,7 @@ function progressBar(parent, frac, width, color) {
 }
 
 // Одна строка: еда · вода · активность, каждая часть открывает своё
-function healthStrip(parent, d) {
+function healthStrip(parent, d, entries) {
   const s = parent.addStack()
   s.centerAlignContent()
   const part = (icon, text, color, action) => {
@@ -1123,7 +1101,11 @@ function healthStrip(parent, d) {
   part("drop.fill", `${liters(d.water)} / ${liters(CONFIG.health.waterGoal)}`, C.notes, "water")
   s.addSpacer()
   const a = d.act
-  part(a && a.active != null ? "flame.fill" : "applewatch", a ? `${nf(a.active || 0)} ккал · ${nf(a.steps || 0)} ш.` : "часы", C.expense, "health")
+  part(a && a.active != null ? "flame.fill" : "applewatch", a ? (entries ? `${nf(a.active || 0)} ккал` : `${nf(a.active || 0)} ккал · ${nf(a.steps || 0)} ш.`) : "часы", C.expense, "health")
+  if (entries) {   // большой виджет: расходы за месяц, нажатие — отчёт
+    s.addSpacer()
+    part(CONFIG.currencyIcon, `−${moneyShort(monthTotals(entries, monthKey(new Date())).expense)}`, C.expense, "report")
+  }
 }
 
 // Средний/маленький виджет с параметром «здоровье»
@@ -1268,7 +1250,7 @@ async function buildWidget(family, param) {
   goldDivider(w)
   w.addSpacer(7)
   // 2 ряда: 4 дня, затем 3 дня и расходы месяца; в дне до 3 событий
-  weekStrip(w, days, weekEvents, entries)
+  weekStrip(w, days, weekEvents)
   w.addSpacer(9)
   // сегодняшние события и напоминания делят одно место: чем меньше событий, тем больше напоминаний
   const used = todayList(w, weekEvents, CONFIG.large.today)
@@ -1280,7 +1262,7 @@ async function buildWidget(family, param) {
   w.addSpacer()
   goldDivider(w)
   w.addSpacer(6)
-  healthStrip(w, health)
+  healthStrip(w, health, entries)
   return w
 }
 
