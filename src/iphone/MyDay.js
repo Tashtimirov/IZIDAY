@@ -2453,35 +2453,73 @@ async function executeAll(list) {
   if (openReport) await report()
 }
 
-// Голосовая запись: танцующий рыжий котик + поле ввода, говорят через микрофон клавиатуры iOS.
-// Системная диктовка Scriptable закрывает экран целиком, а сам WebView микрофон не получает,
-// поэтому котик остаётся виден только так. Текст забираем, пока окно открыто, и после «Закрыть».
+// Голосовая запись: пока говорите, танцует рыжий котик. Звук записывает сама страница с котиком,
+// текст делает OpenAI Whisper (ключ OpenAI в связке ключей). Системная диктовка Scriptable закрывает
+// экран целиком, поэтому она — только запасной вариант: нет ключа или странице не дали микрофон.
+const WHISPER_KEY = "myday.openai.key"
+
+async function whisperKey() {
+  try { if (Keychain.contains(WHISPER_KEY)) return Keychain.get(WHISPER_KEY) } catch (e) {}
+  if (Keychain.contains("myday.whisper.off")) return null
+  const k = await ask("Ключ OpenAI для котика", "sk-…", "Сохранить", "",
+    "Чтобы котик танцевал, пока вы говорите, речь распознаёт OpenAI Whisper (около 0,5 ₽ за минуту). Ключ — на platform.openai.com. Без ключа будет обычная диктовка.")
+  if (!k || !k.trim()) { Keychain.set("myday.whisper.off", "1"); return null }
+  Keychain.set(WHISPER_KEY, k.trim())
+  return k.trim()
+}
+
 async function dictate() {
-  try {
-    const wv = new WebView()
-    await wv.loadHTML(catHTML())
-    let open = true, text = ""
-    const shown = wv.present(false).then(() => { open = false })
-    while (open) {
-      try { text = await wv.evaluateJavaScript("val()") } catch (e) {}
-      await Promise.race([shown, new Promise(r => Timer.schedule(300, false, r))])
-    }
-    try { text = await wv.evaluateJavaScript("val()") } catch (e) {}
-    return (text || "").trim()
-  } catch (e) {}
+  const key = await whisperKey()
+  if (key) {
+    try {
+      const wv = new WebView()
+      await wv.loadHTML(catHTML(), "https://localhost/")
+      let open = true, audio = null, err = ""
+      const shown = wv.present(false).then(() => { open = false })
+      const pull = async () => {
+        const r = JSON.parse(await wv.evaluateJavaScript("pull()", true))
+        if (r.err) err = r.err
+        if (r.data) audio = r
+      }
+      while (open) {
+        try { await pull() } catch (e) {}
+        await Promise.race([shown, new Promise(r => Timer.schedule(500, false, r))])
+      }
+      try { await pull() } catch (e) {}
+      if (audio) return await whisper(key, audio)
+      if (!err) return ""
+    } catch (e) {}
+  }
   try { return (await Dictation.start("ru-RU")) || "" } catch (e) { return "" }
+}
+
+async function whisper(key, audio) {
+  const req = new Request("https://api.openai.com/v1/audio/transcriptions")
+  req.method = "POST"
+  req.timeoutInterval = 60
+  req.headers = { "authorization": `Bearer ${key}` }
+  req.addParameterToMultipart("model", "whisper-1")
+  req.addParameterToMultipart("language", "ru")
+  req.addFileDataToMultipart(Data.fromBase64String(audio.data), audio.type, audio.type.includes("mp4") ? "voice.m4a" : "voice.webm")
+  try {
+    const r = await req.loadJSON()
+    if (r && r.text) return r.text.trim()
+    if (r && r.error) await info("Не удалось распознать", r.error.message || "ошибка OpenAI")
+  } catch (e) { await info("Не удалось распознать", String(e)) }
+  return ""
 }
 
 function catHTML() {
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <style>
-  body { margin: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 3vh; box-sizing: border-box;
+  body { margin: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box;
     font: 17px -apple-system, sans-serif; background: #FAF9F5; color: #3a2a1a; -webkit-user-select: none; }
   @media (prefers-color-scheme: dark) { body { background: #1c1712; color: #f3e6d6 } }
-  svg { height: 34vh; max-width: 90vw; overflow: visible }
-  #tx { margin-top: 14px; width: calc(100vw - 40px); box-sizing: border-box; padding: 12px 14px; border-radius: 14px;
-    border: 2px solid #D97757; background: transparent; color: inherit; font: 19px -apple-system, sans-serif; resize: none; outline: none }
+  svg { height: 52vh; max-width: 90vw; overflow: visible }
+  #st { margin: 18px 20px 0; font-weight: 600; color: #D97757; text-align: center }
+  #hint { margin-top: 10px; font-size: 14px; opacity: .6; text-align: center }
+  .stop svg * { animation-play-state: paused }
   .hips  { transform-origin: 120px 230px; animation: hips .9s ease-in-out infinite alternate }
   .upper { transform-origin: 120px 240px; animation: upper .9s ease-in-out infinite alternate }
   .tail  { transform-origin: 150px 244px; animation: tail .9s ease-in-out infinite alternate }
@@ -2498,7 +2536,6 @@ function catHTML() {
   @keyframes look  { 0%, 40%, 100% { transform: none } 50%, 70% { transform: translate(-5px, -2px) } }
   @keyframes spin  { to { transform: rotate(360deg) } }
   @keyframes think { 0%, 100% { transform: scale(.6) rotate(0); opacity: .35 } 50% { transform: scale(1) rotate(45deg); opacity: 1 } }
-  #hint { margin-top: 14px; font-size: 14px; opacity: .6; text-align: center }
 </style></head><body>
 <svg viewBox="0 0 240 320" onclick="start()">
   <ellipse cx="120" cy="306" rx="70" ry="8" fill="#000" opacity=".13"/>
@@ -2547,13 +2584,28 @@ function catHTML() {
     <circle cx="100" cy="114" r="1.6" fill="#4A2416"/><circle cx="106" cy="118" r="1.6" fill="#4A2416"/><circle cx="140" cy="114" r="1.6" fill="#4A2416"/><circle cx="134" cy="118" r="1.6" fill="#4A2416"/>
   </g>
 </svg>
-<textarea id="tx" rows="3" placeholder="Нажмите 🎤 на клавиатуре и говорите" autofocus></textarea>
+<div id="st">Слушаю…</div>
 <div id="hint">Договорите и нажмите «Закрыть» вверху</div>
 <script>
-  const tx = document.getElementById("tx")
-  function start() { tx.focus() }
-  function val() { return tx.value }
-  setTimeout(start, 300)
+  var chunks = [], type = "", err = "", rec = null
+  const $ = id => document.getElementById(id)
+  function start() {
+    if (!navigator.mediaDevices || !window.MediaRecorder) { err = "нет записи звука"; return say("Запись недоступна — нажмите «Закрыть»") }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      rec = new MediaRecorder(stream)
+      type = rec.mimeType || "audio/mp4"
+      rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data) }
+      rec.start(250)
+    }).catch(e => { err = String(e.name || e); say("Нет доступа к микрофону — нажмите «Закрыть»") })
+  }
+  function say(t) { $("st").textContent = t; $("hint").textContent = ""; document.body.classList.add("stop") }
+  function pull() {
+    if (err || !chunks.length) return completion(JSON.stringify({ err }))
+    const fr = new FileReader()
+    fr.onload = () => completion(JSON.stringify({ type: type.split(";")[0], data: String(fr.result).split(",")[1] }))
+    fr.readAsDataURL(new Blob(chunks, { type }))
+  }
+  start()
 </script></body></html>`
 }
 
