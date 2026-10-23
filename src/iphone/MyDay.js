@@ -31,6 +31,10 @@
  * Параметр виджета (Изменить виджет → Parameter):
  *   пусто    — средний виджет: встречи + напоминания
  *   неделя   — средний виджет: календарь на неделю
+ *   здоровье — средний/маленький виджет: еда, вода, активность с часов
+ *
+ * 📷 в шапке — сфотографировать еду, Claude посчитает калории (нужен ключ ассистента).
+ * Данные Apple Watch передаёт Быстрая команда «Мой день — здоровье» (см. README).
  */
 
 // ───────────── Настройки ─────────────
@@ -46,7 +50,9 @@ const CONFIG = {
   sheetUrl: "https://docs.google.com/spreadsheets/d/1dsrjcRimF85iZptC0WOyLImhe-llh4BOJmSgGzK_om8/edit",
   sheetSecret: "__SHEET_SECRET__",   // совпадает с ключом в скрипте таблицы
   sheetHook: "__SHEET_HOOK__",   // веб-приложение таблицы (автозапись)
-  large:  { weekChips: 2, reminders: 5 },
+  // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
+  health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30 },
+  large:  { weekChips: 2, reminders: 4 },
   medium: { events: 3, reminders: 3, weekChips: 2 },
   // Календари и списки напоминаний, которые можно назвать голосом.
   // calendar — имя календаря событий, list — имя списка напоминаний, words — как вы их называете.
@@ -560,6 +566,7 @@ function baseWidget() {
 
 const BUTTONS = [
   ["mic.fill", "🎤", "voice"],
+  ["camera.fill", "📷", "camera"],
   ["bahtsign", "฿", "money"],
   ["tablecells.fill", "▦", "sheet"],   // открыть Google Таблицу
   ["square.and.pencil", "✎", "note"],
@@ -658,12 +665,318 @@ function reminderPanel(parent, rems, n) {
   })
 }
 
+// ───────────── Еда, вода и активность ─────────────
+// Еда: фото → Claude оценивает калории (нужен ключ ассистента). Вода — стаканами.
+// Активность с Apple Watch приходит из Быстрой команды «Мой день — здоровье»:
+// она читает «Здоровье» и запускает этот скрипт с параметром-словарём (см. README).
+const dayKey = d => `${monthKey(d)}-${String(d.getDate()).padStart(2, "0")}`
+const nf = n => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")
+const liters = ml => `${(Math.round(ml / 50) / 20).toString().replace(".", ",")} л`
+const rawFood = async () => withIds(await loadJSON("food.json"), "m")
+const rawWater = async () => withIds(await loadJSON("water.json"), "w")
+const todayOnly = list => visible(list).filter(x => sameDay(new Date(x.date), new Date())).sort((a, b) => a.date - b.date)
+const loadFoodToday = async () => todayOnly(await rawFood())
+const loadWaterToday = async () => todayOnly(await rawWater())
+const keepDays = (list, n) => list.filter(x => (x.date || 0) > Date.now() - n * 864e5 || x.deleted)
+async function saveFood(list, deletedIds = []) { saveJSON("food.json", keepDays(mergeSynced(await rawFood(), list, deletedIds), 120)) }
+async function saveWater(list, deletedIds = []) { saveJSON("water.json", keepDays(mergeSynced(await rawWater(), list, deletedIds), 60)) }
+
+async function addFood(m) {
+  const now = Date.now()
+  const x = Object.assign({ id: `m${now}-${Math.random().toString(36).slice(2, 6)}`, date: now, u: now }, m)
+  x.kcal = Math.round(+x.kcal || 0)
+  await saveFood([x])
+  return x
+}
+async function addWater(ml) {
+  const now = Date.now()
+  await saveWater([{ id: `w${now}`, date: now, u: now, ml: Math.round(ml) }])
+}
+
+// Число из Быстрых команд: может прийти строкой «1 234,5»
+function healthNum(v) {
+  if (v === null || v === undefined || v === "") return null
+  const n = parseFloat(String(v).replace(/[\s ]/g, "").replace(",", "."))
+  return isFinite(n) ? n : null
+}
+const HEALTH_KEYS = { steps: ["steps", "шаги"], active: ["active", "активные", "калории"], exercise: ["exercise", "упражнения", "тренировка"],
+  stand: ["stand", "стоя"], hr: ["hr", "пульс"], sleep: ["sleep", "сон"], distance: ["distance", "дистанция", "км"] }
+function parseHealth(param) {
+  let p = param
+  if (typeof p === "string") { try { p = JSON.parse(p) } catch (e) { return null } }
+  if (!p || typeof p !== "object") return null
+  const low = {}
+  for (const k of Object.keys(p)) low[k.toLowerCase().trim()] = p[k]
+  const out = { day: dayKey(new Date()), updated: Date.now() }
+  for (const [key, names] of Object.entries(HEALTH_KEYS)) {
+    const k = names.find(n => n in low)
+    const v = k ? healthNum(low[k]) : null
+    if (v !== null) out[key] = v
+  }
+  return Object.keys(out).length > 2 ? out : null
+}
+async function loadHealth() {
+  const p = fm.joinPath(DIR, "health.json")
+  if (!fm.fileExists(p)) return null
+  try {
+    if (fm.isFileStoredIniCloud(p) && !fm.isFileDownloaded(p)) await fm.downloadFileFromiCloud(p)
+    const h = JSON.parse(fm.readString(p))
+    return h && h.day === dayKey(new Date()) ? h : null      // вчерашние цифры не показываем
+  } catch (e) { return null }
+}
+async function dayHealth() {
+  const [food, water, act] = await Promise.all([loadFoodToday(), loadWaterToday(), loadHealth()])
+  const sum = k => food.reduce((s, m) => s + (+m[k] || 0), 0)
+  return { food, kcal: sum("kcal"), protein: sum("protein"), fat: sum("fat"), carbs: sum("carbs"),
+    water: water.reduce((s, w) => s + (w.ml || 0), 0), waterList: water, act }
+}
+
+// ── Оценка калорий по фото через Claude ──
+const FOOD_TOOL = { name: "food_estimate", description: "Оценка блюда на фото",
+  input_schema: { type: "object", properties: {
+    title: { type: "string", description: "Короткое название приёма пищи по-русски, 2–5 слов" },
+    items: { type: "array", items: { type: "object", properties: {
+      name: { type: "string" }, grams: { type: "number" }, kcal: { type: "number" } }, required: ["name", "grams", "kcal"] } },
+    kcal: { type: "number", description: "Всего ккал" },
+    protein: { type: "number", description: "Белки, г" }, fat: { type: "number", description: "Жиры, г" }, carbs: { type: "number", description: "Углеводы, г" },
+    confidence: { type: "string", enum: ["низкая", "средняя", "высокая"] },
+    note: { type: "string", description: "Одна короткая фраза: что неточно или что уточнить. Можно пусто." },
+    not_food: { type: "boolean", description: "true, если на фото нет еды" } },
+    required: ["title", "items", "kcal", "protein", "fat", "carbs", "confidence"] } }
+
+function shrinkPhoto(img, max = 1024) {
+  const { width: w, height: h } = img.size
+  const k = Math.min(1, max / Math.max(w, h))
+  if (k >= 1) return img
+  const dc = new DrawContext()
+  dc.size = new Size(Math.round(w * k), Math.round(h * k))
+  dc.respectScreenScale = false
+  dc.opaque = true
+  dc.drawImageInRect(img, new Rect(0, 0, dc.size.width, dc.size.height))
+  return dc.getImage()
+}
+
+async function estimateFood(img, hint) {
+  const content = []
+  if (img) content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: Data.fromJPEG(shrinkPhoto(img)).toBase64String() } })
+  content.push({ type: "text", text: (img ? "Оцени еду на фото." : "Оцени еду по описанию.") + (hint ? ` Уточнение от меня: ${hint}` : "") })
+  const req = new Request("https://api.anthropic.com/v1/messages")
+  req.method = "POST"
+  req.timeoutInterval = 60
+  req.headers = { "x-api-key": getAIKey(), "anthropic-version": "2023-06-01", "content-type": "application/json" }
+  req.body = JSON.stringify({ model: CONFIG.agentModel, max_tokens: 1200, tools: [FOOD_TOOL], tool_choice: { type: "tool", name: FOOD_TOOL.name },
+    system: "Ты нутрициолог. Определи блюда и продукты, оцени вес каждой части по размеру тарелки, приборов и упаковок, посчитай калории и БЖУ. " +
+      "Учитывай масло и соусы. Если есть уточнение от пользователя — оно важнее того, что видно. Названия по-русски.",
+    messages: [{ role: "user", content }] })
+  const res = await req.loadJSON()
+  if (!res || res.error) throw new Error(res && res.error ? res.error.message || res.error.type : "пустой ответ")
+  const u = (res.content || []).find(c => c.type === "tool_use")
+  if (!u) throw new Error("Claude не вернул оценку")
+  return u.input
+}
+
+function foodSummary(e) {
+  const lines = (e.items || []).map(i => `• ${i.name} — ${nf(i.grams)} г, ${nf(i.kcal)} ккал`)
+  lines.push("", `Итого ≈ ${nf(e.kcal)} ккал`, `Б ${nf(e.protein)} · Ж ${nf(e.fat)} · У ${nf(e.carbs)} г`)
+  lines.push(`Точность: ${e.confidence || "средняя"}`)
+  if (e.note) lines.push(e.note)
+  return lines.join("\n")
+}
+
+async function foodPhoto(source) {
+  if (!getAIKey()) return info("Нужен ключ Claude",
+    "Калории по фото считает Claude. Добавьте API-ключ: меню → 🧠 Ассистент Claude. Он же включит умный разбор команд.")
+  let src = source === "camera" ? 0 : await choose("🍽 Еда", ["📷 Сфотографировать", "🖼 Выбрать из фото", "⌨️ Описать словами"])
+  let img = null, hint = ""
+  try {
+    if (src === 0) img = await Photos.fromCamera()
+    else if (src === 1) img = await Photos.fromLibrary()
+    else if (src === 2) hint = await ask("Что съели?", "Например: тарелка том яма и рис", "Посчитать")
+    else return
+  } catch (e) { return }                                   // закрыли камеру — ничего не делаем
+  if (!img && !hint) return
+  while (true) {
+    let est
+    try { est = await estimateFood(img, hint) } catch (e) {
+      if ((await choose("Не получилось посчитать", ["Повторить"], String(e.message || e))) === 0) continue
+      return
+    }
+    if (est.not_food) return info("Еды не видно", "Попробуйте снять тарелку сверху, целиком в кадре.")
+    const a = new Alert()
+    a.title = `🍽 ${est.title}`
+    a.message = foodSummary(est)
+    a.addAction("Сохранить")
+    a.addAction("Уточнить (порция, состав)")
+    a.addAction("Изменить калории")
+    a.addCancelAction("Отмена")
+    const i = await a.presentAlert()
+    if (i === -1) return
+    if (i === 1) {
+      const t = await ask("Уточнение", "Например: половина порции, без соуса, рис 150 г", "Пересчитать", hint)
+      if (t) hint = t
+      continue
+    }
+    if (i === 2) {
+      const v = healthNum(await ask("Калории", "ккал", "Сохранить", String(Math.round(est.kcal))))
+      if (!v) continue
+      const k = v / (est.kcal || v)
+      ;["protein", "fat", "carbs"].forEach(x => { est[x] = Math.round((est[x] || 0) * k) })
+      est.kcal = v
+    }
+    await addFood({ title: est.title, kcal: est.kcal, protein: Math.round(est.protein || 0), fat: Math.round(est.fat || 0),
+      carbs: Math.round(est.carbs || 0), items: est.items || [] })
+    const d = await dayHealth()
+    return info("✓ Записано", `${est.title}: ${nf(est.kcal)} ккал\nЗа сегодня: ${nf(d.kcal)} ккал` + (d.act && d.act.active ? `, сожжено ${nf(d.act.active)} ккал` : ""))
+  }
+}
+
+// ── Вода ──
+async function waterMenu() {
+  while (true) {
+    const d = await dayHealth()
+    const goal = CONFIG.health.waterGoal
+    const i = await choose(`💧 ${liters(d.water)} из ${liters(goal)}`,
+      [`+ стакан ${CONFIG.health.glass} мл`, "+ бутылка 500 мл", "Другое количество", "Отменить последнее"],
+      d.water >= goal ? "Норма на сегодня выполнена 🎉" : `Осталось ${liters(goal - d.water)}`)
+    if (i === 0) await addWater(CONFIG.health.glass)
+    else if (i === 1) await addWater(500)
+    else if (i === 2) { const v = healthNum(await ask("Сколько выпили?", "мл", "Добавить")); if (v > 0) await addWater(v) }
+    else if (i === 3) { const last = d.waterList[d.waterList.length - 1]; if (last) await saveWater([], [last.id]) }
+    else return
+  }
+}
+
+// ── Активность с часов ──
+const HEALTH_SHORTCUT = "Мой день — здоровье"
+async function refreshHealth() {
+  const cb = new CallbackURL("shortcuts://x-callback-url/run-shortcut")
+  cb.addParameter("name", HEALTH_SHORTCUT)
+  try { await cb.open() } catch (e) { return info("Не удалось запустить команду", `Проверьте, что в «Быстрых командах» есть команда «${HEALTH_SHORTCUT}». Инструкция — в меню «Еда и активность».`) }
+}
+function actLines(act) {
+  if (!act) return "Данных с часов за сегодня нет. Запустите обновление или настройте команду."
+  const l = []
+  if (act.steps != null) l.push(`👟 ${nf(act.steps)} шагов` + (act.distance ? ` · ${String(Math.round(act.distance * 10) / 10).replace(".", ",")} км` : ""))
+  if (act.active != null) l.push(`🔥 ${nf(act.active)} из ${nf(CONFIG.health.moveGoal)} активных ккал`)
+  if (act.exercise != null) l.push(`🏃 ${nf(act.exercise)} из ${CONFIG.health.exerciseGoal} мин упражнений`)
+  if (act.stand != null) l.push(`🧍 ${nf(act.stand)} ч с разминкой`)
+  if (act.hr != null) l.push(`❤️ пульс в покое ${nf(act.hr)}`)
+  if (act.sleep != null) l.push(`😴 сон ${String(Math.round(act.sleep * 10) / 10).replace(".", ",")} ч`)
+  l.push(`обновлено в ${TIME.string(new Date(act.updated))}`)
+  return l.join("\n")
+}
+async function healthMenu() {
+  while (true) {
+    const d = await dayHealth()
+    const food = d.food.length ? d.food.map(m => `${TIME.string(new Date(m.date))} ${m.title} — ${nf(m.kcal)}`).join("\n") : "Пока ничего не записано"
+    const msg = `🍽 Съедено ${nf(d.kcal)} ккал · Б ${nf(d.protein)} Ж ${nf(d.fat)} У ${nf(d.carbs)}\n${food}\n\n` +
+      `💧 Вода ${liters(d.water)} из ${liters(CONFIG.health.waterGoal)}\n\n${actLines(d.act)}`
+    const i = await choose("Еда и активность", ["📷 Добавить еду", "💧 Вода", "🗑 Удалить приём пищи", "⌚ Обновить данные с часов", "ℹ️ Как подключить часы"], msg)
+    if (i === 0) await foodPhoto()
+    else if (i === 1) await waterMenu()
+    else if (i === 2) {
+      if (!d.food.length) continue
+      const j = await choose("Удалить", d.food.map(m => `${TIME.string(new Date(m.date))} ${m.title} — ${nf(m.kcal)} ккал`))
+      if (j >= 0) await saveFood([], [d.food[j].id])
+    }
+    else if (i === 3) return refreshHealth()
+    else if (i === 4) await info("Подключение Apple Watch",
+      `Scriptable не может читать «Здоровье» сам, поэтому данные передаёт Быстрая команда «${HEALTH_SHORTCUT}». ` +
+      "Как её собрать — в README.txt рядом с виджетом (раздел «Apple Watch»). Потом добавьте автоматизацию: " +
+      "Быстрые команды → Автоматизация → Время суток → каждый час или несколько раз в день, «Запускать сразу».")
+    else return
+  }
+}
+
+// Запуск из Быстрой команды: сохранить данные «Здоровья» и выйти без окон
+async function receiveHealth(param) {
+  const h = parseHealth(param)
+  if (!h) { Script.setShortcutOutput("Мой день: не понял данные. Нужен словарь steps, active, exercise, hr…"); return }
+  saveJSON("health.json", h)
+  Script.setShortcutOutput(`Мой день: сохранено (${Object.keys(h).filter(k => k in HEALTH_KEYS).join(", ")})`)
+}
+
+// ── В виджете ──
+function progressBar(parent, frac, width, color) {
+  const bg = parent.addStack()
+  bg.size = new Size(width, 4)
+  bg.cornerRadius = 2
+  bg.backgroundColor = new Color(BRAND.gold, 0.2)
+  const f = Math.max(0, Math.min(1, frac || 0))
+  if (f > 0) {
+    const fill = bg.addStack()
+    fill.size = new Size(Math.max(4, Math.round(width * f)), 4)
+    fill.cornerRadius = 2
+    fill.backgroundColor = color
+  }
+  bg.addSpacer()
+}
+
+// Одна строка: еда · вода · активность, каждая часть открывает своё
+function healthStrip(parent, d) {
+  const s = parent.addStack()
+  s.centerAlignContent()
+  const part = (icon, text, color, action) => {
+    const p = s.addStack()
+    p.centerAlignContent()
+    p.url = `${RUN}?action=${action}`
+    symbol(p, icon, color, 12)
+    p.addSpacer(4)
+    const t = p.addText(text)
+    t.font = Font.semiboldRoundedSystemFont(12); t.textColor = C.text; t.lineLimit = 1; t.minimumScaleFactor = 0.7
+  }
+  part("fork.knife", `${nf(d.kcal)} ккал`, C.gold, "food")
+  s.addSpacer()
+  part("drop.fill", `${liters(d.water)} / ${liters(CONFIG.health.waterGoal)}`, C.notes, "water")
+  s.addSpacer()
+  const a = d.act
+  part(a && a.active != null ? "flame.fill" : "applewatch", a ? `${nf(a.active || 0)} ккал · ${nf(a.steps || 0)} ш.` : "часы", C.expense, "health")
+}
+
+// Средний/маленький виджет с параметром «здоровье»
+function healthPanel(w, d, small) {
+  const W = small ? 130 : 142
+  const big = (parent, value, unit, color) => {
+    const r = parent.addStack(); r.bottomAlignContent()
+    const v = r.addText(value); v.font = Font.boldRoundedSystemFont(small ? 18 : 20); v.textColor = color; v.lineLimit = 1; v.minimumScaleFactor = 0.6
+    r.addSpacer(3)
+    const u = r.addText(unit); u.font = Font.mediumSystemFont(10); u.textColor = C.sub
+  }
+  const line = (parent, text) => { const t = parent.addText(text); t.font = Font.systemFont(11); t.textColor = C.sub; t.lineLimit = 1; t.minimumScaleFactor = 0.7 }
+  const cols = w.addStack(); cols.topAlignContent()
+  const left = cols.addStack(); left.layoutVertically(); left.size = new Size(W, 0); left.url = `${RUN}?action=food`
+  sectionHeader(left, "fork.knife", "Еда", C.gold, d.food.length)
+  left.addSpacer(3)
+  big(left, nf(d.kcal), "ккал", C.text)
+  if (!small) line(left, `Б ${nf(d.protein)} · Ж ${nf(d.fat)} · У ${nf(d.carbs)}`)
+  left.addSpacer(6)
+  const wt = left.addStack(); wt.layoutVertically(); wt.url = `${RUN}?action=water`
+  const wl = wt.addStack(); wl.centerAlignContent(); symbol(wl, "drop.fill", C.notes, 11); wl.addSpacer(4)
+  const wv = wl.addText(`${liters(d.water)} из ${liters(CONFIG.health.waterGoal)}`); wv.font = Font.semiboldRoundedSystemFont(11.5); wv.textColor = C.text
+  wt.addSpacer(3)
+  progressBar(wt, d.water / CONFIG.health.waterGoal, W - 6, C.notes)
+  if (small) return
+  cols.addSpacer(12)
+  const right = cols.addStack(); right.layoutVertically(); right.size = new Size(W, 0); right.url = `${RUN}?action=health`
+  sectionHeader(right, "applewatch", "Активность", C.expense)
+  right.addSpacer(3)
+  const a = d.act
+  if (!a) { empty(right, "Нет данных с часов"); return }
+  big(right, nf(a.active || 0), "ккал", C.expense)
+  progressBar(right, (a.active || 0) / CONFIG.health.moveGoal, W - 6, C.expense)
+  right.addSpacer(4)
+  line(right, `👟 ${nf(a.steps || 0)} · 🏃 ${nf(a.exercise || 0)} мин`)
+  line(right, `обновлено в ${TIME.string(new Date(a.updated))}`)
+}
+
 // ───────────── Сборка виджета по размеру ─────────────
 async function buildWidget(family, param) {
   const days = weekDays()
   const [events, rems, notes, weekEvents, entries] = await Promise.all(
     [getEvents(), getReminders(), loadNotes(), getWeekEvents(days), loadMoney()])
   const weekMode = /нед|week/i.test(param || "")
+  const healthMode = /здоров|еда|health/i.test(param || "")
+  const health = await dayHealth()
 
   // Экран блокировки
   if (family === "accessoryInline") {
@@ -695,6 +1008,22 @@ async function buildWidget(family, param) {
   }
 
   const w = baseWidget()
+
+  if (family === "small" && healthMode) {
+    dateHeader(w, "small", false)
+    w.addSpacer(8)
+    healthPanel(w, health, true)
+    w.addSpacer()
+    return w
+  }
+
+  if (family === "medium" && healthMode) {
+    dateHeader(w, "medium", true)
+    w.addSpacer(8)
+    healthPanel(w, health, false)
+    w.addSpacer()
+    return w
+  }
 
   if (family === "small") {
     dateHeader(w, "small", false)
@@ -751,6 +1080,9 @@ async function buildWidget(family, param) {
   w.addSpacer(8)
   reminderPanel(w, rems, CONFIG.large.reminders)
   w.addSpacer()
+  goldDivider(w)
+  w.addSpacer(6)
+  healthStrip(w, health)
   return w
 }
 
@@ -1983,6 +2315,12 @@ async function confirmAction(title, message) {
 
 // ── Инструменты для Claude ──
 const AGENT_TOOLS = [
+  { name: "add_food", description: "Записать съеденное. Калории и БЖУ оцени сам по описанию (обычная порция, если не сказано).",
+    input_schema: { type: "object", properties: { title: { type: "string" }, kcal: { type: "number" },
+      protein: { type: "number" }, fat: { type: "number" }, carbs: { type: "number" } }, required: ["title", "kcal"] } },
+  { name: "add_water", description: "Записать выпитую воду. Стакан — 250 мл.",
+    input_schema: { type: "object", properties: { ml: { type: "number" } }, required: ["ml"] } },
+  { name: "get_health", description: "Еда, вода и активность с Apple Watch за сегодня.", input_schema: { type: "object", properties: {} } },
   { name: "get_events", description: "Найти события календаря в диапазоне дат. Для поиска по названию передайте query (ищет по подстроке без учёта регистра).",
     input_schema: { type: "object", properties: {
       start: { type: "string", description: "Начало диапазона, YYYY-MM-DDTHH:MM (местное время)" },
@@ -2176,6 +2514,20 @@ async function runTool(name, x) {
       await saveMoney([], [x.id])
       return { ok: true }
     }
+    case "add_food": {
+      if (!(x.kcal > 0)) return { error: "калории должны быть больше нуля" }
+      const m = await addFood({ title: x.title, kcal: x.kcal, protein: Math.round(x.protein || 0), fat: Math.round(x.fat || 0), carbs: Math.round(x.carbs || 0) })
+      return { ok: true, id: m.id }
+    }
+    case "add_water":
+      if (!(x.ml > 0)) return { error: "объём должен быть больше нуля" }
+      await addWater(x.ml)
+      return { ok: true }
+    case "get_health": {
+      const d = await dayHealth()
+      return { eaten_kcal: d.kcal, protein: d.protein, fat: d.fat, carbs: d.carbs, meals: d.food.map(m => ({ time: TIME.string(new Date(m.date)), title: m.title, kcal: m.kcal })),
+        water_ml: d.water, water_goal_ml: CONFIG.health.waterGoal, watch: d.act || "нет данных с часов за сегодня" }
+    }
     case "ask_user": {
       const opts = (x.options || []).slice(0, 5)
       const a = new Alert()
@@ -2209,6 +2561,7 @@ function agentSystem() {
 - Уточняй через ask_user, только если без ответа нельзя сделать правильно: не названо новое время переноса, несколько подходящих событий, не указан способ оплаты (наличные или перевод). Давай короткие варианты ответа.
 - Календари по словам пользователя: ${CONFIG.calendars.map(c => `«${c.calendar}» (список напоминаний «${c.list}»)`).join(", ")}. «Семейный календарь», «календарь семья» — первый; «рабочий», «питипи», «PTP» — второй. Если календарь не назван, не указывай его.
 - Деньги — в батах. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.
+- «Съел», «выпил стакан воды» — add_food и add_water. На вопросы о калориях, шагах и воде смотри get_health.
 - Если пользователь спрашивает (что у меня завтра, сколько потратил), посмотри данные и ответь.
 - Удаление пользователь подтверждает сам — не спрашивай отдельно «точно удалить?».
 - В конце ответь по-русски коротко, 1–4 строки: что сделано (с днём и временем) или ответ на вопрос. Без Markdown, без заголовков.`
@@ -2325,6 +2678,9 @@ async function preview() {
 async function menu() {
   const actions = [
     ["🎤 Голосовая команда", () => voiceCommand()],
+    ["📷 Еда по фото", () => foodPhoto()],
+    ["💧 Вода", waterMenu],
+    ["⌚ Еда и активность", healthMenu],
     ["฿ Расход / доход", () => addFinance(null)],
     ["📝 Быстрая заметка", addNote],
     ["⏰ Новое напоминание", addReminder],
@@ -2355,13 +2711,19 @@ async function menu() {
 async function runAction(action, q) {
   if (action === "voice") return voiceCommand()
   if (action === "money") return addFinance(null)
+  if (action === "camera") return foodPhoto("camera")
+  if (action === "food") return foodPhoto()
+  if (action === "water") return waterMenu()
+  if (action === "health") return healthMenu()
   if (action === "note") return addNote()
   if (action === "report") return report(q.month)
   return menu()
 }
 
 // ───────────── Запуск ─────────────
-if (config.runsInWidget) {
+if (args.shortcutParameter && !config.runsInWidget) {
+  await receiveHealth(args.shortcutParameter)        // запуск из Быстрой команды «Мой день — здоровье»
+} else if (config.runsInWidget) {
   Script.setWidget(await buildWidget(config.widgetFamily, args.widgetParameter))
   await autoSyncSheet()
 } else {
