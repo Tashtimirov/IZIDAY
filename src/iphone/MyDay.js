@@ -741,7 +741,7 @@ function dateHeader(parent, size, withButtons) {
   h.addSpacer()
   if (!withButtons) return
   const buttons = headerButtons()
-  const bs = size === "large" ? 28 : buttons.length > 5 ? 22 : 24
+  const bs = size === "large" ? (buttons.length > 5 ? 26 : 28) : buttons.length > 5 ? 22 : 24   // «Воскресенье» и кнопки должны уместиться в ширину
   buttons.forEach(([icon, fallback, action], i) => {
     if (i) h.addSpacer(buttons.length > 5 ? 5 : 6)
     const color = C.btnFg
