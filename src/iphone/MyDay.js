@@ -2384,8 +2384,105 @@ async function executeAll(list) {
   if (openReport) await report()
 }
 
+// Голосовая запись: пока слушаем — танцует рыжий котик (распознавание речи внутри WebView).
+// Если WebView не умеет распознавать речь — обычная системная диктовка без котика.
 async function dictate() {
+  try {
+    const wv = new WebView()
+    await wv.loadHTML(catHTML(), "https://localhost/")
+    if (await wv.evaluateJavaScript("ok")) {
+      await wv.present(false)
+      const r = JSON.parse(await wv.evaluateJavaScript("JSON.stringify({ text: finalText(), err })"))
+      if (r.text || !r.err) return r.text
+    }
+  } catch (e) {}
   try { return (await Dictation.start("ru-RU")) || "" } catch (e) { return "" }
+}
+
+function catHTML() {
+  return `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<style>
+  body { margin: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font: 17px -apple-system, sans-serif; background: #fff8ef; color: #3a2a1a; -webkit-user-select: none; }
+  @media (prefers-color-scheme: dark) { body { background: #1c1712; color: #f3e6d6 } }
+  svg { width: 72vw; max-width: 300px; overflow: visible }
+  .hips  { transform-origin: 100px 168px; animation: hips .9s ease-in-out infinite alternate }
+  .upper { transform-origin: 100px 168px; animation: upper .9s ease-in-out infinite alternate }
+  .tail  { transform-origin: 122px 190px; animation: tail .9s ease-in-out infinite alternate }
+  .ear   { transform-origin: 100px 60px; animation: ear 1.8s ease-in-out infinite }
+  @keyframes hips  { from { transform: translateX(-9px) rotate(-7deg) } to { transform: translateX(9px) rotate(7deg) } }
+  @keyframes upper { from { transform: rotate(3deg) } to { transform: rotate(-3deg) } }
+  @keyframes tail  { from { transform: rotate(-28deg) } to { transform: rotate(22deg) } }
+  @keyframes ear   { 0%, 85%, 100% { transform: none } 90% { transform: rotate(-4deg) } }
+  .stop svg * { animation-play-state: paused }
+  #st { margin-top: 18px; font-weight: 600; color: #e07a1f }
+  #tx { margin: 10px 24px 0; min-height: 3em; text-align: center; font-size: 19px }
+  #hint { margin-top: 14px; font-size: 14px; opacity: .6; text-align: center }
+</style></head><body>
+<svg viewBox="0 0 200 260" onclick="start()">
+  <defs><linearGradient id="fur" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#f6a04d"/><stop offset="1" stop-color="#e5781f"/></linearGradient></defs>
+  <ellipse cx="100" cy="250" rx="58" ry="7" fill="#000" opacity=".12"/>
+  <ellipse cx="78" cy="243" rx="17" ry="9" fill="#f6a04d" stroke="#b9561a" stroke-width="2"/>
+  <ellipse cx="122" cy="243" rx="17" ry="9" fill="#f6a04d" stroke="#b9561a" stroke-width="2"/>
+  <g class="hips">
+    <path class="tail" d="M122 192 C165 200 170 160 160 130 C156 118 168 112 172 124 C184 165 170 214 122 206 Z" fill="url(#fur)" stroke="#b9561a" stroke-width="2"/>
+    <path d="M70 200 L74 240 M130 200 L126 240" stroke="#e5781f" stroke-width="22" stroke-linecap="round"/>
+    <ellipse cx="100" cy="196" rx="48" ry="34" fill="url(#fur)" stroke="#b9561a" stroke-width="2"/>
+  </g>
+  <g class="upper">
+    <ellipse cx="100" cy="165" rx="50" ry="50" fill="url(#fur)" stroke="#b9561a" stroke-width="2"/>
+    <ellipse cx="100" cy="172" rx="33" ry="38" fill="#ffe6c8"/>
+    <path d="M90 140 Q100 145 110 140 M88 156 Q100 161 112 156" stroke="#f3c9a0" stroke-width="2" fill="none"/>
+    <path d="M62 128 L30 160 L62 182" fill="none" stroke="#b9561a" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M62 128 L30 160 L62 182" fill="none" stroke="#f08d33" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M138 128 L170 160 L138 182" fill="none" stroke="#b9561a" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M138 128 L170 160 L138 182" fill="none" stroke="#f08d33" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M38 152 l10 10 M162 152 l-10 10" stroke="#c9631d" stroke-width="3" stroke-linecap="round"/>
+    <g class="ear">
+      <path d="M62 52 L66 10 L94 38 Z M138 52 L134 10 L106 38 Z" fill="#f08d33" stroke="#b9561a" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M68 44 L70 22 L84 38 Z M132 44 L130 22 L116 38 Z" fill="#ffc1b0"/>
+    </g>
+    <ellipse cx="100" cy="72" rx="48" ry="42" fill="url(#fur)" stroke="#b9561a" stroke-width="2"/>
+    <path d="M92 34 L95 48 M100 32 L100 48 M108 34 L105 48" stroke="#c9631d" stroke-width="4" stroke-linecap="round"/>
+    <ellipse cx="100" cy="92" rx="24" ry="17" fill="#ffe6c8"/>
+    <ellipse cx="82" cy="70" rx="6" ry="8" fill="#2b1a0e"/><ellipse cx="118" cy="70" rx="6" ry="8" fill="#2b1a0e"/>
+    <circle cx="84" cy="67" r="2.2" fill="#fff"/><circle cx="120" cy="67" r="2.2" fill="#fff"/>
+    <ellipse cx="68" cy="86" rx="7" ry="4" fill="#ff8f8f" opacity=".45"/><ellipse cx="132" cy="86" rx="7" ry="4" fill="#ff8f8f" opacity=".45"/>
+    <path d="M95 84 L105 84 L100 90 Z" fill="#e8657a"/>
+    <path d="M100 90 Q100 97 93 97 M100 90 Q100 97 107 97" stroke="#7a3b16" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <path d="M78 90 L50 86 M78 94 L52 98 M122 90 L150 86 M122 94 L148 98" stroke="#7a3b16" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+</svg>
+<div id="st">Слушаю…</div>
+<div id="tx"></div>
+<div id="hint">Договорите и нажмите «Закрыть»</div>
+<script>
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+  var ok = !!SR, err = "", done = "", live = "", rec = null, on = false
+  const $ = id => document.getElementById(id)
+  function finalText() { return (done + " " + live).replace(/\\s+/g, " ").trim() }
+  function start() {
+    if (!SR || on) return
+    rec = new SR(); rec.lang = "ru-RU"; rec.continuous = true; rec.interimResults = true
+    rec.onresult = e => {
+      live = ""
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) done += " " + e.results[i][0].transcript
+        else live += e.results[i][0].transcript
+      }
+      $("tx").textContent = finalText()
+    }
+    rec.onerror = e => { if (e.error !== "no-speech" && e.error !== "aborted") err = e.error }
+    rec.onend = () => {
+      on = false; document.body.classList.add("stop")
+      $("st").textContent = finalText() ? "Готово ✓" : (err ? "Не получилось — нажмите «Закрыть»" : "Нажмите на котика, чтобы говорить")
+      $("hint").textContent = finalText() ? "Нажмите «Закрыть»" : ""
+    }
+    try { rec.start(); on = true; document.body.classList.remove("stop"); $("st").textContent = "Слушаю…" } catch (e) { err = String(e) }
+  }
+  start()
+</script></body></html>`
 }
 
 async function voiceCommand(given) {
