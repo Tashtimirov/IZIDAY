@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Собирает готовые к установке файлы в dist/ и подставляет секреты из secrets.json.
 
-  python3 build.py            → dist/MyDay.js, dist/MyDay-Mac/, dist/MyDay-Mac.zip, dist/Code.gs
+  python3 build.py            → dist/MyDay.js, dist/MyDay-Mac/, dist/MyDay-Mac.zip, dist/Code.gs,
+                                dist/MyDay-RU.js (версия для других: рубли, без личных данных)
 
 secrets.json (не хранится в git, пример — secrets.example.json):
   {"sheet_secret": "...", "sheet_hook": "https://script.google.com/macros/s/…/exec"}
@@ -21,6 +22,15 @@ def fill(text):
 shutil.rmtree(DIST, ignore_errors=True)
 DIST.mkdir()
 (DIST / "MyDay.js").write_text(fill((ROOT / "src/iphone/MyDay.js").read_text()))
+# Версия для других iPhone: личный блок настроек заменяется на src/iphone/profile-ru.js
+START, END = "// ═══ ЛИЧНЫЕ НАСТРОЙКИ (начало)", "// ═══ ЛИЧНЫЕ НАСТРОЙКИ (конец) ═══\n"
+src = (ROOT / "src/iphone/MyDay.js").read_text()
+i, j = src.index(START), src.index(END) + len(END)
+ru = src[:i] + (ROOT / "src/iphone/profile-ru.js").read_text() + src[j:]
+for private in ["docs.google.com/spreadsheets/d/1", "Prime Thai", "PTP", "Семейная группа", sec["sheet_secret"], sec["sheet_hook"]]:
+    if private and private in ru:
+        sys.exit(f"В MyDay-RU.js осталось личное: {private}")
+(DIST / "MyDay-RU.js").write_text(ru)
 (DIST / "Code.gs").write_text(fill((ROOT / "src/sheet/Code.gs").read_text()))
 
 mac = DIST / "MyDay-Mac"

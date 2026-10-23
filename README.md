@@ -8,6 +8,7 @@
 | Папка | Что внутри |
 |---|---|
 | `src/iphone/MyDay.js` | Скрипт для Scriptable на iPhone: виджеты всех размеров, меню, встроенный разбор речи, ассистент Claude (по API-ключу) |
+| `src/iphone/profile-ru.js` | Настройки версии для других людей: рубли, русские магазины, без личных календарей и таблиц |
 | `src/mac/` | Виджет Übersicht для Mac и установщик `install.command` |
 | `src/sheet/Code.gs` | Apps Script для Google Таблицы: принимает операции из виджетов |
 | `build_core.py` | Вырезает из iPhone-скрипта общее ядро (разбор речи, деньги, отчёты) для Mac |
@@ -23,6 +24,16 @@ python3 build.py
 
 Получится `dist/MyDay.js` (вставить в Scriptable), `dist/MyDay-Mac.zip` (установка на Mac:
 `unzip MyDay-Mac.zip && zsh MyDay-Mac/install.command`) и `dist/Code.gs` (вставить в Apps Script таблицы).
+
+`dist/MyDay-RU.js` — готовая версия для других iPhone (Россия, рубли). В исходнике личные настройки лежат между
+`ЛИЧНЫЕ НАСТРОЙКИ (начало)` и `(конец)`; сборка заменяет этот блок на `profile-ru.js` и проверяет, что в файле не осталось
+личных ссылок и ключей. Кнопки ▦ и ✓ появляются, только если в настройках указаны `sheetUrl` и `trackerUrl`.
+
+## Личный трекер
+
+Кнопка ✓ в шапке открывает Google Таблицу «Мой день — личный трекер» на строке сегодняшнего дня (`trackerUrl`, `trackerStart`).
+Лист «Дни»: дата, день недели, галочки «Алкоголь», «Курение», «Секс» и заметка. Лист «Месяцы» считает дни с каждой отметкой.
+В Календарь ничего не записывается.
 
 ## Еда, вода и Apple Watch (iPhone)
 
@@ -58,6 +69,7 @@ node tests/run_corpus.mjs
 node tests/run_corpus.mjs src/iphone/MyDay.js ./corpus2.mjs
 node tests/health_test.mjs      # еда, вода, данные часов, отрисовка
 node tests/agent_test.mjs       # ассистент: один system на разговор, повтор без «мыслей»
+python3 build.py && node tests/ru_test.mjs   # версия для других: рубли, категории, без личных кнопок
 ```
 
 Секреты (`secrets.json`) в репозиторий не попадают.

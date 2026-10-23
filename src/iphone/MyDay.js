@@ -5,15 +5,16 @@
 /*
  * «Мой день» — виджет для iPhone (Scriptable)
  * Календарь на неделю + напоминания + быстрые заметки + голосовые команды
- * + учёт доходов и расходов в батах с ежемесячным отчётом.
+ * + учёт доходов и расходов с ежемесячным отчётом + личный трекер в Google Таблице.
  *
  * Кнопки в шапке виджета (средний и большой размер):
- *   🎤 — голосовая команда   ฿ — расход/доход   ✎ — быстрая заметка
+ *   🎤 — голосовая команда   📷 — еда по фото   ฿ — расход/доход
+ *   ▦ — Google Таблица денег   ✓ — личный трекер (сегодняшняя строка)   ✎ — заметка
  * Нажатие на день календаря открывает его в «Календаре».
  * Нажатие на строку месяца внизу большого виджета открывает отчёт.
  *
  * Голосом можно говорить свободно и несколько дел сразу:
- *   «Завтра в 10 встреча с Олей, потратил 300 бат на такси наличными
+ *   «Завтра в 10 встреча с Олей, потратил 300 на такси наличными
  *    и напомни в 18 купить цветы»
  * Без API-ключа работает встроенный разбор. С ключом Anthropic (меню →
  * «Умный режим») фразы разбирает Claude — точнее на свободной речи.
@@ -23,7 +24,7 @@
  *   «Напомни завтра в 9 утра позвонить в банк»
  *   «Напомни через 2 часа забрать посылку»
  *   «Встреча в пятницу в 15:00 с риелтором»
- *   «Расход 250 бат кафе наличными»
+ *   «Расход 250 кафе наличными»
  *   «Потратил 1200 на такси переводом»
  *   «Доход 30000 зарплата перевод»
  *   «Отчёт»
@@ -37,19 +38,26 @@
  * Данные Apple Watch передаёт Быстрая команда «Мой день - здоровье» (см. README).
  */
 
+// ═══ ЛИЧНЫЕ НАСТРОЙКИ (начало) ═══ build.py заменяет этот блок для версии другим людям
 // ───────────── Настройки ─────────────
 const CONFIG = {
   daysAhead: 2,                  // на сколько дней вперёд показывать встречи (средний виджет)
   notifyReminders: true,         // присылать уведомление в момент напоминания
   defaultReminderHour: 9,        // если сказали день без времени
   defaultEventMinutes: 60,       // длительность встречи по умолчанию (голосом)
-  currency: "฿",
+  currency: "฿",                 // значок валюты в суммах
+  currencyIcon: "bahtsign",      // значок кнопки денег в виджете (SF Symbols)
+  currencyIn: "в батах",         // «Сумма в батах»
+  currencyWords: "бат\\S*|฿",     // как валюту называют голосом (вырезается из комментария)
   agentModel: "claude-sonnet-5-5", // модель ассистента: выполняет команды, уточняет, отвечает
   monthlyReportNotification: true, // 1-го числа в 10:00 прислать уведомление с отчётом
   // Google Таблица с доходами и расходами (кнопка ▦ в виджете)
   sheetUrl: "https://docs.google.com/spreadsheets/d/1dsrjcRimF85iZptC0WOyLImhe-llh4BOJmSgGzK_om8/edit",
   sheetSecret: "__SHEET_SECRET__",   // совпадает с ключом в скрипте таблицы
   sheetHook: "__SHEET_HOOK__",   // веб-приложение таблицы (автозапись)
+  // Личный трекер (кнопка ✓): открывается строка сегодняшнего дня. Пусто — кнопки нет
+  trackerUrl: "https://docs.google.com/spreadsheets/d/10ZbtTHqkdcKRVE8kzivCCRdjdKOGLF3azeM1-6xg8aw/edit#gid=0",
+  trackerStart: "2026-10-01",    // дата во 2-й строке листа «Дни»
   // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
   health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30 },
   large:  { weekChips: 2, reminders: 4 },
@@ -57,9 +65,9 @@ const CONFIG = {
   // Календари и списки напоминаний, которые можно назвать голосом.
   // calendar — имя календаря событий, list — имя списка напоминаний, words — как вы их называете.
   calendars: [
-    { calendar: "Семейная группа", list: "Семья",
+    { calendar: "Семейная группа", list: "Семья", hint: "«семейный календарь», «календарь семья»",
       words: /(?:^|\s)(?:в|во|на)?\s*(?:семейн\S*\s+календар\S*|календар\S*\s+(?:семь\S*|семейн\S*))(?=[\s,.]|$)/i },
-    { calendar: "PTP", list: "Работа",
+    { calendar: "PTP", list: "Работа", hint: "«рабочий», «питипи», «PTP»",
       words: /(?:^|\s)(?:в|во|на)?\s*(?:(?:рабоч\S*|питипи|пи[\s-]*ти[\s-]*пи|пэ[\s-]*тэ[\s-]*пэ|ptp)\s+календар\S*|календар\S*\s+(?:рабоч\S*|питипи|пи[\s-]*ти[\s-]*пи|пэ[\s-]*тэ[\s-]*пэ|ptp)|питипи|пи[\s-]*ти[\s-]*пи|пэ[\s-]*тэ[\s-]*пэ|ptp)(?=[\s,.]|$)/i },
   ],
   week: {
@@ -70,6 +78,9 @@ const CONFIG = {
   // Категории: [название, [слова для распознавания голосом]]
   categories: {
     expense: [
+      // первым: «пиво в супермаркете» — это алкоголь, а не продукты
+      ["Алкоголь",         ["алкогол", "пиво", "пива", " вино ", " вина ", " вином ", " вине ", "виски", "водк", "коньяк", "шампанск", "сидр", "текил",
+                            "коктейл", "выпивк", "бухл", " лео ", "чанг", "сингх", "бар "]],   // пробелы: не «виноград», не «половина»
       ["Еда и продукты",   ["продукт", "еда", "супермаркет", "макро", "севен", "7-eleven", "рынок", "фрукт", "овощ"]],
       ["Кафе и рестораны", ["кафе", "ресторан", "кофе", "обед", "ужин", "завтрак", "доставк"]],
       ["Транспорт",        ["такси", "грэб", "граб", "grab", "болт", "bolt", "бензин", "метро", "автобус", "байк", "мото", "парковк"]],
@@ -78,7 +89,7 @@ const CONFIG = {
       ["Покупки",          ["одежд", "покупк", "шопинг", "техник", "обув"]],
       ["Здоровье",         ["аптек", "врач", "лекарств", "больниц", "стоматолог", "массаж"]],
       ["Спорт",            ["спорт", "фитнес", "тренир", "бассейн"]],
-      ["Развлечения",      ["кино", "клуб", "развлеч", "концерт", "бар "]],
+      ["Развлечения",      ["кино", "клуб", "развлеч", "концерт"]],
       ["Путешествия",      ["отель", "билет", "перелёт", "перелет", "виза", "поездк"]],
       ["Подарки",          ["подар"]],
       ["Другое",           []],
@@ -100,6 +111,7 @@ const BRAND = {
   gold: "#D4A23C", goldLight: "#F0CC60", goldDark: "#A9791A",
   teal: "#0FA89C", cream: "#FBF8F0", sand: "#F1EAD8", terracotta: "#B5532F",
 }
+// ═══ ЛИЧНЫЕ НАСТРОЙКИ (конец) ═══
 const dyn = (light, dark) => Color.dynamic(new Color(light), new Color(dark))
 const C = {
   bgTop:    dyn(BRAND.cream, "#0D3B2A"),
@@ -130,6 +142,7 @@ function chipColor(calTitle) {
 }
 
 const RUN = URLScheme.forRunningScript()
+const CUR_RE = new RegExp(CONFIG.currencyWords, "gi")   // название валюты в речи — вырезается
 
 // ───────────── Хранилище ─────────────
 const IN_ICLOUD = (() => { try { FileManager.iCloud(); return true } catch (e) { return false } })()
@@ -567,10 +580,20 @@ function baseWidget() {
 const BUTTONS = [
   ["mic.fill", "🎤", "voice"],
   ["camera.fill", "📷", "camera"],
-  ["bahtsign", "฿", "money"],
+  [CONFIG.currencyIcon, CONFIG.currency, "money"],
   ["tablecells.fill", "▦", "sheet"],   // открыть Google Таблицу
+  ["checklist", "✓", "tracker"],       // личный трекер на сегодняшней строке
   ["square.and.pencil", "✎", "note"],
-]
+].filter(b => (b[2] !== "sheet" || CONFIG.sheetUrl) && (b[2] !== "tracker" || CONFIG.trackerUrl))
+
+// Ссылка на строку сегодняшнего дня в листе «Дни» (строка 2 — trackerStart)
+function trackerLink(now = new Date()) {
+  const [y, m, d] = CONFIG.trackerStart.split("-").map(Number)
+  const days = Math.round((startOfDay(now) - new Date(y, m - 1, d)) / 864e5)
+  const url = CONFIG.trackerUrl.replace(/#.*$/, "")
+  const gid = (CONFIG.trackerUrl.match(/gid=(\d+)/) || [, "0"])[1]
+  return days >= 0 ? `${url}#gid=${gid}&range=A${days + 2}` : CONFIG.trackerUrl
+}
 
 function dateHeader(parent, size, withButtons) {
   const h = parent.addStack()
@@ -582,16 +605,16 @@ function dateHeader(parent, size, withButtons) {
   t.minimumScaleFactor = 0.8
   h.addSpacer()
   if (!withButtons) return
-  const bs = size === "large" ? 28 : 24
+  const bs = size === "large" ? 28 : BUTTONS.length > 5 ? 22 : 24
   BUTTONS.forEach(([icon, fallback, action], i) => {
-    if (i) h.addSpacer(6)
+    if (i) h.addSpacer(BUTTONS.length > 5 ? 5 : 6)
     const color = C.btnFg
     const b = h.addStack()
     b.size = new Size(bs, bs)
     b.cornerRadius = bs / 2
     b.backgroundColor = C.btnBg
     b.centerAlignContent()
-    b.url = action === "sheet" ? CONFIG.sheetUrl : `${RUN}?action=${action}`
+    b.url = action === "sheet" ? CONFIG.sheetUrl : action === "tracker" ? trackerLink() : `${RUN}?action=${action}`
     b.addSpacer()
     if (!symbol(b, icon, color, Math.round(bs * 0.5))) {
       const ft = b.addText(fallback)
@@ -1292,6 +1315,7 @@ const METHOD = { cash: "💵 Наличные", transfer: "💳 Перевод" 
 const TYPE = { expense: "Расход", income: "Доход" }
 
 function matchCategory(type, low) {
+  low = ` ${low} `                    // чтобы слова с пробелом по краям находились и в начале, и в конце фразы
   for (const [name, words] of CONFIG.categories[type]) {
     if (words.some(w => low.includes(w))) return name
     if (low.includes(name.toLowerCase().slice(0, 5))) return name
@@ -1311,7 +1335,7 @@ function parseMoney(text, type) {
   }
   if ((m = low.match(/наличн\S*|налом|кэш\S*|кеш\S*|cash/))) { method = "cash"; low = low.replace(m[0], " ") }
   else if ((m = low.match(/перевод\S*|переве\S*|карт\S*|qr|кьюар\S*|онлайн|банк\S*/))) { method = "transfer"; low = low.replace(m[0], " ") }
-  low = low.replace(/бат\S*|฿/g, " ")
+  low = low.replace(CUR_RE, " ")
   return { amount: amount > 0 ? amount : null, method, category: matchCategory(type, low), comment: text.trim() }
 }
 
@@ -1327,8 +1351,8 @@ async function addFinance(type, pre = {}, heard) {
   if (!amount) {
     const a = new Alert()
     a.title = TYPE[type]
-    a.message = "Сумма в батах"
-    const f = a.addTextField("Сумма, ฿", "")
+    a.message = `Сумма ${CONFIG.currencyIn}`
+    const f = a.addTextField(`Сумма, ${CONFIG.currency}`, "")
     f.setDecimalPadKeyboard()
     a.addTextField("Комментарий (необязательно)", comment || "")
     a.addAction("Далее")
@@ -1427,7 +1451,7 @@ b{font-variant-numeric:tabular-nums;white-space:nowrap}
 .expense{color:var(--exp)}.income{color:var(--inc)}
 </style></head><body>
 <h1>${monthTitle(key)}</h1>
-<div class="muted">Доходы и расходы в батах · ${t.items.length} операций</div>
+<div class="muted">Доходы и расходы ${CONFIG.currencyIn} · ${t.items.length} операций</div>
 <div class="cards">
   <div class="card"><span class="muted small">Доходы</span><b class="income">${money(t.income)}</b></div>
   <div class="card"><span class="muted small">Расходы</span><b class="expense">${money(t.expense)}</b></div>
@@ -1637,7 +1661,7 @@ function parseWhen(text, inheritDay) {
   return { date: d, hasTime: h !== null, explicitDay, recur, minutes, noPart, rest: cleanText(s) }
 }
 
-// Числа словами → цифры: «с семи до девяти» → «с 7 до 9», «триста пятьдесят бат» → «350 бат»
+// Числа словами → цифры: «с семи до девяти» → «с 7 до 9», «триста пятьдесят» → «350»
 const NUM_WORDS = { ноль: 0, один: 1, одна: 1, одну: 1, одного: 1, одной: 1, два: 2, две: 2, двух: 2, три: 3, трёх: 3, трех: 3,
   четыре: 4, четырёх: 4, четырех: 4, пять: 5, пяти: 5, шесть: 6, шести: 6, семь: 7, семи: 7, восемь: 8, восьми: 8,
   девять: 9, девяти: 9, десять: 10, десяти: 10, одиннадцать: 11, одиннадцати: 11, двенадцать: 12, двенадцати: 12,
@@ -1665,6 +1689,8 @@ function normalizeSpeech(text) {
     .replace(new RegExp(`(\\s)(?:в\\s+)?(?:половин\\S*\\s+|пол)(${ORD_RE})(?=[\\s,.?])`, "gi"), (m, sp, o) => `${sp}в ${ORD_GEN[o.toLowerCase()] - 1 || 12}:30`)
     .replace(new RegExp(`(\\s)(?:в\\s+)?четверть\\s+(${ORD_RE})(?=[\\s,.?])`, "gi"), (m, sp, o) => `${sp}в ${ORD_GEN[o.toLowerCase()] - 1 || 12}:15`)
     .replace(/(\s)(в|к|с|до)\s+час(?=[\s,.])/gi, "$1$2 1")
+    // «2 тысячи», «2,5 тысячи» → 2000, 2500 (иначе «2 1000» читается как 2 100)
+    .replace(/(\d+(?:[.,]\d+)?)\s*тысяч\S*/gi, (m, n) => String(Math.round(parseFloat(n.replace(",", ".")) * 1000)))
     .replace(NUM_SEQ, (m, pre, seq) => {
       const nums = []
       let total = 0, cur = 0, last = Infinity, any = false
@@ -1690,7 +1716,7 @@ const VOICE = {
   report:   /отч[её]т|итоги месяца|сколько\s+(я\s+)?(потратил|заработал)/,
   income:   /доход|получил|заработал|зарплат|поступлен|вернули|кэшбэк|кешбэк|продал|аванс|гонорар|пришл\S*\s+(деньги|оплата|перевод)/,
   spend:    /расход|потрат|купил|заплатил|оплатил|трат[аиы]|стоил|обошл|отдал/,
-  currency: /бат|฿|налич|налом|наликом|кэш|переводом|картой|по qr|кьюар/,
+  currency: new RegExp(`${CONFIG.currencyWords}|налич|налом|наликом|кэш|переводом|картой|по qr|кьюар`),
   event:    /встреч|созвон|показ|просмотр|сделк|подписани|звонок с|совещан|собеседован|при[её]м у|запись к|запиши меня|записан|свидани|митинг|колл|зум|zoom|(ужин|обед|завтрак) с|конференц|вебинар|тренировк|урок|заняти|визит|турнир|матч|игр[аеуы]|падел|падл|теннис|футбол|йог|репетиц|экскурс|вечеринк|день рождени|праздник|концерт|спектакл|выставк|стрижк|барбер|маникюр/,
   remove:   /^(убери|убрать|удали|удалить|отмени|отменить|сотри|вычеркни)/,
   move:     /^(перенеси|перенести|перенесите|перенос|сдвинь|сдвинуть|передвинь|перемести|переставь|измени\s+время|поменяй\s+время)/,
@@ -1707,7 +1733,7 @@ const EVT_TRIG = /^\s*(запиши меня( на| к)?|поставь|доба
 const DEL_TRIG = /^\s*(убери|убрать|удали|удалить|отмени|отменить|сотри|вычеркни)\s*/i
 const ADD_TRIG = /^\s*(добав(ь|ить|ьте)|создай|создать|поставь|запланируй|сделай|сохрани|внеси)\s+/i
 
-// «в семейный календарь», «питипи», «календарь PTP» → какой календарь; слова вырезаются из текста
+// «в семейный календарь», «в рабочий календарь» (CONFIG.calendars) → какой календарь; слова вырезаются из текста
 function extractCalendar(text) {
   for (const c of CONFIG.calendars) {
     const m = (" " + text + " ").match(c.words)
@@ -1793,7 +1819,8 @@ function moneyComment(text) {
   return cleanText(text
     .replace(/(\d+(?:[.,]\d+)?)\s*тыс\S*/gi, " ")
     .replace(/\d{1,3}(?:[\s ]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?/g, " ")
-    .replace(/бат\S*|฿|наличн\S*|налом|наликом|кэш\S*|кеш\S*|переводом|перевод|картой|по qr|qr|позавчера|вчера|сегодня/gi, " ")
+    .replace(CUR_RE, " ")
+    .replace(/наличн\S*|налом|наликом|кэш\S*|кеш\S*|переводом|перевод|картой|по qr|qr|позавчера|вчера|сегодня/gi, " ")
     .replace(/^\s*(расход\S*|доход\S*|потратил\S*|купил\S*|заплатил\S*|оплатил\S*|получил\S*|заработал\S*|трата|ещё|еще)\s*/i, " "))
     .replace(/^(на|за)\s+/i, "")
     .replace(/\s+(на|за|в)$/i, "")
@@ -1891,7 +1918,7 @@ function buildQuery(text) {
   const low = text.toLowerCase()
   const w = parseWhen(text)
   const a = { kind: "query", topic: "schedule", day: w.explicitDay ? startOfDay(w.date) : null, text }
-  if (/потрат|трат|расход|ушл|доход|заработ|баланс|денег|деньги|бат|получил/.test(low)) {
+  if (/потрат|трат|расход|ушл|доход|заработ|баланс|денег|деньги|получил/.test(low) || new RegExp(CONFIG.currencyWords).test(low)) {
     a.topic = "money"
     a.category = matchCategory("expense", " " + low + " ") || matchCategory("income", " " + low + " ")
     if (a.category === "Другое") a.category = null
@@ -2149,8 +2176,8 @@ async function completeAction(a) {
     if (!a.amount) {
       const al = new Alert()
       al.title = label
-      al.message = "Сумма в батах"
-      al.addTextField("Сумма, ฿", "").setDecimalPadKeyboard()
+      al.message = `Сумма ${CONFIG.currencyIn}`
+      al.addTextField(`Сумма, ${CONFIG.currency}`, "").setDecimalPadKeyboard()
       al.addAction("Далее"); al.addCancelAction("Пропустить")
       if ((await al.presentAlert()) === -1) return null
       a.amount = parseFloat(al.textFieldValue(0).replace(/\s/g, "").replace(",", "."))
@@ -2377,7 +2404,7 @@ const AGENT_TOOLS = [
     input_schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
   { name: "delete_note", description: "Удалить заметку.",
     input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
-  { name: "add_money", description: "Записать расход или доход в батах.",
+  { name: "add_money", description: `Записать расход или доход ${CONFIG.currencyIn}.`,
     input_schema: { type: "object", properties: {
       type: { type: "string", enum: ["expense", "income"] }, amount: { type: "number" },
       method: { type: "string", enum: ["cash", "transfer"], description: "cash — наличные; transfer — перевод, карта, QR" },
@@ -2573,8 +2600,8 @@ function agentSystem() {
 - Повторяющиеся события меняй только в нужное повторение, если пользователь не сказал «все» или «каждую неделю».
 - Время без «утра/вечера»: встречи, спорт, свидания, ужины после 6 обычно вечером; созвоны и работа — днём. Если перепутать дорого и неясно — спроси.
 - Уточняй через ask_user, только если без ответа нельзя сделать правильно: не названо новое время переноса, несколько подходящих событий, не указан способ оплаты (наличные или перевод). Давай короткие варианты ответа.
-- Календари по словам пользователя: ${CONFIG.calendars.map(c => `«${c.calendar}» (список напоминаний «${c.list}»)`).join(", ")}. «Семейный календарь», «календарь семья» — первый; «рабочий», «питипи», «PTP» — второй. Если календарь не назван, не указывай его.
-- Деньги — в батах. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.
+${CONFIG.calendars.length ? `- Календари по словам пользователя: ${CONFIG.calendars.map(c => `«${c.calendar}» (список напоминаний «${c.list}»)`).join(", ")}.${CONFIG.calendars.filter(c => c.hint).map(c => ` ${c.hint} — «${c.calendar}».`).join("")} Если календарь не назван, не указывай его.
+` : ""}- Деньги — ${CONFIG.currencyIn}. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.
 - «Съел», «выпил стакан воды» — add_food и add_water. На вопросы о калориях, шагах и воде смотри get_health.
 - Если пользователь спрашивает (что у меня завтра, сколько потратил), посмотри данные и ответь.
 - Удаление пользователь подтверждает сам — не спрашивай отдельно «точно удалить?».
@@ -2706,7 +2733,7 @@ async function menu() {
     ["📷 Еда по фото", () => foodPhoto()],
     ["💧 Вода", waterMenu],
     ["⌚ Еда и активность", healthMenu],
-    ["฿ Расход / доход", () => addFinance(null)],
+    [`${CONFIG.currency} Расход / доход`, () => addFinance(null)],
     ["📝 Быстрая заметка", addNote],
     ["⏰ Новое напоминание", addReminder],
     ["📅 Новая встреча", addEvent],
@@ -2716,7 +2743,8 @@ async function menu() {
     ["🧾 Последние операции", manageMoney],
     ["⌨️ Команда текстом", async () => { const t = await ask("Команда", "Что сделать?", "Отправить"); if (t) await voiceCommand(t) }],
     ["🧠 Ассистент Claude", aiSettings],
-    ["▦ Google Таблица", sheetMenu],
+    ...(CONFIG.trackerUrl ? [["✓ Личный трекер", () => Safari.open(trackerLink())]] : []),
+    ...(CONFIG.sheetUrl ? [["▦ Google Таблица", sheetMenu]] : []),
     ["☁️ Синхронизация с Mac", syncStatus],
     ["👀 Предпросмотр виджета", preview],
   ]
