@@ -64,7 +64,7 @@ const CONFIG = {
   trackerStart: "2026-10-01",    // дата во 2-й строке листа «Дни»
   // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
   health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30 },
-  large:  { reminders: 3 },   // напоминаний под календарём (0 — не показывать)
+  large:  { today: 3, reminders: 3 },   // строк событий сегодня и напоминаний (0 — не показывать)
   medium: { events: 3, reminders: 3, weekChips: 2 },
   // Календари и списки напоминаний, которые можно назвать голосом.
   // calendar — имя календаря событий, list — имя списка напоминаний, words — как вы их называете.
@@ -520,6 +520,78 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
     m.font = Font.boldSystemFont(9)
     m.textColor = C.gold
     mr.addSpacer()
+  }
+}
+
+// Большой виджет: строка из 7 дней с сегодняшнего (под числом — сколько событий) и расходы месяца справа
+function weekStrip(parent, days, events, entries) {
+  const W = 34, H = 58, today = new Date()
+  const LETTERS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
+  const row = parent.addStack()
+  row.topAlignContent()
+  days.slice(0, 7).forEach((day, i) => {
+    if (i) row.addSpacer()
+    const isToday = sameDay(day, today)
+    const weekend = day.getDay() === 0 || day.getDay() === 6
+    const cell = row.addStack()
+    cell.layoutVertically()
+    cell.centerAlignContent()   // по центру ячейки, без растягивания строк: иначе число обрезается до «…»
+    cell.size = new Size(W, H)
+    cell.cornerRadius = 10
+    cell.backgroundColor = isToday ? C.todayBg : new Color(BRAND.gold, 0.1)
+    cell.url = calshowURL(day)
+    const txt = (s, font, color) => { const t = cell.addText(s); t.font = font; t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.6; return t }
+    cell.addSpacer()
+    txt(LETTERS[day.getDay()].toUpperCase(), Font.boldSystemFont(9), isToday ? C.todayFg : weekend ? C.gold : C.sub)
+    txt(String(day.getDate()), Font.heavyRoundedSystemFont(17), isToday ? C.todayFg : C.text)
+    // сколько событий в этот день (ещё не закончившихся)
+    const n = itemsForDay(day, events).length
+    const color = n ? (isToday ? C.todayFg : C.gold) : new Color("#000000", 0)   // пустая строка той же высоты
+    txt(n ? `${n} соб.` : "·", Font.boldRoundedSystemFont(9), color)
+    cell.addSpacer()
+  })
+  row.addSpacer()
+  const tile = row.addStack()
+  tile.layoutVertically()
+  tile.size = new Size(64, H)
+  monthTile(tile, entries)
+}
+
+// Под строкой дней — события только сегодняшнего дня, каждое в одну строку: название и время справа
+function todayList(parent, events, n) {
+  const now = new Date()
+  const evs = events.filter(e => e.endDate > now && e.startDate < new Date(startOfDay(now).getTime() + 864e5))
+    .sort((a, b) => (a.isAllDay ? 0 : a.startDate) - (b.isAllDay ? 0 : b.startDate))
+  if (!evs.length) return empty(parent, "Сегодня событий больше нет")
+  const shown = evs.length > n ? n - 1 : n
+  evs.slice(0, shown).forEach((e, i) => {
+    if (i) parent.addSpacer(6)
+    const s = parent.addStack()
+    s.centerAlignContent()
+    s.url = calshowURL(e.startDate < now ? now : e.startDate)
+    const color = chipColor(e.calendar ? e.calendar.title : "")
+    const bar = s.addStack()
+    bar.size = new Size(4, 18)
+    bar.cornerRadius = 2
+    bar.backgroundColor = new Color(color)
+    s.addSpacer(8)
+    const t = s.addText(stripEmoji(e.title || "Без названия"))
+    t.font = Font.semiboldSystemFont(13.5); t.textColor = C.text; t.lineLimit = 1
+    s.addSpacer(6)
+    s.addSpacer()
+    const pill = s.addStack()
+    pill.setPadding(2, 7, 2, 7)
+    pill.cornerRadius = 8
+    pill.backgroundColor = new Color(color, 0.16)
+    const when = e.isAllDay || !sameDay(e.startDate, now) && e.startDate < now ? "весь день"
+      : e.startDate <= now ? `идёт · до ${TIME.string(e.endDate)}` : `${TIME.string(e.startDate)}–${TIME.string(e.endDate)}`
+    const wt = pill.addText(when)
+    wt.font = Font.boldRoundedSystemFont(11); wt.textColor = C.events; wt.lineLimit = 1
+  })
+  if (evs.length > shown) {
+    parent.addSpacer(6)
+    const m = parent.addText(`ещё ${evs.length - shown} сегодня`)
+    m.font = Font.boldSystemFont(11); m.textColor = C.gold
   }
 }
 
@@ -1186,8 +1258,10 @@ async function buildWidget(family, param) {
   goldDivider(w)
   w.addSpacer(7)
   // 2 ряда: 4 дня, затем 3 дня и расходы месяца; в дне до 3 событий
-  weekGrid(w, days, weekEvents, rems, 3, { perRow: 4, colWidth: 77, compact: true, extraTile: t => monthTile(t, entries) })
-  w.addSpacer(8)
+  weekStrip(w, days, weekEvents, entries)
+  w.addSpacer(9)
+  todayList(w, weekEvents, CONFIG.large.today || 3)
+  w.addSpacer(9)
   if (CONFIG.large.reminders) {   // 0 — календарю отдаётся всё место, напоминания в среднем виджете
     goldDivider(w)
     w.addSpacer(8)
