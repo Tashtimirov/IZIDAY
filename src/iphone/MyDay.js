@@ -64,7 +64,7 @@ const CONFIG = {
   trackerStart: "2026-10-01",    // дата во 2-й строке листа «Дни»
   // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
   health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30 },
-  large:  { reminders: 3 },   // календарь занимает 2 ряда по 3 события, напоминаний помещается 3
+  large:  { reminders: 0 },   // напоминаний в большом виджете (0 — всё место календарю: по 3 события в день в две строки)
   medium: { events: 3, reminders: 3, weekChips: 2 },
   // Календари и списки напоминаний, которые можно назвать голосом.
   // calendar — имя календаря событий, list — имя списка напоминаний, words — как вы их называете.
@@ -440,21 +440,32 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
   const l = hd.addText(LETTERS[day.getDay()].toUpperCase())
   l.font = Font.boldSystemFont(9)
   l.textColor = isToday ? C.todayFg : (past ? C.sub : weekend ? C.gold : C.sub)
-  hd.addSpacer()
   const items = itemsForDay(day, events, rems)
-  if (compact && items.length > maxChips) {
-    const b = hd.addStack()
-    b.setPadding(1, 5, 1, 5)
-    b.cornerRadius = 7
-    b.backgroundColor = isToday ? C.todayFg : new Color(BRAND.gold, 0.25)
-    const bt = b.addText(`${items.length} соб.`)
-    bt.font = Font.heavyRoundedSystemFont(9)
-    bt.textColor = isToday ? C.todayBg : C.gold
+  if (compact) {
+    // «СБ 24» слева, справа кружок с числом событий за день
     hd.addSpacer(4)
+    const n = hd.addText(String(day.getDate()))
+    n.font = Font.heavyRoundedSystemFont(14)
+    n.textColor = isToday ? C.todayFg : C.text
+    hd.addSpacer()
+    if (items.length) {
+      const b = hd.addStack()
+      b.size = new Size(16, 16)
+      b.cornerRadius = 8
+      b.centerAlignContent()
+      b.backgroundColor = isToday ? C.todayFg : (items.length > maxChips ? C.todayBg : new Color(BRAND.gold, 0.25))
+      const bt = b.addText(String(items.length))
+      bt.font = Font.heavyRoundedSystemFont(10)
+      bt.lineLimit = 1
+      bt.minimumScaleFactor = 0.7
+      bt.textColor = isToday ? C.todayBg : (items.length > maxChips ? C.todayFg : C.gold)
+    }
+  } else {
+    hd.addSpacer()
+    const n = hd.addText(String(day.getDate()))
+    n.font = Font.heavyRoundedSystemFont(14)
+    n.textColor = isToday ? C.todayFg : (past ? C.sub : C.text)
   }
-  const n = hd.addText(String(day.getDate()))
-  n.font = Font.heavyRoundedSystemFont(14)
-  n.textColor = isToday ? C.todayFg : (past ? C.sub : C.text)
   col.addSpacer(4)
 
   if (!items.length) {
@@ -465,24 +476,18 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
   const shown = items.length > maxChips && !compact ? maxChips - 1 : maxChips   // место под «+N» не отнимает плашку зря
   items.slice(0, shown).forEach((it, k) => {
     if (compact) {
-      if (k) col.addSpacer(2)
+      // одна надпись «18:30 Турнир по паделу» в две строки: без обрезанного времени и сокращений
+      if (k) col.addSpacer(3)
       const chip = col.addStack()
       chip.size = new Size(W, 0)
-      chip.centerAlignContent()
       chip.setPadding(3, 5, 3, 3)
       chip.cornerRadius = 6
-      chip.backgroundColor = new Color(it.color, past ? 0.25 : 0.95)
-      if (it.time) {
-        const t = chip.addText(it.time)
-        t.font = Font.boldRoundedSystemFont(9.5)
-        t.textColor = past ? C.sub : new Color(BRAND.goldLight)
-        t.lineLimit = 1
-        chip.addSpacer(3)
-      }
-      const ti = chip.addText(stripEmoji(it.title))
+      chip.backgroundColor = new Color(it.color, 0.95)
+      const ti = chip.addText(`${it.time ? it.time + " " : ""}${stripEmoji(it.title)}`)
       ti.font = Font.semiboldSystemFont(10.5)
-      ti.textColor = past ? C.sub : C.chipText
-      ti.lineLimit = 1
+      ti.textColor = C.chipText
+      ti.lineLimit = 2
+      ti.minimumScaleFactor = 0.85
       chip.addSpacer()
       return
     }
@@ -1181,11 +1186,13 @@ async function buildWidget(family, param) {
   goldDivider(w)
   w.addSpacer(7)
   // 2 ряда: 4 дня, затем 3 дня и расходы месяца; в дне до 3 событий
-  weekGrid(w, days, weekEvents, rems, 3, { perRow: 4, colWidth: 76, compact: true, extraTile: t => monthTile(t, entries) })
+  weekGrid(w, days, weekEvents, rems, 3, { perRow: 4, colWidth: 77, compact: true, extraTile: t => monthTile(t, entries) })
   w.addSpacer(8)
-  goldDivider(w)
-  w.addSpacer(8)
-  reminderPanel(w, rems, CONFIG.large.reminders)
+  if (CONFIG.large.reminders) {   // 0 — календарю отдаётся всё место, напоминания в среднем виджете
+    goldDivider(w)
+    w.addSpacer(8)
+    reminderPanel(w, rems, CONFIG.large.reminders)
+  }
   w.addSpacer()
   goldDivider(w)
   w.addSpacer(6)
