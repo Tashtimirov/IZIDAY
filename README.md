@@ -25,7 +25,7 @@ python3 build.py
 Получится `dist/MyDay.js` (вставить в Scriptable), `dist/MyDay-Mac.zip` (установка на Mac:
 `unzip MyDay-Mac.zip && zsh MyDay-Mac/install.command`) и `dist/Code.gs` (вставить в Apps Script таблицы).
 
-`dist/MyDay-RU.js` — готовая версия для других iPhone (Россия, рубли). В исходнике личные настройки лежат между
+`dist/MyDay-RU.js` и `dist/MyDay-TH.js` — готовые версии для других iPhone (Россия, рубли; Таиланд, баты). В исходнике личные настройки лежат между
 `ЛИЧНЫЕ НАСТРОЙКИ (начало)` и `(конец)`; сборка заменяет этот блок на `profile-ru.js` и проверяет, что в файле не осталось
 личных ссылок и ключей. Кнопки ▦ и ✓ появляются, только если в настройках указаны `sheetUrl` и `trackerUrl`.
 
@@ -78,7 +78,7 @@ node tests/run_corpus.mjs
 node tests/run_corpus.mjs src/iphone/MyDay.js ./corpus2.mjs
 node tests/health_test.mjs      # еда, вода, данные часов, отрисовка
 node tests/agent_test.mjs       # ассистент: один system на разговор, повтор без «мыслей»
-python3 build.py && node tests/ru_test.mjs   # версия для других: рубли, категории, без личных кнопок
+python3 build.py && node tests/ru_test.mjs && node tests/th_test.mjs   # версии для других: рубли / баты, категории, без личных кнопок
 node tests/sheet_test.mjs      # автозапись: свой ключ, еда/вода/активность, без лишних отправок
 node tests/gs_test.mjs         # скрипт таблицы на поддельной таблице: листы, без дублей, удаление
 ```

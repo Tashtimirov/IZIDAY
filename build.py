@@ -2,7 +2,7 @@
 """Собирает готовые к установке файлы в dist/ и подставляет секреты из secrets.json.
 
   python3 build.py            → dist/MyDay.js, dist/MyDay-Mac/, dist/MyDay-Mac.zip, dist/Code.gs,
-                                dist/MyDay-RU.js и dist/Code-RU.gs (версия для других: рубли, без личных данных)
+                                dist/MyDay-RU.js, dist/MyDay-TH.js и dist/Code-RU.gs (версии для других: рубли / баты, без личных данных)
 
 secrets.json (не хранится в git, пример — secrets.example.json):
   {"sheet_secret": "...", "sheet_hook": "https://script.google.com/macros/s/…/exec"}
@@ -22,18 +22,29 @@ def fill(text):
 shutil.rmtree(DIST, ignore_errors=True)
 DIST.mkdir()
 (DIST / "MyDay.js").write_text(fill((ROOT / "src/iphone/MyDay.js").read_text()))
-# Версия для других iPhone: личный блок настроек заменяется на src/iphone/profile-ru.js
+# Версии для других iPhone: личный блок настроек заменяется на src/iphone/profile-<страна>.js
 START, END = "// ═══ ЛИЧНЫЕ НАСТРОЙКИ (начало)", "// ═══ ЛИЧНЫЕ НАСТРОЙКИ (конец) ═══\n"
 src = (ROOT / "src/iphone/MyDay.js").read_text()
 i, j = src.index(START), src.index(END) + len(END)
-ru = src[:i] + (ROOT / "src/iphone/profile-ru.js").read_text() + src[j:]
-# Личное (трекер) в версию для других не попадает: строки с «[личное]» и блоки «[личное ▼] … [личное ▲]»
-ru = re.sub(r"[ \t]*// \[личное ▼\][\s\S]*?// \[личное ▲\]\n", "", ru)
-ru = "".join(l for l in ru.splitlines(True) if "[личное]" not in l)
-for private in ["docs.google.com/spreadsheets/d/1", "трекер", "tracker", "Курение", "Секс", "Алкоголь", "Prime Thai", "PTP", "Семейная группа", sec["sheet_secret"], sec["sheet_hook"]]:
-    if private and private in ru:
-        sys.exit(f"В MyDay-RU.js осталось личное: {private}")
-(DIST / "MyDay-RU.js").write_text(ru)
+# у профиля должны быть те же настройки, что и у личной версии (кроме личных), иначе код получит undefined
+shape = r"""const f = require("fs"), [a, b] = process.argv.slice(1).map(p => f.readFileSync(p, "utf8"))
+const cfg = s => new Function(s.slice(s.indexOf("const CONFIG"), s.indexOf("// ═══ ЛИЧНЫЕ НАСТРОЙКИ (конец)")) + "; return CONFIG")()
+const keys = (o, p = "") => Object.entries(o).flatMap(([k, v]) => v && typeof v === "object" && !Array.isArray(v) && !(v instanceof RegExp) && k !== "categories" ? keys(v, p + k + ".") : [p + k])
+const miss = keys(cfg(a)).filter(k => !keys(cfg(b)).includes(k) && !/^tracker/.test(k))
+if (miss.length) { console.log(miss.join(", ")); process.exit(1) }"""
+for country in ["ru", "th"]:
+    prof = ROOT / f"src/iphone/profile-{country}.js"
+    r = subprocess.run(["node", "-e", shape, str(ROOT / "src/iphone/MyDay.js"), str(prof)], capture_output=True, text=True)
+    if r.returncode:
+        sys.exit(f"В {prof.name} не хватает настроек: {r.stdout.strip() or r.stderr.strip()}")
+    out = src[:i] + prof.read_text() + src[j:]
+    # Личное (трекер) в версию для других не попадает: строки с «[личное]» и блоки «[личное ▼] … [личное ▲]»
+    out = re.sub(r"[ \t]*// \[личное ▼\][\s\S]*?// \[личное ▲\]\n", "", out)
+    out = "".join(l for l in out.splitlines(True) if "[личное]" not in l)
+    for private in ["docs.google.com/spreadsheets/d/1", "трекер", "tracker", "Курение", "Секс", "Алкоголь", "Prime Thai", "PTP", "Семейная группа", sec["sheet_secret"], sec["sheet_hook"]]:
+        if private and private in out:
+            sys.exit(f"В MyDay-{country.upper()}.js осталось личное: {private}")
+    (DIST / f"MyDay-{country.upper()}.js").write_text(out)
 # Скрипт таблицы для других: без вашего ключа — таблица запомнит ключ виджета, который первым в неё напишет
 (DIST / "Code-RU.gs").write_text((ROOT / "src/sheet/Code.gs").read_text().replace("__SHEET_SECRET__", ""))
 (DIST / "Code.gs").write_text(fill((ROOT / "src/sheet/Code.gs").read_text()))
