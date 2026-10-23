@@ -64,7 +64,7 @@ const CONFIG = {
   trackerStart: "2026-10-01",    // дата во 2-й строке листа «Дни»
   // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
   health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30 },
-  large:  { reminders: 0 },   // напоминаний в большом виджете (0 — всё место календарю: по 3 события в день в две строки)
+  large:  { reminders: 3 },   // напоминаний под календарём (0 — не показывать)
   medium: { events: 3, reminders: 3, weekChips: 2 },
   // Календари и списки напоминаний, которые можно назвать голосом.
   // calendar — имя календаря событий, list — имя списка напоминаний, words — как вы их называете.
@@ -476,8 +476,8 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
   const shown = items.length > maxChips && !compact ? maxChips - 1 : maxChips   // место под «+N» не отнимает плашку зря
   items.slice(0, shown).forEach((it, k) => {
     if (compact) {
-      // одна надпись «18:30 Турнир по паделу» в две строки: без обрезанного времени и сокращений
-      if (k) col.addSpacer(3)
+      // одна строка «18:30 Турнир по паделу»: время и название одной надписью, длинное — мельче шрифтом
+      if (k) col.addSpacer(2)
       const chip = col.addStack()
       chip.size = new Size(W, 0)
       chip.setPadding(3, 5, 3, 3)
@@ -486,8 +486,8 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
       const ti = chip.addText(`${it.time ? it.time + " " : ""}${stripEmoji(it.title)}`)
       ti.font = Font.semiboldSystemFont(10.5)
       ti.textColor = C.chipText
-      ti.lineLimit = 2
-      ti.minimumScaleFactor = 0.85
+      ti.lineLimit = 1
+      ti.minimumScaleFactor = 0.7
       chip.addSpacer()
       return
     }
