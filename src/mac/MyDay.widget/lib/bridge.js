@@ -30,12 +30,18 @@ function reminders() {
   })))
 }
 
-function addReminder(title, due) {
+function addReminder(title, due, listName) {
   const R = Application("Reminders")
   const props = { name: title }
   if (due) { const d = new Date(due); props.dueDate = d; props.remindMeDate = d }
   const r = R.Reminder(props)
-  R.defaultList().reminders.push(r)
+  let list = R.defaultList()
+  if (listName) {
+    const low = listName.toLowerCase()
+    const all = R.lists()
+    list = all.find(l => l.name().toLowerCase() === low) || all.find(l => l.name().toLowerCase().includes(low)) || list
+  }
+  list.reminders.push(r)
   return "ok"
 }
 
@@ -64,8 +70,10 @@ function showReminder(id) {
 function writableCalendar(name) {
   const Cal = Application("Calendar")
   if (name) {
-    const byName = Cal.calendars.whose({ name: name })()
-    if (byName.length) return byName[0]
+    const low = name.toLowerCase()
+    const all = Cal.calendars.whose({ writable: true })()
+    const hit = all.find(c => c.name().toLowerCase() === low) || all.find(c => c.name().toLowerCase().includes(low))
+    if (hit) return hit
   }
   const w = Cal.calendars.whose({ writable: true })()
   if (!w.length) throw new Error("Нет календаря, в который можно записывать")
@@ -184,7 +192,7 @@ function run(argv) {
   try {
     switch (cmd) {
       case "reminders": return reminders()
-      case "add-reminder": return addReminder(a[0], a[1])
+      case "add-reminder": return addReminder(a[0], a[1], a[2])
       case "delete-reminders": return deleteReminders(a[0])
       case "show-reminder": return showReminder(a[0])
       case "complete-reminder": return completeReminder(a[0])

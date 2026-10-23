@@ -48,6 +48,15 @@ echo
 echo "@@MONEY"
 fetch finance.json
 echo
+echo "@@WEATHER"
+# Погода на сегодня (wttr.in, без ключа). Кэш на 30 минут, чтобы не дёргать сервис каждую минуту.
+WX="${TMPDIR:-/tmp}/myday-weather.json"
+if [ ! -s "$WX" ] || [ -n "$(find "$WX" -mmin +30 2>/dev/null)" ]; then
+  CITY=$(printf %s "${WEATHER_CITY:-}" | sed 's/ /+/g')
+  curl -s --max-time 6 "https://wttr.in/${CITY}?format=j1&lang=ru" -o "$WX.tmp" && grep -q current_condition "$WX.tmp" && mv "$WX.tmp" "$WX"
+fi
+cat "$WX" 2>/dev/null
+echo
 echo "@@SETTINGS"
 fetch settings.json
 echo

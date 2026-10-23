@@ -46,8 +46,16 @@ const CONFIG = {
   sheetUrl: "https://docs.google.com/spreadsheets/d/1dsrjcRimF85iZptC0WOyLImhe-llh4BOJmSgGzK_om8/edit",
   sheetSecret: "__SHEET_SECRET__",   // совпадает с ключом в скрипте таблицы
   sheetHook: "__SHEET_HOOK__",   // веб-приложение таблицы (автозапись)
-  large:  { weekChips: 3, reminders: 2 },
+  large:  { weekChips: 2, reminders: 5 },
   medium: { events: 3, reminders: 3, weekChips: 2 },
+  // Календари и списки напоминаний, которые можно назвать голосом.
+  // calendar — имя календаря событий, list — имя списка напоминаний, words — как вы их называете.
+  calendars: [
+    { calendar: "Семейная группа", list: "Семья",
+      words: /(?:^|\s)(?:в|во|на)?\s*(?:семейн\S*\s+календар\S*|календар\S*\s+(?:семь\S*|семейн\S*))(?=[\s,.]|$)/i },
+    { calendar: "PTP", list: "Работа",
+      words: /(?:^|\s)(?:в|во|на)?\s*(?:(?:рабоч\S*|питипи|пи[\s-]*ти[\s-]*пи|пэ[\s-]*тэ[\s-]*пэ|ptp)\s+календар\S*|календар\S*\s+(?:рабоч\S*|питипи|пи[\s-]*ти[\s-]*пи|пэ[\s-]*тэ[\s-]*пэ|ptp)|питипи|пи[\s-]*ти[\s-]*пи|пэ[\s-]*тэ[\s-]*пэ|ptp)(?=[\s,.]|$)/i },
+  ],
   week: {
     daysBefore: 2,               // сколько прошедших дней показывать
     daysFromToday: 7,            // сколько дней показывать начиная с сегодня
@@ -318,10 +326,12 @@ async function getWeekEvents(days) {
   try { return await CalendarEvent.between(days[0], end, []) } catch (e) { return [] }
 }
 
-function itemsForDay(day, events, rems) {
+// В календаре — только события, которые ещё не закончились. Напоминания живут в своём разделе.
+function itemsForDay(day, events) {
   const next = new Date(day); next.setDate(day.getDate() + 1)
-  const ev = events
-    .filter(e => e.startDate < next && e.endDate > day)
+  const now = new Date()
+  return events
+    .filter(e => e.startDate < next && e.endDate > day && e.endDate > now)
     .map(e => {
       const startsToday = sameDay(e.startDate, day)
       return {
@@ -331,16 +341,7 @@ function itemsForDay(day, events, rems) {
         sort: e.isAllDay || !startsToday ? 0 : e.startDate.getTime(),
       }
     })
-  const rm = rems
-    .filter(r => r.dueDate && sameDay(r.dueDate, day))
-    .map(r => ({
-      time: r.dueDateIncludesTime ? TIME.string(r.dueDate) : "",
-      title: r.title || "Без названия",
-      rem: true, late: isOverdue(r),
-      url: reminderURL(r),
-      sort: r.dueDateIncludesTime ? r.dueDate.getTime() : day.getTime() + 1,
-    }))
-  return ev.concat(rm).sort((a, b) => a.sort - b.sort)
+    .sort((a, b) => a.sort - b.sort)
 }
 
 const REMINDERS_APP = "x-apple-reminderkit://"
@@ -416,19 +417,9 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
     chip.setPadding(3, 5, 4, 3)
     chip.cornerRadius = 7
     if (it.url) chip.url = it.url
-    let fg, tfg
-    if (it.rem) {
-      const c = it.late ? BRAND.terracotta : BRAND.gold
-      chip.backgroundColor = new Color(c, past ? 0.10 : 0.18)
-      chip.borderColor = new Color(c, past ? 0.35 : 0.85)
-      chip.borderWidth = 1
-      fg = past ? C.sub : C.text
-      tfg = past ? C.sub : (it.late ? new Color(BRAND.terracotta) : C.gold)
-    } else {
-      chip.backgroundColor = new Color(it.color, past ? 0.25 : 0.95)
-      fg = past ? C.sub : C.chipText
-      tfg = past ? C.sub : new Color(BRAND.goldLight)
-    }
+    chip.backgroundColor = new Color(it.color, past ? 0.25 : 0.95)
+    const fg = past ? C.sub : C.chipText
+    const tfg = past ? C.sub : new Color(BRAND.goldLight)
     if (it.time) {
       const t = chip.addText(it.time)
       t.font = Font.boldRoundedSystemFont(9)
@@ -563,7 +554,7 @@ function baseWidget() {
   w.backgroundGradient = g
   w.setPadding(12, 12, 12, 12)
   w.url = RUN
-  w.refreshAfterDate = new Date(Date.now() + 15 * 60 * 1000)
+  w.refreshAfterDate = new Date(Date.now() + 5 * 60 * 1000)   // чаще обновляться: прошедшие события и выполненные дела уходят быстрее
   return w
 }
 
@@ -624,6 +615,46 @@ function addReminders(parent, rems, n, size) {
     wrap.url = reminderURL(r)                       // нажатие — открыть в «Напоминаниях»
     row(wrap, r.title || "Без названия", reminderTime(r), late ? C.overdue : C.rem,
       { size, rightColor: late ? C.overdue : C.sub })
+  })
+}
+
+// Крупный список напоминаний: кружок, название, время справа; просроченные — терракотовые
+function reminderPanel(parent, rems, n) {
+  const box = parent.addStack()
+  box.layoutVertically()
+  box.url = REMINDERS_APP
+  const h = box.addStack()
+  h.centerAlignContent()
+  symbol(h, "checklist", C.gold, 13)
+  h.addSpacer(6)
+  const t = h.addText("НАПОМИНАНИЯ")
+  t.font = Font.boldSystemFont(11); t.textColor = C.gold
+  h.addSpacer()
+  if (rems.length) { const c = h.addText(String(rems.length)); c.font = Font.heavyRoundedSystemFont(12); c.textColor = C.gold }
+  box.addSpacer(6)
+  if (!rems.length) { empty(box, "Всё сделано 🎉"); return }
+  rems.slice(0, n).forEach((r, i) => {
+    if (i) box.addSpacer(5)
+    const late = isOverdue(r)
+    const s = box.addStack()
+    s.centerAlignContent()
+    s.url = reminderURL(r)
+    const col = late ? new Color(BRAND.terracotta) : C.gold
+    if (!symbol(s, "circle", col, 15)) { const o = s.addText("○"); o.font = Font.systemFont(14); o.textColor = col }
+    s.addSpacer(8)
+    const tt = s.addText(r.title || "Без названия")
+    tt.font = Font.mediumSystemFont(13.5); tt.textColor = C.text; tt.lineLimit = 1
+    s.addSpacer(6)
+    s.addSpacer()
+    const when = reminderTime(r)
+    if (when) {
+      const pill = s.addStack()
+      pill.setPadding(2, 7, 2, 7)
+      pill.cornerRadius = 8
+      pill.backgroundColor = new Color(late ? BRAND.terracotta : BRAND.gold, 0.16)
+      const wt = pill.addText(when)
+      wt.font = Font.boldRoundedSystemFont(11); wt.textColor = col; wt.lineLimit = 1
+    }
   })
 }
 
@@ -715,18 +746,11 @@ async function buildWidget(family, param) {
   goldDivider(w)
   w.addSpacer(7)
   weekGrid(w, days, weekEvents, rems, CONFIG.large.weekChips, { titleLines: 2, extraTile: t => monthTile(t, entries) })
+  w.addSpacer(8)
+  goldDivider(w)
+  w.addSpacer(8)
+  reminderPanel(w, rems, CONFIG.large.reminders)
   w.addSpacer()
-  // Напоминания без срока в календаре не видны — показываем их строкой внизу
-  const undated = rems.filter(r => !r.dueDate)
-  if (undated.length) {
-    const rs = w.addStack()
-    rs.centerAlignContent()
-    rs.url = REMINDERS_APP
-    symbol(rs, "checklist", C.gold, 11)
-    rs.addSpacer(5)
-    const t = rs.addText(undated.slice(0, 3).map(r => r.title).join("  ·  "))
-    t.font = Font.mediumSystemFont(11); t.textColor = C.text; t.lineLimit = 1
-  }
   return w
 }
 
@@ -797,9 +821,21 @@ function makeRule(recur) {
   } catch (e) { return null }
 }
 
-async function createReminder(title, date, recur) {
+// Календарь или список по имени (без учёта регистра, допускает часть имени); null — не найден
+async function findCalendar(name, forReminders) {
+  if (!name) return null
+  try {
+    const list = forReminders ? await Calendar.forReminders() : await Calendar.forEvents()
+    const low = name.toLowerCase()
+    return list.find(c => c.title.toLowerCase() === low) || list.find(c => c.title.toLowerCase().includes(low)) || null
+  } catch (e) { return null }
+}
+
+async function createReminder(title, date, recur, listName) {
   const r = new Reminder()
   r.title = title
+  const cal = await findCalendar(listName, true)
+  if (cal) r.calendar = cal
   const rule = makeRule(recur)
   if (rule) r.addRecurrenceRule(rule)
   if (date) {
@@ -818,9 +854,11 @@ async function createReminder(title, date, recur) {
   r.save()
 }
 
-function createEvent(title, start, minutes, location, recur) {
+async function createEvent(title, start, minutes, location, recur, calName) {
   const e = new CalendarEvent()
   e.title = title
+  const cal = await findCalendar(calName, false)
+  if (cal) e.calendar = cal
   const rule = makeRule(recur)
   if (rule) e.addRecurrenceRule(rule)
   e.startDate = start
@@ -859,7 +897,7 @@ async function addEvent() {
   const i = await choose("Длительность", durations.map(d => d[0]))
   if (i === -1) return
   const loc = await ask("Место (необязательно)", "Адрес или ссылка", "Готово")
-  createEvent(title, start, durations[i][1], loc)
+  await createEvent(title, start, durations[i][1], loc)
 }
 
 async function completeReminder() {
@@ -1307,7 +1345,7 @@ const VOICE = {
   income:   /доход|получил|заработал|зарплат|поступлен|вернули|кэшбэк|кешбэк|продал|аванс|гонорар|пришл\S*\s+(деньги|оплата|перевод)/,
   spend:    /расход|потрат|купил|заплатил|оплатил|трат[аиы]|стоил|обошл|отдал/,
   currency: /бат|฿|налич|налом|наликом|кэш|переводом|картой|по qr|кьюар/,
-  event:    /встреч|созвон|звонок с|совещан|собеседован|при[её]м у|запись к|запиши меня|записан|свидани|митинг|колл|зум|zoom|(ужин|обед|завтрак) с|конференц|вебинар|тренировк|урок|заняти|визит|турнир|матч|игр[аеуы]|падел|падл|теннис|футбол|йог|репетиц|экскурс|вечеринк|день рождени|праздник|концерт|спектакл|выставк|стрижк|барбер|маникюр/,
+  event:    /встреч|созвон|показ|просмотр|сделк|подписани|звонок с|совещан|собеседован|при[её]м у|запись к|запиши меня|записан|свидани|митинг|колл|зум|zoom|(ужин|обед|завтрак) с|конференц|вебинар|тренировк|урок|заняти|визит|турнир|матч|игр[аеуы]|падел|падл|теннис|футбол|йог|репетиц|экскурс|вечеринк|день рождени|праздник|концерт|спектакл|выставк|стрижк|барбер|маникюр/,
   remove:   /^(убери|убрать|удали|удалить|отмени|отменить|сотри|вычеркни)/,
   move:     /^(перенеси|перенести|перенесите|перенос|сдвинь|сдвинуть|передвинь|перемести|переставь|измени\s+время|поменяй\s+время)/,
   query:    /^(что|чем|какие|какой|какая|какое|сколько|когда|покажи|есть\s+ли|во\s+сколько|где)(\s|$)/,
@@ -1323,6 +1361,15 @@ const EVT_TRIG = /^\s*(запиши меня( на| к)?|поставь|доба
 const DEL_TRIG = /^\s*(убери|убрать|удали|удалить|отмени|отменить|сотри|вычеркни)\s*/i
 const ADD_TRIG = /^\s*(добав(ь|ить|ьте)|создай|создать|поставь|запланируй|сделай|сохрани|внеси)\s+/i
 
+// «в семейный календарь», «питипи», «календарь PTP» → какой календарь; слова вырезаются из текста
+function extractCalendar(text) {
+  for (const c of CONFIG.calendars) {
+    const m = (" " + text + " ").match(c.words)
+    if (m) return { cal: c, text: (" " + text + " ").replace(m[0], " ").replace(/\s+/g, " ").trim() }
+  }
+  return { cal: null, text }
+}
+
 function classify(seg, prev) {
   const low = seg.toLowerCase().trim()
   if (/^(заметк|запомни|идея|мысль|запиши(?!\s+меня))/.test(low)) return "note"   // явная заметка важнее слов вроде «день рождения»
@@ -1337,6 +1384,7 @@ function classify(seg, prev) {
   if (!w.rest) return null                         // только дата/время — это уточнение к соседней команде
   const rest = w.rest.toLowerCase()
   if (VOICE.remind.test(low)) return "reminder"
+  if (extractCalendar(low).cal && !VOICE.task.test(low)) return "event"        // назван календарь — это событие
   if (/\d/.test(rest)) {
     const moneyish = VOICE.spend.test(low) || VOICE.currency.test(low) || VOICE.income.test(low)
       || matchCategory("expense", " " + rest + " ") !== null
@@ -1430,6 +1478,8 @@ function buildActions(segs) {
         date: !w.recur && w.explicitDay ? w.date : null,
         what: /напоминани/i.test(text) ? "reminders" : /событи|встреч|календар/i.test(text) ? "events" : "both" }
     }
+    const ec = extractCalendar(text)
+    text = ec.text
     const w = parseWhen(text, lastDay)
     // «турнир с семи до девяти» — для досуга и спорта время без «утра/вечера» считаем вечерним
     if (kind === "event" && w.date && w.noPart && w.date.getHours() >= 7 && w.date.getHours() <= 11
@@ -1439,8 +1489,11 @@ function buildActions(segs) {
     if (w.explicitDay) lastDay = startOfDay(w.date)
     let title = cleanText(w.rest.replace(kind === "reminder" ? REM_TRIG : EVT_TRIG, ""))
     if (kind === "event" && /^с\s/i.test(title)) title = "Встреча " + title
+    title = cleanText(title.replace(/(^|\s)(в|во|на)\s*$/i, ""))
     return { kind, title: cap(title) || (kind === "event" ? "Встреча" : "Напоминание"),
-      date: w.date, hasTime: w.hasTime, minutes: w.minutes || CONFIG.defaultEventMinutes, recur: w.recur }
+      date: w.date, hasTime: w.hasTime, minutes: w.minutes || CONFIG.defaultEventMinutes, recur: w.recur,
+      calendar: kind === "event" && ec.cal ? ec.cal.calendar : null,
+      list: kind === "reminder" && ec.cal ? ec.cal.list : null }
   })
 }
 
@@ -1683,8 +1736,8 @@ function plural(n) {
 
 function describe(a) {
   const rl = a.recur ? ` · 🔁 ${recurLabel(a.recur)}` : ""
-  if (a.kind === "event") return `📅 ${a.title} — ${WHEN_S.string(a.date)}–${TIME.string(new Date(a.date.getTime() + a.minutes * 60000))}${rl}`
-  if (a.kind === "reminder") return `⏰ ${a.title}${a.date ? " — " + WHEN_S.string(a.date) : ""}${rl}`
+  if (a.kind === "event") return `📅 ${a.title} — ${WHEN_S.string(a.date)}–${TIME.string(new Date(a.date.getTime() + a.minutes * 60000))}${rl}${a.calendar ? " · 🗂 " + a.calendar : ""}`
+  if (a.kind === "reminder") return `⏰ ${a.title}${a.date ? " — " + WHEN_S.string(a.date) : ""}${rl}${a.list ? " · 🗂 " + a.list : ""}`
   if (a.kind === "delete") {
     const titles = [...new Set(a.events.map(e => e.title).concat(a.reminders.map(r => r.title)))]
     const parts = []
@@ -1729,6 +1782,16 @@ async function completeAction(a) {
     a.title = await ask("Заметка", "Текст")
     if (!a.title) return null
   }
+  if ((a.kind === "event" && a.calendar) || (a.kind === "reminder" && a.list)) {
+    const isEv = a.kind === "event", name = isEv ? a.calendar : a.list
+    if (!(await findCalendar(name, !isEv))) {
+      let all = []
+      try { all = (isEv ? await Calendar.forEvents() : await Calendar.forReminders()).filter(c => !isEv || c.isWritable !== false) } catch (e) {}
+      const i = await choose(`Не нашёл ${isEv ? "календарь" : "список"} «${name}»`, all.map(c => c.title), "Куда сохранить?")
+      if (i === -1) return null
+      if (isEv) a.calendar = all[i].title; else a.list = all[i].title
+    }
+  }
   if (a.kind === "event" && (!a.date || !a.hasTime)) {
     await info(`📅 ${a.title}`, "Выберите дату и время встречи")
     const d = await pickDate(a.date || undefined)
@@ -1765,8 +1828,8 @@ async function completeAction(a) {
 async function executeAll(list) {
   let entries = null, openReport = false
   for (const a of list) {
-    if (a.kind === "event") createEvent(a.title, a.date, a.minutes || CONFIG.defaultEventMinutes, a.location, a.recur)
-    else if (a.kind === "reminder") await createReminder(a.title, a.date, a.recur)
+    if (a.kind === "event") await createEvent(a.title, a.date, a.minutes || CONFIG.defaultEventMinutes, a.location, a.recur, a.calendar)
+    else if (a.kind === "reminder") await createReminder(a.title, a.date, a.recur, a.list)
     else if (a.kind === "delete") {
       for (const e of a.events) { try { e.remove() } catch (x) {} }
       for (const r of a.reminders) { try { r.remove() } catch (x) {} }
@@ -2144,6 +2207,7 @@ function agentSystem() {
 - Повторяющиеся события меняй только в нужное повторение, если пользователь не сказал «все» или «каждую неделю».
 - Время без «утра/вечера»: встречи, спорт, свидания, ужины после 6 обычно вечером; созвоны и работа — днём. Если перепутать дорого и неясно — спроси.
 - Уточняй через ask_user, только если без ответа нельзя сделать правильно: не названо новое время переноса, несколько подходящих событий, не указан способ оплаты (наличные или перевод). Давай короткие варианты ответа.
+- Календари по словам пользователя: ${CONFIG.calendars.map(c => `«${c.calendar}» (список напоминаний «${c.list}»)`).join(", ")}. «Семейный календарь», «календарь семья» — первый; «рабочий», «питипи», «PTP» — второй. Если календарь не назван, не указывай его.
 - Деньги — в батах. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.
 - Если пользователь спрашивает (что у меня завтра, сколько потратил), посмотри данные и ответь.
 - Удаление пользователь подтверждает сам — не спрашивай отдельно «точно удалить?».

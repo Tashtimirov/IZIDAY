@@ -2,7 +2,7 @@ import fs from "fs"
 const NOW = new Date(2026, 9, 22, 20, 0)
 const RealDate = Date
 globalThis.Date = class extends RealDate { constructor(...a) { a.length ? super(...a) : super(NOW) } static now() { return NOW.getTime() } }
-const src = fs.readFileSync(new URL("../src/iphone/MyDay.js", import.meta.url).pathname, "utf8").replace(/\/\/ ───────────── Запуск[\s\S]*$/, "")
+const src = fs.readFileSync(new URL("../src/iphone/MyDay.js", import.meta.url), "utf8").replace(/\/\/ ───────────── Запуск[\s\S]*$/, "")
 class Color { constructor(h) { this.hex = h } static dynamic(a) { return a } static white() { return new Color("#fff") } }
 const W = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"], z = n => String(n).padStart(2, "0")
 class DateFormatter { set dateFormat(p) { this.p = p } string(d) { return this.p === "HH:mm" ? `${z(d.getHours())}:${z(d.getMinutes())}` : `${W[d.getDay()]} ${z(d.getDate())}.${z(d.getMonth() + 1)} ${z(d.getHours())}:${z(d.getMinutes())}` } }

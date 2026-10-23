@@ -8,7 +8,9 @@ import * as core from "./lib/core.js"
 // ───────────── Настройки ─────────────
 const MAC = {
   top: 40, right: 30, width: 520,   // начальное положение и ширина (виджет можно перетащить за дату)
-  chips: 4,                         // сколько дел в день в календаре
+  chips: 4,                         // сколько событий в день в календаре
+  reminders: 10,                    // сколько напоминаний показывать
+  weatherCity: "",                  // город для погоды; пусто — определить по сети (например "Pattaya")
   calendar: "",                     // календарь для новых событий (пусто — первый доступный)
 }
 const DAYS_BEFORE = core.CONFIG.week.daysBefore
@@ -21,7 +23,7 @@ const BRAND = { emerald: "#0B4A33", emeraldDeep: "#063322", emeraldMid: "#2E6B57
   goldDark: "#A9791A", teal: "#0FA89C", cream: "#FBF8F0", sand: "#F1EAD8", terracotta: "#B5532F" }
 const PALETTE = [BRAND.emerald, BRAND.teal, BRAND.goldDark, BRAND.emeraldMid]
 
-const DATA_CMD = `"${W}/data.sh" ${DAYS_BEFORE} ${DAYS_FROM_TODAY}`
+const DATA_CMD = `WEATHER_CITY=${JSON.stringify(MAC.weatherCity)} "${W}/data.sh" ${DAYS_BEFORE} ${DAYS_FROM_TODAY}`
 // Каждое обновление: данные для виджета + догоняющая выгрузка в Google Таблицу, если операции менялись
 export const command = async dispatch => {
   let output = ""
@@ -29,7 +31,7 @@ export const command = async dispatch => {
   dispatch({ type: "DATA", output })
   autoSyncSheet(output)
 }
-export const refreshFrequency = 2 * 60 * 1000   // раз в 2 минуты — подхватывает изменения с iPhone
+export const refreshFrequency = 60 * 1000   // раз в минуту: прошедшие события и выполненные дела уходят быстро
 export const initialState = { output: "", busy: false }
 export const updateState = (event, prev) => {
   if (event.type === "BUSY") return { ...prev, busy: event.busy }
@@ -109,21 +111,40 @@ function weekDays() {
   })
 }
 
-function dayItems(day, events, rems) {
+// В календаре — только события, которые ещё не закончились. Напоминания — в своём разделе.
+function dayItems(day, events) {
   const next = new Date(day); next.setDate(day.getDate() + 1)
-  const ev = events.filter(e => e.start < next && e.end > day).map(e => {
+  const now = new Date()
+  return events.filter(e => e.start < next && e.end > day && e.end > now).map(e => {
     const startsToday = core.sameDay(e.start, day)
     return { kind: "event", title: e.title, color: e.color, date: day,
       time: e.allDay || !startsToday ? "" : core.TIME.string(e.start),
       sort: e.allDay || !startsToday ? 0 : e.start.getTime() }
-  })
-  const rm = rems.filter(r => r.dueDate && core.sameDay(r.dueDate, day)).map(r => ({
-    kind: "rem", id: r.identifier, title: r.title, date: day, late: core.isOverdue(r),
-    color: core.isOverdue(r) ? BRAND.terracotta : BRAND.gold,
-    time: "○ " + (r.dueDateIncludesTime ? core.TIME.string(r.dueDate) : "дело"),
-    sort: r.dueDateIncludesTime ? r.dueDate.getTime() : day.getTime() + 1,
-  }))
-  return ev.concat(rm).sort((a, b) => a.sort - b.sort)
+  }).sort((a, b) => a.sort - b.sort)
+}
+
+// ── Погода (wttr.in, без ключа; данные кэшируются в data.sh на 30 минут) ──
+const WX_ICON = c => {
+  c = +c
+  if (c === 113) return "☀️"
+  if (c === 116) return "⛅"
+  if (c === 119 || c === 122) return "☁️"
+  if ([143, 248, 260].includes(c)) return "🌫"
+  if ([200, 386, 389, 392, 395].includes(c)) return "⛈"
+  if ([176, 263, 266, 293, 296, 353].includes(c)) return "🌦"
+  if (c >= 299 && c <= 359) return "🌧"
+  return "🌤"
+}
+function parseWeather(lines) {
+  try {
+    const j = JSON.parse((lines || []).join("\n"))
+    const cur = j.current_condition[0], today = j.weather[0]
+    const rain = Math.max(0, ...today.hourly.map(h => +h.chanceofrain || 0))
+    const desc = (cur.lang_ru && cur.lang_ru[0] && cur.lang_ru[0].value) || (cur.weatherDesc && cur.weatherDesc[0].value) || ""
+    const area = j.nearest_area && j.nearest_area[0] && j.nearest_area[0].areaName && j.nearest_area[0].areaName[0].value
+    return { icon: WX_ICON(cur.weatherCode), temp: +cur.temp_C, feels: +cur.FeelsLikeC, min: +today.mintempC, max: +today.maxtempC,
+      rain, desc: core.cap(desc.trim()), area: area || "" }
+  } catch (e) { return null }
 }
 
 // ───────────── Связь с macOS ─────────────
@@ -532,12 +553,12 @@ async function executeAll(list) {
   let notes = null, money = null, openReport = false, recurWarn = false
   for (const a of list) {
     if (a.kind === "event") {
-      const cal = await targetCalendar()
+      const cal = a.calendar || await targetCalendar()   // календарь, названный голосом, важнее выбранного по умолчанию
       if (!cal) continue
       await bridge("add-event", a.title, localISO(a.date), String(a.minutes || core.CONFIG.defaultEventMinutes),
         rrule(a.recur), a.location || "", cal)
     } else if (a.kind === "reminder") {
-      await bridge("add-reminder", a.title, a.date ? localISO(a.date) : "")
+      await bridge("add-reminder", a.title, a.date ? localISO(a.date) : "", a.list || "")
       if (a.recur) recurWarn = true
     } else if (a.kind === "delete") {
       const titles = [...new Set(a.events.map(e => e.title))]
@@ -746,21 +767,33 @@ const chip = (it, past) => {
 }
 const more = css`text-align: center; font-size: 10px; font-weight: 700; color: var(--gold);`
 const emptyDay = css`text-align: center; color: ${rgba(BRAND.gold, 0.5)}; font-weight: 800;`
-const monthTileCss = css`
-  border-radius: 12px; padding: 9px 10px; cursor: pointer; background: ${rgba(BRAND.gold, 0.12)};
-  box-shadow: inset 0 0 0 1px ${rgba(BRAND.gold, 0.6)}; &:hover { filter: brightness(1.08); }
-  .m { font-size: 10px; font-weight: 800; letter-spacing: .5px; color: var(--gold); margin-bottom: 6px; }
-  .e { font: 700 14px ui-rounded, -apple-system; color: var(--expense); }
-  .i { font: 700 14px ui-rounded, -apple-system; color: ${BRAND.teal}; margin-top: 2px; }
-  .b { font-size: 11px; font-weight: 600; margin-top: 6px; color: var(--text); }
+const weatherCss = css`
+  border-radius: 12px; padding: 9px 10px; cursor: pointer; background: ${rgba(BRAND.teal, 0.10)};
+  box-shadow: inset 0 0 0 1px ${rgba(BRAND.teal, 0.55)}; &:hover { filter: brightness(1.08); } min-width: 0;
+  .h { font-size: 10px; font-weight: 800; letter-spacing: .5px; color: var(--gold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .t { display: flex; align-items: center; gap: 4px; margin-top: 4px; font: 800 24px ui-rounded, -apple-system; color: var(--text); }
+  .t .i { font-size: 22px; }
+  .r { font: 700 11.5px ui-rounded, -apple-system; color: var(--sub); margin-top: 2px; }
+  .d { font-size: 11px; font-weight: 600; margin-top: 4px; color: var(--text); line-height: 1.2;
+       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .p { font-size: 11px; font-weight: 700; margin-top: 3px; color: ${BRAND.teal}; }
 `
-const remLine = css`display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
-  font-size: 12.5px; cursor: pointer; .ic { color: var(--gold); } .tx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }`
+const remBox = css`margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);
+  .hd { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; cursor: pointer; font-size: 11px; font-weight: 800; letter-spacing: .5px; color: var(--gold); }
+  .hd .n { margin-left: auto; font: 800 13px ui-rounded, -apple-system; }
+  .list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
+  .empty { color: var(--sub); font-size: 13px; }
+`
+const remRow = late => css`
+  display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 8px; margin: 0 -8px; border-radius: 9px; cursor: pointer;
+  &:hover { background: var(--hover); }
+  .o { flex: none; width: 15px; height: 15px; border-radius: 50%; box-shadow: inset 0 0 0 1.6px ${late ? BRAND.terracotta : BRAND.gold}; }
+  .x { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .w { flex: none; font: 700 11.5px ui-rounded, -apple-system; padding: 2px 7px; border-radius: 8px;
+       color: ${late ? BRAND.terracotta : "var(--gold)"}; background: ${rgba(late ? BRAND.terracotta : BRAND.gold, 0.16)}; }
+`
 const busyCss = css`font-size: 12px; color: var(--sub); animation: p 1s infinite alternate; @keyframes p { from { opacity: .3 } to { opacity: 1 } }`
 const warn = css`font-size: 11.5px; color: ${BRAND.goldDark}; background: ${rgba(BRAND.gold, 0.14)}; border-radius: 8px; padding: 6px 8px; margin-bottom: 10px;`
-const fmtK = n => { const v = Math.abs(n); return v >= 1e4 ? `${(Math.round(v / 100) / 10).toString().replace(".", ",")}к ฿` : core.money(v) }
-
-export const className = `top: 0; left: 0;`
 
 // ───────────── Перетаскивание (положение запоминается) ─────────────
 const POS_KEY = "myday-pos"
@@ -798,19 +831,16 @@ export const render = ({ output, busy }, dispatch) => {
   const s = sections(output)
   const events = parseEvents(s.EVENTS || [])
   const rems = sortReminders(safeJSON(s.REMINDERS, []).map(toReminder))
-  const money = core.visible(core.withIds(safeJSON(s.MONEY, []), "f"))
   const now = new Date()
   const today = core.startOfDay(now)
-  const totals = core.monthTotals(money, core.monthKey(now))
-  const bal = totals.income - totals.expense
   const go = fn => action(dispatch, fn)
   const icalMissing = !!s.NO_ICALBUDDY
   const icalError = !icalMissing && (s.EVENTS || []).some(l => /error|not authorized|access/i.test(l))
   const days = weekDays()
-  const undated = rems.filter(r => !r.dueDate)
+  const wx = parseWeather(s.WEATHER)
 
   const dayCell = day => {
-    const items = dayItems(day, events, rems)
+    const items = dayItems(day, events)
     const past = day < today
     const isToday = core.sameDay(day, now)
     const weekend = day.getDay() === 0 || day.getDay() === 6
@@ -853,21 +883,35 @@ export const render = ({ output, busy }, dispatch) => {
       <div className={grid}>
         {days.map(dayCell)}
         {Array.from({ length: (5 - (days.length % 5)) % 5 }).map((_, i) => i === 0 ? (
-          <div key="m" className={monthTileCss} title="Отчёт за месяц" onClick={go(() => showReport())}>
-            <div className="m">{core.MONTH_NOM[now.getMonth()].toUpperCase()}</div>
-            <div className="e">−{fmtK(totals.expense)}</div>
-            <div className="i">+{fmtK(totals.income)}</div>
-            <div className="b">= {bal < 0 ? "−" : ""}{fmtK(bal)}</div>
+          <div key="wx" className={weatherCss} title="Открыть «Погоду»" onClick={go(() => run("open -a Weather || open https://wttr.in"))}>
+            <div className="h">{wx && wx.area ? wx.area.toUpperCase() : "ПОГОДА"}</div>
+            {wx ? (
+              <div>
+                <div className="t"><span className="i">{wx.icon}</span>{wx.temp}°</div>
+                <div className="r">{wx.min}° … {wx.max}°</div>
+                <div className="d">{wx.desc}</div>
+                {wx.rain > 0 && <div className="p">☔ {wx.rain}%</div>}
+              </div>
+            ) : <div className="d" style={{ marginTop: 8 }}>Нет данных — проверьте интернет</div>}
           </div>
         ) : <div key={"x" + i} />)}
       </div>
 
-      {undated.length > 0 && (
-        <div className={remLine} title="Напоминания без срока" onClick={go(() => bridge("show-reminder", ""))}>
-          <span className="ic">☑︎</span>
-          <span className="tx">{undated.slice(0, 4).map(r => r.title).join("  ·  ")}</span>
+      <div className={remBox}>
+        <div className="hd" onClick={go(() => bridge("show-reminder", ""))}>☑︎ НАПОМИНАНИЯ<span className="n">{rems.length || ""}</span></div>
+        {!rems.length && <div className="empty">Всё сделано 🎉</div>}
+        <div className="list">
+          {rems.slice(0, MAC.reminders).map(r => {
+            const late = core.isOverdue(r)
+            const when = core.reminderTime(r)
+            return (
+              <div key={r.identifier} className={remRow(late)} title={r.title} onClick={go(() => bridge("show-reminder", r.identifier))}>
+                <span className="o" /><span className="x">{r.title}</span>{when && <span className="w">{when}</span>}
+              </div>
+            )
+          })}
         </div>
-      )}
+      </div>
     </div>
   )
 }

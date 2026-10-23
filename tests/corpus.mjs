@@ -34,4 +34,13 @@ export const CORPUS = [
   { t: "Добавь турнир по паделу по средам с семи до девяти и убери падел по вторникам", kinds: ["event", "delete"] },
   { t: "Завтра в 10 встреча с Олей, потратил 300 бат на такси наличными и напомни в 18 купить цветы", kinds: ["event", "expense", "reminder"] },
   { t: "Идея сделать сайт для кафе", kinds: ["note"] },
+  // выбор календаря
+  { t: "добавь в семейный календарь ужин у мамы в субботу в 7", kinds: ["event"], extra: ["event:calendar=семейная группа", "event:title=ужин у мамы", "event:date=сб 24.10 19:00"] },
+  { t: "календарь семья день рождения Ани 5 ноября в 15", kinds: ["event"], extra: ["event:calendar=семейная группа", "event:title=день рождения ани"] },
+  { t: "встреча с клиентом завтра в 11 в рабочий календарь", kinds: ["event"], extra: ["event:calendar=ptp", "event:title=встреча с клиентом", "event:date=пт 23.10 11:00"] },
+  { t: "питипи созвон с командой в понедельник в 10", kinds: ["event"], extra: ["event:calendar=ptp", "event:title=созвон с командой"] },
+  { t: "показ квартиры в пятницу в 14 календарь PTP", kinds: ["event"], extra: ["event:calendar=ptp", "event:title=показ квартиры"] },
+  { t: "встреча с Олей завтра в 10", kinds: ["event"], extra: ["event:calendar=?"] },
+  { t: "напомни в семейном календаре купить торт завтра", kinds: ["reminder"], extra: ["reminder:list=семья", "reminder:title=купить торт"] },
+  { t: "ужин с семьёй в 8", kinds: ["event"], extra: ["event:calendar=?"] },
 ]

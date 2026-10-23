@@ -3,15 +3,16 @@
 чтобы Mac и iPhone разбирали команды и считали деньги одним и тем же кодом."""
 import re, sys, pathlib
 
-SRC = pathlib.Path(sys.argv[1]).read_text()
-OUT = pathlib.Path(sys.argv[2])
+HERE = pathlib.Path(__file__).resolve().parent
+SRC = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else HERE / "src/iphone/MyDay.js").read_text()
+OUT = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else HERE / "src/mac/MyDay.widget/lib/core.js")
 
 NAMES = """CONFIG MONTH_NOM startOfDay sameDay cap monthKey monthTitle money dayLabel monthTotals
 METHOD TYPE matchCategory parseMoney esc catRows reportHTML reportText reportCSV
 DAYS_DAT recurLabel WEEKDAYS MONTH_GEN WHEN_S cleanText parseWhen NUM_WORDS NUM_MULT NUM_SEQ normalizeSpeech
 VOICE REM_TRIG NOTE_TRIG EVT_TRIG DEL_TRIG ADD_TRIG classify hasTrigger splitCommands moneyDate moneyComment
 buildActions lev STOP words titleMatches  plural describe isOverdue reminderTime
-withIds mergeSynced visible ORD_GEN ORD_RE EVENING_WORDS buildMove buildQuery""".split()
+withIds mergeSynced visible ORD_GEN ORD_RE EVENING_WORDS buildMove buildQuery extractCalendar""".split()
 
 # Режем файл на top-level блоки: каждый начинается со строки без отступа
 starts = [m.start() for m in re.finditer(r"^(?:async function|function|const|let) ", SRC, re.M)]
