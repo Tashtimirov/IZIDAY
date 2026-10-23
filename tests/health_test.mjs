@@ -36,7 +36,7 @@ await app.receiveHealth({ steps: 5000, active: "нет данных", exercise: 
 check("сообщает, что не понял", /Не понял: active = «"нет данных"»/.test(output), output)
 check("мусор не принимается", app.parseHealth("привет") === null && app.parseHealth({ foo: 1 }) === null)
 await app.receiveHealth({ steps: "8000", active: "350" })
-check("сохранено из команды", /сохранено/.test(output) && JSON.parse(files["/d/my-day/health.json"]).steps === 8000, output)
+check("сохранено из команды", /сохранено/.test(output) && /8 000 шагов, 350 ккал/.test(output) && JSON.parse(files["/d/my-day/health.json"]).steps === 8000, output)
 
 // 2. Еда и вода за сегодня
 await app.addFood({ title: "Том ям", kcal: 420.4, protein: 25, fat: 18, carbs: 30 })

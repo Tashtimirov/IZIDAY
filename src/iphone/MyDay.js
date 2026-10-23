@@ -903,7 +903,10 @@ async function receiveHealth(param) {
   const h = parseHealth(param)
   if (!h) { Script.setShortcutOutput("Мой день: не понял данные. Нужен словарь steps, active, exercise, hr…"); return }
   saveJSON("health.json", h)
-  Script.setShortcutOutput(`Мой день: сохранено (${Object.keys(h).filter(k => k in HEALTH_KEYS).join(", ")})` +
+  const got = [h.steps != null && `${nf(h.steps)} шагов`, h.active != null && `${nf(h.active)} ккал`,
+    h.exercise != null && `${nf(h.exercise)} мин`].filter(Boolean).join(", ")
+  Script.setShortcutOutput(`Мой день: сохранено в ${TIME.string(new Date())} (${Object.keys(h).filter(k => k in HEALTH_KEYS).join(", ")})` +
+    (got ? `\n${got}` : "") +
     (h.bad ? `\nНе понял: ${h.bad.join("; ")}` : ""))
 }
 
