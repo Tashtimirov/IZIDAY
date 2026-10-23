@@ -21,7 +21,7 @@ const CONFIG = {
   sheetHook: "",
   // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
   health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30 },
-  large:  { reminders: 4, upcoming: 3 },   // upcoming — ближайшие события под полосой дней
+  large:  { reminders: 4 },
   medium: { events: 3, reminders: 3, weekChips: 2 },
   // Календари, которые можно назвать голосом («в рабочий календарь»). Пусто — всё идёт в основной.
   // Пример: { calendar: "Работа", list: "Работа", hint: "«рабочий»", words: /(?:^|\s)(?:в|во|на)?\s*рабоч\S*\s+календар\S*(?=[\s,.]|$)/i },

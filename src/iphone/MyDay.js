@@ -64,7 +64,7 @@ const CONFIG = {
   trackerStart: "2026-10-01",    // дата во 2-й строке листа «Дни»
   // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
   health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30 },
-  large:  { reminders: 4, upcoming: 3 },   // upcoming — ближайшие события под полосой дней
+  large:  { reminders: 4 },
   medium: { events: 3, reminders: 3, weekChips: 2 },
   // Календари и списки напоминаний, которые можно назвать голосом.
   // calendar — имя календаря событий, list — имя списка напоминаний, words — как вы их называете.
@@ -274,7 +274,7 @@ async function autoSyncSheet() {
 // ───────────── Даты и числа ─────────────
 function fmt(pattern) { const f = new DateFormatter(); f.locale = "ru_RU"; f.dateFormat = pattern; return f }
 const TIME = fmt("HH:mm"), DAY = fmt("d MMM"), FULL = fmt("EEEE, d MMMM"), SHORT = fmt("EE, d MMM")
-const WEEKDAY = fmt("EEEE"), DATE_LONG = fmt("d MMMM"), DAY_WD = fmt("EE, d MMM")
+const WEEKDAY = fmt("EEEE"), DATE_LONG = fmt("d MMMM")
 const WHEN = fmt("EEEE, d MMMM, HH:mm"), DM = fmt("dd.MM"), YMD = fmt("yyyy-MM-dd HH:mm")
 const MONTH_NOM = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август",
   "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
@@ -485,76 +485,46 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
   }
 }
 
-// Большой виджет: полоса дней с сегодняшнего (точки — события дня цветом календаря) и итоги месяца справа
-function weekStrip(parent, days, events, entries) {
-  const W = 34, H = 58, today = new Date()
+// Большой виджет: неделя списком — по строке на день, до двух событий со временем, остальные числом «+N»
+function weekAgenda(parent, days, events) {
+  const today = new Date()
   const LETTERS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
-  const row = parent.addStack()
-  row.topAlignContent()
   days.slice(0, 7).forEach((day, i) => {
-    if (i) row.addSpacer()
+    if (i) parent.addSpacer(3)
     const isToday = sameDay(day, today)
     const weekend = day.getDay() === 0 || day.getDay() === 6
-    const cell = row.addStack()
-    cell.layoutVertically()
-    cell.centerAlignContent()   // по центру ячейки, без растягивания строк: иначе число обрезается до «…»
-    cell.size = new Size(W, H)
-    cell.cornerRadius = 10
-    cell.backgroundColor = isToday ? C.todayBg : new Color(BRAND.gold, 0.1)
-    cell.url = calshowURL(day)
-    const txt = (s, font, color) => { const t = cell.addText(s); t.font = font; t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.6; return t }
-    cell.addSpacer()
-    txt(LETTERS[day.getDay()].toUpperCase(), Font.boldSystemFont(9), isToday ? C.todayFg : weekend ? C.gold : C.sub)
-    txt(String(day.getDate()), Font.heavyRoundedSystemFont(17), isToday ? C.todayFg : C.text)
-    // сколько событий в этот день (ещё не закончившихся)
-    const n = itemsForDay(day, events).length
-    const color = n ? (isToday ? C.todayFg : C.gold) : new Color("#000000", 0)   // пустая строка той же высоты
-    txt(n ? `${n} соб.` : "·", Font.boldRoundedSystemFont(9), color)
-    cell.addSpacer()
+    const r = parent.addStack()
+    r.centerAlignContent()
+    r.url = calshowURL(day)
+    const pill = r.addStack()
+    pill.size = new Size(48, 17)
+    pill.cornerRadius = 8.5
+    pill.centerAlignContent()
+    pill.backgroundColor = isToday ? C.todayBg : new Color(BRAND.gold, 0.1)
+    const d = pill.addText(`${LETTERS[day.getDay()].toUpperCase()} ${day.getDate()}`)
+    d.font = Font.boldRoundedSystemFont(11)
+    d.textColor = isToday ? C.todayFg : weekend ? C.gold : C.text
+    r.addSpacer(8)
+    const items = itemsForDay(day, events)
+    if (!items.length) {
+      const e = r.addText("свободно"); e.font = Font.systemFont(11); e.textColor = C.sub
+    }
+    items.slice(0, 2).forEach((it, k) => {
+      if (k) r.addSpacer(10)
+      const bar = r.addStack(); bar.size = new Size(3, 13); bar.cornerRadius = 1.5; bar.backgroundColor = new Color(it.color)
+      r.addSpacer(5)
+      if (it.time) {
+        const t = r.addText(it.time); t.font = Font.boldRoundedSystemFont(11); t.textColor = C.gold; t.lineLimit = 1
+        r.addSpacer(4)
+      }
+      const ti = r.addText(stripEmoji(it.title)); ti.font = Font.mediumSystemFont(12); ti.textColor = C.text; ti.lineLimit = 1
+    })
+    r.addSpacer()
+    if (items.length > 2) {
+      r.addSpacer(6)
+      const m = r.addText(`+${items.length - 2}`); m.font = Font.heavyRoundedSystemFont(11); m.textColor = C.gold
+    }
   })
-  row.addSpacer()
-  const tile = row.addStack()
-  tile.layoutVertically()
-  tile.size = new Size(64, H)
-  monthTile(tile, entries)
-}
-
-// Ближайшие события крупно: название и когда (сегодня — время начала и конца, дальше — день и время)
-function upcomingList(parent, events, n) {
-  const now = new Date()
-  const list = events.filter(e => e.endDate > now).sort((a, b) => a.startDate - b.startDate).slice(0, n)
-  if (!list.length) return empty(parent, "Ближайших встреч нет")
-  list.forEach((e, i) => {
-    if (i) parent.addSpacer(6)
-    const s = parent.addStack()
-    s.centerAlignContent()
-    s.url = calshowURL(e.startDate)
-    const color = chipColor(e.calendar ? e.calendar.title : "")
-    const bar = s.addStack()
-    bar.size = new Size(4, 18)
-    bar.cornerRadius = 2
-    bar.backgroundColor = new Color(color)
-    s.addSpacer(8)
-    const t = s.addText(stripEmoji(e.title || "Без названия"))
-    t.font = Font.semiboldSystemFont(13.5); t.textColor = C.text; t.lineLimit = 1
-    s.addSpacer(6)
-    s.addSpacer()
-    const pill = s.addStack()
-    pill.setPadding(2, 7, 2, 7)
-    pill.cornerRadius = 8
-    pill.backgroundColor = new Color(color, 0.16)
-    const wt = pill.addText(upcomingWhen(e, now))
-    wt.font = Font.boldRoundedSystemFont(11); wt.textColor = C.events; wt.lineLimit = 1
-  })
-}
-
-function upcomingWhen(e, now) {
-  const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1)
-  const day = sameDay(e.startDate, now) || e.startDate < now ? "" : sameDay(e.startDate, tomorrow) ? "завтра" : DAY_WD.string(e.startDate)
-  if (e.isAllDay) return day || "весь день"
-  if (e.startDate <= now) return `идёт · до ${TIME.string(e.endDate)}`
-  if (!day) return `${TIME.string(e.startDate)}–${TIME.string(e.endDate)}`
-  return `${day} · ${TIME.string(e.startDate)}`
 }
 
 // Эмодзи в начале и в конце названия в узкой плашке только отнимают место
@@ -567,29 +537,6 @@ function moneyShort(n) {
   if (v >= 1e6) return `${f(v / 1e6, 1)}м ${CONFIG.currency}`
   if (v >= 1e4) return `${f(v / 1e3, v >= 1e5 ? 0 : 1)}к ${CONFIG.currency}`
   return money(v)
-}
-
-// Ячейка с итогами месяца (заполняет пустое место в сетке)
-function monthTile(tile, entries) {
-  const now = new Date()
-  const t = monthTotals(entries, monthKey(now))
-  tile.url = `${RUN}?action=report`
-  tile.cornerRadius = 10
-  tile.setPadding(4, 6, 4, 4)
-  tile.backgroundColor = new Color(BRAND.gold, 0.12)
-  tile.borderColor = new Color(BRAND.gold, 0.6)
-  tile.borderWidth = 1
-  const m = tile.addText(MONTH_NOM[now.getMonth()].toUpperCase())
-  m.font = Font.boldSystemFont(8.5); m.textColor = C.gold; m.lineLimit = 1; m.minimumScaleFactor = 0.7
-  tile.addSpacer(2)
-  const lbl = (txt, col) => { const x = tile.addText(txt); x.font = Font.boldRoundedSystemFont(11); x.textColor = col; x.lineLimit = 1; x.minimumScaleFactor = 0.6 }
-  lbl(`−${moneyShort(t.expense)}`, C.expense)
-  tile.addSpacer(1)
-  lbl(`+${moneyShort(t.income)}`, C.income)
-  tile.addSpacer(2)
-  const bal = t.income - t.expense
-  const b = tile.addText(`= ${bal < 0 ? "−" : ""}${moneyShort(bal)}`)
-  b.font = Font.semiboldSystemFont(9); b.textColor = C.text; b.lineLimit = 1; b.minimumScaleFactor = 0.6
 }
 
 // Золотая линия с ромбом, как под названием в логотипе
@@ -1058,7 +1005,7 @@ function progressBar(parent, frac, width, color) {
 }
 
 // Одна строка: еда · вода · активность, каждая часть открывает своё
-function healthStrip(parent, d) {
+function healthStrip(parent, d, entries) {
   const s = parent.addStack()
   s.centerAlignContent()
   const part = (icon, text, color, action) => {
@@ -1076,6 +1023,11 @@ function healthStrip(parent, d) {
   s.addSpacer()
   const a = d.act
   part(a && a.active != null ? "flame.fill" : "applewatch", a ? `${nf(a.active || 0)} ккал · ${nf(a.steps || 0)} ш.` : "часы", C.expense, "health")
+  if (entries) {   // итог месяца (большой виджет): нажатие — отчёт
+    const t = monthTotals(entries, monthKey(new Date())), bal = t.income - t.expense
+    s.addSpacer()
+    part(CONFIG.currencyIcon, `${bal < 0 ? "−" : "+"}${moneyShort(bal)}`, bal < 0 ? C.expense : C.income, "report")
+  }
 }
 
 // Средний/маленький виджет с параметром «здоровье»
@@ -1219,9 +1171,7 @@ async function buildWidget(family, param) {
   w.addSpacer(6)
   goldDivider(w)
   w.addSpacer(7)
-  weekStrip(w, days, weekEvents, entries)
-  w.addSpacer(9)
-  upcomingList(w, weekEvents, CONFIG.large.upcoming)
+  weekAgenda(w, days, weekEvents)
   w.addSpacer(9)
   goldDivider(w)
   w.addSpacer(8)
@@ -1229,7 +1179,7 @@ async function buildWidget(family, param) {
   w.addSpacer()
   goldDivider(w)
   w.addSpacer(6)
-  healthStrip(w, health)
+  healthStrip(w, health, entries)
   return w
 }
 
