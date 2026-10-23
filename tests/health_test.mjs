@@ -27,6 +27,8 @@ const check = (name, ok, got) => { console.log(`${ok ? "✓" : "✗"} ${name}${o
 // 1. Параметр из Быстрых команд: русские ключи, числа строками с запятой и пробелами
 let h = app.parseHealth({ "Шаги": "6 512", "Активные": "423,7", "exercise": 28, "HR": "58", "Сон": "7,25" })
 check("словарь из команды", h && h.steps === 6512 && h.active === 423.7 && h.exercise === 28 && h.hr === 58 && h.sleep === 7.25, h)
+check("несколько строк — сумма", app.parseHealth({ steps: "8327\n0", active: "412,5 ккал\n" }).steps === 8327 &&
+  app.parseHealth({ steps: "8327\n0", active: "412,5 ккал\n" }).active === 412.5, app.parseHealth({ steps: "8327\n0", active: "412,5 ккал\n" }))
 check("JSON-строка", app.parseHealth('{"steps": 100, "active": 5}').steps === 100)
 h = app.parseHealth({ steps: 5000, active: ["120,5", "80"], exercise: { value: "12" }, hr: "" })
 check("список и объект", h.active === 200.5 && h.exercise === 12 && h.hr === 0, h)

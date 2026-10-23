@@ -701,6 +701,8 @@ function healthNum(v) {
     return xs.length ? xs.reduce((a, b) => a + b, 0) : null
   }
   if (typeof v === "object") return healthNum(v.value ?? v.quantity ?? v["Значение"] ?? null)
+  // Список из Быстрых команд приходит текстом в несколько строк («8327\n0») — складываем строки, а не склеиваем цифры
+  if (typeof v === "string" && /[\n\r;]/.test(v.trim())) return healthNum(v.split(/[\n\r;]+/).filter(x => x.trim()))
   const n = parseFloat(String(v).replace(/[\s ]/g, "").replace(",", "."))
   return isFinite(n) ? n : null
 }
