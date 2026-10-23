@@ -921,9 +921,9 @@ async function estimateFood(img, hint) {
       "Учитывай масло и соусы. Если есть уточнение от пользователя — оно важнее того, что видно. Названия по-русски.",
     messages: [{ role: "user", content }] })
   if (!res || res.error) throw new Error(res && res.error ? res.error.message || res.error.type : "пустой ответ")
-  if (res.stop_reason === "refusal") throw new Error("Claude отказался оценивать это фото")
+  if (res.stop_reason === "refusal") throw new Error(`${AI_NAME} отказался оценивать это фото`)
   const t = (res.content || []).filter(c => c.type === "text").map(c => c.text).join("")
-  try { return JSON.parse(t) } catch (e) { throw new Error("Claude не вернул оценку") }
+  try { return JSON.parse(t) } catch (e) { throw new Error(`${AI_NAME} не вернул оценку`) }
 }
 
 function foodSummary(e) {
@@ -935,8 +935,8 @@ function foodSummary(e) {
 }
 
 async function foodPhoto(source) {
-  if (!aiReady()) return info("Нужен ключ Claude",
-    "Калории по фото считает Claude. Добавьте API-ключ: меню → 🧠 Ассистент Claude. Он же включит умный разбор команд.")
+  if (!aiReady()) return info(`Нужен ключ ${AI_NAME}`,
+    `Калории по фото считает ${AI_NAME}. Добавьте API-ключ: меню → 🧠 Ассистент ${AI_NAME}. Он же включит умный разбор команд.`)
   let src = source === "camera" ? 0 : await choose("🍽 Еда", ["📷 Сфотографировать", "🖼 Выбрать из фото", "⌨️ Описать словами"])
   let img = null, hint = ""
   try {
@@ -1635,7 +1635,7 @@ async function report(key) {
   const i = await choose(`Отчёт: ${monthTitle(key)}`, ["📋 Скопировать текстом", "📄 Сохранить CSV в Файлы"])
   if (i === 0) {
     Pasteboard.copy(reportText(key, list))
-    await info("Скопировано", "Отчёт в буфере обмена — можно вставить в чат с Claude для разбора")
+    await info("Скопировано", `Отчёт в буфере обмена — можно вставить в чат с ${AI_NAME} для разбора`)
   }
   if (i === 1) {
     try { await DocumentPicker.exportString(reportCSV(key, list), `finance-${key}.csv`) } catch (e) {}
@@ -2191,8 +2191,11 @@ async function findForDelete(a) {
   return { events, reminders }
 }
 
-// ── Умный режим: разбор через Claude (нужен API-ключ) ──
-const AI_KEY = "myday.anthropic.key"
+// ── Умный режим: разбор через Claude или ChatGPT (CONFIG.ai, нужен API-ключ) ──
+const OPENAI = CONFIG.ai === "openai"
+const AI_NAME = OPENAI ? "ChatGPT" : "Claude"
+const AI_KEY = OPENAI ? "myday.openai.key" : "myday.anthropic.key"
+const AI_KEY_HINT = OPENAI ? "sk-…" : "sk-ant-…"
 
 function getAIKey() {
   try { return Keychain.contains(AI_KEY) ? Keychain.get(AI_KEY) : null } catch (e) { return null }
@@ -2211,6 +2214,7 @@ function deviceId() {
 }
 // Запрос к Claude: со своим ключом — напрямую, иначе через общий доступ
 async function anthropic(body) {
+  if (OPENAI) return openai(body)
   const own = getAIKey()
   const req = new Request(own ? "https://api.anthropic.com/v1/messages" : CONFIG.aiProxy)
   req.method = "POST"
@@ -2225,11 +2229,54 @@ async function anthropic(body) {
   return await req.loadJSON()
 }
 
+// ChatGPT: запрос в формате Claude переводится в Chat Completions, ответ — обратно,
+// поэтому фото еды и ассистент работают с ним без изменений
+async function openai(body) {
+  const msgs = body.system ? [{ role: "system", content: body.system }] : []
+  for (const m of body.messages) {
+    if (typeof m.content === "string") { msgs.push({ role: m.role, content: m.content }); continue }
+    if (m.role === "assistant") {
+      const text = m.content.filter(c => c.type === "text").map(c => c.text).join("\n")
+      const calls = m.content.filter(c => c.type === "tool_use")
+        .map(c => ({ id: c.id, type: "function", function: { name: c.name, arguments: JSON.stringify(c.input || {}) } }))
+      msgs.push(Object.assign({ role: "assistant", content: text || null }, calls.length ? { tool_calls: calls } : {}))
+      continue
+    }
+    m.content.filter(c => c.type === "tool_result")
+      .forEach(c => msgs.push({ role: "tool", tool_call_id: c.tool_use_id, content: String(c.content) }))
+    const parts = m.content.filter(c => c.type !== "tool_result").map(c => c.type === "image"
+      ? { type: "image_url", image_url: { url: `data:${c.source.media_type};base64,${c.source.data}` } }
+      : { type: "text", text: c.text })
+    if (parts.length) msgs.push({ role: "user", content: parts })
+  }
+  const req_ = { model: CONFIG.agentModel, messages: msgs, max_completion_tokens: Math.max(body.max_tokens || 0, 8000) }   // запас на «мысли» модели
+  if (body.tools) req_.tools = body.tools.map(t => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.input_schema } }))
+  const fmt_ = body.output_config && body.output_config.format
+  if (fmt_ && fmt_.type === "json_schema") req_.response_format = { type: "json_schema", json_schema: { name: "result", schema: fmt_.schema, strict: false } }
+  const req = new Request("https://api.openai.com/v1/chat/completions")
+  req.method = "POST"
+  req.timeoutInterval = 90
+  req.headers = { "authorization": `Bearer ${getAIKey()}`, "content-type": "application/json" }
+  req.body = JSON.stringify(req_)
+  const res = await req.loadJSON()
+  if (!res || res.error || !res.choices) return res && res.error ? res : { error: { message: "пустой ответ" } }
+  const ch = res.choices[0], msg = ch.message || {}
+  const content = []
+  if (msg.content) content.push({ type: "text", text: msg.content })
+  for (const c of msg.tool_calls || []) {
+    let input = {}
+    try { input = JSON.parse(c.function.arguments || "{}") } catch (e) {}
+    content.push({ type: "tool_use", id: c.id, name: c.function.name, input })
+  }
+  const stop = msg.refusal || ch.finish_reason === "content_filter" ? "refusal" : ch.finish_reason === "tool_calls" ? "tool_use" : "end_turn"
+  return { content, stop_reason: stop }
+}
+
 async function aiSettings() {
   const has = !!getAIKey()
   let k = null
   if (!has && sharedAI()) {
-    const i = await choose("🧠 Ассистент Claude включён", ["Проверить связь", "Подключить свой ключ"],
+    const i = await choose(`🧠 Ассистент ${AI_NAME} включён`, ["Проверить связь", "Подключить свой ключ"],
       "Работает через общий доступ: ключ не нужен, в день до 40 запросов (фото еды и команды).")
     if (i === 0) {
       let res = null
@@ -2237,17 +2284,17 @@ async function aiSettings() {
       return info(res && res.content ? "Связь есть ✓" : "Не удалось подключиться", res && res.error ? res.error.message : "")
     }
     if (i !== 1) return
-    k = await ask("API-ключ Anthropic", "sk-ant-…", "Сохранить")
+    k = await ask(`API-ключ ${OPENAI ? "OpenAI" : "Anthropic"}`, AI_KEY_HINT, "Сохранить")
   } else if (has) {
-    const i = await choose("🧠 Ассистент Claude включён", ["Заменить ключ", "Выключить"],
-      "Команды выполняет Claude: понимает свободную речь, переносит и удаляет события, уточняет, если неясно. Без ключа работает встроенный разбор.")
+    const i = await choose(`🧠 Ассистент ${AI_NAME} включён`, ["Заменить ключ", "Выключить"],
+      `Команды выполняет ${AI_NAME}: понимает свободную речь, переносит и удаляет события, уточняет, если неясно. Без ключа работает встроенный разбор.`)
     if (i === 1) { Keychain.remove(AI_KEY); return info("Ассистент выключен", "Команды снова разбирает встроенный разбор.") }
     if (i !== 0) return
-    k = await ask("API-ключ Anthropic", "sk-ant-…", "Сохранить")
+    k = await ask(`API-ключ ${OPENAI ? "OpenAI" : "Anthropic"}`, AI_KEY_HINT, "Сохранить")
   } else {
-    k = await ask("🧠 Ассистент Claude", "sk-ant-…", "Сохранить", "",
-      "Команды будет выполнять Claude: свободная речь, перенос и удаление событий, вопросы о расписании и тратах, уточнения. " +
-      "Нужен API-ключ с console.anthropic.com (оплата за использование отдельно). Ключ хранится в связке ключей iPhone.")
+    k = await ask(`🧠 Ассистент ${AI_NAME}`, AI_KEY_HINT, "Сохранить", "",
+      `Команды будет выполнять ${AI_NAME}: свободная речь, перенос и удаление событий, вопросы о расписании и тратах, уточнения. ` +
+      `Нужен API-ключ с ${OPENAI ? "platform.openai.com" : "console.anthropic.com"} (оплата за использование отдельно). Ключ хранится в связке ключей iPhone.`)
   }
   if (!k) return
   Keychain.set(AI_KEY, k.trim())
@@ -2882,8 +2929,8 @@ async function agentTurn(messages, system) {
       res = await callClaude(messages, system)
       // запасной путь: если API всё же не принял старые «мысли», убираем их и повторяем
       if (res && res.error && /thinking/i.test(res.error.message || "")) { dropThinking(messages); res = await callClaude(messages, system) }
-    } catch (e) { return { text: `Нет связи с Claude: ${e}`, changed } }
-    if (!res || res.error) return { text: `Claude ответил ошибкой: ${res && res.error ? res.error.message || res.error.type : "пустой ответ"}`, changed }
+    } catch (e) { return { text: `Нет связи с ${AI_NAME}: ${e}`, changed } }
+    if (!res || res.error) return { text: `${AI_NAME} ответил ошибкой: ${res && res.error ? res.error.message || res.error.type : "пустой ответ"}`, changed }
     messages.push({ role: "assistant", content: res.content })
     const uses = (res.content || []).filter(c => c.type === "tool_use")
     if (!uses.length || res.stop_reason !== "tool_use") {
@@ -2993,7 +3040,7 @@ async function menu() {
     ["📊 Отчёт за месяц", () => report()],
     ["🧾 Последние операции", manageMoney],
     ["⌨️ Команда текстом", async () => { const t = await ask("Команда", "Что сделать?", "Отправить"); if (t) await voiceCommand(t) }],
-    ["🧠 Ассистент Claude", aiSettings],
+    [`🧠 Ассистент ${AI_NAME}`, aiSettings],
     ...(CONFIG.trackerUrl ? [["✓ Личный трекер", () => Safari.open(trackerLink())]] : []),   // [личное]
     ["▦ Google Таблица", sheetMenu],
     ["☁️ Синхронизация с Mac", syncStatus],

@@ -10,8 +10,9 @@ const CONFIG = {
   currencyIcon: "rublesign",     // значок кнопки денег в виджете (SF Symbols)
   currencyIn: "в рублях",        // «Сумма в рублях»
   currencyWords: "рубл\\S*|руб\\.?|₽|рэ", // как валюту называют голосом (вырезается из комментария)
-  agentModel: "claude-sonnet-5-5", // модель ассистента (если есть ключ Anthropic)
-  aiProxy: "",   // в России Claude не работает: общего доступа нет
+  ai: "openai",                  // ассистент и фото еды через ChatGPT (ключ OpenAI пользователя)
+  agentModel: "gpt-5-mini",      // модель ChatGPT: понимает фото, вызывает инструменты
+  aiProxy: "",   // общего доступа нет: у каждого свой ключ
   aiProxyToken: "",
   monthlyReportNotification: true, // 1-го числа в 10:00 прислать уведомление с отчётом
   // Google Таблица с доходами и расходами (кнопка ▦). Пусто — кнопки нет
