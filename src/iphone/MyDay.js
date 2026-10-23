@@ -62,7 +62,7 @@ const CONFIG = {
   trackerStart: "2026-10-01",    // дата во 2-й строке листа «Дни»
   // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
   health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30 },
-  large:  { weekChips: 2, reminders: 4 },
+  large:  { reminders: 4, upcoming: 3 },   // upcoming — ближайшие события под полосой дней
   medium: { events: 3, reminders: 3, weekChips: 2 },
   // Календари и списки напоминаний, которые можно назвать голосом.
   // calendar — имя календаря событий, list — имя списка напоминаний, words — как вы их называете.
@@ -73,7 +73,7 @@ const CONFIG = {
       words: /(?:^|\s)(?:в|во|на)?\s*(?:(?:рабоч\S*|питипи|пи[\s-]*ти[\s-]*пи|пэ[\s-]*тэ[\s-]*пэ|ptp)\s+календар\S*|календар\S*\s+(?:рабоч\S*|питипи|пи[\s-]*ти[\s-]*пи|пэ[\s-]*тэ[\s-]*пэ|ptp)|питипи|пи[\s-]*ти[\s-]*пи|пэ[\s-]*тэ[\s-]*пэ|ptp)(?=[\s,.]|$)/i },
   ],
   week: {
-    daysBefore: 2,               // сколько прошедших дней показывать
+    daysBefore: 0,               // прошедшие дни не показываются: их события уже ушли из виджета
     daysFromToday: 7,            // сколько дней показывать начиная с сегодня
     colWidth: 57,                // ширина колонки дня (5 колонок в строке)
   },
@@ -253,6 +253,7 @@ async function autoSyncSheet() {
 // ───────────── Даты и числа ─────────────
 function fmt(pattern) { const f = new DateFormatter(); f.locale = "ru_RU"; f.dateFormat = pattern; return f }
 const TIME = fmt("HH:mm"), DAY = fmt("d MMM"), FULL = fmt("EEEE, d MMMM"), SHORT = fmt("EE, d MMM")
+const WEEKDAY = fmt("EEEE"), DATE_LONG = fmt("d MMMM"), DAY_WD = fmt("EE, d MMM")
 const WHEN = fmt("EEEE, d MMMM, HH:mm"), DM = fmt("dd.MM"), YMD = fmt("yyyy-MM-dd HH:mm")
 const MONTH_NOM = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август",
   "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
@@ -463,6 +464,89 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
   }
 }
 
+// Большой виджет: полоса дней с сегодняшнего (точки — события дня цветом календаря) и итоги месяца справа
+function weekStrip(parent, days, events, entries) {
+  const W = 34, H = 58, today = new Date()
+  const LETTERS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
+  const row = parent.addStack()
+  row.topAlignContent()
+  days.slice(0, 7).forEach((day, i) => {
+    if (i) row.addSpacer()
+    const isToday = sameDay(day, today)
+    const weekend = day.getDay() === 0 || day.getDay() === 6
+    const cell = row.addStack()
+    cell.layoutVertically()
+    cell.size = new Size(W, H)
+    cell.cornerRadius = 10
+    cell.backgroundColor = isToday ? C.todayBg : new Color(BRAND.gold, 0.1)
+    cell.url = calshowURL(day)
+    const line = () => { const s = cell.addStack(); s.size = new Size(W, 0); s.centerAlignContent(); s.addSpacer(); return s }
+    cell.addSpacer()
+    const l = line()
+    const lt = l.addText(LETTERS[day.getDay()].toUpperCase())
+    lt.font = Font.boldSystemFont(9)
+    lt.textColor = isToday ? C.todayFg : weekend ? C.gold : C.sub
+    l.addSpacer()
+    const n = line()
+    const nt = n.addText(String(day.getDate()))
+    nt.font = Font.heavyRoundedSystemFont(17)
+    nt.textColor = isToday ? C.todayFg : C.text
+    n.addSpacer()
+    cell.addSpacer(2)
+    const items = itemsForDay(day, events)
+    const d = line()
+    const dot = (txt, color) => { const x = d.addText(txt); x.font = Font.boldSystemFont(7); x.textColor = color }
+    if (!items.length) dot("●", new Color("#000000", 0))   // пустая строка той же высоты
+    items.slice(0, 3).forEach(it => dot("●", isToday ? C.todayFg : new Color(it.color)))
+    if (items.length > 3) dot("+", isToday ? C.todayFg : C.gold)
+    d.addSpacer()
+    cell.addSpacer()
+  })
+  row.addSpacer()
+  const tile = row.addStack()
+  tile.layoutVertically()
+  tile.size = new Size(64, H)
+  monthTile(tile, entries)
+}
+
+// Ближайшие события крупно: название и когда (сегодня — время начала и конца, дальше — день и время)
+function upcomingList(parent, events, n) {
+  const now = new Date()
+  const list = events.filter(e => e.endDate > now).sort((a, b) => a.startDate - b.startDate).slice(0, n)
+  if (!list.length) return empty(parent, "Ближайших встреч нет")
+  list.forEach((e, i) => {
+    if (i) parent.addSpacer(6)
+    const s = parent.addStack()
+    s.centerAlignContent()
+    s.url = calshowURL(e.startDate)
+    const color = chipColor(e.calendar ? e.calendar.title : "")
+    const bar = s.addStack()
+    bar.size = new Size(4, 18)
+    bar.cornerRadius = 2
+    bar.backgroundColor = new Color(color)
+    s.addSpacer(8)
+    const t = s.addText(stripEmoji(e.title || "Без названия"))
+    t.font = Font.semiboldSystemFont(13.5); t.textColor = C.text; t.lineLimit = 1
+    s.addSpacer(6)
+    s.addSpacer()
+    const pill = s.addStack()
+    pill.setPadding(2, 7, 2, 7)
+    pill.cornerRadius = 8
+    pill.backgroundColor = new Color(color, 0.16)
+    const wt = pill.addText(upcomingWhen(e, now))
+    wt.font = Font.boldRoundedSystemFont(11); wt.textColor = C.events; wt.lineLimit = 1
+  })
+}
+
+function upcomingWhen(e, now) {
+  const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1)
+  const day = sameDay(e.startDate, now) || e.startDate < now ? "" : sameDay(e.startDate, tomorrow) ? "завтра" : DAY_WD.string(e.startDate)
+  if (e.isAllDay) return day || "весь день"
+  if (e.startDate <= now) return `идёт · до ${TIME.string(e.endDate)}`
+  if (!day) return `${TIME.string(e.startDate)}–${TIME.string(e.endDate)}`
+  return `${day} · ${TIME.string(e.startDate)}`
+}
+
 // Эмодзи в начале и в конце названия в узкой плашке только отнимают место
 const stripEmoji = t => String(t || "").replace(/^[\p{Extended_Pictographic}\uFE0F\u200D\s]+|[\s\uFE0F\u200D\p{Extended_Pictographic}]+$/gu, "") || t
 
@@ -481,18 +565,18 @@ function monthTile(tile, entries) {
   const t = monthTotals(entries, monthKey(now))
   tile.url = `${RUN}?action=report`
   tile.cornerRadius = 10
-  tile.setPadding(6, 6, 6, 6)
+  tile.setPadding(4, 6, 4, 4)
   tile.backgroundColor = new Color(BRAND.gold, 0.12)
   tile.borderColor = new Color(BRAND.gold, 0.6)
   tile.borderWidth = 1
   const m = tile.addText(MONTH_NOM[now.getMonth()].toUpperCase())
   m.font = Font.boldSystemFont(8.5); m.textColor = C.gold; m.lineLimit = 1; m.minimumScaleFactor = 0.7
-  tile.addSpacer(4)
+  tile.addSpacer(2)
   const lbl = (txt, col) => { const x = tile.addText(txt); x.font = Font.boldRoundedSystemFont(11); x.textColor = col; x.lineLimit = 1; x.minimumScaleFactor = 0.6 }
   lbl(`−${moneyShort(t.expense)}`, C.expense)
-  tile.addSpacer(2)
+  tile.addSpacer(1)
   lbl(`+${moneyShort(t.income)}`, C.income)
-  tile.addSpacer(4)
+  tile.addSpacer(2)
   const bal = t.income - t.expense
   const b = tile.addText(`= ${bal < 0 ? "−" : ""}${moneyShort(bal)}`)
   b.font = Font.semiboldSystemFont(9); b.textColor = C.text; b.lineLimit = 1; b.minimumScaleFactor = 0.6
@@ -602,11 +686,20 @@ function trackerLink(now = new Date()) {
 function dateHeader(parent, size, withButtons) {
   const h = parent.addStack()
   h.centerAlignContent()
-  const t = h.addText(cap(size === "small" ? SHORT.string(new Date()) : FULL.string(new Date())))
-  t.font = new Font("Georgia-Bold", size === "large" ? 18 : 15)   // засечки, как в логотипе
+  // день недели и дата без сокращений, в две строки: «Пятница» / «23 октября»
+  const now = new Date(), big = size === "large" ? 19 : 16
+  const d = h.addStack()
+  d.layoutVertically()
+  const t = d.addText(cap(WEEKDAY.string(now)))
+  t.font = new Font("Georgia-Bold", big)   // засечки, как в логотипе
   t.textColor = C.text
   t.lineLimit = 1
   t.minimumScaleFactor = 0.8
+  const dt = d.addText(DATE_LONG.string(now))
+  dt.font = Font.semiboldSystemFont(big - 4)
+  dt.textColor = C.gold
+  dt.lineLimit = 1
+  dt.minimumScaleFactor = 0.8
   h.addSpacer()
   if (!withButtons) return
   const bs = size === "large" ? 28 : BUTTONS.length > 5 ? 22 : 24
@@ -1117,8 +1210,10 @@ async function buildWidget(family, param) {
   w.addSpacer(6)
   goldDivider(w)
   w.addSpacer(7)
-  weekGrid(w, days, weekEvents, rems, CONFIG.large.weekChips, { titleLines: 2, extraTile: t => monthTile(t, entries) })
-  w.addSpacer(8)
+  weekStrip(w, days, weekEvents, entries)
+  w.addSpacer(9)
+  upcomingList(w, weekEvents, CONFIG.large.upcoming)
+  w.addSpacer(9)
   goldDivider(w)
   w.addSpacer(8)
   reminderPanel(w, rems, CONFIG.large.reminders)

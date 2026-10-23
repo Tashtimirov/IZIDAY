@@ -18,13 +18,13 @@ const CONFIG = {
   sheetHook: "",
   // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
   health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30 },
-  large:  { weekChips: 2, reminders: 4 },
+  large:  { reminders: 4, upcoming: 3 },   // upcoming — ближайшие события под полосой дней
   medium: { events: 3, reminders: 3, weekChips: 2 },
   // Календари, которые можно назвать голосом («в рабочий календарь»). Пусто — всё идёт в основной.
   // Пример: { calendar: "Работа", list: "Работа", hint: "«рабочий»", words: /(?:^|\s)(?:в|во|на)?\s*рабоч\S*\s+календар\S*(?=[\s,.]|$)/i },
   calendars: [],
   week: {
-    daysBefore: 2,               // сколько прошедших дней показывать
+    daysBefore: 0,               // прошедшие дни не показываются: их события уже ушли из виджета
     daysFromToday: 7,            // сколько дней показывать начиная с сегодня
     colWidth: 57,                // ширина колонки дня (5 колонок в строке)
   },
