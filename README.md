@@ -57,6 +57,7 @@ Scriptable не может читать «Здоровье» сам (так ус
 node tests/run_corpus.mjs
 node tests/run_corpus.mjs src/iphone/MyDay.js ./corpus2.mjs
 node tests/health_test.mjs      # еда, вода, данные часов, отрисовка
+node tests/agent_test.mjs       # ассистент: один system на разговор, повтор без «мыслей»
 ```
 
 Секреты (`secrets.json`) в репозиторий не попадают.

@@ -2581,21 +2581,31 @@ function agentSystem() {
 - В конце ответь по-русски коротко, 1–4 строки: что сделано (с днём и временем) или ответ на вопрос. Без Markdown, без заголовков.`
 }
 
-async function callClaude(messages) {
+// system передаётся один на весь разговор: в нём текущее время, а «мысли» Claude из прошлых шагов
+// API принимает только с тем же system, с которым они созданы
+async function callClaude(messages, system = agentSystem()) {
   const req = new Request("https://api.anthropic.com/v1/messages")
   req.method = "POST"
   req.timeoutInterval = 60
   req.headers = { "x-api-key": getAIKey(), "anthropic-version": "2023-06-01", "content-type": "application/json" }
-  req.body = JSON.stringify({ model: CONFIG.agentModel, max_tokens: 2000, system: agentSystem(), tools: AGENT_TOOLS, messages })
+  req.body = JSON.stringify({ model: CONFIG.agentModel, max_tokens: 2000, system, tools: AGENT_TOOLS, messages })
   return await req.loadJSON()
 }
 
 // Один «ход»: Claude думает, вызывает инструменты, пока не даст ответ
-async function agentTurn(messages) {
+const dropThinking = messages => messages.forEach(m => {
+  if (m.role === "assistant" && Array.isArray(m.content)) m.content = m.content.filter(c => c.type !== "thinking" && c.type !== "redacted_thinking")
+})
+
+async function agentTurn(messages, system) {
   const changed = []
   for (let step = 0; step < 14; step++) {
     let res
-    try { res = await callClaude(messages) } catch (e) { return { text: `Нет связи с Claude: ${e}`, changed } }
+    try {
+      res = await callClaude(messages, system)
+      // запасной путь: если API всё же не принял старые «мысли», убираем их и повторяем
+      if (res && res.error && /thinking/i.test(res.error.message || "")) { dropThinking(messages); res = await callClaude(messages, system) }
+    } catch (e) { return { text: `Нет связи с Claude: ${e}`, changed } }
     if (!res || res.error) return { text: `Claude ответил ошибкой: ${res && res.error ? res.error.message || res.error.type : "пустой ответ"}`, changed }
     messages.push({ role: "assistant", content: res.content })
     const uses = (res.content || []).filter(c => c.type === "tool_use")
@@ -2616,10 +2626,11 @@ async function agentTurn(messages) {
 
 async function agentCommand(first) {
   const messages = []
+  const system = agentSystem()       // один на весь разговор
   let text = first
   while (text && text.trim()) {
     messages.push({ role: "user", content: text.trim() })
-    const r = await agentTurn(messages)
+    const r = await agentTurn(messages, system)
     const a = new Alert()
     a.title = r.changed.length ? "✓ Готово" : "Мой день"
     a.message = `${r.text}\n\n🎤 «${text.trim()}»`
