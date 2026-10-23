@@ -716,7 +716,7 @@ function parseHealth(param) {
   const bad = []
   for (const [key, names] of Object.entries(HEALTH_KEYS)) {
     const k = names.find(n => n in low)
-    const v = k ? healthNum(low[k]) : null
+    const v = k ? (low[k] === "" ? 0 : healthNum(low[k])) : null   // пусто — за сегодня данных нет
     if (v !== null) out[key] = v
     else if (k) bad.push(`${k} = «${String(JSON.stringify(low[k])).slice(0, 40)}»`)
   }
