@@ -219,10 +219,12 @@ async function syncSheet(silent) {
   const st = await loadSettings()
   const hook = sheetHookOf(st)
   if (!hook) return silent ? null : { ok: false, error: "автозапись отключена" }
-  const all = await rawMoney()
-  const body = { secret: CONFIG.sheetSecret,
-    entries: all.filter(x => !x.deleted).sort((a, b) => a.date - b.date),
-    deleted: all.filter(x => x.deleted).map(x => x.id) }
+  const all = await rawMoney(), food = await rawFood(), water = await rawWater(), health = await loadHealth(true)
+  const live = list => list.filter(x => !x.deleted).sort((a, b) => a.date - b.date)
+  // деньги, еда и вода — целиком; активность — день из Быстрой команды (таблица обновит строку этого дня)
+  const body = { secret: await sheetSecretOf(st),
+    entries: live(all), food: live(food), water: live(water), health: health ? [health] : [],
+    deleted: [...all, ...food, ...water].filter(x => x.deleted).map(x => x.id) }
   try {
     const req = new Request(hook)
     req.method = "POST"
@@ -230,7 +232,8 @@ async function syncSheet(silent) {
     req.headers = { "content-type": "text/plain;charset=utf-8" }
     req.body = JSON.stringify(body)
     const res = await req.loadJSON()
-    if (res && res.ok) await saveSettings({ sheetSyncedAt: Date.now(), sheetSig: moneySig(all) })
+    if (res && res.ok) await saveSettings(Object.assign({ sheetSyncedAt: Date.now(), sheetSig: moneySig(all), sheetSigAll: await syncSig() },
+      res.url && !st.sheetUrl && !CONFIG.sheetUrl ? { sheetUrl: res.url } : {}))
     return res
   } catch (e) { return { ok: false, error: String(e) } }
 }
@@ -239,13 +242,29 @@ async function syncSheet(silent) {
 const sheetHookOf = st => (typeof st.sheetHook === "string" ? st.sheetHook : CONFIG.sheetHook)
 // «Отпечаток» списка операций: меняется при любом добавлении или удалении
 const moneySig = all => `${all.length}:${all.reduce((m, x) => Math.max(m, x.u || x.date || 0), 0)}`
+// То же для всего, что уходит в таблицу с iPhone (Mac следит только за деньгами — sheetSig)
+async function syncSig() {
+  const h = await loadHealth(true)
+  return [moneySig(await rawMoney()), moneySig(await rawFood()), moneySig(await rawWater()), h ? h.updated : 0].join("|")
+}
+// Ссылка на таблицу: из настроек (таблица сама сообщает её при первой записи), иначе встроенная
+const sheetUrlOf = st => st.sheetUrl || CONFIG.sheetUrl
+let SHEET_URL = CONFIG.sheetUrl   // для кнопки ▦ в виджете, уточняется при запуске
+// Ключ для таблицы: встроенный, иначе свой для этого человека — создаётся один раз и хранится в общих настройках
+async function sheetSecretOf(st) {
+  if (CONFIG.sheetSecret && !/^__/.test(CONFIG.sheetSecret)) return CONFIG.sheetSecret
+  if (st.sheetSecret) return st.sheetSecret
+  const secret = Array.from({ length: 32 }, () => "abcdefghijkmnpqrstuvwxyz23456789"[Math.floor(Math.random() * 32)]).join("")
+  await saveSettings({ sheetSecret: secret })
+  return secret
+}
 
 // Догоняющая выгрузка: если операции менялись (на этом или другом устройстве) — отправить в таблицу
 async function autoSyncSheet() {
   try {
     const st = await loadSettings()
     if (!sheetHookOf(st)) return
-    if (st.sheetSig === moneySig(await rawMoney())) return
+    if (st.sheetSigAll === await syncSig()) return
     await syncSheet(true)
   } catch (e) {}
 }
@@ -670,7 +689,9 @@ const BUTTONS = [
   ["tablecells.fill", "▦", "sheet"],   // открыть Google Таблицу
   ["checklist", "✓", "tracker"],       // личный трекер на сегодняшней строке [личное]
   ["square.and.pencil", "✎", "note"],
-].filter(b => b[2] !== "sheet" || CONFIG.sheetUrl)
+]
+// Кнопки шапки: ▦ — только когда таблица подключена
+const headerButtons = () => BUTTONS.filter(b => b[2] !== "sheet" || SHEET_URL)
 
 // [личное ▼]
 // Ссылка на строку сегодняшнего дня в листе «Дни» (строка 2 — trackerStart)
@@ -702,16 +723,17 @@ function dateHeader(parent, size, withButtons) {
   dt.minimumScaleFactor = 0.8
   h.addSpacer()
   if (!withButtons) return
-  const bs = size === "large" ? 28 : BUTTONS.length > 5 ? 22 : 24
-  BUTTONS.forEach(([icon, fallback, action], i) => {
-    if (i) h.addSpacer(BUTTONS.length > 5 ? 5 : 6)
+  const buttons = headerButtons()
+  const bs = size === "large" ? 28 : buttons.length > 5 ? 22 : 24
+  buttons.forEach(([icon, fallback, action], i) => {
+    if (i) h.addSpacer(buttons.length > 5 ? 5 : 6)
     const color = C.btnFg
     const b = h.addStack()
     b.size = new Size(bs, bs)
     b.cornerRadius = bs / 2
     b.backgroundColor = C.btnBg
     b.centerAlignContent()
-    let url = action === "sheet" ? CONFIG.sheetUrl : `${RUN}?action=${action}`
+    let url = action === "sheet" ? SHEET_URL : `${RUN}?action=${action}`
     if (action === "tracker") url = trackerLink()   // [личное]
     b.url = url
     b.addSpacer()
@@ -847,13 +869,13 @@ function parseHealth(param) {
   if (bad.length) Object.defineProperty(out, "bad", { value: bad })   // для сообщения в Быстрых командах, в файл не пишется
   return Object.keys(out).length > 2 ? out : null
 }
-async function loadHealth() {
+async function loadHealth(anyDay = false) {
   const p = fm.joinPath(DIR, "health.json")
   if (!fm.fileExists(p)) return null
   try {
     if (fm.isFileStoredIniCloud(p) && !fm.isFileDownloaded(p)) await fm.downloadFileFromiCloud(p)
     const h = JSON.parse(fm.readString(p))
-    return h && h.day === dayKey(new Date()) ? h : null      // вчерашние цифры не показываем
+    return h && (anyDay || h.day === dayKey(new Date())) ? h : null      // вчерашние цифры не показываем
   } catch (e) { return null }
 }
 async function dayHealth() {
@@ -1025,6 +1047,7 @@ async function receiveHealth(param) {
   const h = parseHealth(param)
   if (!h) { Script.setShortcutOutput("Мой день: не понял данные. Нужен словарь steps, active, exercise, hr…"); return }
   saveJSON("health.json", h)
+  await syncSheet(true)   // день активности сразу в таблицу (если она подключена)
   const got = [h.steps != null && `${nf(h.steps)} шагов`, h.active != null && `${nf(h.active)} ккал`,
     h.exercise != null && `${nf(h.exercise)} мин`].filter(Boolean).join(", ")
   Script.setShortcutOutput(`Мой день: сохранено в ${TIME.string(new Date())} (${Object.keys(h).filter(k => k in HEALTH_KEYS).join(", ")})` +
@@ -2779,11 +2802,12 @@ async function sheetMenu() {
   const when = st.sheetSyncedAt ? fmt("d MMM, HH:mm").string(new Date(st.sheetSyncedAt)) : "ещё не было"
   const on = !!sheetHookOf(st)
   const i = await choose("▦ Google Таблица",
-    ["Открыть таблицу", on ? "Выгрузить все операции сейчас" : "Подключить автозапись",
+    ["Открыть таблицу", on ? "Выгрузить всё сейчас" : "Подключить автозапись",
      ...(on ? ["Изменить ссылку автозаписи", "Отключить автозапись"] : [])],
     on ? `Автозапись включена. Последняя выгрузка: ${when}` :
-      "Автозапись выключена: операции пока не попадают в таблицу сами.")
-  if (i === 0) return Safari.open(CONFIG.sheetUrl)
+      "Автозапись выключена: деньги, еда, вода и активность пока не попадают в таблицу сами.")
+  if (i === 0) return sheetUrlOf(st) ? Safari.open(sheetUrlOf(st)) :
+    info("Таблица ещё не подключена", "Подключите автозапись: таблица сама пришлёт свою ссылку после первой записи.")
   if (i === 1 && on) {
     const r = await syncSheet(false)
     return info(r && r.ok ? "Таблица обновлена ✓" : "Не получилось",
@@ -2794,10 +2818,10 @@ async function sheetMenu() {
       "Скопируйте ссылку веб-приложения из Apps Script (Начать развёртывание → Веб-приложение). Настройка один раз — Mac подхватит её сам.")
     if (!url) return
     if (!/^https:\/\/script\.google\.com\/.+\/exec/.test(url)) return info("Похоже, это не та ссылка", "Нужна ссылка вида https://script.google.com/macros/s/…/exec")
-    await saveSettings({ sheetHook: url })
+    await saveSettings(CONFIG.sheetUrl ? { sheetHook: url } : { sheetHook: url, sheetUrl: "" })   // ссылку на новую таблицу она пришлёт сама
     const r = await syncSheet(false)
     return info(r && r.ok ? "Автозапись подключена ✓" : "Ссылка сохранена, но таблица не ответила",
-      r && r.ok ? `В таблицу выгружено операций: ${r.added || 0}` : `${r && r.error || ""}\nПроверьте, что доступ веб-приложения — «Все».`)
+      r && r.ok ? `В таблицу выгружено записей: ${r.added || 0}` : `${r && r.error || ""}\nПроверьте, что доступ веб-приложения — «Все».`)
   }
   if (i === 3) { await saveSettings({ sheetHook: "" }); return info("Автозапись отключена") }
 }
@@ -2845,7 +2869,7 @@ async function menu() {
     ["⌨️ Команда текстом", async () => { const t = await ask("Команда", "Что сделать?", "Отправить"); if (t) await voiceCommand(t) }],
     ["🧠 Ассистент Claude", aiSettings],
     ...(CONFIG.trackerUrl ? [["✓ Личный трекер", () => Safari.open(trackerLink())]] : []),   // [личное]
-    ...(CONFIG.sheetUrl ? [["▦ Google Таблица", sheetMenu]] : []),
+    ["▦ Google Таблица", sheetMenu],
     ["☁️ Синхронизация с Mac", syncStatus],
     ["👀 Предпросмотр виджета", preview],
   ]
@@ -2878,6 +2902,7 @@ async function runAction(action, q) {
 if (args.shortcutParameter && !config.runsInWidget) {
   await receiveHealth(args.shortcutParameter)        // запуск из Быстрой команды «Мой день - здоровье»
 } else if (config.runsInWidget) {
+  SHEET_URL = sheetUrlOf(await loadSettings())
   Script.setWidget(await buildWidget(config.widgetFamily, args.widgetParameter))
   await autoSyncSheet()
 } else {
@@ -2886,5 +2911,6 @@ if (args.shortcutParameter && !config.runsInWidget) {
   const q = args.queryParameters || {}
   if (q.action) await runAction(q.action, q)
   else await menu()
+  await autoSyncSheet()   // еда, вода и деньги, добавленные сейчас, — сразу в таблицу
 }
 Script.complete()

@@ -2,7 +2,7 @@
 """Собирает готовые к установке файлы в dist/ и подставляет секреты из secrets.json.
 
   python3 build.py            → dist/MyDay.js, dist/MyDay-Mac/, dist/MyDay-Mac.zip, dist/Code.gs,
-                                dist/MyDay-RU.js (версия для других: рубли, без личных данных)
+                                dist/MyDay-RU.js и dist/Code-RU.gs (версия для других: рубли, без личных данных)
 
 secrets.json (не хранится в git, пример — secrets.example.json):
   {"sheet_secret": "...", "sheet_hook": "https://script.google.com/macros/s/…/exec"}
@@ -34,6 +34,8 @@ for private in ["docs.google.com/spreadsheets/d/1", "трекер", "tracker", "
     if private and private in ru:
         sys.exit(f"В MyDay-RU.js осталось личное: {private}")
 (DIST / "MyDay-RU.js").write_text(ru)
+# Скрипт таблицы для других: без вашего ключа — таблица запомнит ключ виджета, который первым в неё напишет
+(DIST / "Code-RU.gs").write_text((ROOT / "src/sheet/Code.gs").read_text().replace("__SHEET_SECRET__", ""))
 (DIST / "Code.gs").write_text(fill((ROOT / "src/sheet/Code.gs").read_text()))
 
 mac = DIST / "MyDay-Mac"
