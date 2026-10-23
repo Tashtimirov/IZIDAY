@@ -732,17 +732,17 @@ async function dayHealth() {
 }
 
 // ── Оценка калорий по фото через Claude ──
-const FOOD_TOOL = { name: "food_estimate", description: "Оценка блюда на фото",
-  input_schema: { type: "object", properties: {
+// Ответ в виде JSON по схеме (structured outputs): принудительный вызов инструмента новые модели не принимают
+const FOOD_SCHEMA = { type: "object", additionalProperties: false, properties: {
     title: { type: "string", description: "Короткое название приёма пищи по-русски, 2–5 слов" },
     items: { type: "array", items: { type: "object", properties: {
-      name: { type: "string" }, grams: { type: "number" }, kcal: { type: "number" } }, required: ["name", "grams", "kcal"] } },
+      name: { type: "string" }, grams: { type: "number" }, kcal: { type: "number" } }, required: ["name", "grams", "kcal"], additionalProperties: false } },
     kcal: { type: "number", description: "Всего ккал" },
     protein: { type: "number", description: "Белки, г" }, fat: { type: "number", description: "Жиры, г" }, carbs: { type: "number", description: "Углеводы, г" },
     confidence: { type: "string", enum: ["низкая", "средняя", "высокая"] },
     note: { type: "string", description: "Одна короткая фраза: что неточно или что уточнить. Можно пусто." },
     not_food: { type: "boolean", description: "true, если на фото нет еды" } },
-    required: ["title", "items", "kcal", "protein", "fat", "carbs", "confidence"] } }
+  required: ["title", "items", "kcal", "protein", "fat", "carbs", "confidence", "note", "not_food"] }
 
 function shrinkPhoto(img, max = 1024) {
   const { width: w, height: h } = img.size
@@ -764,15 +764,15 @@ async function estimateFood(img, hint) {
   req.method = "POST"
   req.timeoutInterval = 60
   req.headers = { "x-api-key": getAIKey(), "anthropic-version": "2023-06-01", "content-type": "application/json" }
-  req.body = JSON.stringify({ model: CONFIG.agentModel, max_tokens: 1200, tools: [FOOD_TOOL], tool_choice: { type: "tool", name: FOOD_TOOL.name },
+  req.body = JSON.stringify({ model: CONFIG.agentModel, max_tokens: 4000, output_config: { format: { type: "json_schema", schema: FOOD_SCHEMA } },
     system: "Ты нутрициолог. Определи блюда и продукты, оцени вес каждой части по размеру тарелки, приборов и упаковок, посчитай калории и БЖУ. " +
       "Учитывай масло и соусы. Если есть уточнение от пользователя — оно важнее того, что видно. Названия по-русски.",
     messages: [{ role: "user", content }] })
   const res = await req.loadJSON()
   if (!res || res.error) throw new Error(res && res.error ? res.error.message || res.error.type : "пустой ответ")
-  const u = (res.content || []).find(c => c.type === "tool_use")
-  if (!u) throw new Error("Claude не вернул оценку")
-  return u.input
+  if (res.stop_reason === "refusal") throw new Error("Claude отказался оценивать это фото")
+  const t = (res.content || []).filter(c => c.type === "text").map(c => c.text).join("")
+  try { return JSON.parse(t) } catch (e) { throw new Error("Claude не вернул оценку") }
 }
 
 function foodSummary(e) {
