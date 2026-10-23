@@ -34,7 +34,7 @@
  *   здоровье — средний/маленький виджет: еда, вода, активность с часов
  *
  * 📷 в шапке — сфотографировать еду, Claude посчитает калории (нужен ключ ассистента).
- * Данные Apple Watch передаёт Быстрая команда «Мой день — здоровье» (см. README).
+ * Данные Apple Watch передаёт Быстрая команда «Мой день - здоровье» (см. README).
  */
 
 // ───────────── Настройки ─────────────
@@ -667,7 +667,7 @@ function reminderPanel(parent, rems, n) {
 
 // ───────────── Еда, вода и активность ─────────────
 // Еда: фото → Claude оценивает калории (нужен ключ ассистента). Вода — стаканами.
-// Активность с Apple Watch приходит из Быстрой команды «Мой день — здоровье»:
+// Активность с Apple Watch приходит из Быстрой команды «Мой день - здоровье»:
 // она читает «Здоровье» и запускает этот скрипт с параметром-словарём (см. README).
 const dayKey = d => `${monthKey(d)}-${String(d.getDate()).padStart(2, "0")}`
 const nf = n => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")
@@ -857,7 +857,7 @@ async function waterMenu() {
 }
 
 // ── Активность с часов ──
-const HEALTH_SHORTCUT = "Мой день — здоровье"
+const HEALTH_SHORTCUT = "Мой день - здоровье"   // дефис, как печатается с клавиатуры
 async function refreshHealth() {
   const cb = new CallbackURL("shortcuts://x-callback-url/run-shortcut")
   cb.addParameter("name", HEALTH_SHORTCUT)
@@ -2733,7 +2733,7 @@ async function runAction(action, q) {
 
 // ───────────── Запуск ─────────────
 if (args.shortcutParameter && !config.runsInWidget) {
-  await receiveHealth(args.shortcutParameter)        // запуск из Быстрой команды «Мой день — здоровье»
+  await receiveHealth(args.shortcutParameter)        // запуск из Быстрой команды «Мой день - здоровье»
 } else if (config.runsInWidget) {
   Script.setWidget(await buildWidget(config.widgetFamily, args.widgetParameter))
   await autoSyncSheet()
