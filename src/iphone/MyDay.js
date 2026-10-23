@@ -696,6 +696,11 @@ async function addWater(ml) {
 // Число из Быстрых команд: может прийти строкой «1 234,5»
 function healthNum(v) {
   if (v === null || v === undefined || v === "") return null
+  if (Array.isArray(v)) {                                  // несколько значений (без группировки по дню) — складываем
+    const xs = v.map(healthNum).filter(x => x !== null)
+    return xs.length ? xs.reduce((a, b) => a + b, 0) : null
+  }
+  if (typeof v === "object") return healthNum(v.value ?? v.quantity ?? v["Значение"] ?? null)
   const n = parseFloat(String(v).replace(/[\s ]/g, "").replace(",", "."))
   return isFinite(n) ? n : null
 }
@@ -708,11 +713,14 @@ function parseHealth(param) {
   const low = {}
   for (const k of Object.keys(p)) low[k.toLowerCase().trim()] = p[k]
   const out = { day: dayKey(new Date()), updated: Date.now() }
+  const bad = []
   for (const [key, names] of Object.entries(HEALTH_KEYS)) {
     const k = names.find(n => n in low)
     const v = k ? healthNum(low[k]) : null
     if (v !== null) out[key] = v
+    else if (k) bad.push(`${k} = «${String(JSON.stringify(low[k])).slice(0, 40)}»`)
   }
+  if (bad.length) Object.defineProperty(out, "bad", { value: bad })   // для сообщения в Быстрых командах, в файл не пишется
   return Object.keys(out).length > 2 ? out : null
 }
 async function loadHealth() {
@@ -893,7 +901,8 @@ async function receiveHealth(param) {
   const h = parseHealth(param)
   if (!h) { Script.setShortcutOutput("Мой день: не понял данные. Нужен словарь steps, active, exercise, hr…"); return }
   saveJSON("health.json", h)
-  Script.setShortcutOutput(`Мой день: сохранено (${Object.keys(h).filter(k => k in HEALTH_KEYS).join(", ")})`)
+  Script.setShortcutOutput(`Мой день: сохранено (${Object.keys(h).filter(k => k in HEALTH_KEYS).join(", ")})` +
+    (h.bad ? `\nНе понял: ${h.bad.join("; ")}` : ""))
 }
 
 // ── В виджете ──
