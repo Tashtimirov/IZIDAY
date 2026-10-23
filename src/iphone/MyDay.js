@@ -497,30 +497,19 @@ function weekStrip(parent, days, events, entries) {
     const weekend = day.getDay() === 0 || day.getDay() === 6
     const cell = row.addStack()
     cell.layoutVertically()
+    cell.centerAlignContent()   // по центру ячейки, без растягивания строк: иначе число обрезается до «…»
     cell.size = new Size(W, H)
     cell.cornerRadius = 10
     cell.backgroundColor = isToday ? C.todayBg : new Color(BRAND.gold, 0.1)
     cell.url = calshowURL(day)
-    const line = () => { const s = cell.addStack(); s.size = new Size(W, 0); s.centerAlignContent(); s.addSpacer(); return s }
+    const txt = (s, font, color) => { const t = cell.addText(s); t.font = font; t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.6; return t }
     cell.addSpacer()
-    const l = line()
-    const lt = l.addText(LETTERS[day.getDay()].toUpperCase())
-    lt.font = Font.boldSystemFont(9)
-    lt.textColor = isToday ? C.todayFg : weekend ? C.gold : C.sub
-    l.addSpacer()
-    const n = line()
-    const nt = n.addText(String(day.getDate()))
-    nt.font = Font.heavyRoundedSystemFont(17)
-    nt.textColor = isToday ? C.todayFg : C.text
-    n.addSpacer()
-    cell.addSpacer(2)
-    const items = itemsForDay(day, events)
-    const d = line()
-    const dot = (txt, color) => { const x = d.addText(txt); x.font = Font.boldSystemFont(7); x.textColor = color }
-    if (!items.length) dot("●", new Color("#000000", 0))   // пустая строка той же высоты
-    items.slice(0, 3).forEach(it => dot("●", isToday ? C.todayFg : new Color(it.color)))
-    if (items.length > 3) dot("+", isToday ? C.todayFg : C.gold)
-    d.addSpacer()
+    txt(LETTERS[day.getDay()].toUpperCase(), Font.boldSystemFont(9), isToday ? C.todayFg : weekend ? C.gold : C.sub)
+    txt(String(day.getDate()), Font.heavyRoundedSystemFont(17), isToday ? C.todayFg : C.text)
+    // сколько событий в этот день (ещё не закончившихся)
+    const n = itemsForDay(day, events).length
+    const color = n ? (isToday ? C.todayFg : C.gold) : new Color("#000000", 0)   // пустая строка той же высоты
+    txt(n ? `${n} соб.` : "·", Font.boldRoundedSystemFont(9), color)
     cell.addSpacer()
   })
   row.addSpacer()
