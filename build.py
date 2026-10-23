@@ -37,15 +37,19 @@ for country in ["ru", "th"]:
     r = subprocess.run(["node", "-e", shape, str(ROOT / "src/iphone/MyDay.js"), str(prof)], capture_output=True, text=True)
     if r.returncode:
         sys.exit(f"В {prof.name} не хватает настроек: {r.stdout.strip() or r.stderr.strip()}")
-    out = src[:i] + prof.read_text() + src[j:]
+    out = src[:i] + prof.read_text().replace("__AI_PROXY_TOKEN__", sec.get("ai_proxy_token", "")).replace("__AI_PROXY__", sec.get("ai_proxy", "")) + src[j:]
     # Личное (трекер) в версию для других не попадает: строки с «[личное]» и блоки «[личное ▼] … [личное ▲]»
     out = re.sub(r"[ \t]*// \[личное ▼\][\s\S]*?// \[личное ▲\]\n", "", out)
     out = "".join(l for l in out.splitlines(True) if "[личное]" not in l)
+    if country == "ru" and sec.get("ai_proxy_token") and sec["ai_proxy_token"] in out:
+        sys.exit("В версии для России не должно быть общего доступа к Claude")
     for private in ["docs.google.com/spreadsheets/d/1", "трекер", "tracker", "Курение", "Секс", "Алкоголь", "Prime Thai", "PTP", "Семейная группа", sec["sheet_secret"], sec["sheet_hook"]]:
         if private and private in out:
             sys.exit(f"В MyDay-{country.upper()}.js осталось личное: {private}")
     (DIST / f"MyDay-{country.upper()}.js").write_text(out)
 # Скрипт таблицы для других: без вашего ключа — таблица запомнит ключ виджета, который первым в неё напишет
+# Общий доступ друзей к Claude: ваш ключ остаётся в Google-скрипте, виджет знает только пароль
+(DIST / "Proxy.gs").write_text((ROOT / "src/proxy/Proxy.gs").read_text().replace("__AI_PROXY_TOKEN__", sec.get("ai_proxy_token", "")))
 (DIST / "Code-RU.gs").write_text((ROOT / "src/sheet/Code.gs").read_text().replace("__SHEET_SECRET__", ""))
 (DIST / "Code.gs").write_text(fill((ROOT / "src/sheet/Code.gs").read_text()))
 

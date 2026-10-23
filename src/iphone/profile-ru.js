@@ -11,6 +11,8 @@ const CONFIG = {
   currencyIn: "в рублях",        // «Сумма в рублях»
   currencyWords: "рубл\\S*|руб\\.?|₽|рэ", // как валюту называют голосом (вырезается из комментария)
   agentModel: "claude-sonnet-5-5", // модель ассистента (если есть ключ Anthropic)
+  aiProxy: "",   // в России Claude не работает: общего доступа нет
+  aiProxyToken: "",
   monthlyReportNotification: true, // 1-го числа в 10:00 прислать уведомление с отчётом
   // Google Таблица с доходами и расходами (кнопка ▦). Пусто — кнопки нет
   sheetUrl: "",

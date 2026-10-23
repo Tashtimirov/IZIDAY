@@ -11,6 +11,8 @@ const CONFIG = {
   currencyIn: "в батах",         // «Сумма в батах»
   currencyWords: "бат\\S*|฿|thb", // как валюту называют голосом (вырезается из комментария)
   agentModel: "claude-sonnet-5-5", // модель ассистента (если есть ключ Anthropic)
+  aiProxy: "__AI_PROXY__",   // общий доступ к Claude через Google-скрипт владельца (подставляется при сборке)
+  aiProxyToken: "__AI_PROXY_TOKEN__",
   monthlyReportNotification: true, // 1-го числа в 10:00 прислать уведомление с отчётом
   // Google Таблица с доходами и расходами (кнопка ▦). Пусто — кнопки нет
   sheetUrl: "",

@@ -52,6 +52,8 @@ const CONFIG = {
   currencyIn: "в батах",         // «Сумма в батах»
   currencyWords: "бат\\S*|฿",     // как валюту называют голосом (вырезается из комментария)
   agentModel: "claude-sonnet-5-5", // модель ассистента: выполняет команды, уточняет, отвечает
+  aiProxy: "",                   // общий доступ к Claude через чужой Google-скрипт (версия для друзей); свой ключ важнее
+  aiProxyToken: "",
   monthlyReportNotification: true, // 1-го числа в 10:00 прислать уведомление с отчётом
   // Google Таблица с доходами и расходами (кнопка ▦ в виджете)
   sheetUrl: "https://docs.google.com/spreadsheets/d/1dsrjcRimF85iZptC0WOyLImhe-llh4BOJmSgGzK_om8/edit",
@@ -914,15 +916,10 @@ async function estimateFood(img, hint) {
   const content = []
   if (img) content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: Data.fromJPEG(shrinkPhoto(img)).toBase64String() } })
   content.push({ type: "text", text: (img ? "Оцени еду на фото." : "Оцени еду по описанию.") + (hint ? ` Уточнение от меня: ${hint}` : "") })
-  const req = new Request("https://api.anthropic.com/v1/messages")
-  req.method = "POST"
-  req.timeoutInterval = 60
-  req.headers = { "x-api-key": getAIKey(), "anthropic-version": "2023-06-01", "content-type": "application/json" }
-  req.body = JSON.stringify({ model: CONFIG.agentModel, max_tokens: 4000, output_config: { format: { type: "json_schema", schema: FOOD_SCHEMA } },
+  const res = await anthropic({ model: CONFIG.agentModel, max_tokens: 4000, output_config: { format: { type: "json_schema", schema: FOOD_SCHEMA } },
     system: "Ты нутрициолог. Определи блюда и продукты, оцени вес каждой части по размеру тарелки, приборов и упаковок, посчитай калории и БЖУ. " +
       "Учитывай масло и соусы. Если есть уточнение от пользователя — оно важнее того, что видно. Названия по-русски.",
     messages: [{ role: "user", content }] })
-  const res = await req.loadJSON()
   if (!res || res.error) throw new Error(res && res.error ? res.error.message || res.error.type : "пустой ответ")
   if (res.stop_reason === "refusal") throw new Error("Claude отказался оценивать это фото")
   const t = (res.content || []).filter(c => c.type === "text").map(c => c.text).join("")
@@ -938,7 +935,7 @@ function foodSummary(e) {
 }
 
 async function foodPhoto(source) {
-  if (!getAIKey()) return info("Нужен ключ Claude",
+  if (!aiReady()) return info("Нужен ключ Claude",
     "Калории по фото считает Claude. Добавьте API-ключ: меню → 🧠 Ассистент Claude. Он же включит умный разбор команд.")
   let src = source === "camera" ? 0 : await choose("🍽 Еда", ["📷 Сфотографировать", "🖼 Выбрать из фото", "⌨️ Описать словами"])
   let img = null, hint = ""
@@ -2200,11 +2197,48 @@ const AI_KEY = "myday.anthropic.key"
 function getAIKey() {
   try { return Keychain.contains(AI_KEY) ? Keychain.get(AI_KEY) : null } catch (e) { return null }
 }
+// Общий доступ (версия для друзей): запросы идут через Google-скрипт владельца, его ключ телефону не виден
+const sharedAI = () => !!CONFIG.aiProxy && !/^__/.test(CONFIG.aiProxy)
+const aiReady = () => !!getAIKey() || sharedAI()
+function deviceId() {
+  const k = "myday.device"
+  try {
+    if (Keychain.contains(k)) return Keychain.get(k)
+    const id = Array.from({ length: 24 }, () => "abcdefghijkmnpqrstuvwxyz23456789"[Math.floor(Math.random() * 32)]).join("")
+    Keychain.set(k, id)
+    return id
+  } catch (e) { return "unknown0" }
+}
+// Запрос к Claude: со своим ключом — напрямую, иначе через общий доступ
+async function anthropic(body) {
+  const own = getAIKey()
+  const req = new Request(own ? "https://api.anthropic.com/v1/messages" : CONFIG.aiProxy)
+  req.method = "POST"
+  req.timeoutInterval = 90
+  if (own) {
+    req.headers = { "x-api-key": own, "anthropic-version": "2023-06-01", "content-type": "application/json" }
+    req.body = JSON.stringify(body)
+  } else {
+    req.headers = { "content-type": "text/plain;charset=utf-8" }
+    req.body = JSON.stringify({ token: CONFIG.aiProxyToken, device: deviceId(), body })
+  }
+  return await req.loadJSON()
+}
 
 async function aiSettings() {
   const has = !!getAIKey()
   let k = null
-  if (has) {
+  if (!has && sharedAI()) {
+    const i = await choose("🧠 Ассистент Claude включён", ["Проверить связь", "Подключить свой ключ"],
+      "Работает через общий доступ: ключ не нужен, в день до 40 запросов (фото еды и команды).")
+    if (i === 0) {
+      let res = null
+      try { res = await callClaude([{ role: "user", content: "Проверка связи. Ответь одним словом: работает" }]) } catch (e) {}
+      return info(res && res.content ? "Связь есть ✓" : "Не удалось подключиться", res && res.error ? res.error.message : "")
+    }
+    if (i !== 1) return
+    k = await ask("API-ключ Anthropic", "sk-ant-…", "Сохранить")
+  } else if (has) {
     const i = await choose("🧠 Ассистент Claude включён", ["Заменить ключ", "Выключить"],
       "Команды выполняет Claude: понимает свободную речь, переносит и удаляет события, уточняет, если неясно. Без ключа работает встроенный разбор.")
     if (i === 1) { Keychain.remove(AI_KEY); return info("Ассистент выключен", "Команды снова разбирает встроенный разбор.") }
@@ -2361,7 +2395,7 @@ async function voiceCommand(given) {
       "Далее", "", "Не удалось распознать речь — можно написать текстом")
     if (!heard) return
   }
-  if (getAIKey()) return agentCommand(heard)   // ассистент Claude: понимает свободную речь и уточняет
+  if (aiReady()) return agentCommand(heard)   // ассистент Claude: понимает свободную речь и уточняет
 
   let actions = buildActions(splitCommands(normalizeSpeech(heard)))
   if (!actions.length) actions = [{ kind: null, raw: heard }]
@@ -2735,12 +2769,7 @@ ${CONFIG.calendars.length ? `- Календари по словам пользо
 // system передаётся один на весь разговор: в нём текущее время, а «мысли» Claude из прошлых шагов
 // API принимает только с тем же system, с которым они созданы
 async function callClaude(messages, system = agentSystem()) {
-  const req = new Request("https://api.anthropic.com/v1/messages")
-  req.method = "POST"
-  req.timeoutInterval = 60
-  req.headers = { "x-api-key": getAIKey(), "anthropic-version": "2023-06-01", "content-type": "application/json" }
-  req.body = JSON.stringify({ model: CONFIG.agentModel, max_tokens: 2000, system, tools: AGENT_TOOLS, messages })
-  return await req.loadJSON()
+  return await anthropic({ model: CONFIG.agentModel, max_tokens: 2000, system, tools: AGENT_TOOLS, messages })
 }
 
 // Один «ход»: Claude думает, вызывает инструменты, пока не даст ответ
