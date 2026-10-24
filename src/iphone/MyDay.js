@@ -242,7 +242,10 @@ async function syncSheet(silent) {
     req.headers = { "content-type": "text/plain;charset=utf-8" }
     req.body = JSON.stringify(body)
     const res = await req.loadJSON()
-    if (res && res.ok) await saveSettings(Object.assign({ sheetSyncedAt: Date.now(), sheetSig: moneySig(all), sheetSigAll: await syncSig() },
+    // старый скрипт таблицы (без номеров листов) еду, воду и шаги не принимает — их отпечаток не запоминаем, выгрузим снова
+    if (res && res.ok && !res.sheets) res.oldScript = true
+    if (res && res.ok) await saveSettings(Object.assign({ sheetSyncedAt: Date.now(), sheetSig: moneySig(all) },
+      res.oldScript ? {} : { sheetSigAll: await syncSig() },
       res.sheets ? { sheetGids: res.sheets } : {},
       res.url && !st.sheetUrl && !CONFIG.sheetUrl ? { sheetUrl: res.url } : {}))
     return res
@@ -3069,8 +3072,11 @@ async function sheetMenu() {
     info("Таблица ещё не подключена", "Подключите автозапись: таблица сама пришлёт свою ссылку после первой записи.")
   if (i === 1 && on) {
     const r = await syncSheet(false)
+    if (r && r.oldScript) return info("Скрипт таблицы старый",
+      "Деньги записаны, а еду, воду и шаги эта версия скрипта не принимает. Вставьте новый Code.gs и обновите развёртывание: «Управление развёртываниями» → карандаш → «Новая версия».")
     return info(r && r.ok ? "Таблица обновлена ✓" : "Не получилось",
-      r && r.ok ? `Добавлено: ${r.added || 0}, удалено: ${r.removed || 0}` : `${r && r.error || "нет ответа"}`)
+      r && r.ok ? `Добавлено: ${r.added || 0}, удалено: ${r.removed || 0}` :
+        r && r.error === "forbidden" ? "Таблица не узнала ключ этого виджета." : `${r && r.error || "нет ответа"}`)
   }
   if (i === 1 || i === 2) {
     const url = await ask("Ссылка автозаписи", "https://script.google.com/macros/s/…/exec", "Подключить", st.sheetHook || "",
