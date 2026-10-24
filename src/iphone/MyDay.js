@@ -221,11 +221,11 @@ async function syncSheet(silent) {
   const st = await loadSettings()
   const hook = sheetHookOf(st)
   if (!hook) return silent ? null : { ok: false, error: "автозапись отключена" }
-  const all = await rawMoney(), food = await rawFood(), water = await rawWater(), health = await loadHealth(true)
+  const all = await rawMoney(), food = await rawFood(), water = await rawWater(), health = await healthDays()
   const live = list => list.filter(x => !x.deleted).sort((a, b) => a.date - b.date)
-  // деньги, еда и вода — целиком; активность — день из Быстрой команды (таблица обновит строку этого дня)
+  // всё целиком: деньги, еда, вода и активность по дням (таблица обновит строку каждого дня)
   const body = { secret: await sheetSecretOf(st),
-    entries: live(all), food: live(food), water: live(water), health: health ? [health] : [],
+    entries: live(all), food: live(food), water: live(water), health,
     deleted: [...all, ...food, ...water].filter(x => x.deleted).map(x => x.id) }
   try {
     const req = new Request(hook)
@@ -248,7 +248,8 @@ const moneySig = all => `${all.length}:${all.reduce((m, x) => Math.max(m, x.u ||
 // То же для всего, что уходит в таблицу с iPhone (Mac следит только за деньгами — sheetSig)
 async function syncSig() {
   const h = await loadHealth(true)
-  return [moneySig(await rawMoney()), moneySig(await rawFood()), moneySig(await rawWater()), h ? h.updated : 0].join("|")
+  // «v2» — один раз выгрузить всё заново: старый скрипт таблицы еду, воду и шаги не принимал
+  return ["v2", moneySig(await rawMoney()), moneySig(await rawFood()), moneySig(await rawWater()), h ? h.updated : 0].join("|")
 }
 // Ссылка на таблицу: из настроек (таблица сама сообщает её при первой записи), иначе встроенная
 const sheetUrlOf = st => st.sheetUrl || CONFIG.sheetUrl
@@ -882,7 +883,10 @@ function parseHealth(param) {
   if (!p || typeof p !== "object") return null
   const low = {}
   for (const k of Object.keys(p)) low[k.toLowerCase().trim()] = p[k]
-  const out = { day: dayKey(new Date()), updated: Date.now() }
+  // день можно передать (прошлые дни из Здоровья): «2026-10-20» или любая дата, которую понимает Date
+  const dv = low.day ?? low.date ?? low["дата"] ?? low["день"]
+  const dd = dv ? (/^\d{4}-\d{2}-\d{2}$/.test(String(dv).trim()) ? String(dv).trim() : dayKey(new Date(dv))) : null
+  const out = { day: dd && /^\d{4}-/.test(dd) ? dd : dayKey(new Date()), updated: Date.now() }
   const bad = []
   for (const [key, names] of Object.entries(HEALTH_KEYS)) {
     const k = names.find(n => n in low)
@@ -901,6 +905,18 @@ async function loadHealth(anyDay = false) {
     const h = JSON.parse(fm.readString(p))
     return h && (anyDay || h.day === dayKey(new Date())) ? h : null      // вчерашние цифры не показываем
   } catch (e) { return null }
+}
+// История активности по дням (для таблицы): последняя запись дня заменяет прежнюю, храним ~400 дней
+async function saveHealthDay(h) {
+  const log = (await loadJSON("health-days.json")).filter(x => x && x.day !== h.day)
+  log.push(Object.assign({}, h))
+  log.sort((a, b) => a.day < b.day ? -1 : 1)
+  saveJSON("health-days.json", log.slice(-400))
+}
+async function healthDays() {
+  const log = await loadJSON("health-days.json"), cur = await loadHealth(true)
+  if (cur && !log.some(x => x.day === cur.day)) log.push(cur)
+  return log
 }
 async function dayHealth() {
   const [food, water, act] = await Promise.all([loadFoodToday(), loadWaterToday(), loadHealth()])
@@ -1065,7 +1081,8 @@ async function healthMenu() {
 async function receiveHealth(param) {
   const h = parseHealth(param)
   if (!h) { Script.setShortcutOutput("Мой день: не понял данные. Нужен словарь steps, active, exercise, hr…"); return }
-  saveJSON("health.json", h)
+  if (h.day === dayKey(new Date())) saveJSON("health.json", h)   // прошлый день — только в историю
+  await saveHealthDay(h)
   await syncSheet(true)   // день активности сразу в таблицу (если она подключена)
   const got = [h.steps != null && `${nf(h.steps)} шагов`, h.active != null && `${nf(h.active)} ккал`,
     h.exercise != null && `${nf(h.exercise)} мин`].filter(Boolean).join(", ")

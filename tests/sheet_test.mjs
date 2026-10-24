@@ -39,9 +39,16 @@ clock += 1000
 await app.saveMoney([{ id: "f1", date: clock, u: clock, type: "expense", amount: 500, method: "transfer", category: "Еда и продукты", comment: "Пятёрочка" }])
 check("расход уходит сразу, с тем же ключом", sent.length === 2 && sent[1].entries.length === 1 && sent[1].secret === b.secret, sent.length)
 clock += 1000
+await app.receiveHealth({ day: "2026-10-20", steps: "3000", active: "120" })
+const hb = sent[sent.length - 1].health
+check("прошлый день из Здоровья — в историю, вместе с сегодняшним", hb.length === 2 && hb[0].day === "2026-10-20" && hb[0].steps === 3000 && hb[1].day === "2026-10-23", hb)
+const st2 = await app.loadSettings(); await app.saveSettings({ sheetSigAll: st2.sheetSigAll.replace(/^v2\|/, "") })
+const n0 = sent.length; await app.autoSyncSheet()
+check("после старой версии всё выгружается заново один раз", sent.length === n0 + 1 && sent[n0].food.length === 1, sent.length - n0)
+clock += 1000
 await app.addWater(300)
 await app.autoSyncSheet()
-check("новая вода — догоняющая выгрузка", sent.length === 3 && sent[2].water.length === 2, sent.length)
+check("новая вода — догоняющая выгрузка", sent.length === n0 + 2 && sent[n0 + 1].water.length === 2, sent.length)
 app.setUrl(app.sheetUrlOf(st))
 check("кнопка ▦ появилась", app.headerButtons().some(x => x[2] === "sheet"))
 console.log(fail ? `SHEET_FAIL ${fail}` : "SHEET_OK")
