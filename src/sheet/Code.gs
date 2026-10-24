@@ -51,6 +51,55 @@ const SUMMARIES = [
      ["", "#,##0"]]] },
 ];
 
+// Лист «Анализ еды»: цели (можно менять), сегодня, неделя, рекомендации и самые калорийные блюда.
+// [подпись, значение или формула, формат]; строки с заголовком без значения — разделы. Ссылки B3–B5 — цели.
+const DAYS7 = "'Еда'!A2:A, \">=\"&(TODAY()-6)";
+const ANALYSIS = { name: "Анализ еды", rows: [
+  ["Цели (можно менять)"],
+  ["Калории в день", 2000, "#,##0"],
+  ["Белок в день, г", 100, "0"],
+  ["Вода в день, л", 2, "0.0"],
+  [""],
+  ["Сегодня"],
+  ["Съедено, ккал", "=SUMIFS('Еда'!C2:C, 'Еда'!A2:A, \">=\"&TODAY(), 'Еда'!A2:A, \"<\"&(TODAY()+1))", "#,##0"],
+  ["Осталось до цели, ккал", "=B3-B8", "#,##0"],
+  ["Белок, г", "=SUMIFS('Еда'!D2:D, 'Еда'!A2:A, \">=\"&TODAY(), 'Еда'!A2:A, \"<\"&(TODAY()+1))", "0"],
+  ["Сожжено (часы), ккал", "=IFERROR(VLOOKUP(TODAY(), 'Активность'!A2:C, 3, FALSE), 0)", "#,##0"],
+  ["Шагов", "=IFERROR(VLOOKUP(TODAY(), 'Активность'!A2:B, 2, FALSE), 0)", "#,##0"],
+  ["Последние 7 дней"],
+  ["Дней с записями", "=IFERROR(ROWS(UNIQUE(FILTER(INT('Еда'!A2:A), 'Еда'!A2:A>=TODAY()-6))), 0)", "0"],
+  ["Ккал в день", `=IF(B14=0, 0, SUMIFS('Еда'!C2:C, ${DAYS7})/B14)`, "#,##0"],
+  ["Белок в день, г", `=IF(B14=0, 0, SUMIFS('Еда'!D2:D, ${DAYS7})/B14)`, "0"],
+  ["Жиры в день, г", `=IF(B14=0, 0, SUMIFS('Еда'!E2:E, ${DAYS7})/B14)`, "0"],
+  ["Углеводы в день, г", `=IF(B14=0, 0, SUMIFS('Еда'!F2:F, ${DAYS7})/B14)`, "0"],
+  ["Белки / жиры / углеводы, % калорий", "=IF(B15=0, \"—\", ROUND(B16*400/B15)&\"% / \"&ROUND(B17*900/B15)&\"% / \"&ROUND(B18*400/B15)&\"%\")", ""],
+  ["Сожжено в день (часы), ккал", "=IFERROR(AVERAGEIFS('Активность'!C2:C, 'Активность'!A2:A, \">=\"&(TODAY()-6)), 0)", "#,##0"],
+  ["Шагов в день", "=IFERROR(AVERAGEIFS('Активность'!B2:B, 'Активность'!A2:A, \">=\"&(TODAY()-6)), 0)", "#,##0"],
+  ["Воды в день, л", "=IFERROR(SUMIFS('Вода'!B2:B, 'Вода'!A2:A, \">=\"&(TODAY()-6))/1000/ROWS(UNIQUE(FILTER(INT('Вода'!A2:A), 'Вода'!A2:A>=TODAY()-6))), 0)", "0.0"],
+  [""],
+  ["Рекомендации"],
+  ["", "=IF(B14<5, \"📝 Записывайте всю еду: за неделю записи есть только за \"&B14&\" дн., выводы по неполным данным неточные.\", \"\")"],
+  ["", "=IF(B14=0, \"\", IF(B15>B3*1.1, \"⬇️ В среднем \"&ROUND(B15)&\" ккал в день, на \"&ROUND(B15-B3)&\" больше цели. Уберите один перекус или сладкие напитки.\", IF(B15<B3*0.8, \"⬆️ В среднем \"&ROUND(B15)&\" ккал, заметно меньше цели \"&B3&\". Слишком большой дефицит отнимает силы и портит сон.\", \"✅ Калории в норме: в среднем \"&ROUND(B15)&\" при цели \"&B3&\".\")))"],
+  ["", "=IF(B14=0, \"\", IF(B16<B4*0.9, \"🥩 Белка в среднем \"&ROUND(B16)&\" г из \"&B4&\". Добавьте яйца, курицу, рыбу, творог или тофу к каждому приёму пищи.\", \"✅ Белка достаточно: \"&ROUND(B16)&\" г в день.\"))"],
+  ["", "=IF(B15=0, \"\", IF(B17*9/B15>0.35, \"🧈 Жиры дают \"&ROUND(B17*900/B15)&\"% калорий (лучше до 35%). Меньше жареного, соусов и орехов горстями.\", \"\"))"],
+  ["", "=IF(B15=0, \"\", IF(B18*4/B15>0.55, \"🍚 Углеводы дают \"&ROUND(B18*400/B15)&\"% калорий. Замените часть риса, лапши и сладкого овощами и белком.\", \"\"))"],
+  ["", "=IF(B22<B5*0.8, \"💧 Воды в среднем \"&ROUND(B22, 1)&\" л из \"&B5&\". Держите бутылку на виду и выпивайте стакан перед едой.\", \"\")"],
+  ["", "=IF(B21=0, \"\", IF(B21<6000, \"👟 В среднем \"&ROUND(B21)&\" шагов в день. Прогулка 20–30 минут после ужина добавит 2–3 тысячи.\", \"\"))"],
+  [""],
+  ["Совет Claude"],
+  ["", "Появится вечером, если в свойства скрипта добавлен ключ ANTHROPIC_KEY. Обновить сейчас: меню «Мой день» → «Совет по еде»."],
+  ["Обновлено", ""],
+], top: ["Самые калорийные блюда за 30 дней",
+  "=QUERY('Еда'!A2:C, \"select B, count(B), sum(C) where A >= date '\"&TEXT(TODAY()-29, \"yyyy-mm-dd\")&\"' and B is not null group by B order by sum(C) desc limit 10 label B 'Блюдо', count(B) 'Раз', sum(C) 'Ккал всего'\", 0)"],
+  // съедено, сожжено и шаги за 14 дней, по строке на день (с G15, под топом блюд)
+  days: ["Съедено и сожжено по дням", "=LET(d, SEQUENCE(14, 1, TODAY(), -1), " +
+    "e, MAP(d, LAMBDA(x, SUMIFS('Еда'!C2:C, 'Еда'!A2:A, \">=\"&x, 'Еда'!A2:A, \"<\"&(x+1)))), " +
+    "b, MAP(d, LAMBDA(x, IFERROR(VLOOKUP(x, 'Активность'!A2:C, 3, FALSE), 0))), " +
+    "s, MAP(d, LAMBDA(x, IFERROR(VLOOKUP(x, 'Активность'!A2:B, 2, FALSE), 0))), " +
+    "VSTACK(HSTACK(\"День\", \"Съедено ккал\", \"Сожжено ккал\", \"Шаги\", \"Разница ккал\"), HSTACK(d, e, b, s, MAP(e, b, LAMBDA(p, q, p-q)))))"] };
+// rows[i] — строка i + 2 (в строке 1 заголовок листа)
+const ADVICE_ROW = ANALYSIS.rows.findIndex(r => r[0] === "Совет Claude") + 3;   // строка с текстом совета
+
 function doGet() {
   ensureSheets_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -77,7 +126,11 @@ function doPost(e) {
       added += r.added; removed += r.removed;
     }
     for (const h of body.health || []) upsertActivity_(ss.getSheetByName(ACTIVITY.name), h);
-    return out_({ ok: true, added, removed, url: ss.getUrl() });
+    if (Array.isArray(body.food)) dailyAdvice_();
+    // номера листов — чтобы виджет открывал нужный лист (калории → «Анализ еды»)
+    const sheets = {};
+    ss.getSheets().forEach(sh => { sheets[sh.getName()] = sh.getSheetId(); });
+    return out_({ ok: true, added, removed, url: ss.getUrl(), sheets });
   } finally {
     lock.releaseLock();
   }
@@ -85,9 +138,48 @@ function doPost(e) {
 
 // Меню в таблице: создать листы вручную, не дожидаясь первой записи из виджета
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu("Мой день").addItem("Создать листы", "setup").addToUi();
+  SpreadsheetApp.getUi().createMenu("Мой день").addItem("Создать листы", "setup").addItem("Совет по еде", "advice").addToUi();
 }
 function setup() { ensureSheets_(); }
+function advice() { ensureSheets_(); writeAdvice_(); }
+
+// Совет Claude по еде: раз в день, при первой выгрузке после 20:00, если в свойствах скрипта есть ANTHROPIC_KEY
+function dailyAdvice_() {
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty("ANTHROPIC_KEY")) return;
+  const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+  const now = new Date(), day = Utilities.formatDate(now, tz, "yyyy-MM-dd");
+  if (Number(Utilities.formatDate(now, tz, "H")) < 20 || props.getProperty("adviceDay") === day) return;
+  props.setProperty("adviceDay", day);
+  try { writeAdvice_(); } catch (e) {}
+}
+
+function writeAdvice_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet(), tz = ss.getSpreadsheetTimeZone();
+  const sh = ss.getSheetByName(ANALYSIS.name);
+  const key = PropertiesService.getScriptProperties().getProperty("ANTHROPIC_KEY");
+  if (!key) { sh.getRange(ADVICE_ROW, 2).setValue("Добавьте ANTHROPIC_KEY: «Расширения» → «Apps Script» → «Настройки проекта» → «Свойства скрипта»."); return; }
+  const since = new Date(Date.now() - 14 * 864e5);
+  const fmt = d => Utilities.formatDate(d, tz, "dd.MM HH:mm");
+  const rows = (name, cols) => { const s = ss.getSheetByName(name); const n = s.getLastRow();
+    return n < 2 ? [] : s.getRange(2, 1, n - 1, cols).getValues().filter(r => r[0] instanceof Date && r[0] >= since); };
+  const food = rows("Еда", 6).map(r => `${fmt(r[0])} ${r[1]}: ${r[2]} ккал, Б${r[3]} Ж${r[4]} У${r[5]}`);
+  const act = rows("Активность", 4).map(r => `${fmt(r[0]).slice(0, 5)}: ${r[1]} шагов, сожжено ${r[2]} ккал, упражнения ${r[3]} мин`);
+  const goals = sh.getRange(3, 2, 3, 1).getValues().map(r => r[0]);
+  if (!food.length) { sh.getRange(ADVICE_ROW, 2).setValue("За две недели нет записей еды — совета пока нет."); return; }
+  const res = UrlFetchApp.fetch("https://api.anthropic.com/v1/messages", {
+    method: "post", contentType: "application/json", muteHttpExceptions: true,
+    headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+    payload: JSON.stringify({ model: "claude-sonnet-5-5", max_tokens: 1500,
+      system: "Ты внимательный нутрициолог. Пиши по-русски, просто и по делу, без Markdown. 4–6 коротких пунктов, каждый с новой строки и с эмодзи в начале: " +
+        "что получается хорошо, что стоит поменять и конкретные замены блюд из списка. Опирайся только на данные; если данных мало, скажи об этом.",
+      messages: [{ role: "user", content: `Цели: ${goals[0]} ккал в день, белок ${goals[1]} г, вода ${goals[2]} л.\n\nЕда за 14 дней:\n${food.join("\n")}\n\nАктивность:\n${act.join("\n") || "нет данных"}` }] }),
+  });
+  const j = JSON.parse(res.getContentText());
+  const text = (j.content || []).filter(c => c.type === "text").map(c => c.text).join("").trim();
+  sh.getRange(ADVICE_ROW, 2).setValue(text || `Не получилось: ${j.error ? j.error.message : "пустой ответ"}`);
+  sh.getRange(ADVICE_ROW + 1, 2).setValue(new Date()).setNumberFormat("dd.MM.yyyy HH:mm");
+}
 
 function checkSecret_(got) {
   if (SECRET && SECRET.indexOf("__") !== 0) return got === SECRET;
@@ -170,6 +262,31 @@ function ensureSheets_() {
       col += formats.length + 1;
     }
     sh.setFrozenRows(2);
+  }
+  const an = make(ANALYSIS.name);
+  if (an) {
+    ANALYSIS.rows.forEach(([label, value, format], i) => {
+      const r = i + 2;
+      if (label !== undefined) an.getRange(r, 1).setValue(label);
+      if (value === undefined) { if (label) an.getRange(r, 1).setFontWeight("bold").setFontSize(12).setFontColor("#0B4A33"); return; }
+      const cell = an.getRange(r, 2);
+      if (typeof value === "string" && value[0] === "=") cell.setFormula(value); else cell.setValue(value);
+      if (format) cell.setNumberFormat(format);
+      if (!label) an.getRange(r, 2, 1, 4).merge().setWrap(true);   // рекомендации — во всю ширину
+    });
+    an.getRange(1, 1).setValue("Анализ еды").setFontWeight("bold").setFontSize(14);
+    an.getRange(3, 2, 3, 1).setBackground("#FFF6D6");   // цели можно менять
+    an.setColumnWidth(1, 260); an.setColumnWidth(2, 140);
+    an.getRange(1, 7).setValue(ANALYSIS.top[0]).setFontWeight("bold").setFontSize(12);
+    an.getRange(2, 7).setFormula(ANALYSIS.top[1]);
+    an.getRange(2, 7, 1, 3).setFontWeight("bold").setBackground("#F1EAD8");
+    an.setColumnWidth(7, 220);
+    an.getRange(15, 7).setValue(ANALYSIS.days[0]).setFontWeight("bold").setFontSize(12);
+    an.getRange(16, 7).setFormula(ANALYSIS.days[1]);
+    an.getRange(16, 7, 1, 5).setFontWeight("bold").setBackground("#F1EAD8");
+    an.getRange(17, 7, 14, 1).setNumberFormat("dd.mm ddd");
+    an.getRange(17, 8, 14, 4).setNumberFormat("#,##0");
+    ss.setActiveSheet(an); ss.moveActiveSheet(1);   // первым листом: сюда ведёт нажатие на калории
   }
   // пустой лист, который Google создаёт в новой таблице, больше не нужен
   const blank = ss.getSheets().find(sh => /^(Лист|Sheet)\s*1$/.test(sh.getName()) && sh.getLastRow() === 0);

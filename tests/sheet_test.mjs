@@ -11,11 +11,11 @@ const files = {}
 const fmo = { joinPath: (a, b) => a + "/" + b, documentsDirectory: () => "/d", fileExists: p => p in files || p === "/d/my-day",
   createDirectory() {}, isFileStoredIniCloud: () => false, readString: p => files[p], writeString: (p, s) => { files[p] = s } }
 const sent = []
-class Request { constructor(url) { this.url = url } async loadJSON() { sent.push(JSON.parse(this.body)); return { ok: true, added: 1, removed: 0, url: "https://docs.google.com/spreadsheets/d/XYZ/edit" } } }
+class Request { constructor(url) { this.url = url } async loadJSON() { sent.push(JSON.parse(this.body)); return { ok: true, added: 1, removed: 0, url: "https://docs.google.com/spreadsheets/d/XYZ/edit", sheets: { "Анализ еды": 777 } } } }
 const g = { Color, DateFormatter, Request, URLScheme: { forRunningScript: () => "x" }, FileManager: { iCloud: () => fmo, local: () => fmo },
   Keychain: { contains: () => false }, Script: { setShortcutOutput() {} } }
 const app = await new Function(...Object.keys(g), "return (async()=>{" + src +
-  "; return { syncSheet, autoSyncSheet, saveSettings, loadSettings, addFood, addWater, receiveHealth, saveMoney, sheetUrlOf, headerButtons, setUrl: u => { SHEET_URL = u } } })()")(...Object.values(g))
+  "; return { syncSheet, autoSyncSheet, saveSettings, loadSettings, addFood, addWater, receiveHealth, saveMoney, sheetUrlOf, sheetTabUrl, headerButtons, setUrl: u => { SHEET_URL = u } } })()")(...Object.values(g))
 let fail = 0
 const check = (name, ok, got) => { console.log(`${ok ? "✓" : "✗"} ${name}${ok ? "" : "  → " + JSON.stringify(got)}`); if (!ok) fail++ }
 
@@ -31,6 +31,7 @@ check("еда, вода, активность", b.food.length === 1 && b.food[0]
   b.health[0].steps === 7500 && b.health[0].day === "2026-10-23", b)
 let st = await app.loadSettings()
 check("ключ запомнен", st.sheetSecret === b.secret)
+check("калории ведут на лист «Анализ еды»", app.sheetTabUrl(st, "Анализ еды") === "https://docs.google.com/spreadsheets/d/XYZ/edit#gid=777", app.sheetTabUrl(st, "Анализ еды"))
 check("ссылка на таблицу пришла от таблицы", app.sheetUrlOf(st) === "https://docs.google.com/spreadsheets/d/XYZ/edit", st.sheetUrl)
 await app.autoSyncSheet()
 check("без изменений повторно не шлёт", sent.length === 1, sent.length)

@@ -14,15 +14,18 @@ class Sheet {
       setFormula: f => { sh.formulas[`${r},${c}`] = f; return obj },
       sort: ({ column }) => { const rows = obj.getValues(); rows.sort((a, b) => +a[column - c] - +b[column - c]); obj.setValues(rows); return obj },
     }
-    for (const k of ["setFontWeight", "setBackground", "setFontColor", "setNumberFormat", "setFontSize"]) obj[k] = () => obj
+    for (const k of ["setFontWeight", "setBackground", "setFontColor", "setNumberFormat", "setFontSize", "merge", "setWrap"]) obj[k] = () => obj
     return obj
   }
   deleteRow(r) { this.cells.splice(r - 1, 1) }
-  setFrozenRows() {} hideColumns() {} showColumns() {}
+  setFrozenRows() {} hideColumns() {} showColumns() {} setColumnWidth() {}
+  getSheetId() { return sheets.indexOf(this) + 100 }
 }
 const sheets = [new Sheet("Лист1")]
 const ss = { getSheetByName: n => sheets.find(s => s.name === n) || null, insertSheet: n => { const s = new Sheet(n); sheets.push(s); return s },
-  getSheets: () => sheets, deleteSheet: s => sheets.splice(sheets.indexOf(s), 1), getName: () => "Мой день", getUrl: () => "https://docs.google.com/spreadsheets/d/T/edit" }
+  getSheets: () => sheets, deleteSheet: s => sheets.splice(sheets.indexOf(s), 1), getName: () => "Мой день", getUrl: () => "https://docs.google.com/spreadsheets/d/T/edit",
+  setActiveSheet: s => { ss.active = s }, moveActiveSheet: i => { sheets.splice(sheets.indexOf(ss.active), 1); sheets.splice(i - 1, 0, ss.active) },
+  getSpreadsheetTimeZone: () => "Asia/Bangkok" }
 const props = {}
 const g = {
   SpreadsheetApp: { getActiveSpreadsheet: () => ss },
@@ -56,5 +59,14 @@ r = post(Object.assign({}, body, { water: [body.water[0]], deleted: ["w2"] }))
 check("удалённое убирается", r.removed === 1 && ss.getSheetByName("Вода").getLastRow() === 2, r)
 check("итоги — формулы", Object.values(ss.getSheetByName("Итоги: деньги").formulas).length === 4 &&
   Object.values(ss.getSheetByName("Итоги: еда").formulas).every(f => f.startsWith("=QUERY(")))
+const an = ss.getSheetByName("Анализ еды")
+check("анализ еды — первым листом, номера листов в ответе", sheets[0] === an && r.sheets && r.sheets["Анализ еды"] === an.getSheetId(), r.sheets)
+const cell = a1 => an.formulas[a1] ?? (an.cells[+a1.split(",")[0] - 1] || [])[+a1.split(",")[1] - 1]
+check("цели в B3–B5, сегодня и неделя — формулы", cell("3,2") === 2000 && cell("4,2") === 100 && cell("5,2") === 2 &&
+  /SUMIFS\('Еда'!C2:C/.test(cell("8,2")) && cell("9,2") === "=B3-B8" && /ROWS\(UNIQUE/.test(cell("14,2")) && /B14/.test(cell("15,2")))
+check("рекомендации и топ блюд", /Белка в среднем/.test(cell("27,2")) && /шагов в день/.test(cell("31,2")) && /order by sum\(C\) desc limit 10/.test(cell("2,7")))
+check("шаги сегодня и таблица по дням", cell("12,1") === "Шагов" && /'Активность'!A2:B, 2/.test(cell("12,2")) &&
+  /SEQUENCE\(14/.test(cell("16,7")) && /Сожжено ккал/.test(cell("16,7")) && cell("15,7") === "Съедено и сожжено по дням")
+check("подписи на своих строках", cell("21,1") === "Шагов в день" && cell("22,1") === "Воды в день, л" && cell("33,1") === "Совет Claude" && cell("35,1") === "Обновлено")
 console.log(fail ? `GS_FAIL ${fail}` : "GS_OK")
 process.exit(fail ? 1 : 0)

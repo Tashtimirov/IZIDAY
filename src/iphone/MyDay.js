@@ -235,6 +235,7 @@ async function syncSheet(silent) {
     req.body = JSON.stringify(body)
     const res = await req.loadJSON()
     if (res && res.ok) await saveSettings(Object.assign({ sheetSyncedAt: Date.now(), sheetSig: moneySig(all), sheetSigAll: await syncSig() },
+      res.sheets ? { sheetGids: res.sheets } : {},
       res.url && !st.sheetUrl && !CONFIG.sheetUrl ? { sheetUrl: res.url } : {}))
     return res
   } catch (e) { return { ok: false, error: String(e) } }
@@ -252,6 +253,12 @@ async function syncSig() {
 // Ссылка на таблицу: из настроек (таблица сама сообщает её при первой записи), иначе встроенная
 const sheetUrlOf = st => st.sheetUrl || CONFIG.sheetUrl
 let SHEET_URL = CONFIG.sheetUrl   // для кнопки ▦ в виджете, уточняется при запуске
+let FOOD_URL = null               // лист «Анализ еды»: нажатие на калории в виджете
+// Ссылка на лист таблицы по имени: номера листов (gid) таблица присылает при каждой выгрузке
+function sheetTabUrl(st, name) {
+  const url = sheetUrlOf(st), gid = st.sheetGids && st.sheetGids[name]
+  return url && gid !== undefined ? `${url.replace(/[#?].*$/, "")}#gid=${gid}` : null
+}
 // Ключ для таблицы: встроенный, иначе свой для этого человека — создаётся один раз и хранится в общих настройках
 async function sheetSecretOf(st) {
   if (CONFIG.sheetSecret && !/^__/.test(CONFIG.sheetSecret)) return CONFIG.sheetSecret
@@ -1090,7 +1097,7 @@ function healthStrip(parent, d, entries) {
   const part = (icon, text, color, action) => {
     const p = s.addStack()
     p.centerAlignContent()
-    p.url = `${RUN}?action=${action}`
+    p.url = action === "food" && FOOD_URL ? FOOD_URL : `${RUN}?action=${action}`   // калории — анализ еды в таблице
     symbol(p, icon, color, 12)
     p.addSpacer(4)
     const t = p.addText(text)
@@ -1100,8 +1107,8 @@ function healthStrip(parent, d, entries) {
   s.addSpacer()
   part("drop.fill", `${liters(d.water)} / ${liters(CONFIG.health.waterGoal)}`, C.notes, "water")
   s.addSpacer()
-  const a = d.act
-  part(a && a.active != null ? "flame.fill" : "applewatch", a ? (entries ? `${nf(a.active || 0)} ккал` : `${nf(a.active || 0)} ккал · ${nf(a.steps || 0)} ш.`) : "часы", C.expense, "health")
+  const a = d.act   // в большом виджете места меньше: сожжённые ккал без подписи (огонёк) и шаги
+  part(a && a.active != null ? "flame.fill" : "applewatch", a ? (entries ? `${nf(a.active || 0)} · ${nf(a.steps || 0)} ш.` : `${nf(a.active || 0)} ккал · ${nf(a.steps || 0)} ш.`) : "часы", C.expense, "health")
   if (entries) {   // большой виджет: расходы за месяц, нажатие — отчёт
     s.addSpacer()
     part(CONFIG.currencyIcon, `−${moneyShort(monthTotals(entries, monthKey(new Date())).expense)}`, C.expense, "report")
@@ -1119,7 +1126,7 @@ function healthPanel(w, d, small) {
   }
   const line = (parent, text) => { const t = parent.addText(text); t.font = Font.systemFont(11); t.textColor = C.sub; t.lineLimit = 1; t.minimumScaleFactor = 0.7 }
   const cols = w.addStack(); cols.topAlignContent()
-  const left = cols.addStack(); left.layoutVertically(); left.size = new Size(W, 0); left.url = `${RUN}?action=food`
+  const left = cols.addStack(); left.layoutVertically(); left.size = new Size(W, 0); left.url = FOOD_URL || `${RUN}?action=food`
   sectionHeader(left, "fork.knife", "Еда", C.gold, d.food.length)
   left.addSpacer(3)
   big(left, nf(d.kcal), "ккал", C.text)
@@ -3000,7 +3007,9 @@ async function runAction(action, q) {
 if (args.shortcutParameter && !config.runsInWidget) {
   await receiveHealth(args.shortcutParameter)        // запуск из Быстрой команды «Мой день - здоровье»
 } else if (config.runsInWidget) {
-  SHEET_URL = sheetUrlOf(await loadSettings())
+  const st = await loadSettings()
+  SHEET_URL = sheetUrlOf(st)
+  FOOD_URL = sheetTabUrl(st, "Анализ еды")
   Script.setWidget(await buildWidget(config.widgetFamily, args.widgetParameter))
   await autoSyncSheet()
 } else {
