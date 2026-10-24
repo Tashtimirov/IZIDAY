@@ -69,5 +69,18 @@ check("панель среднего виджета", texts.includes("540") && t
 texts.length = 0; app.healthPanel(el(), Object.assign({}, d, { act: null }), false)
 check("без часов", texts.includes("Нет данных с часов"), texts)
 
+
+// Запуск из Быстрой команды: без параметра — без окон (иначе «Alerts are not supported in Siri»), параметр текстом тоже понимается
+const full = fs.readFileSync(new URL("../src/iphone/MyDay.js", import.meta.url), "utf8")
+const launch = async (args) => {
+  output = null
+  const g2 = Object.assign({}, g, { args, config: { runsWithSiri: true, runsInWidget: false },
+    Alert: class { constructor() { throw new Error("Alerts are not supported in Siri.") } }, Request: class { loadJSON() { throw new Error("offline") } },
+    CallbackURL: class {}, Safari: {}, Calendar: {}, Reminder: {}, CalendarEvent: {}, Notification: class {}, WebView: class {}, Data: {}, Photo: {}, Dictation: {}, Speech: {}, Timer: {}, ListWidget: class {}, Device: { locale: () => "ru_RU" }, Script: { setShortcutOutput: s => { output = s }, complete() {}, setWidget() {} } })
+  await new Function(...Object.keys(g2), "return (async()=>{" + full + "})()")(...Object.values(g2))
+  return output
+}
+check("команда без параметра — объяснение, а не ошибка", /не передала данные/.test(await launch({})), output)
+check("параметр текстом из команды — сохранено", /сохранено/.test(await launch({ plainTexts: ['{"steps": 6000, "active": 300}'] })), output)
 console.log(fail ? `\nОШИБОК: ${fail}` : "\nHEALTH_OK")
 process.exit(fail ? 1 : 0)

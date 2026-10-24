@@ -1333,6 +1333,7 @@ async function pickDate(initial) {
 }
 
 async function info(title, message) {
+  if (typeof config !== "undefined" && config.runsWithSiri) { Script.setShortcutOutput(`${title}${message ? "\n" + message : ""}`); return }
   const a = new Alert(); a.title = title; if (message) a.message = message
   a.addAction("OK"); await a.presentAlert()
 }
@@ -3183,8 +3184,12 @@ async function runAction(action, q) {
 }
 
 // ───────────── Запуск ─────────────
-if (args.shortcutParameter && !config.runsInWidget) {
-  await receiveHealth(args.shortcutParameter)        // запуск из Быстрой команды «Мой день - здоровье»
+// Из Быстрой команды (без «Run In App») окна показывать нельзя: Scriptable падает с «Alerts are not supported in Siri»
+const SHORTCUT_PARAM = args.shortcutParameter ?? (args.plainTexts && args.plainTexts.length ? args.plainTexts.join("\n") : null)
+if (SHORTCUT_PARAM && !config.runsInWidget) {
+  await receiveHealth(SHORTCUT_PARAM)        // запуск из Быстрой команды «Мой день - здоровье»
+} else if (config.runsWithSiri) {
+  Script.setShortcutOutput("Мой день: команда не передала данные о здоровье. В действии «Выполнить скрипт» в поле Parameter должен стоять «Словарь».")
 } else if (config.runsInWidget) {
   const st = await loadSettings()
   SHEET_URL = sheetUrlOf(st)
