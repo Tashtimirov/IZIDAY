@@ -33,7 +33,7 @@ const g = {
   PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = v } }) },
   ContentService: { createTextOutput: s => ({ setMimeType: () => JSON.parse(s) }), MimeType: { JSON: 1 } },
 }
-const gs = new Function(...Object.keys(g), code + "; return { doPost, doGet }")(...Object.values(g))
+const gs = new Function(...Object.keys(g), code + "; return { doPost, doGet, localFormula_ }")(...Object.values(g))
 let fail = 0
 const check = (name, ok, got) => { console.log(`${ok ? "✓" : "✗"} ${name}${ok ? "" : "  → " + JSON.stringify(got)}`); if (!ok) fail++ }
 const post = b => gs.doPost({ postData: { contents: JSON.stringify(b) } })
@@ -68,5 +68,9 @@ check("рекомендации и топ блюд", /Белка в средне
 check("шаги сегодня и таблица по дням", cell("12,1") === "Шагов" && /'Активность'!A2:B, 2/.test(cell("12,2")) &&
   /SEQUENCE\(14/.test(cell("16,7")) && /Сожжено ккал/.test(cell("16,7")) && cell("15,7") === "Съедено и сожжено по дням")
 check("подписи на своих строках", cell("21,1") === "Шагов в день" && cell("22,1") === "Воды в день, л" && cell("33,1") === "Совет Claude" && cell("35,1") === "Обновлено")
+const ru = gs.localFormula_("ru_RU")
+check("формулы под русскую локаль", ru("=IF(B3>B4*1.1, \"a, b\", ROUND(B5, 1))") === "=IF(B3>B4*1,1; \"a, b\"; ROUND(B5; 1))" &&
+  ru("=QUERY({'Л'!A2:A, IF(B2:B=1, C2:C, 0)}, \"select Col1\", 0)") === "=QUERY({'Л'!A2:A\\ IF(B2:B=1; C2:C; 0)}; \"select Col1\"; 0)" &&
+  gs.localFormula_("en_US")("=A(1.5, 2)") === "=A(1.5, 2)", ru("=IF(B3>B4*1.1, \"a, b\", ROUND(B5, 1))"))
 console.log(fail ? `GS_FAIL ${fail}` : "GS_OK")
 process.exit(fail ? 1 : 0)

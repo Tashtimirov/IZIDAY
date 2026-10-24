@@ -90,7 +90,7 @@ const ANALYSIS = { name: "Еда и активность", rows: [
   ["", "Появится вечером, если в свойства скрипта добавлен ключ ANTHROPIC_KEY. Обновить сейчас: меню «Мой день» → «Совет по еде»."],
   ["Обновлено", ""],
 ], top: ["Самые калорийные блюда за 30 дней",
-  "=QUERY('Еда'!A2:C, \"select B, count(B), sum(C) where A >= date '\"&TEXT(TODAY()-29, \"yyyy-mm-dd\")&\"' and B is not null group by B order by sum(C) desc limit 10 label B 'Блюдо', count(B) 'Раз', sum(C) 'Ккал всего'\", 0)"],
+  "=IFERROR(QUERY('Еда'!A2:C, \"select B, count(B), sum(C) where A >= date '\"&TEXT(TODAY()-29, \"yyyy-mm-dd\")&\"' and B is not null group by B order by sum(C) desc limit 10 label B 'Блюдо', count(B) 'Раз', sum(C) 'Ккал всего'\", 0), \"Пока нет записей\")"],
   // съедено, сожжено и шаги за 14 дней, по строке на день (с G15, под топом блюд)
   days: ["Съедено и сожжено по дням", "=LET(d, SEQUENCE(14, 1, TODAY(), -1), " +
     "e, MAP(d, LAMBDA(x, SUMIFS('Еда'!C2:C, 'Еда'!A2:A, \">=\"&x, 'Еда'!A2:A, \"<\"&(x+1)))), " +
@@ -235,9 +235,27 @@ function upsertActivity_(sh, h) {
   if (last + 1 > 2) sh.getRange(2, 1, last, row.length).sort({ column: 1, ascending: true });
 }
 
+// Формулы в коде записаны по-английски (запятые, 0.35). В таблице с русской и похожей локалью
+// setFormula ждёт «;» между аргументами и десятичную запятую, иначе ячейка показывает #ERROR!.
+// Текст в кавычках (запросы QUERY, подписи) не меняется.
+function localFormula_(locale) {
+  if (!/^(ru|uk|be|kk|uz|az|hy|ka|de|fr|es|it|pt|pl|nl|tr|cs|sk|sl|sv|fi|da|nb|no|id|vi|ro|hu|el|bg|sr|hr|lt|lv|et)/.test(locale || "")) return f => f;
+  return f => {
+    const stack = [];   // ( или {: запятая прямо внутри {…} разделяет столбцы массива — там «\»
+    return f.split(/("(?:[^"]|"")*"|'[^']*')/).map((part, i) => i % 2 ? part :
+      part.replace(/[(){},]/g, c => {
+        if (c === "(" || c === "{") stack.push(c);
+        else if (c === ")" || c === "}") stack.pop();
+        else return stack[stack.length - 1] === "{" ? "\\" : ";";
+        return c;
+      }).replace(/(\d)\.(\d)/g, "$1,$2")).join("");
+  };
+}
+
 // Создаёт недостающие листы с заголовками и листы-итоги. Существующие не трогает.
 function ensureSheets_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const fx = localFormula_(ss.getSpreadsheetLocale ? ss.getSpreadsheetLocale() : "en_US");
   const make = name => (ss.getSheetByName(name) ? null : ss.insertSheet(name));
   const header = (sh, head, formats) => {
     sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight("bold").setBackground("#0B4A33").setFontColor("#F0CC60");
@@ -256,7 +274,7 @@ function ensureSheets_() {
     let col = 1;
     for (const [title, formula, formats] of s.blocks) {
       sh.getRange(1, col).setValue(title).setFontWeight("bold").setFontSize(12);
-      sh.getRange(2, col).setFormula(formula);
+      sh.getRange(2, col).setFormula(fx(formula));
       sh.getRange(2, col, 1, formats.length).setFontWeight("bold").setBackground("#F1EAD8");
       formats.forEach((f, i) => { if (f) sh.getRange(3, col + i, sh.getMaxRows() - 2, 1).setNumberFormat(f); });
       col += formats.length + 1;
@@ -270,7 +288,7 @@ function ensureSheets_() {
       if (label !== undefined) an.getRange(r, 1).setValue(label);
       if (value === undefined) { if (label) an.getRange(r, 1).setFontWeight("bold").setFontSize(12).setFontColor("#0B4A33"); return; }
       const cell = an.getRange(r, 2);
-      if (typeof value === "string" && value[0] === "=") cell.setFormula(value); else cell.setValue(value);
+      if (typeof value === "string" && value[0] === "=") cell.setFormula(fx(value)); else cell.setValue(value);
       if (format) cell.setNumberFormat(format);
       if (!label) an.getRange(r, 2, 1, 4).merge().setWrap(true);   // рекомендации — во всю ширину
     });
@@ -278,11 +296,11 @@ function ensureSheets_() {
     an.getRange(3, 2, 3, 1).setBackground("#FFF6D6");   // цели можно менять
     an.setColumnWidth(1, 260); an.setColumnWidth(2, 140);
     an.getRange(1, 7).setValue(ANALYSIS.top[0]).setFontWeight("bold").setFontSize(12);
-    an.getRange(2, 7).setFormula(ANALYSIS.top[1]);
+    an.getRange(2, 7).setFormula(fx(ANALYSIS.top[1]));
     an.getRange(2, 7, 1, 3).setFontWeight("bold").setBackground("#F1EAD8");
     an.setColumnWidth(7, 220);
     an.getRange(15, 7).setValue(ANALYSIS.days[0]).setFontWeight("bold").setFontSize(12);
-    an.getRange(16, 7).setFormula(ANALYSIS.days[1]);
+    an.getRange(16, 7).setFormula(fx(ANALYSIS.days[1]));
     an.getRange(16, 7, 1, 5).setFontWeight("bold").setBackground("#F1EAD8");
     an.getRange(17, 7, 14, 1).setNumberFormat("dd.mm ddd");
     an.getRange(17, 8, 14, 4).setNumberFormat("#,##0");
