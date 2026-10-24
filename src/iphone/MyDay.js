@@ -2477,8 +2477,108 @@ async function executeAll(list) {
   if (openReport) await report()
 }
 
+// Голосовая запись: танцующий рыжий котик + поле ввода, говорят через микрофон клавиатуры iOS.
+// Системная диктовка Scriptable закрывает экран целиком, а сам WebView микрофон не получает,
+// поэтому котик остаётся виден только так. Текст забираем, пока окно открыто, и после «Закрыть».
 async function dictate() {
+  try {
+    const wv = new WebView()
+    await wv.loadHTML(catHTML())
+    let open = true, text = ""
+    const shown = wv.present(false).then(() => { open = false })
+    while (open) {
+      try { text = await wv.evaluateJavaScript("val()") } catch (e) {}
+      await Promise.race([shown, new Promise(r => Timer.schedule(300, false, r))])
+    }
+    try { text = await wv.evaluateJavaScript("val()") } catch (e) {}
+    return (text || "").trim()
+  } catch (e) {}
   try { return (await Dictation.start("ru-RU")) || "" } catch (e) { return "" }
+}
+
+function catHTML() {
+  return `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<style>
+  body { margin: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 3vh; box-sizing: border-box;
+    font: 17px -apple-system, sans-serif; background: #FAF9F5; color: #3a2a1a; -webkit-user-select: none; }
+  @media (prefers-color-scheme: dark) { body { background: #1c1712; color: #f3e6d6 } }
+  svg { height: 34vh; max-width: 90vw; overflow: visible }
+  #tx { margin-top: 14px; width: calc(100vw - 40px); box-sizing: border-box; padding: 12px 14px; border-radius: 14px;
+    border: 2px solid #D97757; background: transparent; color: inherit; font: 19px -apple-system, sans-serif; resize: none; outline: none }
+  .hips  { transform-origin: 120px 230px; animation: hips .9s ease-in-out infinite alternate }
+  .upper { transform-origin: 120px 240px; animation: upper .9s ease-in-out infinite alternate }
+  .tail  { transform-origin: 150px 244px; animation: tail .9s ease-in-out infinite alternate }
+  .ear   { transform-origin: 120px 60px; animation: ear 2.4s ease-in-out infinite }
+  .lids  { transform-origin: 120px 78px; animation: blink 4s infinite }
+  .look  { animation: look 6s ease-in-out infinite }
+  .belly { transform-origin: 120px 206px; animation: spin 12s linear infinite }
+  .think { transform-origin: 120px 22px; animation: think 1.8s ease-in-out infinite }
+  @keyframes hips  { from { transform: translateX(-10px) rotate(-8deg) } to { transform: translateX(10px) rotate(8deg) } }
+  @keyframes upper { from { transform: rotate(3deg) } to { transform: rotate(-3deg) } }
+  @keyframes tail  { from { transform: rotate(-26deg) } to { transform: rotate(20deg) } }
+  @keyframes ear   { 0%, 88%, 100% { transform: none } 93% { transform: rotate(-4deg) } }
+  @keyframes blink { 0%, 90%, 100% { transform: none } 94% { transform: scaleY(1.9) } }
+  @keyframes look  { 0%, 40%, 100% { transform: none } 50%, 70% { transform: translate(-5px, -2px) } }
+  @keyframes spin  { to { transform: rotate(360deg) } }
+  @keyframes think { 0%, 100% { transform: scale(.6) rotate(0); opacity: .35 } 50% { transform: scale(1) rotate(45deg); opacity: 1 } }
+  #hint { margin-top: 14px; font-size: 14px; opacity: .6; text-align: center }
+</style></head><body>
+<svg viewBox="0 0 240 320" onclick="start()">
+  <ellipse cx="120" cy="306" rx="70" ry="8" fill="#000" opacity=".13"/>
+  <g class="think"><circle cx="120" cy="22" r="3.4" fill="#D97757"/><path d="M122.4 23.6 L129.9 22.5 Q131.4 21.5 129.9 20.7 L122.3 20.2 Z M120.6 24.8 L126.5 29.1 Q128.3 29.5 127.8 27.8 L122.9 22.3 Z M118.7 24.6 L120.8 32.7 Q122.0 34.0 122.7 32.4 L122.1 24.0 Z M117.5 23.5 L114.6 31.9 Q114.8 33.6 116.3 32.6 L120.6 24.8 Z M117.2 21.5 L109.8 26.0 Q108.8 27.5 110.6 27.7 L118.7 24.6 Z M118.1 19.8 L110.8 18.7 Q109.1 19.3 110.4 20.5 L117.3 23.1 Z M120.2 19.1 L114.4 10.9 Q112.8 10.1 112.8 11.9 L117.3 20.9 Z M121.9 19.8 L121.8 11.9 Q121.0 10.3 119.9 11.8 L118.5 19.5 Z M122.9 21.9 L130.6 14.8 Q131.3 13.1 129.5 13.3 L120.8 19.2 Z" fill="#D97757"/></g>
+  <g class="hips">
+    <g class="tail"><path d="M150 236 C196 246 214 214 204 176 C200 162 212 156 218 168 C232 214 210 262 150 252 Z" fill="#D97757" stroke="#4A2416" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M205 186 l10 -3 M208 204 l12 -1 M203 222 l12 3" stroke="#B4573A" stroke-width="5" stroke-linecap="round"/>
+      <g class=""><circle cx="214" cy="166" r="2.6" fill="#F5E6D3"/><path d="M215.8 167.4 L223.3 167.0 Q224.4 166.3 223.3 165.6 L215.8 164.8 Z M214.4 168.2 L220.6 173.4 Q221.9 173.7 221.6 172.3 L216.2 166.3 Z M212.9 167.9 L214.4 175.8 Q215.3 176.9 215.9 175.6 L215.5 167.6 Z M212.1 167.1 L210.0 173.5 Q210.1 174.9 211.3 174.1 L214.5 168.2 Z M211.9 165.2 L205.1 167.5 Q204.1 168.4 205.4 168.9 L212.6 167.7 Z M212.9 164.1 L207.5 162.1 Q206.2 162.3 206.9 163.4 L211.8 166.4 Z M214.2 163.8 L210.6 158.8 Q209.4 158.2 209.4 159.6 L212.0 165.1 Z M215.6 164.5 L216.3 157.5 Q215.8 156.2 214.9 157.2 L213.1 164.0 Z M216.2 165.6 L219.9 160.8 Q220.2 159.5 218.8 159.8 L214.3 163.8 Z" fill="#F5E6D3"/></g></g>
+    <path d="M92 258 L90 282 M148 258 L150 282" stroke="#4A2416" stroke-width="30" stroke-linecap="round"/>
+    <path d="M92 258 L90 282 M148 258 L150 282" stroke="#D97757" stroke-width="24" stroke-linecap="round"/>
+    <path d="M60 236 C60 200 180 200 180 236 C180 276 60 276 60 236 Z" fill="#D97757" stroke="#4A2416" stroke-width="3"/>
+  </g>
+  <path d="M66 298 C66 284 106 282 108 298 Z M132 298 C134 282 174 284 174 298 Z" fill="#D97757" stroke="#4A2416" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M80 296 v-6 M90 296 v-7 M150 296 v-7 M160 296 v-6" stroke="#4A2416" stroke-width="2" stroke-linecap="round"/>
+  <g class="upper">
+    <path d="M120 128 C176 128 186 180 182 214 C178 252 152 262 120 262 C88 262 62 252 58 214 C54 180 64 128 120 128 Z" fill="#D97757" stroke="#4A2416" stroke-width="3"/>
+    <path d="M66 176 q10 4 14 -2 M62 200 q12 4 16 -2 M174 176 q-10 4 -14 -2 M178 200 q-12 4 -16 -2" stroke="#B4573A" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <path d="M120 150 C152 150 160 186 158 212 C156 240 142 252 120 252 C98 252 84 240 82 212 C80 186 88 150 120 150 Z" fill="#F5E6D3"/>
+    <g class="belly"><circle cx="120" cy="206" r="6.8" fill="#D97757"/><path d="M124.9 209.1 L142.8 206.4 Q145.7 204.4 142.5 202.7 L124.5 202.3 Z M122.3 211.3 L138.9 219.5 Q142.4 219.4 140.8 216.3 L125.8 205.5 Z M118.7 211.6 L125.7 224.4 Q128.6 226.5 129.2 223.0 L124.9 209.0 Z M116.5 210.6 L117.5 230.8 Q119.3 233.8 121.2 230.9 L123.3 210.8 Z M114.5 207.6 L106.1 221.0 Q105.7 224.6 109.0 223.3 L119.8 211.8 Z M114.8 203.4 L97.9 207.8 Q95.2 210.2 98.5 211.5 L115.9 210.1 Z M116.8 201.2 L100.0 196.3 Q96.4 197.0 98.6 199.8 L114.4 207.5 Z M119.7 200.2 L109.0 189.4 Q105.6 188.2 106.1 191.8 L114.4 204.5 Z M122.8 201.0 L119.1 180.9 Q116.9 178.1 115.4 181.3 L116.1 201.7 Z M125.0 203.2 L131.8 184.9 Q131.4 181.4 128.5 183.3 L118.9 200.3 Z M125.7 206.6 L137.5 197.9 Q139.2 194.8 135.6 194.7 L122.3 200.7 Z" fill="#D97757"/></g>
+    <path d="M78 150 L40 186 L78 214" fill="none" stroke="#4A2416" stroke-width="27" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M78 150 L40 186 L78 214" fill="none" stroke="#D97757" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M162 150 L200 186 L162 214" fill="none" stroke="#4A2416" stroke-width="27" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M162 150 L200 186 L162 214" fill="none" stroke="#D97757" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M46 176 l10 8 M194 176 l-10 8" stroke="#B4573A" stroke-width="5" stroke-linecap="round"/>
+    <path d="M70 88 L38 92 L50 102 L28 110 L50 116 L36 130 L70 128 Z M170 88 L202 92 L190 102 L212 110 L190 116 L204 130 L170 128 Z" fill="#D97757" stroke="#4A2416" stroke-width="3" stroke-linejoin="round"/>
+    <g class="ear">
+      <path d="M70 72 L66 22 L106 50 Z M170 72 L174 22 L134 50 Z" fill="#D97757" stroke="#4A2416" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M76 62 L74 34 L98 52 Z M164 62 L166 34 L142 52 Z" fill="#F2A7A0"/>
+      <path d="M70 26 l-4 -8 M72 28 l2 -9 M170 26 l4 -8 M168 28 l-2 -9" stroke="#4A2416" stroke-width="2" stroke-linecap="round"/>
+    </g>
+    <path d="M120 40 C172 40 186 74 184 100 C182 130 156 142 120 142 C84 142 58 130 56 100 C54 74 68 40 120 40 Z" fill="#D97757" stroke="#4A2416" stroke-width="3"/>
+    <path d="M106 44 L110 62 M120 42 L120 64 M134 44 L130 62 M68 76 l12 4 M172 76 l-12 4" stroke="#B4573A" stroke-width="5" stroke-linecap="round"/>
+    <path d="M120 98 C146 98 156 110 154 122 C152 134 138 138 120 138 C102 138 88 134 86 122 C84 110 94 98 120 98 Z" fill="#F5E6D3"/>
+    <g class="eyes">
+      <ellipse cx="96" cy="90" rx="14" ry="12" fill="#fff" stroke="#4A2416" stroke-width="2"/>
+      <ellipse cx="144" cy="90" rx="14" ry="12" fill="#fff" stroke="#4A2416" stroke-width="2"/>
+      <g class="look"><circle cx="99" cy="93" r="6.5" fill="#2A1A10"/><circle cx="147" cy="93" r="6.5" fill="#2A1A10"/>
+      <circle cx="101" cy="90.5" r="2" fill="#fff"/><circle cx="149" cy="90.5" r="2" fill="#fff"/></g>
+      <g class="lids"><path d="M81 90 C81 74 111 74 111 90 C104 86 88 86 81 90 Z M129 90 C129 74 159 74 159 90 C152 86 136 86 129 90 Z" fill="#D97757" stroke="#4A2416" stroke-width="2.5" stroke-linejoin="round"/></g>
+    </g>
+    <g fill="none" stroke="#4A2416" stroke-width="3"><circle cx="96" cy="90" r="18"/><circle cx="144" cy="90" r="18"/><path d="M114 88 q6 -5 12 0 M78 86 l-16 -4 M162 86 l16 -4"/></g>
+    <path d="M89 76 q8 -9 16 -4 M135 70 q9 -4 17 4" stroke="#4A2416" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M113 108 L127 108 L120 116 Z" fill="#7A3B2A" stroke="#4A2416" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M120 116 v5 M120 121 C114 128 106 126 103 120 M120 121 C127 129 138 126 142 116" stroke="#4A2416" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M90 112 L42 104 M90 118 L44 124 M150 112 L198 104 M150 118 L196 124" stroke="#4A2416" stroke-width="1.6" stroke-linecap="round"/>
+    <circle cx="100" cy="114" r="1.6" fill="#4A2416"/><circle cx="106" cy="118" r="1.6" fill="#4A2416"/><circle cx="140" cy="114" r="1.6" fill="#4A2416"/><circle cx="134" cy="118" r="1.6" fill="#4A2416"/>
+  </g>
+</svg>
+<textarea id="tx" rows="3" placeholder="Нажмите 🎤 на клавиатуре и говорите" autofocus></textarea>
+<div id="hint">Договорите и нажмите «Закрыть» вверху</div>
+<script>
+  const tx = document.getElementById("tx")
+  function start() { tx.focus() }
+  function val() { return tx.value }
+  setTimeout(start, 300)
+</script></body></html>`
 }
 
 async function voiceCommand(given) {
