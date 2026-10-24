@@ -59,8 +59,8 @@ r = post(Object.assign({}, body, { water: [body.water[0]], deleted: ["w2"] }))
 check("удалённое убирается", r.removed === 1 && ss.getSheetByName("Вода").getLastRow() === 2, r)
 check("итоги — формулы", Object.values(ss.getSheetByName("Итоги: деньги").formulas).length === 4 &&
   Object.values(ss.getSheetByName("Итоги: еда").formulas).every(f => f.startsWith("=QUERY(")))
-const an = ss.getSheetByName("Анализ еды")
-check("анализ еды — первым листом, номера листов в ответе", sheets[0] === an && r.sheets && r.sheets["Анализ еды"] === an.getSheetId(), r.sheets)
+const an = ss.getSheetByName("Еда и активность")
+check("анализ еды — первым листом, номера листов в ответе", sheets[0] === an && r.sheets && r.sheets["Еда и активность"] === an.getSheetId(), r.sheets)
 const cell = a1 => an.formulas[a1] ?? (an.cells[+a1.split(",")[0] - 1] || [])[+a1.split(",")[1] - 1]
 check("цели в B3–B5, сегодня и неделя — формулы", cell("3,2") === 2000 && cell("4,2") === 100 && cell("5,2") === 2 &&
   /SUMIFS\('Еда'!C2:C/.test(cell("8,2")) && cell("9,2") === "=B3-B8" && /ROWS\(UNIQUE/.test(cell("14,2")) && /B14/.test(cell("15,2")))

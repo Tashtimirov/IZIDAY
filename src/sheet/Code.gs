@@ -51,10 +51,10 @@ const SUMMARIES = [
      ["", "#,##0"]]] },
 ];
 
-// Лист «Анализ еды»: цели (можно менять), сегодня, неделя, рекомендации и самые калорийные блюда.
+// Лист «Еда и активность»: цели (можно менять), сегодня, неделя, рекомендации и самые калорийные блюда.
 // [подпись, значение или формула, формат]; строки с заголовком без значения — разделы. Ссылки B3–B5 — цели.
 const DAYS7 = "'Еда'!A2:A, \">=\"&(TODAY()-6)";
-const ANALYSIS = { name: "Анализ еды", rows: [
+const ANALYSIS = { name: "Еда и активность", rows: [
   ["Цели (можно менять)"],
   ["Калории в день", 2000, "#,##0"],
   ["Белок в день, г", 100, "0"],
@@ -127,7 +127,7 @@ function doPost(e) {
     }
     for (const h of body.health || []) upsertActivity_(ss.getSheetByName(ACTIVITY.name), h);
     if (Array.isArray(body.food)) dailyAdvice_();
-    // номера листов — чтобы виджет открывал нужный лист (калории → «Анализ еды»)
+    // номера листов — чтобы виджет открывал нужный лист (калории и активность → «Еда и активность»)
     const sheets = {};
     ss.getSheets().forEach(sh => { sheets[sh.getName()] = sh.getSheetId(); });
     return out_({ ok: true, added, removed, url: ss.getUrl(), sheets });
@@ -274,7 +274,7 @@ function ensureSheets_() {
       if (format) cell.setNumberFormat(format);
       if (!label) an.getRange(r, 2, 1, 4).merge().setWrap(true);   // рекомендации — во всю ширину
     });
-    an.getRange(1, 1).setValue("Анализ еды").setFontWeight("bold").setFontSize(14);
+    an.getRange(1, 1).setValue(ANALYSIS.name).setFontWeight("bold").setFontSize(14);
     an.getRange(3, 2, 3, 1).setBackground("#FFF6D6");   // цели можно менять
     an.setColumnWidth(1, 260); an.setColumnWidth(2, 140);
     an.getRange(1, 7).setValue(ANALYSIS.top[0]).setFontWeight("bold").setFontSize(12);

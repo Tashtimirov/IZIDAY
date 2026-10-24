@@ -253,7 +253,7 @@ async function syncSig() {
 // Ссылка на таблицу: из настроек (таблица сама сообщает её при первой записи), иначе встроенная
 const sheetUrlOf = st => st.sheetUrl || CONFIG.sheetUrl
 let SHEET_URL = CONFIG.sheetUrl   // для кнопки ▦ в виджете, уточняется при запуске
-let FOOD_URL = null               // лист «Анализ еды»: нажатие на калории в виджете
+let STATS_URL = null              // лист «Еда и активность»: нажатие на калории и сожжённые калории в виджете
 // Ссылка на лист таблицы по имени: номера листов (gid) таблица присылает при каждой выгрузке
 function sheetTabUrl(st, name) {
   const url = sheetUrlOf(st), gid = st.sheetGids && st.sheetGids[name]
@@ -1097,7 +1097,7 @@ function healthStrip(parent, d, entries) {
   const part = (icon, text, color, action) => {
     const p = s.addStack()
     p.centerAlignContent()
-    p.url = action === "food" && FOOD_URL ? FOOD_URL : `${RUN}?action=${action}`   // калории — анализ еды в таблице
+    p.url = (action === "food" || action === "health") && STATS_URL ? STATS_URL : `${RUN}?action=${action}`   // калории и активность — в таблицу
     symbol(p, icon, color, 12)
     p.addSpacer(4)
     const t = p.addText(text)
@@ -1126,7 +1126,7 @@ function healthPanel(w, d, small) {
   }
   const line = (parent, text) => { const t = parent.addText(text); t.font = Font.systemFont(11); t.textColor = C.sub; t.lineLimit = 1; t.minimumScaleFactor = 0.7 }
   const cols = w.addStack(); cols.topAlignContent()
-  const left = cols.addStack(); left.layoutVertically(); left.size = new Size(W, 0); left.url = FOOD_URL || `${RUN}?action=food`
+  const left = cols.addStack(); left.layoutVertically(); left.size = new Size(W, 0); left.url = STATS_URL || `${RUN}?action=food`
   sectionHeader(left, "fork.knife", "Еда", C.gold, d.food.length)
   left.addSpacer(3)
   big(left, nf(d.kcal), "ккал", C.text)
@@ -1139,7 +1139,7 @@ function healthPanel(w, d, small) {
   progressBar(wt, d.water / CONFIG.health.waterGoal, W - 6, C.notes)
   if (small) return
   cols.addSpacer(12)
-  const right = cols.addStack(); right.layoutVertically(); right.size = new Size(W, 0); right.url = `${RUN}?action=health`
+  const right = cols.addStack(); right.layoutVertically(); right.size = new Size(W, 0); right.url = STATS_URL || `${RUN}?action=health`
   sectionHeader(right, "applewatch", "Активность", C.expense)
   right.addSpacer(3)
   const a = d.act
@@ -3009,7 +3009,7 @@ if (args.shortcutParameter && !config.runsInWidget) {
 } else if (config.runsInWidget) {
   const st = await loadSettings()
   SHEET_URL = sheetUrlOf(st)
-  FOOD_URL = sheetTabUrl(st, "Анализ еды")
+  STATS_URL = sheetTabUrl(st, "Еда и активность") || SHEET_URL   // пока таблица не прислала номер листа — просто таблица
   Script.setWidget(await buildWidget(config.widgetFamily, args.widgetParameter))
   await autoSyncSheet()
 } else {
