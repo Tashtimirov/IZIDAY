@@ -2485,10 +2485,22 @@ async function dictate() {
     const wv = new WebView()
     await wv.loadHTML(catHTML())
     let open = true, text = ""
-    const shown = wv.present(false).then(() => { open = false })
+    const wait = ms => new Promise(r => Timer.schedule(ms, false, r))
+    // при запуске из виджета Scriptable ещё не готов показать окно: present() сразу завершается,
+    // и котик не появлялся до второго-третьего нажатия. Ждём и повторяем, если окно закрылось мгновенно.
+    await wait(400)
+    let shown = null
+    for (let i = 0; i < 4; i++) {
+      const t0 = Date.now()
+      open = true
+      shown = wv.present(false).then(() => { open = false })
+      await Promise.race([shown, wait(700)])
+      if (open || Date.now() - t0 > 650) break
+      await wait(500)
+    }
     while (open) {
       try { text = await wv.evaluateJavaScript("val()") } catch (e) {}
-      await Promise.race([shown, new Promise(r => Timer.schedule(300, false, r))])
+      await Promise.race([shown, wait(300)])
     }
     try { text = await wv.evaluateJavaScript("val()") } catch (e) {}
     return (text || "").trim()
