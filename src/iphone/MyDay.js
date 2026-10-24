@@ -2508,11 +2508,16 @@ async function dictate() {
       if (open || Date.now() - t0 > 650) break
       await wait(500)
     }
+    // «Отправить» на странице: забираем текст и идём дальше, окно с котиком остаётся под следующими окнами
     while (open) {
-      try { text = await wv.evaluateJavaScript("val()") } catch (e) {}
+      try {
+        const r = JSON.parse(await wv.evaluateJavaScript("val()"))
+        text = r.text
+        if (r.sent) return (text || "").trim()
+      } catch (e) {}
       await Promise.race([shown, wait(300)])
     }
-    try { text = await wv.evaluateJavaScript("val()") } catch (e) {}
+    try { text = JSON.parse(await wv.evaluateJavaScript("val()")).text } catch (e) {}
     return (text || "").trim()
   } catch (e) {}
   try { return (await Dictation.start("ru-RU")) || "" } catch (e) { return "" }
@@ -2528,6 +2533,9 @@ function catHTML() {
   svg { height: 34vh; max-width: 90vw; overflow: visible }
   #tx { margin-top: 14px; width: calc(100vw - 40px); box-sizing: border-box; padding: 12px 14px; border-radius: 14px;
     border: 2px solid #D97757; background: transparent; color: inherit; font: 19px -apple-system, sans-serif; resize: none; outline: none }
+  #go { margin-top: 12px; width: calc(100vw - 40px); padding: 13px; border: 0; border-radius: 14px;
+    background: #D97757; color: #fff; font: 600 18px -apple-system, sans-serif }
+  #go:disabled { opacity: .7 }
   .hips  { transform-origin: 120px 230px; animation: hips .9s ease-in-out infinite alternate }
   .upper { transform-origin: 120px 240px; animation: upper .9s ease-in-out infinite alternate }
   .tail  { transform-origin: 150px 244px; animation: tail .9s ease-in-out infinite alternate }
@@ -2593,12 +2601,19 @@ function catHTML() {
     <circle cx="100" cy="114" r="1.6" fill="#4A2416"/><circle cx="106" cy="118" r="1.6" fill="#4A2416"/><circle cx="140" cy="114" r="1.6" fill="#4A2416"/><circle cx="134" cy="118" r="1.6" fill="#4A2416"/>
   </g>
 </svg>
-<textarea id="tx" rows="3" placeholder="Нажмите 🎤 на клавиатуре и говорите" autofocus></textarea>
-<div id="hint">Договорите и нажмите «Закрыть» вверху</div>
+<textarea id="tx" rows="3" placeholder="Нажмите 🎤 на клавиатуре и говорите" enterkeyhint="send" autofocus></textarea>
+<button id="go">Отправить</button>
 <script>
-  const tx = document.getElementById("tx")
+  const tx = document.getElementById("tx"), go = document.getElementById("go")
+  let sent = false
   function start() { tx.focus() }
-  function val() { return tx.value }
+  function val() { return JSON.stringify({ text: tx.value, sent }) }
+  function send() {
+    if (!tx.value.trim()) return tx.focus()
+    sent = true; tx.blur(); go.textContent = "Выполняю…"; go.disabled = true
+  }
+  go.onclick = send
+  tx.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); send() } }
   setTimeout(start, 300)
 </script></body></html>`
 }
