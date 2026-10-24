@@ -146,6 +146,7 @@ function chipColor(calTitle) {
 }
 
 const RUN = URLScheme.forRunningScript()
+const WRUN = `${RUN}?from=widget`   // запуск из виджета: после операции — обратно на экран «Домой»
 const CUR_RE = new RegExp(CONFIG.currencyWords, "gi")   // название валюты в речи — вырезается
 
 // ───────────── Хранилище ─────────────
@@ -154,15 +155,25 @@ const fm = IN_ICLOUD ? FileManager.iCloud() : FileManager.local()
 const DIR = fm.joinPath(fm.documentsDirectory(), "my-day")
 if (!fm.fileExists(DIR)) fm.createDirectory(DIR, true)
 
-async function loadJSON(name) {
+// Файл читается с диска (и из iCloud) один раз за запуск, дальше — из памяти; запись обновляет память
+const TEXT = new Map()
+async function readText(name) {
+  if (TEXT.has(name)) return TEXT.get(name)
   const p = fm.joinPath(DIR, name)
-  if (!fm.fileExists(p)) return []
-  try {
+  let t = null
+  if (fm.fileExists(p)) try {
     if (fm.isFileStoredIniCloud(p) && !fm.isFileDownloaded(p)) await fm.downloadFileFromiCloud(p)
-    return JSON.parse(fm.readString(p)) || []
-  } catch (e) { return [] }
+    t = fm.readString(p)
+  } catch (e) {}
+  TEXT.set(name, t)
+  return t
 }
-function saveJSON(name, data) { fm.writeString(fm.joinPath(DIR, name), JSON.stringify(data)) }
+function writeText(name, t) { fm.writeString(fm.joinPath(DIR, name), t); TEXT.set(name, t) }
+
+async function loadJSON(name) {
+  try { return JSON.parse(await readText(name)) || [] } catch (e) { return [] }
+}
+function saveJSON(name, data) { writeText(name, JSON.stringify(data)) }
 
 // ── Синхронизация с Mac: каждая запись имеет id и время изменения u.
 // При сохранении свежая версия файла сливается с нашими изменениями по записям,
@@ -203,17 +214,14 @@ async function saveMoney(list, deletedIds = []) {
 
 // ── Google Таблица: общие настройки (iCloud, видны и Mac) и автозапись ──
 async function loadSettings() {
-  const p = fm.joinPath(DIR, "settings.json")
-  if (!fm.fileExists(p)) return {}
   try {
-    if (fm.isFileStoredIniCloud(p) && !fm.isFileDownloaded(p)) await fm.downloadFileFromiCloud(p)
-    const v = JSON.parse(fm.readString(p))
+    const v = JSON.parse(await readText("settings.json"))
     return v && typeof v === "object" && !Array.isArray(v) ? v : {}
   } catch (e) { return {} }
 }
 async function saveSettings(patch) {
   const cur = await loadSettings()
-  fm.writeString(fm.joinPath(DIR, "settings.json"), JSON.stringify(Object.assign(cur, patch)))
+  writeText("settings.json", JSON.stringify(Object.assign(cur, patch)))
 }
 
 // Отправляет в таблицу все операции и удалённые ID. Таблица сама пропускает те, что уже есть.
@@ -331,12 +339,11 @@ function reminderTime(r) {
 }
 
 // ───────────── Данные календаря ─────────────
-async function getEvents() {
+// Ближайшие встречи (до daysAhead) из общей выборки календаря
+function upcoming(all) {
   const now = new Date()
   const end = startOfDay(now); end.setDate(end.getDate() + CONFIG.daysAhead + 1)
-  let list = []
-  try { list = await CalendarEvent.between(startOfDay(now), end, []) } catch (e) {}
-  return list.filter(e => e.endDate > now).sort((a, b) => a.startDate - b.startDate)
+  return all.filter(e => e.startDate < end && e.endDate > now).sort((a, b) => a.startDate - b.startDate)
 }
 
 async function getReminders() {
@@ -372,9 +379,12 @@ function weekDays() {
   return Array.from({ length: count }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d })
 }
 
-async function getWeekEvents(days) {
+// Один запрос к календарю на неделю и ближайшие встречи: запросы к календарю — самое долгое при обновлении виджета
+async function getCalendar(days) {
+  const from = new Date(Math.min(days[0], startOfDay(new Date())))
   const end = new Date(days[days.length - 1]); end.setDate(end.getDate() + 1)
-  try { return await CalendarEvent.between(days[0], end, []) } catch (e) { return [] }
+  const near = startOfDay(new Date()); near.setDate(near.getDate() + CONFIG.daysAhead + 1)
+  try { return await CalendarEvent.between(from, new Date(Math.max(end, near)), []) } catch (e) { return [] }
 }
 
 // В календаре — только события, которые ещё не закончились. Напоминания живут в своём разделе.
@@ -702,7 +712,7 @@ function baseWidget() {
   g.locations = [0, 1]
   w.backgroundGradient = g
   w.setPadding(12, 12, 12, 12)
-  w.url = RUN
+  w.url = WRUN
   w.refreshAfterDate = new Date(Date.now() + 5 * 60 * 1000)   // чаще обновляться: прошедшие события и выполненные дела уходят быстрее
   return w
 }
@@ -758,7 +768,7 @@ function dateHeader(parent, size, withButtons) {
     b.cornerRadius = bs / 2
     b.backgroundColor = C.btnBg
     b.centerAlignContent()
-    let url = action === "sheet" ? SHEET_URL : `${RUN}?action=${action}`
+    let url = action === "sheet" ? SHEET_URL : `${WRUN}&action=${action}`
     if (action === "tracker") url = trackerLink()   // [личное]
     b.url = url
     b.addSpacer()
@@ -898,11 +908,8 @@ function parseHealth(param) {
   return Object.keys(out).length > 2 ? out : null
 }
 async function loadHealth(anyDay = false) {
-  const p = fm.joinPath(DIR, "health.json")
-  if (!fm.fileExists(p)) return null
   try {
-    if (fm.isFileStoredIniCloud(p) && !fm.isFileDownloaded(p)) await fm.downloadFileFromiCloud(p)
-    const h = JSON.parse(fm.readString(p))
+    const h = JSON.parse(await readText("health.json"))
     return h && (anyDay || h.day === dayKey(new Date())) ? h : null      // вчерашние цифры не показываем
   } catch (e) { return null }
 }
@@ -1114,7 +1121,7 @@ function healthStrip(parent, d, entries) {
   const part = (icon, text, color, action) => {
     const p = s.addStack()
     p.centerAlignContent()
-    p.url = (action === "food" || action === "health") && STATS_URL ? STATS_URL : `${RUN}?action=${action}`   // калории и активность — в таблицу
+    p.url = (action === "food" || action === "health") && STATS_URL ? STATS_URL : `${WRUN}&action=${action}`   // калории и активность — в таблицу
     symbol(p, icon, color, 12)
     p.addSpacer(4)
     const t = p.addText(text)
@@ -1143,20 +1150,20 @@ function healthPanel(w, d, small) {
   }
   const line = (parent, text) => { const t = parent.addText(text); t.font = Font.systemFont(11); t.textColor = C.sub; t.lineLimit = 1; t.minimumScaleFactor = 0.7 }
   const cols = w.addStack(); cols.topAlignContent()
-  const left = cols.addStack(); left.layoutVertically(); left.size = new Size(W, 0); left.url = STATS_URL || `${RUN}?action=food`
+  const left = cols.addStack(); left.layoutVertically(); left.size = new Size(W, 0); left.url = STATS_URL || `${WRUN}&action=food`
   sectionHeader(left, "fork.knife", "Еда", C.gold, d.food.length)
   left.addSpacer(3)
   big(left, nf(d.kcal), "ккал", C.text)
   if (!small) line(left, `Б ${nf(d.protein)} · Ж ${nf(d.fat)} · У ${nf(d.carbs)}`)
   left.addSpacer(6)
-  const wt = left.addStack(); wt.layoutVertically(); wt.url = `${RUN}?action=water`
+  const wt = left.addStack(); wt.layoutVertically(); wt.url = `${WRUN}&action=water`
   const wl = wt.addStack(); wl.centerAlignContent(); symbol(wl, "drop.fill", C.notes, 11); wl.addSpacer(4)
   const wv = wl.addText(`${liters(d.water)} из ${liters(CONFIG.health.waterGoal)}`); wv.font = Font.semiboldRoundedSystemFont(11.5); wv.textColor = C.text
   wt.addSpacer(3)
   progressBar(wt, d.water / CONFIG.health.waterGoal, W - 6, C.notes)
   if (small) return
   cols.addSpacer(12)
-  const right = cols.addStack(); right.layoutVertically(); right.size = new Size(W, 0); right.url = STATS_URL || `${RUN}?action=health`
+  const right = cols.addStack(); right.layoutVertically(); right.size = new Size(W, 0); right.url = STATS_URL || `${WRUN}&action=health`
   sectionHeader(right, "applewatch", "Активность", C.expense)
   right.addSpacer(3)
   const a = d.act
@@ -1171,18 +1178,21 @@ function healthPanel(w, d, small) {
 // ───────────── Сборка виджета по размеру ─────────────
 async function buildWidget(family, param) {
   const days = weekDays()
-  const [events, rems, notes, weekEvents, entries] = await Promise.all(
-    [getEvents(), getReminders(), loadNotes(), getWeekEvents(days), loadMoney()])
+  const lock = /^accessory/.test(family)   // экрану блокировки деньги и еда не нужны
+  const [calendar, rems, notes, entries, health] = await Promise.all(
+    [getCalendar(days), getReminders(), loadNotes(), lock ? [] : loadMoney(), lock ? null : dayHealth()])
+  const events = upcoming(calendar)
+  const weekEnd = new Date(days[days.length - 1]); weekEnd.setDate(weekEnd.getDate() + 1)
+  const weekEvents = calendar.filter(e => e.startDate < weekEnd && e.endDate > days[0])
   const weekMode = /нед|week/i.test(param || "")
   const healthMode = /здоров|еда|health/i.test(param || "")
-  const health = await dayHealth()
 
   // Экран блокировки
   if (family === "accessoryInline") {
     const w = new ListWidget()
     const e = events[0]
     w.addText(e ? `${eventTime(e)} · ${e.title}` : rems[0] ? `☐ ${rems[0].title}` : "День свободен")
-    w.url = RUN
+    w.url = WRUN
     return w
   }
   if (family === "accessoryCircular") {
@@ -1191,12 +1201,12 @@ async function buildWidget(family, param) {
     const n = w.addText(String(rems.length))
     n.font = Font.boldRoundedSystemFont(22); n.centerAlignText()
     const l = w.addText("дел"); l.font = Font.systemFont(10); l.centerAlignText()
-    w.url = `${RUN}?action=voice`
+    w.url = `${WRUN}&action=voice`
     return w
   }
   if (family === "accessoryRectangular") {
     const w = new ListWidget()
-    w.url = RUN
+    w.url = WRUN
     const lines = []
     if (events[0]) lines.push(`📅 ${eventTime(events[0])} ${events[0].title}`)
     rems.slice(0, events[0] ? 1 : 2).forEach(r => lines.push(`☐ ${r.title}`))
@@ -3106,6 +3116,7 @@ async function menu() {
     ["▦ Google Таблица", sheetMenu],
     ["☁️ Синхронизация с Mac", syncStatus],
     ["👀 Предпросмотр виджета", preview],
+    ["🏠 Возврат к виджету", homeSettings],
   ]
   if (!IN_ICLOUD) await info("⚠️ iCloud выключен для Scriptable",
     "Заметки и деньги не будут видны на Mac. Включите: Настройки → [ваше имя] → iCloud → iCloud Drive → Scriptable.")
@@ -3118,6 +3129,24 @@ async function menu() {
     if (i === -1) break
     await actions[i][1]()
   }
+}
+
+// ── Возврат на экран «Домой» после операции из виджета ──
+// Scriptable сам свернуться не умеет, поэтому в конце запускается Быстрая команда с одним действием «Перейти на экран «Домой»»
+const HOME_SHORTCUT = "Мой день - домой"
+const HOME_KEY = "myday.home"
+const homeOn = () => { try { return Keychain.contains(HOME_KEY) } catch (e) { return false } }
+const goHome = () => Safari.open(`shortcuts://run-shortcut?name=${encodeURIComponent(HOME_SHORTCUT)}`)
+async function homeSettings() {
+  const on = homeOn()
+  const i = await choose("🏠 Возврат к виджету", on ? ["Проверить", "Выключить"] : ["Команда создана — включить"],
+    (on ? "Включено: после операции из виджета iPhone возвращается на экран «Домой».\n\n" : "") +
+    `Один раз создайте Быструю команду «${HOME_SHORTCUT}» (название ровно так) с одним действием ` +
+    "«Перейти на экран «Домой»». Её будет запускать виджет после каждой операции.")
+  if (i === -1) return
+  if (on && i === 1) { Keychain.remove(HOME_KEY); return info("Возврат выключен") }
+  Keychain.set(HOME_KEY, "1")
+  goHome()   // проверка: должен открыться экран «Домой»
 }
 
 async function runAction(action, q) {
@@ -3142,11 +3171,15 @@ if (args.shortcutParameter && !config.runsInWidget) {
   Script.setWidget(await buildWidget(config.widgetFamily, args.widgetParameter))
   await autoSyncSheet()
 } else {
-  await scheduleMonthlyReport()
-  await autoSyncSheet()
+  // Сначала окно, потом всё остальное: раньше перед открытием ждали выгрузку в таблицу (до 30 с)
   const q = args.queryParameters || {}
-  if (q.action) await runAction(q.action, q)
-  else await menu()
-  await autoSyncSheet()   // еда, вода и деньги, добавленные сейчас, — сразу в таблицу
+  try {
+    if (q.action) await runAction(q.action, q)
+    else await menu()
+  } finally {
+    if (q.from === "widget" && homeOn()) goHome()
+  }
+  await autoSyncSheet()   // еда, вода и деньги, добавленные сейчас, — сразу в таблицу (не успеет — догонит виджет)
+  await scheduleMonthlyReport()
 }
 Script.complete()
