@@ -19,7 +19,7 @@ const CONFIG = {
   sheetSecret: "",
   sheetHook: "",
   // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
-  health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30 },
+  health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30, weight: 80 },   // weight, кг — для оценки тренировок без часов
   large:  { today: 3, rows: 6 },   // до 3 событий сегодня; вместе с напоминаниями — 6 строк
   medium: { events: 3, reminders: 3, weekChips: 2 },
   // Календари, которые можно назвать голосом («в рабочий календарь»). Пусто — всё идёт в основной.

@@ -15,7 +15,7 @@ class Request { constructor(url) { this.url = url } async loadJSON() { sent.push
 const g = { Color, DateFormatter, Request, URLScheme: { forRunningScript: () => "x" }, FileManager: { iCloud: () => fmo, local: () => fmo },
   Keychain: { contains: () => false }, Script: { setShortcutOutput() {} } }
 const app = await new Function(...Object.keys(g), "return (async()=>{" + src +
-  "; return { syncSheet, autoSyncSheet, saveSettings, loadSettings, addFood, addWater, receiveHealth, saveMoney, sheetUrlOf, sheetTabUrl, headerButtons, setUrl: u => { SHEET_URL = u } } })()")(...Object.values(g))
+  "; return { addWorkout, syncSheet, autoSyncSheet, saveSettings, loadSettings, addFood, addWater, receiveHealth, saveMoney, sheetUrlOf, sheetTabUrl, headerButtons, setUrl: u => { SHEET_URL = u } } })()")(...Object.values(g))
 let fail = 0
 const check = (name, ok, got) => { console.log(`${ok ? "✓" : "✗"} ${name}${ok ? "" : "  → " + JSON.stringify(got)}`); if (!ok) fail++ }
 
@@ -51,5 +51,10 @@ await app.autoSyncSheet()
 check("новая вода — догоняющая выгрузка", sent.length === n0 + 2 && sent[n0 + 1].water.length === 2, sent.length)
 app.setUrl(app.sheetUrlOf(st))
 check("кнопка ▦ появилась", app.headerButtons().some(x => x[2] === "sheet"))
+clock += 1000
+await app.addWorkout({ title: "Плавание 180 м", minutes: 8, kcal: 70, date: new Date(2026, 9, 21, 9).getTime() })
+await app.autoSyncSheet()
+const hw = sent[sent.length - 1].health.find(h => h.day === "2026-10-21")
+check("тренировка без часов уходит в таблицу днём активности", hw && hw.active === 70 && hw.exercise === 8, sent[sent.length - 1].health)
 console.log(fail ? `SHEET_FAIL ${fail}` : "SHEET_OK")
 process.exit(fail ? 1 : 0)

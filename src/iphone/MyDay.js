@@ -63,7 +63,7 @@ const CONFIG = {
   trackerUrl: "https://docs.google.com/spreadsheets/d/10ZbtTHqkdcKRVE8kzivCCRdjdKOGLF3azeM1-6xg8aw/edit#gid=0",
   trackerStart: "2026-10-01",    // дата во 2-й строке листа «Дни»
   // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
-  health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30 },
+  health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30, weight: 92 },   // weight, кг — для оценки тренировок без часов
   large:  { today: 3, rows: 6 },   // до 3 событий сегодня; вместе с напоминаниями — 6 строк
   medium: { events: 3, reminders: 3, weekChips: 2 },
   // Календари и списки напоминаний, которые можно назвать голосом.
@@ -260,7 +260,7 @@ const moneySig = all => `${all.length}:${all.reduce((m, x) => Math.max(m, x.u ||
 async function syncSig() {
   const h = await loadHealth(true)
   // «v2» — один раз выгрузить всё заново: старый скрипт таблицы еду, воду и шаги не принимал
-  return ["v2", moneySig(await rawMoney()), moneySig(await rawFood()), moneySig(await rawWater()), h ? h.updated : 0].join("|")
+  return ["v2", moneySig(await rawMoney()), moneySig(await rawFood()), moneySig(await rawWater()), moneySig(await rawWorkouts()), h ? h.updated : 0].join("|")
 }
 // Ссылка на таблицу: из настроек (таблица сама сообщает её при первой записи), иначе встроенная
 const sheetUrlOf = st => st.sheetUrl || CONFIG.sheetUrl
@@ -856,12 +856,32 @@ const nf = n => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")
 const liters = ml => `${(Math.round(ml / 50) / 20).toString().replace(".", ",")} л`
 const rawFood = async () => withIds(await loadJSON("food.json"), "m")
 const rawWater = async () => withIds(await loadJSON("water.json"), "w")
+// Тренировки со слов (часы забыл): { title, minutes, kcal, date } — прибавляются к активности дня
+const rawWorkouts = async () => withIds(await loadJSON("workouts.json"), "t")
 const todayOnly = list => visible(list).filter(x => sameDay(new Date(x.date), new Date())).sort((a, b) => a.date - b.date)
 const loadFoodToday = async () => todayOnly(await rawFood())
 const loadWaterToday = async () => todayOnly(await rawWater())
 const keepDays = (list, n) => list.filter(x => (x.date || 0) > Date.now() - n * 864e5 || x.deleted)
 async function saveFood(list, deletedIds = []) { saveJSON("food.json", keepDays(mergeSynced(await rawFood(), list, deletedIds), 120)) }
 async function saveWater(list, deletedIds = []) { saveJSON("water.json", keepDays(mergeSynced(await rawWater(), list, deletedIds), 60)) }
+async function saveWorkouts(list, deletedIds = []) { saveJSON("workouts.json", keepDays(mergeSynced(await rawWorkouts(), list, deletedIds), 400)) }
+async function addWorkout(w) {
+  const now = Date.now()
+  const x = Object.assign({ id: `t${now}-${Math.random().toString(36).slice(2, 6)}`, date: now, u: now }, w)
+  x.kcal = Math.round(+x.kcal || 0); x.minutes = Math.round(+x.minutes || 0)
+  await saveWorkouts([x])
+  return x
+}
+// Активность дня = данные часов + тренировки со слов (сожжённые ккал и минуты упражнений складываются)
+function withWorkouts(act, day, workouts) {
+  const ws = workouts.filter(w => dayKey(new Date(w.date)) === day)
+  if (!ws.length) return act
+  const out = Object.assign({ day, updated: 0 }, act || {})
+  out.active = (out.active || 0) + ws.reduce((s, w) => s + (w.kcal || 0), 0)
+  out.exercise = (out.exercise || 0) + ws.reduce((s, w) => s + (w.minutes || 0), 0)
+  out.updated = Math.max(out.updated || 0, ...ws.map(w => w.u || w.date || 0))
+  return out
+}
 
 async function addFood(m) {
   const now = Date.now()
@@ -924,15 +944,16 @@ async function saveHealthDay(h) {
   saveJSON("health-days.json", log.slice(-400))
 }
 async function healthDays() {
-  const log = await loadJSON("health-days.json"), cur = await loadHealth(true)
+  const log = await loadJSON("health-days.json"), cur = await loadHealth(true), ws = visible(await rawWorkouts())
   if (cur && !log.some(x => x.day === cur.day)) log.push(cur)
-  return log
+  const days = new Set([...log.map(x => x.day), ...ws.map(w => dayKey(new Date(w.date)))])
+  return [...days].sort().map(day => withWorkouts(log.find(x => x.day === day), day, ws))
 }
 async function dayHealth() {
-  const [food, water, act] = await Promise.all([loadFoodToday(), loadWaterToday(), loadHealth()])
+  const [food, water, watch, workouts] = await Promise.all([loadFoodToday(), loadWaterToday(), loadHealth(), rawWorkouts().then(todayOnly)])
   const sum = k => food.reduce((s, m) => s + (+m[k] || 0), 0)
   return { food, kcal: sum("kcal"), protein: sum("protein"), fat: sum("fat"), carbs: sum("carbs"),
-    water: water.reduce((s, w) => s + (w.ml || 0), 0), waterList: water, act }
+    water: water.reduce((s, w) => s + (w.ml || 0), 0), waterList: water, workouts, act: withWorkouts(watch, dayKey(new Date()), workouts) }
 }
 
 // ── Оценка калорий по фото через Claude ──
@@ -1068,15 +1089,25 @@ async function healthMenu() {
   while (true) {
     const d = await dayHealth()
     const food = d.food.length ? d.food.map(m => `${TIME.string(new Date(m.date))} ${m.title} — ${nf(m.kcal)}`).join("\n") : "Пока ничего не записано"
+    const wk = d.workouts.length ? "\n\n🏋️ Без часов: " + d.workouts.map(w => `${w.title} — ${nf(w.kcal)} ккал${w.minutes ? `, ${w.minutes} мин` : ""}`).join("; ") : ""
     const msg = `🍽 Съедено ${nf(d.kcal)} ккал · Б ${nf(d.protein)} Ж ${nf(d.fat)} У ${nf(d.carbs)}\n${food}\n\n` +
-      `💧 Вода ${liters(d.water)} из ${liters(CONFIG.health.waterGoal)}\n\n${actLines(d.act)}`
-    const i = await choose("Еда и активность", ["📷 Добавить еду", "💧 Вода", "🗑 Удалить приём пищи", "⌚ Обновить данные с часов", "ℹ️ Как подключить часы"], msg)
+      `💧 Вода ${liters(d.water)} из ${liters(CONFIG.health.waterGoal)}\n\n${actLines(d.act)}${wk}`
+    const i = await choose("Еда и активность", ["📷 Добавить еду", "💧 Вода", "🗑 Удалить приём пищи", "⌚ Обновить данные с часов", "ℹ️ Как подключить часы", "🏋️ Тренировка без часов", "🗑 Удалить тренировку"], msg)
     if (i === 0) await foodPhoto()
     else if (i === 1) await waterMenu()
     else if (i === 2) {
       if (!d.food.length) continue
       const j = await choose("Удалить", d.food.map(m => `${TIME.string(new Date(m.date))} ${m.title} — ${nf(m.kcal)} ккал`))
       if (j >= 0) await saveFood([], [d.food[j].id])
+    }
+    else if (i === 5) {
+      const t = await ask("Тренировка без часов", "Например: проплыл 10 раз бассейн 18 м", "Записать")
+      if (t) await voiceCommand(`Тренировка без часов, запиши: ${t}`)
+    }
+    else if (i === 6) {
+      if (!d.workouts.length) continue
+      const j = await choose("Удалить тренировку", d.workouts.map(w => `${TIME.string(new Date(w.date))} ${w.title} — ${nf(w.kcal)} ккал`))
+      if (j >= 0) await saveWorkouts([], [d.workouts[j].id])
     }
     else if (i === 3) return refreshHealth()
     else if (i === 4) await info("Подключение Apple Watch",
@@ -1130,15 +1161,17 @@ function healthStrip(parent, d, entries) {
     const t = p.addText(text)
     t.font = Font.semiboldRoundedSystemFont(12); t.textColor = C.text; t.lineLimit = 1; t.minimumScaleFactor = 0.7
   }
-  part("fork.knife", `${nf(d.kcal)} ккал`, C.gold, "food")
+  const a = d.act
+  // калории одной частью: съедено / сожжено (часы + тренировки со слов)
+  part("flame.fill", `${nf(d.kcal)} / ${a && a.active != null ? nf(a.active) : "—"}${entries ? "" : " ккал"}`, C.gold, "food")
   s.addSpacer()
   part("drop.fill", `${liters(d.water)} / ${liters(CONFIG.health.waterGoal)}`, C.notes, "water")
   s.addSpacer()
-  const a = d.act   // в большом виджете места меньше: сожжённые ккал без подписи (огонёк) и шаги
-  part(a && a.active != null ? "flame.fill" : "applewatch", a ? (entries ? `${nf(a.active || 0)} · ${nf(a.steps || 0)} ш.` : `${nf(a.active || 0)} ккал · ${nf(a.steps || 0)} ш.`) : "часы", C.expense, "health")
-  if (entries) {   // большой виджет: расходы за месяц, нажатие — отчёт
+  part(a && a.steps != null ? "figure.walk" : "applewatch", a && a.steps != null ? `${nf(a.steps)} ш.` : "часы", C.expense, "health")
+  if (entries) {   // большой виджет: доходы и расходы за месяц, нажатие — отчёт
+    const t = monthTotals(entries, monthKey(new Date()))
     s.addSpacer()
-    part(CONFIG.currencyIcon, `−${moneyShort(monthTotals(entries, monthKey(new Date())).expense)}`, C.expense, "report")
+    part(CONFIG.currencyIcon, `+${moneyShort(t.income)} −${moneyShort(t.expense)}`, C.income, "report")
   }
 }
 
@@ -2753,7 +2786,10 @@ const AGENT_TOOLS = [
       protein: { type: "number" }, fat: { type: "number" }, carbs: { type: "number" } }, required: ["title", "kcal"] } },
   { name: "add_water", description: "Записать выпитую воду. Стакан — 250 мл.",
     input_schema: { type: "object", properties: { ml: { type: "number" } }, required: ["ml"] } },
-  { name: "get_health", description: "Еда, вода и активность с Apple Watch за сегодня.", input_schema: { type: "object", properties: {} } },
+  { name: "add_workout", description: "Записать тренировку без часов (пользователь забыл часы и рассказывает сам). Оцени длительность и сожжённые калории сам по MET и весу пользователя из системной подсказки: например, бассейн 18 м × 10 раз = 180 м ≈ 6–8 минут спокойного плавания.",
+    input_schema: { type: "object", properties: { title: { type: "string", description: "Коротко: «Плавание 180 м»" }, minutes: { type: "number" }, kcal: { type: "number" },
+      date: { type: "string", description: "YYYY-MM-DDTHH:MM, если тренировка была не сейчас" } }, required: ["title", "minutes", "kcal"] } },
+  { name: "get_health", description: "Еда, вода и активность с Apple Watch за сегодня (вместе с тренировками без часов).", input_schema: { type: "object", properties: {} } },
   { name: "get_events", description: "Найти события календаря в диапазоне дат. Для поиска по названию передайте query (ищет по подстроке без учёта регистра).",
     input_schema: { type: "object", properties: {
       start: { type: "string", description: "Начало диапазона, YYYY-MM-DDTHH:MM (местное время)" },
@@ -2956,6 +2992,12 @@ async function runTool(name, x) {
       if (!(x.ml > 0)) return { error: "объём должен быть больше нуля" }
       await addWater(x.ml)
       return { ok: true }
+    case "add_workout": {
+      if (!(x.kcal > 0)) return { error: "калории должны быть больше нуля" }
+      const when = x.date && !isNaN(new Date(x.date)) ? new Date(x.date).getTime() : Date.now()
+      const w = await addWorkout({ title: x.title, minutes: x.minutes, kcal: x.kcal, date: when })
+      return { ok: true, id: w.id }
+    }
     case "get_health": {
       const d = await dayHealth()
       return { eaten_kcal: d.kcal, protein: d.protein, fat: d.fat, carbs: d.carbs, meals: d.food.map(m => ({ time: TIME.string(new Date(m.date)), title: m.title, kcal: m.kcal })),
@@ -2995,6 +3037,7 @@ function agentSystem() {
 ${CONFIG.calendars.length ? `- Календари по словам пользователя: ${CONFIG.calendars.map(c => `«${c.calendar}» (список напоминаний «${c.list}»)`).join(", ")}.${CONFIG.calendars.filter(c => c.hint).map(c => ` ${c.hint} — «${c.calendar}».`).join("")} Если календарь не назван, не указывай его.
 ` : ""}- Деньги — ${CONFIG.currencyIn}. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.
 - «Съел», «выпил стакан воды» — add_food и add_water. На вопросы о калориях, шагах и воде смотри get_health.
+- Тренировка без часов («проплыл бассейн 10 раз», «час падела, часы забыл») — add_workout. Вес пользователя ${CONFIG.health.weight || 80} кг. Скажи, сколько ккал и минут записал.
 - Если пользователь спрашивает (что у меня завтра, сколько потратил), посмотри данные и ответь.
 - Удаление пользователь подтверждает сам — не спрашивай отдельно «точно удалить?».
 - В конце ответь по-русски коротко, 1–4 строки: что сделано (с днём и временем) или ответ на вопрос. Без Markdown, без заголовков.`
