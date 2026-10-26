@@ -2882,9 +2882,16 @@ async function runTool(name, x) {
       if (!e) return { error: "событие не найдено" }
       const before = evOut(e)
       const dur = e.endDate - e.startDate
+      const s = x.start ? parseIsoLocal(x.start) : null, en = x.end ? parseIsoLocal(x.end) : null
+      const newStart = s || e.startDate, newEnd = en || (s ? new Date(s.getTime() + dur) : e.endDate)
+      // перенос подтверждает пользователь: время могли попросить сменить не он, а текст в чужом приглашении
+      if (newStart.getTime() !== e.startDate.getTime() || newEnd.getTime() !== e.endDate.getTime()) {
+        const what = `${e.title}\n${cap(WHEN.string(e.startDate))} → ${cap(WHEN.string(newStart))}`
+        if (!(await confirmAction("Перенести событие?", what))) return { cancelled: "пользователь отказался переносить" }
+      }
       if (x.title) e.title = x.title
-      if (x.start) { const s = parseIsoLocal(x.start); if (s) { e.startDate = s; if (!x.end) e.endDate = new Date(s.getTime() + dur) } }
-      if (x.end) { const en = parseIsoLocal(x.end); if (en) e.endDate = en }
+      e.startDate = newStart
+      e.endDate = newEnd
       if (x.location !== undefined) e.location = x.location
       if (x.notes !== undefined) e.notes = x.notes
       e.save()
@@ -3039,7 +3046,7 @@ ${CONFIG.calendars.length ? `- Календари по словам пользо
 - «Съел», «выпил стакан воды» — add_food и add_water. На вопросы о калориях, шагах и воде смотри get_health.
 - Тренировка без часов («проплыл бассейн 10 раз», «час падела, часы забыл») — add_workout. Вес пользователя ${CONFIG.health.weight || 80} кг. Скажи, сколько ккал и минут записал.
 - Если пользователь спрашивает (что у меня завтра, сколько потратил), посмотри данные и ответь.
-- Удаление пользователь подтверждает сам — не спрашивай отдельно «точно удалить?».
+- Удаление и перенос пользователь подтверждает сам — не спрашивай отдельно «точно удалить?» или «точно перенести?».
 - В конце ответь по-русски коротко, 1–4 строки: что сделано (с днём и временем) или ответ на вопрос. Без Markdown, без заголовков.`
 }
 

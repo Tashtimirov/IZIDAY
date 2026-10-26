@@ -30,7 +30,7 @@ class Alert { constructor() { this.actions = [] } addAction(a) { this.actions.pu
 const g = { Color, DateFormatter, CalendarEvent, Reminder, Alert, URLScheme: { forRunningScript: () => "x" },
   FileManager: { iCloud: () => fmo, local: () => fmo }, Keychain: { contains: () => false }, Request: class { async loadJSON() { return { ok: true } } },
   DatePicker: class { async pickDateAndTime() { return at(23, 21) } } }
-const app = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { voiceCommand } })()")(...Object.values(g))
+const app = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { voiceCommand, runTool } })()")(...Object.values(g))
 const show = id => store.filter(e => e.identifier === id).map(e => `${e.startDate.getDate()}.10 ${z(e.startDate.getHours())}:${z(e.startDate.getMinutes())}–${z(e.endDate.getHours())}:${z(e.endDate.getMinutes())}`).join(", ")
 let ok = true
 const check = (cond, msg) => { console.log(cond ? "   ✓" : "   ✗", msg); ok = ok && cond }
@@ -79,5 +79,17 @@ check(shown.some(x => /Транспорт/.test(x) && /370/.test(x)), "пока�
 console.log("🎤 когда у меня йога")
 await app.voiceCommand("когда у меня йога")
 check(shown.some(x => /^Йога/.test(x) && /07:30/.test(x)), "показано ближайшее занятие")
+
+console.log("🧠 ассистент переносит созвон: сначала спрашивает")
+const callBefore = show("CALL")
+answers.length = 0; answers.push("Нет")
+let tr = await app.runTool("update_event", { id: "CALL", occurrence_start: "2026-10-23T10:00", start: "2026-10-23T15:00" })
+check(tr.cancelled && show("CALL") === callBefore && /^Перенести событие\?/.test(shown[shown.length - 1]), "отказ — событие на месте: " + show("CALL"))
+answers.push("Да")
+tr = await app.runTool("update_event", { id: "CALL", occurrence_start: "2026-10-23T10:00", start: "2026-10-23T15:00" })
+check(tr.ok && show("CALL") === "23.10 15:00–17:00", "согласие — перенесено: " + show("CALL"))
+const n0 = shown.length
+tr = await app.runTool("update_event", { id: "CALL", occurrence_start: "2026-10-23T15:00", title: "Созвон с Кириллом (Zoom)" })
+check(tr.ok && shown.length === n0, "смена названия без переноса — без вопроса")
 
 console.log(ok ? "\nEXEC_OK" : "\nEXEC_FAIL")

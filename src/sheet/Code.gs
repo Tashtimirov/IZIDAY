@@ -12,9 +12,9 @@ const DT = "dd.MM.yyyy HH:mm";
 // Листы с записями: имя, заголовки (последний столбец — ID), как запись из виджета превращается в строку
 const LISTS = {
   money: { name: "Операции", head: ["Дата", "Тип", "Сумма", "Способ", "Категория", "Комментарий", "ID"], formats: [DT, "", "#,##0.##"],
-           row: x => [new Date(x.date), TYPE[x.type] || x.type, Number(x.amount) || 0, METHOD[x.method] || x.method || "", x.category || "", x.comment || ""] },
+           row: x => [new Date(x.date), txt_(TYPE[x.type] || x.type), Number(x.amount) || 0, txt_(METHOD[x.method] || x.method), txt_(x.category), txt_(x.comment)] },
   food:  { name: "Еда", head: ["Дата", "Блюдо", "Ккал", "Белки, г", "Жиры, г", "Углеводы, г", "ID"], formats: [DT, "", "0", "0", "0", "0"],
-           row: x => [new Date(x.date), x.title || "", num_(x.kcal), num_(x.protein), num_(x.fat), num_(x.carbs)] },
+           row: x => [new Date(x.date), txt_(x.title), num_(x.kcal), num_(x.protein), num_(x.fat), num_(x.carbs)] },
   water: { name: "Вода", head: ["Дата", "Мл", "ID"], formats: [DT, "0"],
            row: x => [new Date(x.date), num_(x.ml)] },
 };
@@ -100,10 +100,10 @@ const ANALYSIS = { name: "Еда и активность", rows: [
 // rows[i] — строка i + 2 (в строке 1 заголовок листа)
 const ADVICE_ROW = ANALYSIS.rows.findIndex(r => r[0] === "Совет Claude") + 3;   // строка с текстом совета
 
+// Без ключа — только «работает»: адрес таблицы отдаёт doPost тому, кто знает ключ
 function doGet() {
   ensureSheets_();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  return out_({ ok: true, sheet: ss.getName(), url: ss.getUrl() });
+  return out_({ ok: true });
 }
 
 function doPost(e) {
@@ -326,6 +326,10 @@ function lastDataRow_(sh, idCol) {
   for (let i = n - 1; i >= 0; i--) if (a[i][0] !== "" || g[i][0] !== "") return i + 1;
   return 1;
 }
+
+// Текст из виджета — всегда текст: «=…», «+…», «-…», «@…» таблица иначе выполнит как формулу
+// (например, IMAGE или IMPORTXML, которые отправят данные таблицы на чужой сайт)
+function txt_(v) { const s = String(v == null ? "" : v); return /^[=+\-@]/.test(s) ? "'" + s : s; }
 
 function num_(v) { const n = Number(v); return isFinite(n) ? Math.round(n * 10) / 10 : 0; }
 
