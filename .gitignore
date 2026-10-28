@@ -2,3 +2,5 @@ secrets.json
 dist/
 node_modules/
 .DS_Store
+android.keystore
+build/
