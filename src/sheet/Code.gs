@@ -8,6 +8,9 @@ const SECRET = "__SHEET_SECRET__";
 const TYPE = { expense: "Расход", income: "Доход" };
 const METHOD = { cash: "Наличные", transfer: "Перевод" };
 const DT = "dd.MM.yyyy HH:mm";
+// Расходы по карте из писем банка. Переводы получателям, в чьём имени есть одно из этих слов
+// (свои счета, кошельки и семья), расходом не считаются. Через запятую, например "IVANOV, PETROVA".
+const CARD_SKIP = "__CARD_SKIP__";
 
 // Листы с записями: имя, заголовки (последний столбец — ID), как запись из виджета превращается в строку
 const LISTS = {
@@ -126,11 +129,17 @@ function doPost(e) {
       added += r.added; removed += r.removed;
     }
     for (const h of body.health || []) upsertActivity_(ss.getSheetByName(ACTIVITY.name), h);
+    // расходы по карте: свежие письма банка → лист «Карта», виджету — те, которых у него ещё нет
+    let card;
+    if (PropertiesService.getScriptProperties().getProperty("cardOn")) {
+      try { importBank_(); } catch (err) {}
+      if (Array.isArray(body.entries)) card = cardForWidget_(body.entries, deleted);
+    }
     if (Array.isArray(body.food)) dailyAdvice_();
     // номера листов — чтобы виджет открывал нужный лист (калории и активность → «Еда и активность»)
     const sheets = {};
     ss.getSheets().forEach(sh => { sheets[sh.getName()] = sh.getSheetId(); });
-    return out_({ ok: true, added, removed, url: ss.getUrl(), sheets });
+    return out_(Object.assign({ ok: true, added, removed, url: ss.getUrl(), sheets }, card ? { card } : {}));
   } finally {
     lock.releaseLock();
   }
@@ -138,10 +147,116 @@ function doPost(e) {
 
 // Меню в таблице: создать листы вручную, не дожидаясь первой записи из виджета
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu("Мой день").addItem("Создать листы", "setup").addItem("Совет по еде", "advice").addToUi();
+  SpreadsheetApp.getUi().createMenu("Мой день").addItem("Создать листы", "setup").addItem("Совет по еде", "advice")
+    .addItem("Расходы по карте: включить", "cardOn").addItem("Расходы по карте: выключить", "cardOff").addToUi();
 }
 function setup() { ensureSheets_(); }
 function advice() { ensureSheets_(); writeAdvice_(); }
+
+// ── Расходы по карте ──
+// Скрипт раз в 15 минут читает письма Bangkok Bank о платежах и складывает их на лист «Карта».
+// Виджет при выгрузке получает платежи, которых у него ещё нет, и добавляет их расходом («Перевод»);
+// если такая же сумма уже записана вручную, виджет спрашивает. Принятые виджетом попадают в «Операции» как обычно.
+const CARD = { name: "Карта", head: ["Дата", "Сумма", "Кому", "Вид", "Статус", "ID"], formats: [DT, "#,##0.##"],
+  query: "from:bangkokbank.com", days: 60 };
+const CARD_NEW = "ждёт виджет", CARD_ADDED = "в расходах", CARD_DUP = "дубль, не добавлено", CARD_OWN = "свой счёт, не расход";
+
+function cardOn() {
+  const props = PropertiesService.getScriptProperties();
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === "importBank").forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger("importBank").timeBased().everyMinutes(15).create();
+  // письма с начала сегодняшнего дня: то, что было раньше, вы, скорее всего, уже записали
+  if (!props.getProperty("cardSince")) { const d = new Date(); d.setHours(0, 0, 0, 0); props.setProperty("cardSince", String(d.getTime())); }
+  props.setProperty("cardOn", "1");
+  const n = importBank();
+  try { SpreadsheetApp.getUi().alert(`Расходы по карте включены. Новых платежей: ${n}. Дальше письма банка проверяются каждые 15 минут.`); } catch (e) {}
+}
+function cardOff() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === "importBank").forEach(t => ScriptApp.deleteTrigger(t));
+  PropertiesService.getScriptProperties().deleteProperty("cardOn");
+}
+function importBank() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try { ensureSheets_(); return importBank_(); } finally { lock.releaseLock(); }
+}
+
+// Новые письма банка → строки листа «Карта». Повторно одно письмо не добавляется (ID — номер письма).
+function importBank_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CARD.name) || makeCardSheet_(ss);
+  const props = PropertiesService.getScriptProperties();
+  const since = Number(props.getProperty("cardSince") || 0);
+  const idCol = CARD.head.length;
+  const have = new Set(readIds_(sh, idCol).filter(String));
+  const skip = CARD_SKIP.indexOf("__") === 0 ? [] : CARD_SKIP.split(",").map(x => x.trim().toUpperCase()).filter(String);
+  const rows = [];
+  const threads = GmailApp.search(`${CARD.query} newer_than:${CARD.days}d`, 0, 100);
+  for (const th of threads) for (const m of th.getMessages()) {
+    const id = "bbl-" + m.getId();
+    if (have.has(id) || m.getDate().getTime() < since) continue;
+    const p = parseBankMail_(m.getSubject(), m.getBody() || m.getPlainBody());
+    if (!p) continue;
+    const own = skip.some(w => p.to.toUpperCase().indexOf(w) >= 0);
+    rows.push([m.getDate(), p.amount, txt_(p.to), p.kind, own ? CARD_OWN : CARD_NEW, id]);
+    have.add(id);
+  }
+  if (rows.length) {
+    rows.sort((a, b) => a[0] - b[0]);
+    const start = lastDataRow_(sh, idCol) + 1;
+    sh.getRange(start, 1, rows.length, idCol).setValues(rows);
+  }
+  return rows.filter(r => r[4] === CARD_NEW).length;
+}
+
+function makeCardSheet_(ss) {
+  const sh = ss.insertSheet(CARD.name);
+  sh.getRange(1, 1, 1, CARD.head.length).setValues([CARD.head]).setFontWeight("bold").setBackground("#0B4A33").setFontColor("#F0CC60");
+  sh.setFrozenRows(1);
+  CARD.formats.forEach((f, i) => { if (f) sh.getRange(2, i + 1, sh.getMaxRows() - 1, 1).setNumberFormat(f); });
+  sh.hideColumns(CARD.head.length);
+  return sh;
+}
+
+// Письмо Bangkok Bank → { kind, to, amount } или null (вход в приложение, зачисления и прочее — не платёж).
+// Берётся английская половина письма: «Amount (Baht) 70.00», «Payee name …», «Account name …».
+function parseBankMail_(subject, body) {
+  const kinds = [[/Payments? confirmation/i, "Оплата"], [/PromptPay Top ?Up/i, "Пополнение кошелька"],
+    [/transfer.*PromptPay|PromptPay.*transfer/i, "Перевод PromptPay"], [/Funds transfer/i, "Перевод на счёт"], [/Bill payment/i, "Оплата счёта"]];
+  const k = kinds.find(([re]) => re.test(subject || ""));
+  if (!k) return null;
+  const text = String(body || "").replace(/<(style|script)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&#39;|&rsquo;/g, "'").replace(/[|*]/g, " ").replace(/\s+/g, " ");
+  const en = text.slice(Math.max(0, text.search(/Automatic e-mail/i)));
+  const num = re => { const m = en.match(re); return m ? parseFloat(m[1].replace(/,/g, "")) : 0; };
+  const amount = num(/Amount \(Baht\)\s*([\d,]+(?:\.\d+)?)/i) + num(/Fee \(Baht\)\s*([\d,]+(?:\.\d+)?)/i);
+  if (!(amount > 0)) return null;
+  const pick = re => { const m = en.match(re); return m ? m[1].trim() : ""; };
+  const to = pick(/Payee name\s+(.+?)\s+From:/i) || pick(/e-wallet owner\s+(.+?)\s+(?:e-wallet provider|From:)/i)
+    || pick(/Account name\s+(.+?)\s+(?:Amount|Bank\b)/i) || pick(/(?:Biller|Company) name\s+(.+?)\s+(?:From:|Account)/i);
+  const wallet = pick(/e-wallet provider name\s+(.+?)\s+From:/i);
+  return { kind: k[1], to: wallet ? `${to} (${wallet})` : to, amount: Math.round(amount * 100) / 100 };
+}
+
+// Платежи «ждёт виджет», которых у виджета нет. Статусы на листе обновляются по тому, что виджет прислал.
+function cardForWidget_(entries, deleted) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CARD.name);
+  if (!sh) return [];
+  const idCol = CARD.head.length, last = lastDataRow_(sh, idCol);
+  if (last < 2) return [];
+  const mine = new Set(entries.filter(x => x && x.id).map(x => x.id));
+  const rows = sh.getRange(2, 1, last - 1, idCol).getValues();
+  const out = [];
+  rows.forEach((r, i) => {
+    const id = String(r[idCol - 1] || "");
+    if (!id || r[4] === CARD_OWN) return;
+    const status = mine.has(id) ? CARD_ADDED : deleted.has(id) ? CARD_DUP : r[4] === CARD_NEW ? CARD_NEW : r[4];
+    if (status !== r[4]) sh.getRange(i + 2, 5).setValue(status);
+    if (status === CARD_NEW && r[0] instanceof Date)
+      out.push({ id, date: r[0].getTime(), amount: Number(r[1]) || 0, to: String(r[2] || "").replace(/^'/, ""), kind: String(r[3] || "") });
+  });
+  return out;
+}
 
 // Совет Claude по еде: раз в день, при первой выгрузке после 20:00, если в свойствах скрипта есть ANTHROPIC_KEY
 function dailyAdvice_() {

@@ -247,7 +247,10 @@ async function syncSheet(silent) {
     if (res && res.ok) await saveSettings(Object.assign({ sheetSyncedAt: Date.now(), sheetSig: moneySig(all) },
       res.oldScript ? {} : { sheetSigAll: await syncSig() },
       res.sheets ? { sheetGids: res.sheets } : {},
-      res.url && !st.sheetUrl && !CONFIG.sheetUrl ? { sheetUrl: res.url } : {}))
+      res.url && !st.sheetUrl && !CONFIG.sheetUrl ? { sheetUrl: res.url } : {},
+      { cardOn: Array.isArray(res.card) }))
+    // после отпечатка: новые расходы по карте не считаются выгруженными и уйдут в «Операции» следующей выгрузкой
+    if (res && res.ok && Array.isArray(res.card)) res.cardTaken = await takeCard(res.card)
     return res
   } catch (e) { return { ok: false, error: String(e) } }
 }
@@ -285,7 +288,9 @@ async function autoSyncSheet() {
   try {
     const st = await loadSettings()
     if (!sheetHookOf(st)) return
-    if (st.sheetSigAll === await syncSig()) return
+    // расходы по карте появляются в таблице сами — при включённом импорте спрашиваем таблицу и без своих изменений
+    const cardDue = st.cardOn && Date.now() - (st.sheetSyncedAt || 0) > 15 * 60 * 1000
+    if (st.sheetSigAll === await syncSig() && !cardDue) return
     await syncSheet(true)
   } catch (e) {}
 }
@@ -1617,6 +1622,102 @@ async function manageMoney() {
     const c = await choose(labels[i], ["🗑 Удалить"], `${METHOD[e.method]}${e.comment ? "\n" + e.comment : ""}`)
     if (c === 0) await saveMoney([], [e.id])
   }
+}
+
+// ───────────── Расходы по карте ─────────────
+// Скрипт таблицы читает письма банка и при выгрузке присылает платежи, которых здесь ещё нет.
+// Они записываются расходом «Перевод». Если такая же сумма уже записана вручную (разница до суток) — спросить.
+const CARD_WORDS = [
+  ["Еда и продукты",   /7-?eleven|seven|makro|lotus|big ?c\b|tops|villa market|foodland|family ?mart|mini ?big|gourmet|supermarket|market|fresh/i],
+  ["Кафе и рестораны", /resta?u|reataurant|cafe|café|coffee|kitchen|bistro|noodle|pizza|burger|starbucks|amazon|bakery|grill|food|eat|bar\b|pub\b/i],
+  ["Транспорт",        /grab|bolt|taxi|bts|mrt|airport rail|ptt|shell|bangchak|esso|caltex|parking|lineman|robinhood|indrive/i],
+  ["Здоровье",         /pharma|hospital|clinic|dental|boots|watsons|medic/i],
+  ["Красота и массаж", /massage|spa\b|salon|barber|beauty/i],
+  ["Связь и интернет", /\bais\b|true ?move|dtac|true ?online|3bb|internet|mobile/i],
+  ["Жильё",            /condo|juristic|electric|\bpea\b|\bmea\b|waterworks|\bpwa\b|rent/i],
+  ["Спорт",            /fitness|gym|yoga|muay|sport/i],
+  ["Покупки",          /homepro|uniqlo|central|robinson|lazada|shopee|ikea|power ?buy|mall|store|shop/i],
+]
+function cardCategory(to) {
+  const names = CONFIG.categories.expense.map(c => c[0])
+  const hit = CARD_WORDS.find(([name, re]) => names.includes(name) && re.test(to || ""))
+  return hit ? hit[0] : (matchCategory("expense", String(to || "").toLowerCase()) || "Другое")
+}
+const cardEntry = c => ({ id: c.id, date: c.date, u: Date.now(), type: "expense", amount: c.amount, method: "transfer",
+  category: cardCategory(c.to), comment: c.to || c.kind || "Карта", card: true })
+// Запись, сделанная вручную, с той же суммой и не дальше суток от платежа
+const cardTwin = (c, list) => list.find(x => x && !x.deleted && x.type === "expense" && !String(x.id).startsWith("bbl-")
+  && Math.abs(x.amount - c.amount) < 0.01 && Math.abs(x.date - c.date) <= 24 * 3600 * 1000)
+
+async function takeCard(card) {
+  const all = await rawMoney(), known = new Set(all.map(x => x.id))   // и удалённые: «дубль» второй раз не спросим
+  const st = await loadSettings()
+  const ask = (st.cardAsk || []).filter(x => !known.has(x.id))
+  const add = [], fresh = []
+  for (const c of card) {
+    if (!c || !c.id || !(c.amount > 0) || known.has(c.id) || ask.some(x => x.id === c.id)) continue
+    if (cardTwin(c, all)) { ask.push(c); fresh.push(c) } else add.push(cardEntry(c))
+  }
+  if (add.length) saveJSON("finance.json", mergeSynced(all, add))
+  await saveSettings({ cardAsk: ask })
+  try {
+    if (add.length) {
+      const n = new Notification()
+      n.identifier = "myday-card"
+      n.title = add.length === 1 ? `💳 Расход по карте: ${money(add[0].amount)}` : `💳 Расходы по карте: ${add.length}`
+      n.body = add.map(e => `−${money(e.amount)} · ${e.comment} · ${e.category}`).join("\n")
+      n.openURL = `${RUN}?action=report`
+      await n.schedule()
+    }
+    if (fresh.length) {
+      const n = new Notification()
+      n.identifier = "myday-card-dup"
+      n.title = "💳 Похоже на дубль"
+      n.body = `${fresh.map(c => `${money(c.amount)} · ${c.to}`).join(", ")}: такая сумма уже записана. Нажмите, чтобы решить.`
+      n.openURL = `${RUN}?action=card`
+      await n.schedule()
+    }
+  } catch (e) {}
+  return { added: add.length, ask: fresh.length }
+}
+
+// Спросить про возможные дубли: «одно и то же» — не добавлять, «разные» — добавить, «позже» — спросить в следующий раз
+async function askCardDups() {
+  const st = await loadSettings()
+  for (const c of st.cardAsk || []) {
+    const all = await rawMoney()
+    let r = 1
+    if (!all.some(x => x.id === c.id)) {
+      const twin = cardTwin(c, all)
+      if (twin) {
+        const a = new Alert()
+        a.title = "💳 Похоже на дубль"
+        a.message = `По карте: ${WHEN_S.string(new Date(c.date))}\n−${money(c.amount)} · ${c.to || c.kind}\n\n` +
+          `Уже записано: ${WHEN_S.string(new Date(twin.date))}\n−${money(twin.amount)} · ${twin.category}${twin.comment ? " · " + twin.comment : ""}`
+        a.addAction("Это одно и то же — не добавлять")
+        a.addAction("Разные — добавить")
+        a.addCancelAction("Решить позже")
+        r = await a.presentAlert()
+        if (r === -1) return
+      }
+      saveJSON("finance.json", mergeSynced(all, r === 0 ? [] : [cardEntry(c)], r === 0 ? [c.id] : []))
+    }
+    const cur = await loadSettings()
+    await saveSettings({ cardAsk: (cur.cardAsk || []).filter(x => x.id !== c.id) })
+  }
+}
+
+async function cardMenu() {
+  const title = "💳 Расходы по карте"
+  const r = await syncSheet(false)
+  if (!r || !r.ok) return info(title, `Таблица не ответила: ${(r && r.error) || "нет связи"}`)
+  if (!Array.isArray(r.card)) return info(title, "Выключено. Включается один раз в Google Таблице: меню «Мой день» → " +
+    "«Расходы по карте: включить» (Google попросит разрешить доступ к почте). Скрипт таблицы при этом нужно обновить и развернуть заново.")
+  await askCardDups()
+  const t = r.cardTaken || { added: 0 }
+  await info(title, "Включено: таблица каждые 15 минут читает письма Bangkok Bank, а виджет сам записывает оплаты " +
+    "расходом «Перевод». Если такая же сумма уже записана вручную, виджет спросит, дубль ли это.\n\n" +
+    `Сейчас добавлено: ${t.added}. Наличные по-прежнему записывайте сами.`)
 }
 
 // ───────────── Финансы: отчёт ─────────────
@@ -3182,6 +3283,7 @@ async function menu() {
     ["🗒 Мои заметки", manageNotes],
     ["📊 Отчёт за месяц", () => report()],
     ["🧾 Последние операции", manageMoney],
+    ...(CONFIG.currency === "฿" ? [["💳 Расходы по карте", cardMenu]] : []),
     ["⌨️ Команда текстом", async () => { const t = await ask("Команда", "Что сделать?", "Отправить"); if (t) await voiceCommand(t) }],
     [`🧠 Ассистент ${AI_NAME}`, aiSettings],
     ...(CONFIG.trackerUrl ? [["✓ Личный трекер", () => Safari.open(trackerLink())]] : []),   // [личное]
@@ -3250,8 +3352,9 @@ if (SHORTCUT_PARAM && !config.runsInWidget) {
   // Сначала окно, потом всё остальное: раньше перед открытием ждали выгрузку в таблицу (до 30 с)
   const q = args.queryParameters || {}
   try {
-    if (q.action) await runAction(q.action, q)
-    else await menu()
+    if (q.action === "card") await askCardDups()        // уведомление «Похоже на дубль»
+    else if (q.action) await runAction(q.action, q)
+    else { await askCardDups(); await menu() }
   } finally {
     if (q.from === "widget" && homeOn()) goHome()
   }

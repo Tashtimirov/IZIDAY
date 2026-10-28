@@ -5,7 +5,8 @@
                                 dist/MyDay-RU.js, dist/MyDay-TH.js и dist/Code-RU.gs (версии для других: рубли / баты, без личных данных)
 
 secrets.json (не хранится в git, пример — secrets.example.json):
-  {"sheet_secret": "...", "sheet_hook": "https://script.google.com/macros/s/…/exec"}
+  {"sheet_secret": "...", "sheet_hook": "https://script.google.com/macros/s/…/exec",
+   "card_skip": "IVANOV"}   ← слова из имён своих счетов: переводы туда не считаются расходом
 """
 import json, os, re, shutil, subprocess, sys, zipfile, pathlib
 
@@ -17,7 +18,7 @@ if not sec_path.exists():
 sec = json.loads(sec_path.read_text())
 
 def fill(text):
-    return text.replace("__SHEET_SECRET__", sec["sheet_secret"]).replace("__SHEET_HOOK__", sec["sheet_hook"])
+    return text.replace("__SHEET_SECRET__", sec["sheet_secret"]).replace("__SHEET_HOOK__", sec["sheet_hook"]).replace("__CARD_SKIP__", sec.get("card_skip", ""))
 
 shutil.rmtree(DIST, ignore_errors=True)
 DIST.mkdir()
@@ -50,7 +51,7 @@ for country in ["ru", "th"]:
 # Скрипт таблицы для других: без вашего ключа — таблица запомнит ключ виджета, который первым в неё напишет
 # Общий доступ друзей к Claude: ваш ключ остаётся в Google-скрипте, виджет знает только пароль
 (DIST / "Proxy.gs").write_text((ROOT / "src/proxy/Proxy.gs").read_text().replace("__AI_PROXY_TOKEN__", sec.get("ai_proxy_token", "")))
-(DIST / "Code-RU.gs").write_text((ROOT / "src/sheet/Code.gs").read_text().replace("__SHEET_SECRET__", ""))
+(DIST / "Code-RU.gs").write_text((ROOT / "src/sheet/Code.gs").read_text().replace("__SHEET_SECRET__", "").replace("__CARD_SKIP__", ""))
 (DIST / "Code.gs").write_text(fill((ROOT / "src/sheet/Code.gs").read_text()))
 
 mac = DIST / "MyDay-Mac"
