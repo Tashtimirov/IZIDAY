@@ -30,9 +30,9 @@ let calQueries = 0
 class CalendarEvent { static async between(a, b) { calQueries++; return store.filter(e => e.startDate < b && e.endDate > a) } }
 class Reminder { static async allIncomplete() { return [{ title: "Купить хлеб", dueDate: at(23, 9) }] } }
 // всё, что рисует виджет, — пустышки, которые принимают любые вызовы и свойства
-const urls = []
+const urls = [], texts = []
 const stub = () => new Proxy(function () {}, {
-  get: (t, k) => k === "then" ? undefined : k in t ? t[k] : (t[k] = stub()),
+  get: (t, k) => k === "then" ? undefined : k === "addText" ? (s => (texts.push(s), stub())) : k in t ? t[k] : (t[k] = stub()),
   set: (t, k, v) => { if (k === "url") urls.push(v); t[k] = v; return true },
   apply: () => stub(), construct: () => stub() })
 const log = []
@@ -54,6 +54,18 @@ for (const [family, param] of [["small"], ["small", "здоровье"], ["mediu
   check(!err && calQueries === 1, `${family}${param ? " · " + param : ""}: построен, запросов к календарю: ${calQueries}${err ? " — " + err.stack : ""}`)
 }
 check(Object.values(reads).every(n => n === 1), "каждый файл прочитан с диска один раз: " + JSON.stringify(reads))
+// большой виджет: в строке дней названия событий, а не их число («1 соб»)
+store.push({ title: "Турнир по паделу", startDate: at(25, 18), endDate: at(25, 20), calendar: { title: "Личное" } },
+  { title: "Ужин", startDate: at(25, 21), endDate: at(25, 22), calendar: { title: "Личное" } },
+  { title: "Врач", startDate: at(26, 9), endDate: at(26, 10), calendar: { title: "Личное" } },
+  { title: "Почта", startDate: at(26, 11), endDate: at(26, 12), calendar: { title: "Личное" } },
+  { title: "Кино", startDate: at(26, 19), endDate: at(26, 21), calendar: { title: "Личное" } })
+texts.length = 0
+await app.buildWidget("large")
+check(!texts.some(t => /\d+\s*соб|событи[еяй]\b/.test(String(t))) && texts.includes("Йога"), "большой виджет: у дня названия событий, не число: " + texts.filter(t => /соб|Йога/.test(String(t))).join(", "))
+check(texts.includes("Турнир по паделу") && texts.includes("Ужин"), "два события в дне — оба названия")
+check(texts.includes("Врач") && texts.includes("+2 ещё") && !texts.includes("Кино"), "три события — первое название и «+2 ещё»")
+store.splice(-5)
 const ev = app.upcoming(await app.getCalendar(app.weekDays())).map(e => e.title)
 check(ev.join() === "Созвон,Йога", "ближайшие встречи — сегодня и 2 дня вперёд, без прошедших: " + ev.join())
 check(urls.filter(u => typeof u === "string" && u.startsWith("scriptable")).every(u => u.includes("from=widget")), "все ссылки виджета помечены from=widget")

@@ -64,7 +64,7 @@ const CONFIG = {
   trackerStart: "2026-10-01",    // дата во 2-й строке листа «Дни»
   // Еда, вода и активность с Apple Watch (кнопка 📷, параметр виджета «здоровье»)
   health: { waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30, weight: 92 },   // weight, кг — для оценки тренировок без часов
-  large:  { today: 3, rows: 6 },   // до 3 событий сегодня; вместе с напоминаниями — 6 строк
+  large:  { today: 3, rows: 5 },   // до 3 событий сегодня; вместе с напоминаниями — 5 строк (строка дней выше: в ней названия)
   medium: { events: 3, reminders: 3, weekChips: 2 },
   // Календари и списки напоминаний, которые можно назвать голосом.
   // calendar — имя календаря событий, list — имя списка напоминаний, words — как вы их называете.
@@ -558,9 +558,18 @@ function contentWidth(family) {
   return w - 24
 }
 
-// Большой виджет: строка из 7 дней с сегодняшнего на всю ширину; под числом — сколько событий в этот день
+// Большой виджет: строка из 7 дней с сегодняшнего на всю ширину; под числом — названия событий этого дня.
+// Не число («2 соб»), а сами названия: два события — по строке на каждое, одно — в две строки,
+// больше двух — первое название и «+N», чтобы было понятно, что за событие.
+function stripLines(items) {
+  const names = items.map(it => stripEmoji(it.title))
+  if (names.length === 1) return [{ text: names[0], lines: 2 }]
+  if (names.length === 2) return names.map(t => ({ text: t, lines: 1 }))
+  return [{ text: names[0], lines: 1 }, { text: `+${names.length - 1} ещё`, lines: 1, more: true }]
+}
+
 function weekStrip(parent, days, events) {
-  const GAP = 4, H = 58, today = new Date()
+  const GAP = 4, H = 76, today = new Date()
   const W = Math.floor((contentWidth() - GAP * 6) / 7)
   const LETTERS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
   const row = parent.addStack()
@@ -572,23 +581,27 @@ function weekStrip(parent, days, events) {
     cell.layoutVertically()
     cell.size = new Size(W, H)
     cell.cornerRadius = 10
+    cell.setPadding(5, 3, 5, 3)
     cell.backgroundColor = isToday ? C.todayBg : new Color(BRAND.gold, 0.1)
     cell.url = calshowURL(day)
     // каждая надпись — в своей строке между двумя пружинами, так она стоит ровно по центру ячейки
-    const txt = (s, font, color) => {
+    const txt = (s, font, color, lines = 1, scale = 0.7) => {
       const line = cell.addStack()
       line.addSpacer()
-      const t = line.addText(s); t.font = font; t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.7
+      const t = line.addText(s); t.font = font; t.textColor = color; t.lineLimit = lines; t.minimumScaleFactor = scale
+      t.centerAlignText()
       line.addSpacer()
     }
-    const n = itemsForDay(day, events).length   // ещё не закончившиеся события дня
-    cell.addSpacer()
-    txt(LETTERS[day.getDay()].toUpperCase(), Font.boldSystemFont(10), isToday ? C.todayFg : weekend ? C.gold : C.sub)
-    cell.addSpacer(1)
-    txt(String(day.getDate()), Font.heavyRoundedSystemFont(18), isToday ? C.todayFg : C.text)
+    const items = itemsForDay(day, events)   // ещё не закончившиеся события дня
+    txt(LETTERS[day.getDay()].toUpperCase(), Font.boldSystemFont(9.5), isToday ? C.todayFg : weekend ? C.gold : C.sub)
+    txt(String(day.getDate()), Font.heavyRoundedSystemFont(16), isToday ? C.todayFg : C.text)
     cell.addSpacer(2)
-    txt(n ? `${n} соб` : "нет", Font.semiboldRoundedSystemFont(9.5),
-      isToday ? C.todayFg : n ? C.gold : new Color(BRAND.gold, 0.35))
+    if (!items.length) txt("—", Font.semiboldRoundedSystemFont(9), isToday ? C.todayFg : new Color(BRAND.gold, 0.35))
+    stripLines(items).forEach((l, k) => {
+      if (k) cell.addSpacer(1)
+      txt(l.text, l.more ? Font.boldSystemFont(8) : Font.semiboldSystemFont(8.5),
+        isToday ? C.todayFg : l.more ? C.gold : C.text, l.lines, 0.75)
+    })
     cell.addSpacer()
   })
 }
@@ -1324,7 +1337,7 @@ async function buildWidget(family, param) {
   w.addSpacer(6)
   goldDivider(w)
   w.addSpacer(7)
-  // 2 ряда: 4 дня, затем 3 дня и расходы месяца; в дне до 3 событий
+  // 7 дней в строку, в каждом — названия событий (не число)
   weekStrip(w, days, weekEvents)
   w.addSpacer(9)
   // сегодняшние события и напоминания делят одно место: чем меньше событий, тем больше напоминаний
