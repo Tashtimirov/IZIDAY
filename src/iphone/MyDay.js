@@ -1638,7 +1638,7 @@ async function manageMoney() {
 }
 
 // ───────────── Расходы по карте ─────────────
-// Скрипт таблицы читает письма банка и при выгрузке присылает платежи, которых здесь ещё нет.
+// Скрипт таблицы читает письма банков (Bangkok Bank, Kasikornbank) и при выгрузке присылает платежи, которых здесь ещё нет.
 // Они записываются расходом «Перевод». Если такая же сумма уже записана вручную (разница до суток) — спросить.
 const CARD_WORDS = [
   ["Еда и продукты",   /7-?eleven|seven|makro|lotus|big ?c\b|tops|villa market|foodland|family ?mart|mini ?big|gourmet|supermarket|market|fresh/i],
@@ -1659,7 +1659,7 @@ function cardCategory(to) {
 const cardEntry = c => ({ id: c.id, date: c.date, u: Date.now(), type: "expense", amount: c.amount, method: "transfer",
   category: cardCategory(c.to), comment: c.to || c.kind || "Карта", card: true })
 // Запись, сделанная вручную, с той же суммой и не дальше суток от платежа
-const cardTwin = (c, list) => list.find(x => x && !x.deleted && x.type === "expense" && !String(x.id).startsWith("bbl-")
+const cardTwin = (c, list) => list.find(x => x && !x.deleted && x.type === "expense" && !x.card && !/^(bbl|kb)-/.test(String(x.id))
   && Math.abs(x.amount - c.amount) < 0.01 && Math.abs(x.date - c.date) <= 24 * 3600 * 1000)
 
 async function takeCard(card) {
@@ -1728,7 +1728,7 @@ async function cardMenu() {
     "«Расходы по карте: включить» (Google попросит разрешить доступ к почте). Скрипт таблицы при этом нужно обновить и развернуть заново.")
   await askCardDups()
   const t = r.cardTaken || { added: 0 }
-  await info(title, "Включено: таблица каждые 15 минут читает письма Bangkok Bank, а виджет сам записывает оплаты " +
+  await info(title, "Включено: таблица каждые 15 минут читает письма Bangkok Bank и Kasikornbank, а виджет сам записывает оплаты " +
     "расходом «Перевод». Если такая же сумма уже записана вручную, виджет спросит, дубль ли это.\n\n" +
     `Сейчас добавлено: ${t.added}. Наличные по-прежнему записывайте сами.`)
 }

@@ -31,8 +31,10 @@ const ss = { getSheetByName: n => sheets.find(s => s.name === n) || null, insert
   setActiveSheet: s => { ss.active = s }, moveActiveSheet: () => {}, getSpreadsheetTimeZone: () => "Asia/Bangkok" }
 const props = {}, triggers = []
 // письма — как их отдаёт Gmail (англ. половина письма, ячейки таблицы)
-const mail = (id, at, subject, rows) => ({ getId: () => id, getDate: () => new Date(at), getSubject: () => subject, getPlainBody: () => "",
+const mail = (id, at, subject, rows, from = "BualuangmBanking@bangkokbank.com") => ({ getId: () => id, getFrom: () => from, getDate: () => new Date(at), getSubject: () => subject, getPlainBody: () => "",
   getBody: () => `<p>ยืนยัน ... ไทย</p><p><b>Automatic e-mail: x</b></p><table>${rows.map(([k, v]) => `<tr><td></td><td>${k}</td><td>${v}</td></tr>`).join("")}</table><p>Yours sincerely</p>` })
+const kmail = (id, at, subject, text) => ({ getId: () => id, getFrom: () => "K PLUS <KPLUS@kasikornbank.com>", getDate: () => new Date(at),
+  getSubject: () => subject, getPlainBody: () => "", getBody: () => `<div>ธนาคารกสิกรไทย</div><div>${text.replace(/ (?=[A-Z][a-zA-Z ()0-9]{1,30}:)/g, "<br>")}</div>` })
 const T0 = new Date("2026-10-28T00:00:00+07:00").getTime()
 const inbox = [
   mail("m1", T0 + 12.5 * 3600e3, "ยืนยันการชำระเงิน / Payments confirmation (28/10/2026 @ 12:34:23)",
@@ -43,6 +45,14 @@ const inbox = [
   mail("m3", T0 + 14 * 3600e3, "ยืนยันรายการโอนเงินไปยังหมายเลขโทรศัพท์มือถือโดยพร้อมเพย์ / Confirmation of funds transfer to Mobile Phone Number by PromptPay (28/10/2026 @ 14:00:00)",
     [["From:", ""], ["Account no.", "970-0-xxx847"], ["To:", ""], ["Mobile Phone Number", "080-xxx-0000"], ["Account name", "ERIK HYAN CHU"], ["Amount (Baht)", "450.00"], ["Fee (Baht)", "0.00"]]),
   mail("m4", T0 + 15 * 3600e3, "บริการแจ้งเตือน / Sign-on to Bangkok Bank Mobile Banking Notification", [["Date", "x"]]),
+  mail("m5", T0 + 15.2 * 3600e3, "ยืนยันการโอนเงิน / Funds transfer confirmation (28/10/2026 @ 15:12:00)",
+    [["From:", ""], ["Account no.", "970-0-xxx847"], ["To:", ""], ["Account no.", "1598272502"], ["Account name", "MR. ILDAR TASHTIMIROV"], ["Bank", "KBANK"], ["Amount (Baht)", "3,000.00"], ["Fee (Baht)", "0.00"]]),
+  // K PLUS: письма вида «Поле: значение»
+  kmail("k1", T0 + 15.5 * 3600e3, "Result of Payment (Success)", "Transaction Date: 28/10/2026 15:30:00 From Account: xxx-x-x1234-x Merchant Name: FOODLAND PATTAYA Amount (THB): 1,250.50 Fee (THB): 0.00 Available Balance (THB): 9,999.00"),
+  kmail("k2", T0 + 15.6 * 3600e3, "Result of Funds Transfer (Success)", "Transaction Date: 28/10/2026 15:36:00 From Account: xxx-x-x1234-x From Account Name: ILDAR TASHTIMIROV To Bank: Bangkok Bank To Account: xxx-x-x0847-x Account Name: MR. ILDAR TASHTIMIROV Amount (THB): 500.00 Fee (THB): 0.00"),
+  kmail("k3", T0 + 15.7 * 3600e3, "Result of PromptPay Funds Transfer (Success)", "From Account: xxx-x-x1234-x From Account Name: ILDAR TASHTIMIROV To PromptPay ID: 080-xxx-0000 Account Name: SOMCHAI JAIDEE Amount (THB): 200.00 Fee (THB): 0.00"),
+  kmail("k4", T0 + 15.8 * 3600e3, "Result of updating Own E-Mail Address", "From E-Mail Address: a@b.c To E-Mail Address: realtashtimirov@gmail.com"),
+  kmail("k5", T0 + 15.9 * 3600e3, "Result of Bill Payment (Success)", "Company Name: TRUE MOVE H Ref 1: 0812345678 Paid: 599.00 THB"),
   mail("m0", T0 - 3600e3, "ยืนยันการชำระเงิน / Payments confirmation (27/10/2026 @ 23:00:00)", [["Payee name", "old"], ["From:", ""], ["Amount (Baht)", "99.00"]]),
 ]
 const g = {
@@ -68,15 +78,23 @@ gs.cardOn()
 check("повторное включение не плодит триггеры", triggers.length === 1)
 const card = ss.getSheetByName("Карта")
 const rows = card.cells.slice(1)
-check("лист «Карта»: 3 платежа с сегодняшнего дня, вход в приложение и вчерашнее — нет", rows.length === 3, rows)
+check("лист «Карта»: платежи с сегодняшнего дня, вход в приложение, смена почты и вчерашнее — нет", rows.length === 8, rows.map(r => r[5]))
 check("оплата: сумма и получатель", rows[0][1] === 70 && rows[0][2] === "heokaow reataurant" && rows[0][3] === "Оплата", rows[0])
 check("пополнение своего кошелька — не расход", rows[1][1] === 4000 && /свой счёт/.test(rows[1][4]) && /K Plus Wallet/.test(rows[1][2]), rows[1])
 check("перевод PromptPay человеку", rows[2][1] === 450 && rows[2][2] === "ERIK HYAN CHU" && rows[2][3] === "Перевод PromptPay", rows[2])
+const row = id => rows.find(x => x[5] === id) || []
+check("перевод Bangkok Bank → свой счёт в Kasikornbank — не расход", /свой счёт/.test(row("bbl-m5")[4]), row("bbl-m5"))
+check("K PLUS: оплата в магазине", row("kb-k1")[1] === 1250.5 && row("kb-k1")[2] === "FOODLAND PATTAYA" && row("kb-k1")[3] === "Оплата K PLUS" && row("kb-k1")[4] === "ждёт виджет", row("kb-k1"))
+check("K PLUS: перевод на свой счёт в Bangkok Bank — не расход (получатель, а не отправитель)", row("kb-k2")[1] === 500 && /свой счёт/.test(row("kb-k2")[4]) && row("kb-k2")[2] === "MR. ILDAR TASHTIMIROV", row("kb-k2"))
+check("K PLUS: перевод человеку", row("kb-k3")[1] === 200 && row("kb-k3")[2] === "SOMCHAI JAIDEE" && row("kb-k3")[4] === "ждёт виджет", row("kb-k3"))
+check("K PLUS: письмо без понятной суммы остаётся на листе и в расходы не идёт", /не разобрано/.test(row("kb-k5")[4]), row("kb-k5"))
 let r = post({ entries: [] })
-check("виджету — два расхода", r.card.length === 2 && r.card[0].id === "bbl-m1" && r.card[0].amount === 70 && r.card[1].to === "ERIK HYAN CHU", r.card)
+check("виджету — четыре расхода", r.card.length === 4 && r.card[0].id === "bbl-m1" && r.card[0].amount === 70 && r.card[1].to === "ERIK HYAN CHU" &&
+  r.card.some(c => c.id === "kb-k1") && r.card.some(c => c.id === "kb-k3"), r.card)
 r = post({ entries: [] })
-check("повторный опрос почты не дублирует строки", card.cells.length === 4, card.cells.length)
-r = post({ entries: [{ id: "bbl-m1", date: rows[0][0].getTime(), type: "expense", amount: 70, method: "transfer", category: "Кафе и рестораны", comment: "heokaow" }], deleted: ["bbl-m3"] })
+check("повторный опрос почты не дублирует строки", card.cells.length === 9, card.cells.length)
+r = post({ entries: [{ id: "bbl-m1", date: rows[0][0].getTime(), type: "expense", amount: 70, method: "transfer", category: "Кафе и рестораны", comment: "heokaow" }],
+  deleted: ["bbl-m3", "kb-k1", "kb-k3"] })
 check("принятое виджетом — «в расходах», дубль — «не добавлено», больше не присылаются",
   r.card.length === 0 && card.cells[1][4] === "в расходах" && card.cells[3][4] === "дубль, не добавлено", card.cells.map(x => x[4]))
 check("принятое попало в «Операции»", ss.getSheetByName("Операции").cells.some(x => x && x[6] === "bbl-m1"))
@@ -136,6 +154,10 @@ answers.push(1)
 await app.askCardDups()
 const e5 = (await app.loadMoney()).find(x => x.id === "bbl-m5")
 check("«разные» — добавлено", e5 && e5.amount === 450 && e5.category === "Еда и продукты", e5)
+reply = { ok: true, sheets: {}, card: [{ id: "kb-k9", date: at(12.6), amount: 70, to: "CAFE AMAZON", kind: "Оплата K PLUS" }] }
+await app.syncSheet(true)
+check("платёж K PLUS на ту же сумму, что и платёж Bangkok Bank, — не дубль (дубль ищется только среди ручных записей)",
+  (await app.loadMoney()).some(x => x.id === "kb-k9") && !(await app.loadSettings()).cardAsk.length)
 check("категории: grab, аптека, незнакомое", app.cardCategory("GRAB TAXI") === "Транспорт" && app.cardCategory("Boots pharmacy") === "Здоровье" && app.cardCategory("SOMCHAI") === "Другое")
 await app.autoSyncSheet()   // добавленное «разные» уходит в таблицу
 const st = await app.loadSettings(), n1 = sent.length

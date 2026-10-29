@@ -154,12 +154,14 @@ function setup() { ensureSheets_(); }
 function advice() { ensureSheets_(); writeAdvice_(); }
 
 // ── Расходы по карте ──
-// Скрипт раз в 15 минут читает письма Bangkok Bank о платежах и складывает их на лист «Карта».
+// Скрипт раз в 15 минут читает письма Bangkok Bank и Kasikornbank (K PLUS) о платежах и складывает их на лист «Карта».
 // Виджет при выгрузке получает платежи, которых у него ещё нет, и добавляет их расходом («Перевод»);
 // если такая же сумма уже записана вручную, виджет спрашивает. Принятые виджетом попадают в «Операции» как обычно.
 const CARD = { name: "Карта", head: ["Дата", "Сумма", "Кому", "Вид", "Статус", "ID"], formats: [DT, "#,##0.##"],
-  query: "from:bangkokbank.com", days: 60 };
+  query: "{from:bangkokbank.com from:kasikornbank.com}", days: 60 };
 const CARD_NEW = "ждёт виджет", CARD_ADDED = "в расходах", CARD_DUP = "дубль, не добавлено", CARD_OWN = "свой счёт, не расход";
+// письмо похоже на платёж, но сумму найти не удалось: строка остаётся на листе, в расходы не идёт
+const CARD_ODD = "не разобрано, проверьте письмо";
 
 function cardOn() {
   const props = PropertiesService.getScriptProperties();
@@ -193,12 +195,15 @@ function importBank_() {
   const rows = [];
   const threads = GmailApp.search(`${CARD.query} newer_than:${CARD.days}d`, 0, 100);
   for (const th of threads) for (const m of th.getMessages()) {
-    const id = "bbl-" + m.getId();
+    const kb = /kasikornbank/i.test(m.getFrom ? m.getFrom() : "");
+    const id = (kb ? "kb-" : "bbl-") + m.getId();
     if (have.has(id) || m.getDate().getTime() < since) continue;
-    const p = parseBankMail_(m.getSubject(), m.getBody() || m.getPlainBody());
+    const body = m.getBody() || m.getPlainBody();
+    const p = kb ? parseKBankMail_(m.getSubject(), body) : parseBankMail_(m.getSubject(), body);
     if (!p) continue;
+    // переводы между своими счетами (Bangkok Bank ⇄ Kasikornbank, свои кошельки) — не расход, иначе траты задвоятся
     const own = skip.some(w => p.to.toUpperCase().indexOf(w) >= 0);
-    rows.push([m.getDate(), p.amount, txt_(p.to), p.kind, own ? CARD_OWN : CARD_NEW, id]);
+    rows.push([m.getDate(), p.amount, txt_(p.to), p.kind, !(p.amount > 0) ? CARD_ODD : own ? CARD_OWN : CARD_NEW, id]);
     have.add(id);
   }
   if (rows.length) {
@@ -236,6 +241,28 @@ function parseBankMail_(subject, body) {
     || pick(/Account name\s+(.+?)\s+(?:Amount|Bank\b)/i) || pick(/(?:Biller|Company) name\s+(.+?)\s+(?:From:|Account)/i);
   const wallet = pick(/e-wallet provider name\s+(.+?)\s+From:/i);
   return { kind: k[1], to: wallet ? `${to} (${wallet})` : to, amount: Math.round(amount * 100) / 100 };
+}
+
+// Письмо K PLUS (Kasikornbank) → { kind, to, amount } или null. Только списания: зачисления, вход, смена почты — нет.
+// Поля английской части: «Amount (THB): 100.00», «Fee (THB): 0.00», «Account Name / Merchant Name / Company Name: …».
+function parseKBankMail_(subject, body) {
+  subject = String(subject || "");
+  if (/receiv|deposit|incoming|e-?mail|sign|log ?in|password|register|change|unsuccess|fail|เงินเข้า|รับเงิน/i.test(subject)) return null;
+  const kinds = [[/top ?up|เติมเงิน/i, "Пополнение (K PLUS)"], [/transfer|โอน/i, "Перевод K PLUS"],
+    [/pay|bill|qr|scan|purchase|ชำระ|จ่าย/i, "Оплата K PLUS"], [/withdraw|ถอน/i, "Снятие K PLUS"]];
+  const k = kinds.find(([re]) => re.test(subject));
+  if (!k) return null;
+  const text = String(body || "").replace(/<(style|script)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&#39;|&rsquo;/g, "'").replace(/[|*\t]/g, " ").replace(/\s+/g, " ");
+  const num = re => { const m = text.match(re); return m ? parseFloat(m[1].replace(/,/g, "")) : 0; };
+  const amount = num(/\bAmount\s*(?:\((?:THB|Baht)\))?\s*:?\s*(?:THB|฿)?\s*([\d,]+(?:\.\d+)?)/i)
+    + num(/\bFee\s*(?:\((?:THB|Baht)\))?\s*:?\s*(?:THB|฿)?\s*([\d,]+(?:\.\d+)?)/i);
+  // значение поля — до следующего «Поле:» или до суммы
+  // подписи полей — как в письмах K PLUS: «Account Name:», «Amount (THB):» (с заглавной буквы)
+  const pick = label => { const m = text.match(new RegExp(`(?:${label})\\s*:?\\s+(.+?)(?=\\s+(?:(?:[A-Z][a-z]+ ?){1,4}(?:\\([A-Z]+\\) ?)?:|Amount\\b|Fee\\b)|$)`)); return m ? m[1].trim() : ""; };
+  const to = pick("Merchant Name|Shop Name|Company Name|Biller Name|To Account Name|Receiver Name|Recipient Name|Paid to") || pick("(?<!From )Account Name")
+    || pick("To e-?Wallet|To Wallet") || "K PLUS";
+  return { kind: k[1], to: to.slice(0, 80), amount: Math.round(amount * 100) / 100 };
 }
 
 // Платежи «ждёт виджет», которых у виджета нет. Статусы на листе обновляются по тому, что виджет прислал.
