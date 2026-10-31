@@ -67,7 +67,7 @@ const g = {
 const RealDate = Date
 let clock = T0 + 16 * 3600e3
 globalThis.Date = class extends RealDate { constructor(...a) { a.length ? super(...a) : super(clock) } static now() { return clock } }
-const gs = new Function(...Object.keys(g), code + "; return { doPost, cardOn, cardOff, importBank, parseBankMail_ }")(...Object.values(g))
+const gs = new Function(...Object.keys(g), code + "; return { doPost, cardOn, cardOff, cardMonth, importBank, parseBankMail_ }")(...Object.values(g))
 const KEY = "k".repeat(32)
 const post = b => gs.doPost({ postData: { contents: JSON.stringify(Object.assign({ secret: KEY, deleted: [], food: [], water: [] }, b)) } })
 
@@ -104,6 +104,10 @@ check("принятое попало в «Операции»", ss.getSheetByName
 const plain = gs.parseBankMail_("Payments confirmation (28/10/2026 @ 12:34:23)",
   "*Automatic e-mail: Payment confirmation*\n\n| To: |\n| | Service name / Payee name | heokaow reataurant |\n| From: |\n| | Amount (Baht) | 1,070.00 |\n| | Fee (Baht) | 5.00 |")
 check("письмо без HTML тоже разбирается, комиссия прибавляется", plain && plain.amount === 1075 && plain.to === "heokaow reataurant", plain)
+gs.cardMonth()
+check("«загрузить весь месяц» добавляет платежи до включения, без повторов", card.cells.filter(r => r && r[5] === "bbl-m0").length === 1 && card.cells.length === 10, card.cells.map(r => r && r[5]))
+gs.cardMonth()
+check("повторная загрузка месяца ничего не дублирует", card.cells.length === 10)
 gs.cardOff()
 check("выключение убирает триггер", triggers.length === 0 && post({ entries: [] }).card === undefined)
 
@@ -161,6 +165,13 @@ reply = { ok: true, sheets: {}, card: [{ id: "kb-k9", date: at(12.6), amount: 70
 await app.syncSheet(true)
 check("платёж K PLUS на ту же сумму, что и платёж Bangkok Bank, — не дубль (дубль ищется только среди ручных записей)",
   (await app.loadMoney()).some(x => x.id === "kb-k9") && !(await app.loadSettings()).cardAsk.length)
+reply = { ok: true, sheets: {}, card: [{ id: "bbl-x1", date: at(14.3), amount: 450, to: "A", kind: "Оплата" }, { id: "bbl-x2", date: at(14.4), amount: 450, to: "B", kind: "Оплата" }] }
+await app.syncSheet(true)
+answers.push(2)
+alerts.length = 0
+await app.askCardDups()
+list = await app.loadMoney()
+check("«это и остальные — дубли»: один вопрос на всех", alerts.length === 1 && !list.some(x => x.id === "bbl-x1" || x.id === "bbl-x2") && !(await app.loadSettings()).cardAsk.length, alerts.length)
 check("категории: grab, аптека, незнакомое", app.cardCategory("GRAB TAXI") === "Транспорт" && app.cardCategory("Boots pharmacy") === "Здоровье" && app.cardCategory("SOMCHAI") === "Другое")
 await app.autoSyncSheet()   // добавленное «разные» уходит в таблицу
 const st = await app.loadSettings(), n1 = sent.length

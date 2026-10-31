@@ -147,7 +147,8 @@ function doPost(e) {
 // Меню в таблице: создать листы вручную, не дожидаясь первой записи из виджета
 function onOpen() {
   SpreadsheetApp.getUi().createMenu("Мой день").addItem("Создать листы", "setup").addItem("Совет по еде", "advice")
-    .addItem("Расходы по карте: включить", "cardOn").addItem("Расходы по карте: выключить", "cardOff").addToUi();
+    .addItem("Расходы по карте: включить", "cardOn").addItem("Расходы по карте: загрузить весь месяц", "cardMonth")
+    .addItem("Расходы по карте: выключить", "cardOff").addToUi();
 }
 function setup() { ensureSheets_(); }
 function advice() { ensureSheets_(); writeAdvice_(); }
@@ -172,6 +173,15 @@ function cardOn() {
   const n = importBank(true);
   try { SpreadsheetApp.getUi().alert(`Расходы по карте включены. Новых платежей: ${n}. Дальше письма банка проверяются каждые 15 минут.`); } catch (e) {}
 }
+// Платежи с 1-го числа текущего месяца (то, что было до включения). Похожие на ручные записи виджет спросит.
+function cardMonth() {
+  const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0);
+  const props = PropertiesService.getScriptProperties();
+  if (Number(props.getProperty("cardSince") || Infinity) > d.getTime()) props.setProperty("cardSince", String(d.getTime()));
+  if (!props.getProperty("cardOn")) return cardOn();
+  const n = importBank(true);
+  try { SpreadsheetApp.getUi().alert(`Загружено платежей с начала месяца: ${n}. Виджет добавит их и спросит про похожие на ручные записи.`); } catch (e) {}
+}
 function cardOff() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === "importBank").forEach(t => ScriptApp.deleteTrigger(t));
   PropertiesService.getScriptProperties().deleteProperty("cardOn");
@@ -195,7 +205,13 @@ function importBank_(full) {
   const skip = CARD_SKIP.indexOf("__") === 0 ? [] : CARD_SKIP.split(",").map(x => x.trim().toUpperCase()).filter(String);
   const rows = [];
   const after = Math.max(Math.floor(since / 1000) - 3600, Math.floor(Date.now() / 1000) - CARD.days * 86400);
-  const threads = GmailApp.search(`${CARD.query} after:${after}`, 0, 100);
+  // по 100 цепочек за раз: за месяц писем банка бывает больше сотни
+  const threads = [];
+  for (let page; threads.length < 1000; ) {
+    page = GmailApp.search(`${CARD.query} -subject:Sign-on after:${after}`, threads.length, 100);
+    threads.push(...page);
+    if (page.length < 100) break;
+  }
   for (const th of threads) for (const m of (th.getLastMessageDate().getTime() < since ? [] : th.getMessages())) {
     const kb = /kasikornbank/i.test(m.getFrom ? m.getFrom() : "");
     const id = (kb ? "kb-" : "bbl-") + m.getId();

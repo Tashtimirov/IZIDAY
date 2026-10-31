@@ -1698,21 +1698,27 @@ async function takeCard(card) {
 // Спросить про возможные дубли: «одно и то же» — не добавлять, «разные» — добавить, «позже» — спросить в следующий раз
 async function askCardDups() {
   const st = await loadSettings()
-  for (const c of st.cardAsk || []) {
+  let allSame = false
+  const list = st.cardAsk || []
+  for (const [i, c] of list.entries()) {
     const all = await rawMoney()
     let r = 1
     if (!all.some(x => x.id === c.id)) {
       const twin = cardTwin(c, all)
-      if (twin) {
+      if (twin && allSame) r = 0
+      else if (twin) {
         const a = new Alert()
         a.title = "💳 Похоже на дубль"
         a.message = `По карте: ${WHEN_S.string(new Date(c.date))}\n−${money(c.amount)} · ${c.to || c.kind}\n\n` +
           `Уже записано: ${WHEN_S.string(new Date(twin.date))}\n−${money(twin.amount)} · ${twin.category}${twin.comment ? " · " + twin.comment : ""}`
         a.addAction("Это одно и то же — не добавлять")
         a.addAction("Разные — добавить")
+        const left = list.length - i - 1
+        if (left) a.addAction(`Это и ещё ${left} — дубли, не добавлять`)   // после загрузки месяца вопросов много
         a.addCancelAction("Решить позже")
         r = await a.presentAlert()
         if (r === -1) return
+        if (r === 2) { allSame = true; r = 0 }
       }
       saveJSON("finance.json", mergeSynced(all, r === 0 ? [] : [cardEntry(c)], r === 0 ? [c.id] : []))
     }
