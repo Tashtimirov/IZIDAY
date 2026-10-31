@@ -219,8 +219,9 @@ function importBank_(full) {
     const body = m.getBody() || m.getPlainBody();
     const p = kb ? parseKBankMail_(m.getSubject(), body) : parseBankMail_(m.getSubject(), body);
     if (!p) continue;
-    // переводы между своими счетами (Bangkok Bank ⇄ Kasikornbank, свои кошельки) — не расход, иначе траты задвоятся
-    const own = skip.some(w => p.to.toUpperCase().indexOf(w) >= 0);
+    // переводы между своими счетами (Bangkok Bank ⇄ Kasikornbank) — не расход, иначе траты задвоятся.
+    // Пополнение своего кошелька — расход: о покупках из кошелька письма не приходят, иначе их не будет видно
+    const own = !/Пополнение/.test(p.kind) && skip.some(w => p.to.toUpperCase().indexOf(w) >= 0);
     rows.push([m.getDate(), p.amount, txt_(p.to), p.kind, !(p.amount > 0) ? CARD_ODD : own ? CARD_OWN : CARD_NEW, id]);
     have.add(id);
   }

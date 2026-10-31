@@ -80,7 +80,7 @@ const card = ss.getSheetByName("Карта")
 const rows = card.cells.slice(1)
 check("лист «Карта»: платежи с сегодняшнего дня, вход в приложение, смена почты и вчерашнее — нет", rows.length === 8, rows.map(r => r[5]))
 check("оплата: сумма и получатель", rows[0][1] === 70 && rows[0][2] === "heokaow reataurant" && rows[0][3] === "Оплата", rows[0])
-check("пополнение своего кошелька — не расход", rows[1][1] === 4000 && /свой счёт/.test(rows[1][4]) && /K Plus Wallet/.test(rows[1][2]), rows[1])
+check("пополнение своего кошелька K Plus — расход", rows[1][1] === 4000 && rows[1][4] === "ждёт виджет" && /K Plus Wallet/.test(rows[1][2]), rows[1])
 check("перевод PromptPay человеку", rows[2][1] === 450 && rows[2][2] === "ERIK HYAN CHU" && rows[2][3] === "Перевод PromptPay", rows[2])
 const row = id => rows.find(x => x[5] === id) || []
 check("перевод Bangkok Bank → свой счёт в Kasikornbank — не расход", /свой счёт/.test(row("bbl-m5")[4]), row("bbl-m5"))
