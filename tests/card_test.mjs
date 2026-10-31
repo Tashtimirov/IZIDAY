@@ -89,7 +89,7 @@ check("K PLUS: перевод на свой счёт в Bangkok Bank — не р
 check("K PLUS: перевод человеку", row("kb-k3")[1] === 200 && row("kb-k3")[2] === "SOMCHAI JAIDEE" && row("kb-k3")[4] === "ждёт виджет", row("kb-k3"))
 check("K PLUS: письмо без понятной суммы остаётся на листе и в расходы не идёт", /не разобрано/.test(row("kb-k5")[4]), row("kb-k5"))
 let r = post({ entries: [] })
-check("виджету — четыре расхода", r.card.length === 4 && r.card[0].id === "bbl-m1" && r.card[0].amount === 70 && r.card[1].to === "ERIK HYAN CHU" &&
+check("виджету — пять расходов (с пополнением кошелька)", r.card.length === 5 && r.card[0].id === "bbl-m1" && r.card[0].amount === 70 && r.card[2].to === "ERIK HYAN CHU" &&
   r.card.some(c => c.id === "kb-k1") && r.card.some(c => c.id === "kb-k3"), r.card)
 r = post({ entries: [] })
 check("выгрузка из виджета почту не читает (быстрый ответ)", searches.length === 2, searches.length)
@@ -97,7 +97,7 @@ gs.importBank({})
 check("триггер смотрит только последние дни", /after:\d+/.test(searches[searches.length - 1]) && card.cells.length === 9, searches)
 check("повторный опрос почты не дублирует строки", card.cells.length === 9, card.cells.length)
 r = post({ entries: [{ id: "bbl-m1", date: rows[0][0].getTime(), type: "expense", amount: 70, method: "transfer", category: "Кафе и рестораны", comment: "heokaow" }],
-  deleted: ["bbl-m3", "kb-k1", "kb-k3"] })
+  deleted: ["bbl-m2", "bbl-m3", "kb-k1", "kb-k3"] })
 check("принятое виджетом — «в расходах», дубль — «не добавлено», больше не присылаются",
   r.card.length === 0 && card.cells[1][4] === "в расходах" && card.cells[3][4] === "дубль, не добавлено", card.cells.map(x => x[4]))
 check("принятое попало в «Операции»", ss.getSheetByName("Операции").cells.some(x => x && x[6] === "bbl-m1"))
