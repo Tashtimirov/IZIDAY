@@ -129,12 +129,11 @@ function doPost(e) {
       added += r.added; removed += r.removed;
     }
     for (const h of body.health || []) upsertActivity_(ss.getSheetByName(ACTIVITY.name), h);
-    // расходы по карте: свежие письма банка → лист «Карта», виджету — те, которых у него ещё нет
+    // расходы по карте: виджету — платежи с листа «Карта», которых у него ещё нет. Почту здесь не читаем:
+    // это долго, а Быстрая команда и виджет ждут ответа недолго; письма раз в 15 минут разбирает триггер
     let card;
-    if (PropertiesService.getScriptProperties().getProperty("cardOn")) {
-      try { importBank_(); } catch (err) {}
-      if (Array.isArray(body.entries)) card = cardForWidget_(body.entries, deleted);
-    }
+    if (PropertiesService.getScriptProperties().getProperty("cardOn") && Array.isArray(body.entries))
+      card = cardForWidget_(body.entries, deleted);
     if (Array.isArray(body.food)) dailyAdvice_();
     // номера листов — чтобы виджет открывал нужный лист (калории и активность → «Еда и активность»)
     const sheets = {};
@@ -170,31 +169,34 @@ function cardOn() {
   // письма с начала сегодняшнего дня: то, что было раньше, вы, скорее всего, уже записали
   if (!props.getProperty("cardSince")) { const d = new Date(); d.setHours(0, 0, 0, 0); props.setProperty("cardSince", String(d.getTime())); }
   props.setProperty("cardOn", "1");
-  const n = importBank();
+  const n = importBank(true);
   try { SpreadsheetApp.getUi().alert(`Расходы по карте включены. Новых платежей: ${n}. Дальше письма банка проверяются каждые 15 минут.`); } catch (e) {}
 }
 function cardOff() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === "importBank").forEach(t => ScriptApp.deleteTrigger(t));
   PropertiesService.getScriptProperties().deleteProperty("cardOn");
 }
-function importBank() {
+function importBank(full) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
-  try { ensureSheets_(); return importBank_(); } finally { lock.releaseLock(); }
+  try { ensureSheets_(); return importBank_(full === true); } finally { lock.releaseLock(); }
 }
 
 // Новые письма банка → строки листа «Карта». Повторно одно письмо не добавляется (ID — номер письма).
-function importBank_() {
+// Обычный запуск смотрит письма за последние 3 дня (быстро), full — всё с момента включения.
+function importBank_(full) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sh = ss.getSheetByName(CARD.name) || makeCardSheet_(ss);
   const props = PropertiesService.getScriptProperties();
-  const since = Number(props.getProperty("cardSince") || 0);
+  const start = Number(props.getProperty("cardSince") || 0);
+  const since = full ? start : Math.max(start, Date.now() - 3 * 864e5);
   const idCol = CARD.head.length;
   const have = new Set(readIds_(sh, idCol).filter(String));
   const skip = CARD_SKIP.indexOf("__") === 0 ? [] : CARD_SKIP.split(",").map(x => x.trim().toUpperCase()).filter(String);
   const rows = [];
-  const threads = GmailApp.search(`${CARD.query} newer_than:${CARD.days}d`, 0, 100);
-  for (const th of threads) for (const m of th.getMessages()) {
+  const after = Math.max(Math.floor(since / 1000) - 3600, Math.floor(Date.now() / 1000) - CARD.days * 86400);
+  const threads = GmailApp.search(`${CARD.query} after:${after}`, 0, 100);
+  for (const th of threads) for (const m of (th.getLastMessageDate().getTime() < since ? [] : th.getMessages())) {
     const kb = /kasikornbank/i.test(m.getFrom ? m.getFrom() : "");
     const id = (kb ? "kb-" : "bbl-") + m.getId();
     if (have.has(id) || m.getDate().getTime() < since) continue;

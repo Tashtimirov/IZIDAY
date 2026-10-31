@@ -225,7 +225,7 @@ async function saveSettings(patch) {
 }
 
 // Отправляет в таблицу все операции и удалённые ID. Таблица сама пропускает те, что уже есть.
-async function syncSheet(silent) {
+async function syncSheet(silent, timeout = 30) {
   const st = await loadSettings()
   const hook = sheetHookOf(st)
   if (!hook) return silent ? null : { ok: false, error: "автозапись отключена" }
@@ -238,7 +238,7 @@ async function syncSheet(silent) {
   try {
     const req = new Request(hook)
     req.method = "POST"
-    req.timeoutInterval = 30
+    req.timeoutInterval = timeout
     req.headers = { "content-type": "text/plain;charset=utf-8" }
     req.body = JSON.stringify(body)
     const res = await req.loadJSON()
@@ -1142,12 +1142,13 @@ async function receiveHealth(param) {
   if (!h) { Script.setShortcutOutput("Мой день: не понял данные. Нужен словарь steps, active, exercise, hr…"); return }
   if (h.day === dayKey(new Date())) saveJSON("health.json", h)   // прошлый день — только в историю
   await saveHealthDay(h)
-  await syncSheet(true)   // день активности сразу в таблицу (если она подключена)
   const got = [h.steps != null && `${nf(h.steps)} шагов`, h.active != null && `${nf(h.active)} ккал`,
     h.exercise != null && `${nf(h.exercise)} мин`].filter(Boolean).join(", ")
   Script.setShortcutOutput(`Мой день: сохранено в ${TIME.string(new Date())} (${Object.keys(h).filter(k => k in HEALTH_KEYS).join(", ")})` +
     (got ? `\n${got}` : "") +
     (h.bad ? `\nНе понял: ${h.bad.join("; ")}` : ""))
+  // ответ команде уже готов: если выгрузка не успеет, её догонит виджет
+  await syncSheet(true, 15)   // день активности сразу в таблицу (если она подключена)
 }
 
 // ── В виджете ──

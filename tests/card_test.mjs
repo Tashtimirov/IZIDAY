@@ -29,7 +29,7 @@ const sheets = [new Sheet("Лист1")]
 const ss = { getSheetByName: n => sheets.find(s => s.name === n) || null, insertSheet: n => { const s = new Sheet(n); sheets.push(s); return s },
   getSheets: () => sheets, deleteSheet: s => sheets.splice(sheets.indexOf(s), 1), getUrl: () => "https://docs.google.com/spreadsheets/d/T/edit",
   setActiveSheet: s => { ss.active = s }, moveActiveSheet: () => {}, getSpreadsheetTimeZone: () => "Asia/Bangkok" }
-const props = {}, triggers = []
+const props = {}, triggers = [], searches = []
 // письма — как их отдаёт Gmail (англ. половина письма, ячейки таблицы)
 const mail = (id, at, subject, rows, from = "BualuangmBanking@bangkokbank.com") => ({ getId: () => id, getFrom: () => from, getDate: () => new Date(at), getSubject: () => subject, getPlainBody: () => "",
   getBody: () => `<p>ยืนยัน ... ไทย</p><p><b>Automatic e-mail: x</b></p><table>${rows.map(([k, v]) => `<tr><td></td><td>${k}</td><td>${v}</td></tr>`).join("")}</table><p>Yours sincerely</p>` })
@@ -60,14 +60,14 @@ const g = {
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = v }, deleteProperty: k => { delete props[k] } }) },
   ContentService: { createTextOutput: s => ({ setMimeType: () => JSON.parse(s) }), MimeType: { JSON: 1 } },
-  GmailApp: { search: q => (/bangkokbank/.test(q) ? [{ getMessages: () => inbox }] : []) },
+  GmailApp: { search: q => (searches.push(q), /bangkokbank/.test(q) ? [{ getMessages: () => inbox, getLastMessageDate: () => new Date(Math.max(...inbox.map(m => +m.getDate()))) }] : []) },
   ScriptApp: { getProjectTriggers: () => triggers, deleteTrigger: t => triggers.splice(triggers.indexOf(t), 1),
     newTrigger: f => ({ timeBased: () => ({ everyMinutes: m => ({ create: () => triggers.push({ getHandlerFunction: () => f, m }) }) }) }) },
 }
 const RealDate = Date
 let clock = T0 + 16 * 3600e3
 globalThis.Date = class extends RealDate { constructor(...a) { a.length ? super(...a) : super(clock) } static now() { return clock } }
-const gs = new Function(...Object.keys(g), code + "; return { doPost, cardOn, cardOff, parseBankMail_ }")(...Object.values(g))
+const gs = new Function(...Object.keys(g), code + "; return { doPost, cardOn, cardOff, importBank, parseBankMail_ }")(...Object.values(g))
 const KEY = "k".repeat(32)
 const post = b => gs.doPost({ postData: { contents: JSON.stringify(Object.assign({ secret: KEY, deleted: [], food: [], water: [] }, b)) } })
 
@@ -92,6 +92,9 @@ let r = post({ entries: [] })
 check("виджету — четыре расхода", r.card.length === 4 && r.card[0].id === "bbl-m1" && r.card[0].amount === 70 && r.card[1].to === "ERIK HYAN CHU" &&
   r.card.some(c => c.id === "kb-k1") && r.card.some(c => c.id === "kb-k3"), r.card)
 r = post({ entries: [] })
+check("выгрузка из виджета почту не читает (быстрый ответ)", searches.length === 2, searches.length)
+gs.importBank({})
+check("триггер смотрит только последние дни", /after:\d+/.test(searches[searches.length - 1]) && card.cells.length === 9, searches)
 check("повторный опрос почты не дублирует строки", card.cells.length === 9, card.cells.length)
 r = post({ entries: [{ id: "bbl-m1", date: rows[0][0].getTime(), type: "expense", amount: 70, method: "transfer", category: "Кафе и рестораны", comment: "heokaow" }],
   deleted: ["bbl-m3", "kb-k1", "kb-k3"] })
