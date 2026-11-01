@@ -9,6 +9,7 @@ class Sheet {
   getRange(r, c, nr = 1, nc = 1) {
     const sh = this, obj = {
       // как в настоящей таблице: строка «=…» становится формулой, строка из цифр — числом
+      getDisplayValues: () => obj.getValues().map(r => r.map(v => v instanceof Date ? v.toISOString() : String(v))),
       getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => (sh.cells[r - 1 + i] || [])[c - 1 + j] ?? "")),
       setValues: v => { v.forEach((row, i) => row.forEach((x, j) => { (sh.cells[r - 1 + i] ||= [])[c - 1 + j] = typeof x === "string" && /^=/.test(x) ? "#ERROR!" : typeof x === "string" && /^\d+$/.test(x) ? +x : x })); return obj },
       setValue: x => obj.setValues([[x]]),
@@ -19,7 +20,8 @@ class Sheet {
     return obj
   }
   deleteRow(r) { this.cells.splice(r - 1, 1) }
-  setFrozenRows() {} hideColumns() {} showColumns() {} setColumnWidth() {} hideSheet() { this.hidden = true }
+  setFrozenRows() {} hideColumns() {} showColumns() {} setColumnWidth() {} hideSheet() { this.hidden = true } isSheetHidden() { return !!this.hidden }
+  getLastColumn() { return this.cells.reduce((m, r) => Math.max(m, r ? r.length : 0), 0) }
   getSheetId() { return sheets.indexOf(this) + 100 }
 }
 const sheets = [new Sheet("Лист1")]
@@ -30,6 +32,7 @@ const ss = { getSheetByName: n => sheets.find(s => s.name === n) || null, insert
 const props = {}, fetched = []
 const g = {
   SpreadsheetApp: { getActiveSpreadsheet: () => ss },
+  Utilities: { formatDate: (d, tz, f) => { const z = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}` } },
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = v } }) },
   ContentService: { createTextOutput: s => ({ setMimeType: () => JSON.parse(s) }), MimeType: { JSON: 1 } },
@@ -95,6 +98,13 @@ a = hub({ from: "app", fire: { url: "https://api.anthropic.com/v1/claude_code/ro
 check("рутина запущена, ссылка на сессию", a.fire && a.fire.session_url === "https://claude.ai/code/session_x" && fetched[0].o.headers.Authorization === "Bearer t", a.fire)
 a = hub({ from: "app", fire: { url: "https://evil.example/fire", token: "t", text: "x" } })
 check("чужой адрес не вызывается", !a.fire && fetched.length === 1)
+// чтение листов для помощника
+a = hub({ from: "app", read: {} })
+check("список листов без скрытого _hub", a.read && a.read.sheets.some(x => x.name === "Операции" && x.head.includes("Сумма")) && !a.read.sheets.some(x => x.name === "_hub"), a.read)
+a = hub({ from: "app", read: { sheet: "операции", limit: 5 } })
+check("строки листа: последние limit, даты строкой", a.read.rows.length === 5 && a.read.total > 5 && /^\d{4}-\d{2}-\d{2}/.test(a.read.rows[0][0]), a.read && a.read.rows && a.read.rows[0])
+a = hub({ from: "app", read: { sheet: "Нет такого" } })
+check("неизвестный лист — ошибка и список", a.read.error && a.read.sheets.includes("Операции"))
 check("без ключа — отказ", gs.doPost({ postData: { contents: JSON.stringify({ secret: "x".repeat(32), hub: { from: "app" } }) } }).error === "forbidden")
 console.log(fail ? `\n✗ ошибок: ${fail}` : "\nВсё в порядке")
 process.exit(fail ? 1 : 0)

@@ -474,6 +474,15 @@ const AGENT_TOOLS = [
     input_schema: { type: "object", properties: { month: { type: "string", description: "YYYY-MM, по умолчанию текущий" } } } },
   { name: "delete_money", description: "Удалить ошибочную операцию по id.",
     input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "get_history", description: "Сводка по дням за период (до 92 дней): еда (ккал, БЖУ), вода, тренировки, шаги и активность с часов, расходы и доходы. " +
+      "details=true — ещё и сами записи (блюда, операции). Для вопросов «как я питался на неделе», «сколько потратил за октябрь по дням», «сколько шагов вчера».",
+    input_schema: { type: "object", properties: { from: { type: "string", description: "YYYY-MM-DD" }, to: { type: "string", description: "YYYY-MM-DD, по умолчанию сегодня" },
+      details: { type: "boolean" } }, required: ["from"] } },
+  { name: "read_sheet", description: "Прочитать таблицу виджета (Google Таблица) напрямую. Без sheet — список листов с колонками. " +
+      "С sheet — строки листа (последние limit, можно from/to по дате в первом столбце). Листы: «Операции», «Еда», «Вода», «Тренировки», «Активность», " +
+      "«Карта» (платежи по банковской карте из писем банка), «Итоги: …», «Еда и активность» и другие. Используй, когда нужны данные старше, чем есть в get_history, или лист, которого нет в других инструментах.",
+    input_schema: { type: "object", properties: { sheet: { type: "string" }, from: { type: "string", description: "YYYY-MM-DD" }, to: { type: "string", description: "YYYY-MM-DD" },
+      limit: { type: "number", description: "сколько последних строк, по умолчанию 200" } } } },
   { name: "ask_user", description: "Задать пользователю уточняющий вопрос и получить ответ. Используйте, только если без ответа нельзя выполнить команду правильно.",
     input_schema: { type: "object", properties: {
       question: { type: "string" },
@@ -579,6 +588,36 @@ async function runTool(name, x) {
       return { month: key, income: t.income, expense: t.expense, cash: t.cash, transfer: t.transfer, by_category: t.cats,
         items: t.items.slice(-60).map(e => ({ id: e.id, date: iso(new Date(e.date)), type: e.type, amount: e.amount, method: e.method, category: e.category, comment: e.comment })) }
     }
+    case "get_history": {
+      const d0 = parseIso(x.from), d1 = x.to ? parseIso(x.to) : sod(new Date())
+      if (!d0 || !d1) return { error: "даты в формате YYYY-MM-DD" }
+      const from = sod(d0), to = addDays(sod(d1), 1)
+      if ((to - from) / 864e5 > 92) return { error: "не больше 92 дней за раз" }
+      const inDay = (list, d) => live(list).filter(e => e.date >= +d && e.date < +addDays(d, 1))
+      const hd = {}
+      for (const h of (D.snap && D.snap.health) || []) if (h && h.day) hd[h.day] = h
+      const days = []
+      for (let d = from; d < to; d = addDays(d, 1)) {
+        const food = inDay(D.food, d), money = inDay(D.money, d), wk = inDay(D.workouts, d), h = hd[dayKey(d)]
+        const sum = (a, k) => Math.round(a.reduce((s, m) => s + (+m[k] || 0), 0))
+        const row = { date: dayKey(d), kcal: sum(food, "kcal"), protein: sum(food, "protein"), fat: sum(food, "fat"), carbs: sum(food, "carbs"),
+          water_ml: sum(inDay(D.water, d), "ml"), expense: sum(money.filter(e => e.type === "expense"), "amount"), income: sum(money.filter(e => e.type === "income"), "amount") }
+        if (wk.length) row.workouts = wk.map(w => ({ title: w.title, minutes: w.minutes, kcal: w.kcal }))
+        if (h) Object.assign(row, { steps: h.steps, active_kcal: h.active, exercise_min: h.exercise, sleep_h: h.sleep })
+        if (x.details) {
+          if (food.length) row.food = food.map(m => ({ time: hm(new Date(m.date)), title: m.title, kcal: m.kcal }))
+          if (money.length) row.money = money.map(e => ({ time: hm(new Date(e.date)), type: e.type, amount: e.amount, category: e.category, comment: e.comment, method: e.method }))
+        }
+        days.push(row)
+      }
+      return { days, note: Object.keys(hd).length ? "шаги и активность с часов есть только за дни, которые прислал виджет (обычно последние 14)" : "данных с часов нет" }
+    }
+    case "read_sheet": {
+      try {
+        const res = await hubPost({ read: { sheet: x.sheet || "", from: x.from || "", to: x.to || "", limit: x.limit || 200 } }, 45000)
+        return res.read || { error: "скрипт таблицы старый: разверните новую версию Code.gs" }
+      } catch (e) { return { error: String(e.message || e) } }
+    }
     case "delete_money": {
       const e = live(D.money).find(z => z.id === x.id)
       if (!e) return { error: "операция не найдена" }
@@ -656,6 +695,8 @@ ${cals.length ? `- Календари по словам пользователя
 - «Съел», «выпил стакан воды» — add_food и add_water. На вопросы о калориях, шагах и воде смотри get_health.
 - Тренировка без часов («проплыл бассейн 10 раз», «час падела, часы забыл») — add_workout. Вес пользователя ${H().weight || 80} кг. Скажи, сколько ккал и минут записал.
 - Если пользователь спрашивает (что у меня завтра, сколько потратил), посмотри данные и ответь.
+- У тебя есть доступ ко всем данным пользователя: календарь и напоминания iPhone, деньги (и платежи по карте), еда, вода, тренировки, шаги и активность с часов — за сегодня и за прошлые дни.
+  История по дням — get_history; любой лист таблицы виджета целиком — read_sheet. Не говори, что данных нет, пока не посмотрел. Замечай закономерности (недобор воды, перерасход, мало шагов) и говори о них, когда к месту.
 - Удаление и перенос пользователь подтверждает сам — не спрашивай отдельно «точно удалить?» или «точно перенести?».`
 }
 function chatSystem() {

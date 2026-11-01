@@ -10,6 +10,7 @@ export function sheetScript() {
     getLastRow() { let n = 0; this.cells.forEach((r, i) => { if (r && r.some(v => v !== "" && v !== undefined)) n = i + 1 }); return n }
     getRange(r, c, nr = 1, nc = 1) {
       const sh = this, obj = {
+        getDisplayValues: () => obj.getValues().map(r => r.map(v => v instanceof Date ? v.toISOString() : String(v))),
         getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => (sh.cells[r - 1 + i] || [])[c - 1 + j] ?? "")),
         setValues: v => { v.forEach((row, i) => row.forEach((x, j) => { (sh.cells[r - 1 + i] ||= [])[c - 1 + j] = x })); return obj },
         setValue: x => obj.setValues([[x]]),
@@ -20,7 +21,8 @@ export function sheetScript() {
       return obj
     }
     deleteRow(r) { this.cells.splice(r - 1, 1) }
-    setFrozenRows() {} hideColumns() {} showColumns() {} setColumnWidth() {} hideSheet() {}
+    setFrozenRows() {} hideColumns() {} showColumns() {} setColumnWidth() {} hideSheet() { this.hidden = true } isSheetHidden() { return !!this.hidden }
+    getLastColumn() { return this.cells.reduce((m, r) => Math.max(m, r ? r.length : 0), 0) }
     getSheetId() { return sheets.indexOf(this) + 100 }
   }
   const ss = { getSheetByName: n => sheets.find(s => s.name === n) || null, insertSheet: n => { const s = new Sheet(n); sheets.push(s); return s },
@@ -30,6 +32,7 @@ export function sheetScript() {
   const props = {}
   const g = {
     SpreadsheetApp: { getActiveSpreadsheet: () => ss },
+  Utilities: { formatDate: (d, tz, f) => { const z = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}` } },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = v } }) },
     ContentService: { createTextOutput: s => ({ setMimeType: () => JSON.parse(s) }), MimeType: { JSON: 1 } },

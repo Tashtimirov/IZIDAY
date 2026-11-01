@@ -216,8 +216,33 @@ function hub_(h) {
         : { error: j.error ? j.error.type + ": " + j.error.message : "пустой ответ" };
     } catch (err) { out.fire = { error: "нет связи: " + err }; }
   }
+  // 5. Чтение любого листа для помощника (только чтение; скрытый «_hub» не отдаётся)
+  if (h.read) out.read = readSheet_(ss, h.read);
   out.url = ss.getUrl();
   return out;
+}
+
+// Без имени листа — список листов с заголовками и числом строк. С именем — строки (последние limit),
+// по первому столбцу-дате можно отфильтровать from/to (YYYY-MM-DD). Даты отдаются как «YYYY-MM-DD HH:MM»
+function readSheet_(ss, r) {
+  const tz = ss.getSpreadsheetTimeZone();
+  const cell = v => v instanceof Date ? Utilities.formatDate(v, tz, "yyyy-MM-dd HH:mm").replace(" 00:00", "") : v;
+  const sheets = ss.getSheets().filter(sh => sh.getName() !== HUB.name && !sh.isSheetHidden());
+  if (!r.sheet) return { sheets: sheets.map(sh => ({ name: sh.getName(), rows: Math.max(0, sh.getLastRow() - 1),
+    head: sh.getLastColumn() ? sh.getRange(1, 1, 1, Math.min(sh.getLastColumn(), 20)).getDisplayValues()[0].filter(String) : [] })) };
+  const sh = sheets.find(x => x.getName().toLowerCase() === String(r.sheet).toLowerCase());
+  if (!sh) return { error: "нет листа «" + r.sheet + "»", sheets: sheets.map(x => x.getName()) };
+  const n = sh.getLastRow(), w = Math.min(sh.getLastColumn(), 30);
+  if (n < 1 || w < 1) return { sheet: sh.getName(), head: [], rows: [] };
+  const all = sh.getRange(1, 1, n, w).getValues();
+  const head = all[0].map(String);
+  let rows = all.slice(1).filter(x => x.some(v => v !== ""));
+  const from = r.from ? new Date(r.from + "T00:00:00") : null, to = r.to ? new Date(r.to + "T23:59:59") : null;
+  if ((from || to) && rows.some(x => x[0] instanceof Date))
+    rows = rows.filter(x => x[0] instanceof Date && (!from || x[0] >= from) && (!to || x[0] <= to));
+  const limit = Math.max(1, Math.min(Number(r.limit) || 200, 1000)), total = rows.length;
+  rows = rows.slice(-limit).map(x => x.map(cell));
+  return { sheet: sh.getName(), head, total, rows };
 }
 
 // Скрытый лист «_hub»: в столбце A ключ, в B число кусков, дальше JSON по кускам (в ячейку влезает 50 000 знаков).
