@@ -56,7 +56,8 @@ const CONFIG = {
   aiProxyToken: "",
   monthlyReportNotification: true, // 1-го числа в 10:00 прислать уведомление с отчётом
   assistantChat: true,           // кнопка 💬 — чат с помощником Claude вместо заметок; 🎤 сразу слушает и пишет в этот чат
-  briefs: { morning: "08:00", evening: "21:00" },   // утренняя и вечерняя сводка помощника (уведомление → чат); "" — без сводки
+  briefs: { morning: "08:00", evening: "21:00" },
+  routes: "__ROUTES__",          // маршруты в Claude Code из secrets.json (routes); заданные в меню 🤖 важнее   // утренняя и вечерняя сводка помощника (уведомление → чат); "" — без сводки
   webApp: "__WEB_APP__",         // веб-приложение «Мой день» (build.py берёт web_app из secrets.json): кнопки виджета открывают его, а виджет передаёт ему календарь и напоминания
   // Google Таблица с доходами и расходами (кнопка ▦ в виджете)
   sheetUrl: "https://docs.google.com/spreadsheets/d/1dsrjcRimF85iZptC0WOyLImhe-llh4BOJmSgGzK_om8/edit",
@@ -3361,7 +3362,8 @@ async function listen() {
 
 // ── Маршруты в Claude Code: [{ name, hint, url, token }] — токены только в Связке ключей iPhone
 function loadRoutes() {
-  try { return Keychain.contains(ROUTES_KEY) ? JSON.parse(Keychain.get(ROUTES_KEY)) : [] } catch (e) { return [] }
+  try { if (Keychain.contains(ROUTES_KEY)) { const r = JSON.parse(Keychain.get(ROUTES_KEY)); if (r.length) return r } } catch (e) {}
+  return Array.isArray(CONFIG.routes) ? CONFIG.routes : []   // встроенные при сборке (только личная версия)
 }
 function saveRoutes(list) { Keychain.set(ROUTES_KEY, JSON.stringify(list)) }
 const ROUTE_URL = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/

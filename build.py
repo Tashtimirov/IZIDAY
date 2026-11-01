@@ -18,7 +18,7 @@ if not sec_path.exists():
 sec = json.loads(sec_path.read_text())
 
 def fill(text):
-    return text.replace("__SHEET_SECRET__", sec["sheet_secret"]).replace("__SHEET_HOOK__", sec["sheet_hook"]).replace("__CARD_SKIP__", sec.get("card_skip", "")).replace("__WEB_APP__", sec.get("web_app", ""))
+    return text.replace("__SHEET_SECRET__", sec["sheet_secret"]).replace("__SHEET_HOOK__", sec["sheet_hook"]).replace("__CARD_SKIP__", sec.get("card_skip", "")).replace("__WEB_APP__", sec.get("web_app", "")).replace('"__ROUTES__"', json.dumps(sec.get("routes", []), ensure_ascii=False))
 
 shutil.rmtree(DIST, ignore_errors=True)
 DIST.mkdir()
@@ -44,7 +44,7 @@ for country in ["ru", "th"]:
     out = "".join(l for l in out.splitlines(True) if "[личное]" not in l)
     if country == "ru" and sec.get("ai_proxy_token") and sec["ai_proxy_token"] in out:
         sys.exit("В версии для России не должно быть общего доступа к Claude")
-    for private in ["docs.google.com/spreadsheets/d/1", "трекер", "tracker", "Курение", "Секс", "Алкоголь", "Prime Thai", "PTP", "Семейная группа", sec["sheet_secret"], sec["sheet_hook"]]:
+    for private in ["docs.google.com/spreadsheets/d/1", "трекер", "tracker", "Курение", "Секс", "Алкоголь", "Prime Thai", "PTP", "Семейная группа", sec["sheet_secret"], sec["sheet_hook"], *[r.get("token", "") for r in sec.get("routes", [])]]:
         if private and private in out:
             sys.exit(f"В MyDay-{country.upper()}.js осталось личное: {private}")
     (DIST / f"MyDay-{country.upper()}.js").write_text(out)
