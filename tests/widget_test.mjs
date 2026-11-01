@@ -32,7 +32,7 @@ class Reminder { static async allIncomplete() { return [{ title: "Купить �
 // всё, что рисует виджет, — пустышки, которые принимают любые вызовы и свойства
 const urls = [], texts = []
 const stub = () => new Proxy(function () {}, {
-  get: (t, k) => k === "then" ? undefined : k === "addText" ? (s => (texts.push(s), stub())) : k in t ? t[k] : (t[k] = stub()),
+  get: (t, k) => k === "then" ? undefined : k === "addText" ? (s => { if (typeof s !== "string") throw new Error("addText получил " + s); texts.push(s); return stub() }) : k in t ? t[k] : (t[k] = stub()),
   set: (t, k, v) => { if (k === "url") urls.push(v); t[k] = v; return true },
   apply: () => stub(), construct: () => stub() })
 const log = []

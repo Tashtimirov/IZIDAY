@@ -564,7 +564,8 @@ function contentWidth(family) {
 // Не число («2 соб»), а сами названия: два события — по строке на каждое, одно — в две строки,
 // больше двух — первое название и «+N», чтобы было понятно, что за событие.
 function stripLines(items) {
-  const names = items.map(it => stripEmoji(it.title))
+  const names = items.map(it => stripEmoji(it.title) || "Без названия")
+  if (!names.length) return []   // день без событий: только «—» (раньше тут было undefined и виджет падал)
   if (names.length === 1) return [{ text: names[0], lines: 2 }]
   if (names.length === 2) return names.map(t => ({ text: t, lines: 1 }))
   return [{ text: names[0], lines: 1 }, { text: `+${names.length - 1} ещё`, lines: 1, more: true }]
