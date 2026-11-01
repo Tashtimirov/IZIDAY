@@ -1003,7 +1003,7 @@ function render() {
 const TITLES = { chat: "Помощник", money: "Деньги", health: "Здоровье", more: "Ещё" }
 function renderTop() {
   const v = iphone()
-  if (tab === "today") $("#top-title").textContent = fullDate(new Date())
+  if (tab === "today") { const d = new Date(); $("#top-title").innerHTML = `${esc(core.cap(WDF[d.getDay()]))}<span class="dt">${d.getDate()} ${MONTHS_GEN[d.getMonth()]}</span>` }
   else $("#top-title").textContent = TITLES[tab]
   let sub = ""
   if (!D.conn) sub = "Не подключено к виджету"
@@ -1016,6 +1016,8 @@ function renderTop() {
   $("#top-sub").textContent = sub
 }
 
+const WDF = ["воскресенье","понедельник","вторник","среда","четверг","пятница","суббота"]
+const MONTHS_GEN = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"]
 function renderToday() {
   const now = new Date(), t0 = sod(now), v = iphone()
   const isToday = sameDay(selDay, t0)
@@ -1027,11 +1029,13 @@ function renderToday() {
   html += `<div class="week">${[...Array(7)].map((_, i) => {
     const d = addDays(t0, i), n = counts[dayKey(d)] || 0
     return `<button class="day ${sameDay(d, selDay) ? "on" : ""} ${d.getDay() % 6 === 0 ? "we" : ""}" data-day="${+d}">
-      <div class="wd">${WD[d.getDay()]}</div><div class="dn">${d.getDate()}</div><div class="n">${n || ""}</div></button>`
+      <div class="wd">${WD[d.getDay()]}</div><div class="dn">${d.getDate()}</div><div class="n">${n ? n + " соб." : "—"}</div></button>`
   }).join("")}</div>`
   const onDay = d => v.events.filter(e => e.s < addDays(d, 1) && e.e > d).sort((a, b) => (b.all_day ? 1 : 0) - (a.all_day ? 1 : 0) || a.s - b.s)
   const dayEvs = onDay(selDay)
-  html += `<div class="card"><h2>${isToday ? "Сегодня" : esc(core.cap(dayName(selDay)))}<button class="act" data-do="event">+ Событие</button></h2>`
+  const nSel = dayEvs.length
+  html += `<div class="card daycard"><div class="dayhead"><div><div class="dh-t">${isToday ? "Сегодня" : esc(core.cap(dayName(selDay)))}, ${selDay.getDate()} ${MONTHS_GEN[selDay.getMonth()]}</div>
+    <div class="dh-n">${nSel ? `${nSel} ${plural(nSel, "событие", "события", "событий")}` : "Нет событий"}</div></div><button class="act" data-do="event">+ Событие</button></div>`
   html += dayEvs.length ? dayEvs.map((e, i) => {
     const t = e.all_day ? "весь день" : e.s < selDay ? "до " + hm(e.e) : hm(e.s)
     const past = isToday && !e.all_day && e.e <= now
@@ -1042,19 +1046,6 @@ function renderToday() {
   html += `</div>`
   dayEvsCache = dayEvs
 
-  // Дальше на неделю: названия событий по дням, чтобы видеть план целиком
-  const ahead = []
-  for (let i = 0; i < 7; i++) {
-    const d = addDays(t0, i)
-    if (sameDay(d, selDay)) continue
-    const evs = onDay(d).filter(e => !(i === 0 && !e.all_day && e.e <= now))
-    if (evs.length) ahead.push([d, evs])
-  }
-  if (ahead.length) {
-    html += `<div class="card"><h2>На неделе</h2>` + ahead.map(([d, evs]) => `<button class="agenda-day" data-day="${+d}">${esc(core.cap(dayName(d)))}</button>` +
-      evs.slice(0, 8).map(e => `<div class="agenda"><span class="dot" style="background:${esc(e.color || "var(--teal)")}"></span><span class="at">${e.all_day ? "весь день" : e.s < d ? "до " + hm(e.e) : hm(e.s)}</span><span class="t">${esc(e.title || "(без названия)")}</span></div>`).join("") +
-      (evs.length > 8 ? `<div class="agenda more">ещё ${evs.length - 8}</div>` : "")).join("") + `</div>`
-  }
 
   let rems = openRems(v)
   if (isToday) rems = rems.filter(r => !remDue(r) || remDue(r) < addDays(t0, 1))
@@ -1070,10 +1061,12 @@ function renderToday() {
     const h = dayHealth(), g = H()
     const t = core.monthTotals(live(D.money), core.monthKey(t0))
     const spent = live(D.money).filter(e => e.type === "expense" && sameDay(e.date, t0)).reduce((s, e) => s + e.amount, 0)
+    const mini = (p, color, icon) => { const r = 23, c = 2 * Math.PI * r
+      return `<span class="mr"><svg viewBox="0 0 56 56"><circle cx="28" cy="28" r="${r}" class="mr-t"/><circle cx="28" cy="28" r="${r}" stroke="${color}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - Math.max(0, Math.min(1, p || 0)))}"/></svg><i>${icon}</i></span>` }
     html += `<div class="card"><h2>За день</h2><div class="stats">
-      <button class="stat" data-do="water"><div class="v">💧 ${liters(h.water)} л</div><div class="l">из ${liters(g.waterGoal)} · +стакан</div><div class="prog"><div style="width:${Math.min(100, h.water / g.waterGoal * 100)}%"></div></div></button>
-      <button class="stat" data-do="tab-health"><div class="v">🍽 ${num(h.kcal)}</div><div class="l">ккал${h.active ? ` · −${num(h.active)} актив.` : ""}</div><div class="prog gold"><div style="width:${Math.min(100, h.kcal / (g.kcalGoal || 2000) * 100)}%"></div></div></button>
-      <button class="stat" data-do="tab-money"><div class="v">−${num(spent)}</div><div class="l">${esc(core.CONFIG.currency)} сегодня · −${num(t.expense)} за месяц</div></button>
+      <button class="stat" data-do="water">${mini(h.water / g.waterGoal, "var(--teal)", "💧")}<div class="v">${liters(h.water)} л</div><div class="l">из ${liters(g.waterGoal)} · +стакан</div></button>
+      <button class="stat" data-do="tab-health">${mini(h.kcal / (g.kcalGoal || 2000), "var(--gold)", "🍽")}<div class="v">${num(h.kcal)}</div><div class="l">ккал${h.active ? ` · −${num(h.active)}` : ""}</div></button>
+      <button class="stat" data-do="tab-money">${mini(t.expense ? spent / Math.max(spent, t.expense / Math.max(1, t0.getDate())) : 0, "var(--red)", "฿")}<div class="v">−${num(spent)}</div><div class="l">сегодня · −${num(t.expense)} за мес.</div></button>
     </div></div>`
   }
   const failed = D.ops.filter(o => o.state === "done" && o.result && o.result.error)
