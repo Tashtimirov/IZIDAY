@@ -1026,18 +1026,34 @@ function renderToday() {
   html += `<div class="week">${[...Array(7)].map((_, i) => {
     const d = addDays(t0, i), n = counts[dayKey(d)] || 0
     return `<button class="day ${sameDay(d, selDay) ? "on" : ""} ${d.getDay() % 6 === 0 ? "we" : ""}" data-day="${+d}">
-      <div class="wd">${WD[d.getDay()]}</div><div class="dn">${d.getDate()}</div><div class="n">${n ? "•".repeat(Math.min(n, 4)) : ""}</div></button>`
+      <div class="wd">${WD[d.getDay()]}</div><div class="dn">${d.getDate()}</div><div class="n">${n || ""}</div></button>`
   }).join("")}</div>`
-  const dayEvs = v.events.filter(e => e.s < addDays(selDay, 1) && e.e > selDay && (!isToday || e.e > now || e.all_day))
+  const onDay = d => v.events.filter(e => e.s < addDays(d, 1) && e.e > d).sort((a, b) => (b.all_day ? 1 : 0) - (a.all_day ? 1 : 0) || a.s - b.s)
+  const dayEvs = onDay(selDay)
   html += `<div class="card"><h2>${isToday ? "Сегодня" : esc(core.cap(dayName(selDay)))}<button class="act" data-do="event">+ Событие</button></h2>`
   html += dayEvs.length ? dayEvs.map((e, i) => {
     const t = e.all_day ? "весь день" : e.s < selDay ? "до " + hm(e.e) : hm(e.s)
-    return `<div class="row ${e.pending ? "pending" : ""}" data-ev="${i}"><div class="bar-l" style="background:${esc(e.color || "var(--teal)")}"></div>
+    const past = isToday && !e.all_day && e.e <= now
+    return `<div class="row ${e.pending ? "pending" : ""} ${past ? "past" : ""}" data-ev="${i}"><div class="bar-l" style="background:${esc(e.color || "var(--teal)")}"></div>
       <div class="time" style="${e.all_day ? "font-size:11.5px" : ""}">${t}</div>
       <div class="grow"><div class="t">${esc(e.title || "(без названия)")}</div><div class="s">${e.all_day ? "" : hm(e.s) + "–" + hm(e.e)}${e.location ? " · " + esc(e.location) : ""}${e.calendar ? " · " + esc(e.calendar) : ""}</div></div></div>`
-  }).join("") : `<div class="empty">${isToday ? "Событий больше нет 🎉" : "Ничего не запланировано"}</div>`
+  }).join("") : `<div class="empty">${D.snap ? "Ничего не запланировано" : "Календарь ещё не пришёл от виджета"}</div>`
   html += `</div>`
   dayEvsCache = dayEvs
+
+  // Дальше на неделю: названия событий по дням, чтобы видеть план целиком
+  const ahead = []
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(t0, i)
+    if (sameDay(d, selDay)) continue
+    const evs = onDay(d).filter(e => !(i === 0 && !e.all_day && e.e <= now))
+    if (evs.length) ahead.push([d, evs])
+  }
+  if (ahead.length) {
+    html += `<div class="card"><h2>На неделе</h2>` + ahead.map(([d, evs]) => `<button class="agenda-day" data-day="${+d}">${esc(core.cap(dayName(d)))}</button>` +
+      evs.slice(0, 8).map(e => `<div class="agenda"><span class="dot" style="background:${esc(e.color || "var(--teal)")}"></span><span class="at">${e.all_day ? "весь день" : e.s < d ? "до " + hm(e.e) : hm(e.s)}</span><span class="t">${esc(e.title || "(без названия)")}</span></div>`).join("") +
+      (evs.length > 8 ? `<div class="agenda more">ещё ${evs.length - 8}</div>` : "")).join("") + `</div>`
+  }
 
   let rems = openRems(v)
   if (isToday) rems = rems.filter(r => !remDue(r) || remDue(r) < addDays(t0, 1))
