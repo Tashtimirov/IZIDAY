@@ -10,7 +10,7 @@
  *
  * Кнопки в шапке виджета (средний и большой размер):
  *   🎤 — голосовая команда   📷 — еда по фото   ฿ — расход/доход
- *   ▦ — Google Таблица денег   ✎ — заметка
+ *   ▦ — Google Таблица денег   ✎ — заметка (в личной версии 💬 — чат с помощником)
  *   ✓ — личный трекер (сегодняшняя строка)   // [личное]
  * Нажатие на день календаря открывает его в «Календаре».
  * Нажатие на строку месяца внизу большого виджета открывает отчёт.
@@ -55,6 +55,8 @@ const CONFIG = {
   aiProxy: "",                   // общий доступ к Claude через чужой Google-скрипт (версия для друзей); свой ключ важнее
   aiProxyToken: "",
   monthlyReportNotification: true, // 1-го числа в 10:00 прислать уведомление с отчётом
+  assistantChat: true,           // кнопка 💬 — чат с помощником Claude вместо заметок; 🎤 сразу слушает и пишет в этот чат
+  briefs: { morning: "08:00", evening: "21:00" },   // утренняя и вечерняя сводка помощника (уведомление → чат); "" — без сводки
   // Google Таблица с доходами и расходами (кнопка ▦ в виджете)
   sheetUrl: "https://docs.google.com/spreadsheets/d/1dsrjcRimF85iZptC0WOyLImhe-llh4BOJmSgGzK_om8/edit",
   sheetSecret: "__SHEET_SECRET__",   // совпадает с ключом в скрипте таблицы
@@ -744,7 +746,7 @@ const BUTTONS = [
   [CONFIG.currencyIcon, CONFIG.currency, "money"],
   ["tablecells.fill", "▦", "sheet"],   // открыть Google Таблицу
   ["checklist", "✓", "tracker"],       // личный трекер на сегодняшней строке [личное]
-  ["square.and.pencil", "✎", "note"],
+  CONFIG.assistantChat ? ["bubble.left.and.bubble.right.fill", "💬", "chat"] : ["square.and.pencil", "✎", "note"],
 ]
 // Кнопки шапки: ▦ — только когда таблица подключена
 const headerButtons = () => BUTTONS.filter(b => b[2] !== "sheet" || SHEET_URL)
@@ -2649,6 +2651,7 @@ async function executeAll(list) {
 // Системная диктовка Scriptable закрывает экран целиком, а сам WebView микрофон не получает,
 // поэтому котик остаётся виден только так. Текст забираем, пока окно открыто, и после «Закрыть».
 async function dictate() {
+  if (CONFIG.assistantChat) return listen()   // личная версия: без котика, системная диктовка слушает сразу
   try {
     const wv = new WebView()
     await wv.loadHTML(catHTML())
@@ -3131,6 +3134,11 @@ async function runTool(name, x) {
       return { eaten_kcal: d.kcal, protein: d.protein, fat: d.fat, carbs: d.carbs, meals: d.food.map(m => ({ time: TIME.string(new Date(m.date)), title: m.title, kcal: m.kcal })),
         water_ml: d.water, water_goal_ml: CONFIG.health.waterGoal, watch: d.act || "нет данных с часов за сегодня" }
     }
+    case "claude_code": {   // чат помощника: задача уходит в новую сессию Claude Code
+      const r = loadRoutes().find(z => z.name === x.route)
+      if (!r) return { error: `нет маршрута «${x.route}»` }
+      return await fireRoute(r, x.task)
+    }
     case "ask_user": {
       const opts = (x.options || []).slice(0, 5)
       const a = new Alert()
@@ -3173,8 +3181,8 @@ ${CONFIG.calendars.length ? `- Календари по словам пользо
 
 // system передаётся один на весь разговор: в нём текущее время, а «мысли» Claude из прошлых шагов
 // API принимает только с тем же system, с которым они созданы
-async function callClaude(messages, system = agentSystem()) {
-  return await anthropic({ model: CONFIG.agentModel, max_tokens: 2000, system, tools: AGENT_TOOLS, messages })
+async function callClaude(messages, system = agentSystem(), tools = AGENT_TOOLS) {
+  return await anthropic({ model: CONFIG.agentModel, max_tokens: 2000, system, tools, messages })
 }
 
 // Один «ход»: Claude думает, вызывает инструменты, пока не даст ответ
@@ -3182,14 +3190,14 @@ const dropThinking = messages => messages.forEach(m => {
   if (m.role === "assistant" && Array.isArray(m.content)) m.content = m.content.filter(c => c.type !== "thinking" && c.type !== "redacted_thinking")
 })
 
-async function agentTurn(messages, system) {
+async function agentTurn(messages, system, tools) {
   const changed = []
   for (let step = 0; step < 14; step++) {
     let res
     try {
-      res = await callClaude(messages, system)
+      res = await callClaude(messages, system, tools)
       // запасной путь: если API всё же не принял старые «мысли», убираем их и повторяем
-      if (res && res.error && /thinking/i.test(res.error.message || "")) { dropThinking(messages); res = await callClaude(messages, system) }
+      if (res && res.error && /thinking/i.test(res.error.message || "")) { dropThinking(messages); res = await callClaude(messages, system, tools) }
     } catch (e) { return { text: `Нет связи с ${AI_NAME}: ${e}`, changed } }
     if (!res || res.error) return { text: `${AI_NAME} ответил ошибкой: ${res && res.error ? res.error.message || res.error.type : "пустой ответ"}`, changed }
     messages.push({ role: "assistant", content: res.content })
@@ -3227,6 +3235,315 @@ async function agentCommand(first) {
     text = i === 0 ? await dictate() : await ask("Команда", "Что сделать?", "Отправить")
     if (messages.length > 40) messages.splice(0, messages.length - 20)
     while (messages.length && (messages[0].role !== "user" || typeof messages[0].content !== "string")) messages.shift()
+  }
+}
+
+// ───────────── Чат с помощником (личная версия: CONFIG.assistantChat) ─────────────
+// 💬 в виджете открывает постоянный чат с Claude, 🎤 открывает его же и сразу включает системную диктовку.
+// Помощник делает дела в календаре, напоминаниях, деньгах и еде сам, советует как друг,
+// а сложные задачи передаёт в Claude Code (новая сессия по API «рутин» claude.ai/code/routines).
+const CHAT_FILE = "chat.json"
+const ROUTES_KEY = "myday.routes"
+const CHAT_SESSIONS = []
+const sleep = ms => new Promise(r => Timer.schedule(ms, false, r))
+
+// Системная диктовка: слушает сразу. Из виджета Scriptable первые доли секунды не готов показать окно —
+// если диктовка закрылась мгновенно, пробуем ещё раз; закрытие пользователем — пустой ответ
+async function listen() {
+  for (let i = 0; i < 3; i++) {
+    const t0 = Date.now()
+    try { return ((await Dictation.start("ru-RU")) || "").trim() } catch (e) { if (Date.now() - t0 > 1500) return "" }
+    await sleep(500)
+  }
+  return ""
+}
+
+// ── Маршруты в Claude Code: [{ name, hint, url, token }] — токены только в Связке ключей iPhone
+function loadRoutes() {
+  try { return Keychain.contains(ROUTES_KEY) ? JSON.parse(Keychain.get(ROUTES_KEY)) : [] } catch (e) { return [] }
+}
+function saveRoutes(list) { Keychain.set(ROUTES_KEY, JSON.stringify(list)) }
+const ROUTE_URL = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/
+
+async function fireRoute(route, text) {
+  const req = new Request(route.url)
+  req.method = "POST"
+  req.timeoutInterval = 30
+  req.headers = { "Authorization": `Bearer ${route.token}`, "anthropic-version": "2023-06-01",
+    "anthropic-beta": "experimental-cc-routine-2026-04-01", "content-type": "application/json" }
+  req.body = JSON.stringify({ text: String(text || "").slice(0, 60000) })
+  let r
+  try { r = await req.loadJSON() } catch (e) { return { error: `нет связи: ${e}` } }
+  if (r && r.claude_code_session_url) { CHAT_SESSIONS.push(r.claude_code_session_url); return { ok: true, session_url: r.claude_code_session_url } }
+  return { error: r && r.error ? `${r.error.type}: ${r.error.message}` : "пустой ответ" }
+}
+
+function routeTool(routes) {
+  return { name: "claude_code",
+    description: "Передать задачу в Claude Code: запускается новая сессия, она работает сама (код, документы, исследование, " +
+      "длинные многошаговые задачи) и возвращает ссылку. Маршруты:\n" + routes.map(r => `- «${r.name}»: ${r.hint || "без описания"}`).join("\n"),
+    input_schema: { type: "object", properties: {
+      route: { type: "string", enum: routes.map(r => r.name) },
+      task: { type: "string", description: "Полная постановка задачи: что сделать, весь нужный контекст из разговора, что вернуть. Сессия этот чат не видит." },
+    }, required: ["route", "task"] } }
+}
+const chatTools = () => { const r = loadRoutes(); return r.length ? AGENT_TOOLS.concat([routeTool(r)]) : AGENT_TOOLS }
+
+function chatSystem() {
+  const routes = loadRoutes()
+  return agentSystem().replace(/\n- В конце ответь[^\n]*/, "") + `
+
+Это постоянный чат в виджете. Ты — личный помощник, секретарь и друг пользователя: помогаешь в любом деле — в жизни и в работе.
+- Дела (встречи, напоминания, деньги, еда, вода, тренировки) делай сам инструментами, потом коротко скажи, что сделал.
+- Когда просят совета или делятся чем-то личным — отвечай как умный друг: честно, по существу, с заботой, думай на годы вперёд, а не только о сегодняшнем дне. Можно мягко не согласиться.
+- Длина ответа: обычно 1–6 строк; совет или разбор — сколько нужно, но без воды. Без Markdown-заголовков и таблиц, короткие списки можно.
+- В начале сообщений пользователя в квадратных скобках время, когда оно отправлено; сам время в скобках не пиши.
+${routes.length ? `- Сложную задачу, которую не решить здесь за пару сообщений (код, разбор документов, исследование, подготовка текста или плана, многошаговая работа), передай через claude_code. Рабочую — в маршрут нужного рабочего проекта по его описанию; личную, не связанную с работой, — в маршрут для личных задач. Если неясно, что именно нужно, сначала коротко уточни. После передачи скажи одной строкой, куда передал; ссылка на сессию покажется сама.`
+  : "- Передавать задачи в Claude Code пока нельзя: маршруты не подключены (меню → 🤖 Задачи в Claude Code). Сложную задачу честно назови сложной и предложи подключить."}`
+}
+
+const BRIEFS = {
+  morning: { label: "☀️ Утренняя сводка", prompt: "Сделай утреннюю сводку на сегодня. Посмотри события и напоминания на сегодня (и просроченные), " +
+    "траты за месяц. Расскажи: что сегодня по порядку со временем, что важно не забыть, что просрочено; сколько потрачено в этом месяце. " +
+    "В конце одна короткая дружеская мысль или совет на день. Ничего не меняй." },
+  evening: { label: "🌙 Вечерняя сводка", prompt: "Сделай вечернюю сводку за сегодня. Посмотри события и напоминания (вместе с выполненными), " +
+    "деньги и еду с водой и активностью за сегодня, события на завтра. Расскажи: что сделано, что не сделано; сколько потрачено сегодня " +
+    "(итог и главные траты); сколько съедено ккал и БЖУ, вода, активность; что завтра. Если есть невыполненные напоминания на сегодня " +
+    "или просроченные — спроси через ask_user, перенести ли их на завтра (варианты: «Перенести всё на завтра», «Выберу сам», «Оставить как есть») " +
+    "и сделай, как ответят; время у перенесённых сохраняй, без времени — на завтра." },
+}
+
+// Сообщения чата для API: только текст, подряд идущие от одного автора склеиваются, первым — пользователь
+function chatContext(hist) {
+  const out = []
+  for (const m of hist.slice(-30)) {
+    let content = m.prompt || m.text
+    if (!content) continue
+    if (m.role === "user") content = `[${fmt("d MMM HH:mm").string(new Date(m.at || Date.now()))}] ${content}`
+    const last = out[out.length - 1]
+    if (last && last.role === m.role) last.content += "\n\n" + content
+    else out.push({ role: m.role, content })
+  }
+  while (out.length && out[0].role !== "user") out.shift()
+  return out
+}
+
+async function chatReply(hist, item) {
+  hist.push(item)
+  CHAT_SESSIONS.length = 0
+  const r = await agentTurn(chatContext(hist), chatSystem(), chatTools())
+  const reply = { role: "assistant", text: r.text, at: Date.now() }
+  if (CHAT_SESSIONS.length) reply.links = CHAT_SESSIONS.slice()   // ссылки на запущенные сессии Claude Code — под ответом
+  hist.push(reply)
+  saveJSON(CHAT_FILE, hist.slice(-200))
+  return reply
+}
+
+// Окно WebView из виджета: Scriptable не сразу готов его показать — повторяем, если закрылось мгновенно
+async function presentWebView(wv) {
+  const st = { open: true, shown: null }
+  await sleep(400)
+  for (let i = 0; i < 4; i++) {
+    const t0 = Date.now()
+    st.open = true
+    st.shown = wv.present(false).then(() => { st.open = false })
+    await Promise.race([st.shown, sleep(700)])
+    if (st.open || Date.now() - t0 > 650) break
+    await sleep(500)
+  }
+  return st
+}
+
+const chatView = m => ({ role: m.role, text: m.text, voice: !!m.voice, links: m.links || [],
+  time: TIME.string(new Date(m.at || Date.now())) })
+
+async function openChat(opts = {}) {
+  if (!aiReady()) {
+    await info(`Нужен ключ ${AI_NAME}`, "Помощнику нужен API-ключ: меню → 🧠 Ассистент.")
+    return aiSettings()
+  }
+  const hist = await loadJSON(CHAT_FILE)
+  const wv = new WebView()
+  wv.shouldAllowRequest = req => {
+    const u = req.url || ""
+    if (/^(about:|data:)/.test(u) || u === "" ) return true
+    Safari.open(u)   // ссылки (сессии Claude Code) — в Safari, чат остаётся
+    return false
+  }
+  await wv.loadHTML(chatHTML(hist.slice(-60).map(chatView)))
+  const st = await presentWebView(wv)
+  const js = async s => { try { return await wv.evaluateJavaScript(s) } catch (e) { return null } }
+  let pending = opts.brief && BRIEFS[opts.brief] ? { role: "user", text: BRIEFS[opts.brief].label, prompt: BRIEFS[opts.brief].prompt, at: Date.now() } : null
+  let mic = !!opts.listen && !pending
+  while (st.open) {
+    if (mic) {
+      mic = false
+      await js("micOn(true)")
+      const t = await listen()
+      await js("micOn(false)")
+      if (t) pending = { role: "user", text: t, voice: true, at: Date.now() }
+      else await js("focusInput()")   // не услышал — можно надиктовать с клавиатуры или написать
+    }
+    if (pending) {
+      const item = pending
+      pending = null
+      await js(`add(${JSON.stringify(chatView(item))}); typing(true)`)
+      let reply
+      try { reply = await chatReply(hist, item) } catch (e) { reply = { role: "assistant", text: `Ошибка: ${e}`, at: Date.now() } }
+      await js(`typing(false); add(${JSON.stringify(chatView(reply))})`)
+      continue
+    }
+    try {
+      const o = JSON.parse(await js("take()") || "{}")
+      if (o.clear) { hist.length = 0; saveJSON(CHAT_FILE, []) }
+      if (o.mic) mic = true
+      else if (o.text) pending = { role: "user", text: o.text, at: Date.now() }
+    } catch (e) {}
+    if (!mic && !pending) await Promise.race([st.shown, sleep(300)])
+  }
+}
+
+function chatHTML(items) {
+  return `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<style>
+  :root { --bg: ${BRAND.cream}; --me: ${BRAND.emerald}; --meFg: #fff; --ai: #fff; --aiFg: #1d2a24; --sub: #7d8a83; --gold: ${BRAND.gold}; --bar: rgba(251,248,240,.94) }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0f1613; --me: ${BRAND.emeraldMid}; --ai: #1d2622; --aiFg: #eef2ef; --sub: #8fa098; --bar: rgba(15,22,19,.94) } }
+  * { box-sizing: border-box }
+  body { margin: 0; background: var(--bg); color: var(--aiFg); font: 17px -apple-system, sans-serif; -webkit-text-size-adjust: none }
+  header { position: sticky; top: 0; z-index: 2; padding: 12px 16px 10px; background: var(--bar); -webkit-backdrop-filter: blur(12px);
+    display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(0,0,0,.06) }
+  header b { font: 700 19px Georgia, serif } header span { color: var(--sub); font-size: 13px; flex: 1 }
+  header button { border: 0; background: none; color: var(--sub); font-size: 13px }
+  #list { padding: 12px 12px 120px; display: flex; flex-direction: column; gap: 8px }
+  .m { max-width: 84%; padding: 9px 13px; border-radius: 18px; white-space: pre-wrap; word-wrap: break-word; line-height: 1.32 }
+  .u { align-self: flex-end; background: var(--me); color: var(--meFg); border-bottom-right-radius: 6px }
+  .a { align-self: flex-start; background: var(--ai); border-bottom-left-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.06) }
+  .t { display: block; font-size: 11px; opacity: .55; margin-top: 3px; text-align: right }
+  .m a { color: inherit; font-weight: 600 } .a a { color: ${BRAND.teal} }
+  .link { display: block; margin-top: 6px; padding: 7px 10px; border-radius: 10px; background: rgba(15,168,156,.12); text-decoration: none }
+  #typing { display: none; align-self: flex-start; color: var(--sub); padding: 4px 8px }
+  #typing i { display: inline-block; width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: var(--gold); animation: b 1s infinite }
+  #typing i:nth-child(2) { animation-delay: .15s } #typing i:nth-child(3) { animation-delay: .3s }
+  @keyframes b { 0%, 80%, 100% { opacity: .25 } 40% { opacity: 1 } }
+  .empty { color: var(--sub); text-align: center; margin: 30vh 24px 0; line-height: 1.4 }
+  form { position: fixed; left: 0; right: 0; bottom: 0; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: var(--bar);
+    -webkit-backdrop-filter: blur(12px); display: flex; gap: 8px; align-items: flex-end; border-top: 1px solid rgba(0,0,0,.06) }
+  textarea { flex: 1; resize: none; max-height: 30vh; padding: 9px 13px; border-radius: 20px; border: 1.5px solid var(--gold);
+    background: transparent; color: inherit; font: 17px -apple-system, sans-serif; outline: none }
+  .btn { width: 40px; height: 40px; border-radius: 50%; border: 0; font-size: 19px; flex: none }
+  #mic { background: var(--gold); color: #fff } #mic.on { background: ${BRAND.terracotta}; animation: p 1s infinite alternate }
+  @keyframes p { to { transform: scale(1.12) } }
+  #send { background: var(--me); color: #fff }
+</style></head><body>
+<header><b>Помощник</b><span>Claude</span><button id="clr">Очистить</button></header>
+<div id="list"></div>
+<div id="typing"><i></i><i></i><i></i></div>
+<form id="f"><button type="button" class="btn" id="mic">🎤</button>
+<textarea id="tx" rows="1" placeholder="Напишите или нажмите 🎤" enterkeyhint="send"></textarea>
+<button class="btn" id="send">↑</button></form>
+<script>
+  const list = document.getElementById("list"), tx = document.getElementById("tx"), typingEl = document.getElementById("typing")
+  let queue = [], mic = false, clear = false
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))
+  const linkify = s => esc(s).replace(/https?:\\/\\/[^\\s<]+[^\\s<.,;:!?)»]/g, u => '<a href="' + u + '">' + u.replace(/^https?:\\/\\//, "").slice(0, 40) + '…</a>')
+  function add(m) {
+    const e = document.querySelector(".empty"); if (e) e.remove()
+    const d = document.createElement("div")
+    d.className = "m " + (m.role === "user" ? "u" : "a")
+    d.innerHTML = (m.voice ? "🎤 " : "") + linkify(m.text) +
+      (m.links || []).map(u => '<a class="link" href="' + esc(u) + '">🤖 Открыть сессию Claude Code</a>').join("") +
+      '<span class="t">' + esc(m.time || "") + "</span>"
+    list.appendChild(d)
+    list.appendChild(typingEl)
+    scrollTo(0, document.body.scrollHeight)
+  }
+  function typing(on) { typingEl.style.display = on ? "block" : "none"; scrollTo(0, document.body.scrollHeight) }
+  function micOn(on) { document.getElementById("mic").classList.toggle("on", on) }
+  function focusInput() { tx.focus() }
+  function take() { const o = { text: queue.shift() || "", mic, clear }; mic = false; clear = false; return JSON.stringify(o) }
+  function grow() { tx.style.height = "auto"; tx.style.height = tx.scrollHeight + "px" }
+  function send() { const v = tx.value.trim(); if (!v) return; queue.push(v); tx.value = ""; grow() }
+  document.getElementById("f").onsubmit = e => { e.preventDefault(); send() }
+  document.getElementById("mic").onclick = () => { tx.blur(); mic = true }
+  document.getElementById("clr").onclick = () => { if (confirm("Очистить переписку? Помощник забудет разговор.")) { clear = true; list.innerHTML = "" } }
+  tx.oninput = grow
+  tx.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }
+  const items = ${JSON.stringify(items)}
+  if (!items.length) list.innerHTML = '<div class="empty">Я ваш помощник: дела, напоминания, деньги, еда, советы.<br>Сложные задачи передам в Claude Code.</div>'
+  items.forEach(add)
+  list.appendChild(typingEl)
+</script></body></html>`
+}
+
+// ── Утренняя и вечерняя сводка: ежедневное уведомление, нажатие открывает чат и помощник собирает сводку
+async function scheduleBriefs() {
+  if (!CONFIG.assistantChat) return
+  for (const kind of ["morning", "evening"]) {
+    try {
+      const at = (CONFIG.briefs || {})[kind]
+      const id = `myday-brief-${kind}`
+      if (!at) { Notification.removePending([id]); continue }
+      const [h, m] = at.split(":").map(Number)
+      const n = new Notification()
+      n.identifier = id
+      n.title = BRIEFS[kind].label
+      n.body = kind === "morning" ? "Что сегодня: встречи, дела, деньги — нажмите" : "Итоги дня: сделано, потрачено, съедено, что перенести — нажмите"
+      n.openURL = `${RUN}?action=brief&kind=${kind}`
+      n.setDailyTrigger(h, m || 0, true)
+      await n.schedule()
+    } catch (e) {}
+  }
+}
+
+async function briefsInfo() {
+  const b = CONFIG.briefs || {}
+  const i = await choose("🌅 Сводки помощника", ["☀️ Утренняя сводка сейчас", "🌙 Вечерняя сводка сейчас"],
+    `Каждый день приходит уведомление: утром в ${b.morning || "—"}, вечером в ${b.evening || "—"}. ` +
+    "Нажатие открывает чат, и помощник собирает сводку. Вечером он предложит перенести несделанное на завтра.\n\nВремя меняется в CONFIG.briefs.")
+  if (i === 0) return openChat({ brief: "morning" })
+  if (i === 1) return openChat({ brief: "evening" })
+}
+
+// ── Настройка маршрутов в Claude Code
+async function routesMenu() {
+  while (true) {
+    const routes = loadRoutes()
+    const i = await choose("🤖 Задачи в Claude Code", [...routes.map(r => `✏️ ${r.name}`), "➕ Добавить маршрут", "❓ Как получить ссылку и токен"],
+      routes.length ? "Помощник передаёт сложные задачи в новую сессию Claude Code по этим маршрутам." :
+        "Маршрутов нет: помощник пока не может передавать задачи. Добавьте хотя бы «Личное».")
+    if (i === -1) return
+    if (i === routes.length + 1) {
+      await info("Как подключить", "1. На компьютере откройте claude.ai/code/routines → «New routine».\n" +
+        "2. Промпт, например: «Ты мой личный помощник. Выполни задачу из сообщения до конца и коротко отчитайся». Выберите репозиторий и окружение (для рабочего проекта — его репозиторий).\n" +
+        "3. В «Select a trigger» → «Add another trigger» → API → «Generate token». Токен показывается один раз.\n" +
+        "4. Здесь «Добавить маршрут»: название (например «Личное» или «Работа: название проекта»), когда туда передавать, ссылка …/fire и токен.\n\n" +
+        "Каждая передача — новая сессия, она расходует лимиты подписки Claude. Лимит: 30 запусков в час на маршрут.")
+      continue
+    }
+    const old = i < routes.length ? routes[i] : null
+    if (old) {
+      const j = await choose(old.name, ["Изменить", "Проверить (запустить тестовую сессию)", "Удалить"], `${old.hint || ""}\n${old.url}`)
+      if (j === 2) { saveRoutes(routes.filter(r => r !== old)); continue }
+      if (j === 1) {
+        const r = await fireRoute(old, "Проверка связи из виджета «Мой день». Ничего не делай, просто ответь «Связь есть».")
+        if (r.ok) { const k = await choose("Работает ✓", ["Открыть сессию"], "Сессия запущена."); if (k === 0) Safari.open(r.session_url) }
+        else await info("Не получилось", r.error)
+        continue
+      }
+      if (j !== 0) continue
+    }
+    const name = await ask("Название маршрута", "Личное / Работа: проект", "Далее", old ? old.name : "")
+    if (!name) continue
+    const hint = await ask("Когда передавать сюда", "Например: личные дела, не про работу", "Далее", old ? old.hint : "",
+      "Помощник выбирает маршрут по этому описанию.")
+    const url = await ask("Ссылка API", "https://api.anthropic.com/v1/claude_code/routines/trig_…/fire", "Далее", old ? old.url : "")
+    if (!url) continue
+    if (!ROUTE_URL.test(url.trim())) { await info("Похоже, это не та ссылка", "Нужна ссылка вида https://api.anthropic.com/v1/claude_code/routines/trig_…/fire"); continue }
+    const token = await ask("Токен", "sk-ant-oat01-…", "Сохранить", "", old ? "Оставьте пустым, чтобы не менять." : "")
+    if (!token && !old) continue
+    const r = { name, hint: hint || "", url: url.trim(), token: token || old.token }
+    saveRoutes(old ? routes.map(z => z === old ? r : z) : routes.concat([r]))
   }
 }
 
@@ -3291,21 +3608,23 @@ async function preview() {
 
 async function menu() {
   const actions = [
-    ["🎤 Голосовая команда", () => voiceCommand()],
+    ...(CONFIG.assistantChat ? [["💬 Чат с помощником", () => openChat()]] : []),
+    ["🎤 Голосовая команда", () => CONFIG.assistantChat ? openChat({ listen: true }) : voiceCommand()],
     ["📷 Еда по фото", () => foodPhoto()],
     ["💧 Вода", waterMenu],
     ["⌚ Еда и активность", healthMenu],
     [`${CONFIG.currency} Расход / доход`, () => addFinance(null)],
-    ["📝 Быстрая заметка", addNote],
+    ...(CONFIG.assistantChat ? [] : [["📝 Быстрая заметка", addNote]]),
     ["⏰ Новое напоминание", addReminder],
     ["📅 Новая встреча", addEvent],
     ["✅ Отметить выполненным", completeReminder],
-    ["🗒 Мои заметки", manageNotes],
+    ...(CONFIG.assistantChat ? [] : [["🗒 Мои заметки", manageNotes]]),
     ["📊 Отчёт за месяц", () => report()],
     ["🧾 Последние операции", manageMoney],
     ...(CONFIG.currency === "฿" ? [["💳 Расходы по карте", cardMenu]] : []),
     ["⌨️ Команда текстом", async () => { const t = await ask("Команда", "Что сделать?", "Отправить"); if (t) await voiceCommand(t) }],
     [`🧠 Ассистент ${AI_NAME}`, aiSettings],
+    ...(CONFIG.assistantChat ? [["🤖 Задачи в Claude Code", routesMenu], ["🌅 Утренняя и вечерняя сводка", briefsInfo]] : []),
     ...(CONFIG.trackerUrl ? [["✓ Личный трекер", () => Safari.open(trackerLink())]] : []),   // [личное]
     ["▦ Google Таблица", sheetMenu],
     ["☁️ Синхронизация с Mac", syncStatus],
@@ -3344,7 +3663,9 @@ async function homeSettings() {
 }
 
 async function runAction(action, q) {
-  if (action === "voice") return voiceCommand()
+  if (action === "voice") return CONFIG.assistantChat ? openChat({ listen: true }) : voiceCommand()
+  if (action === "chat") return CONFIG.assistantChat ? openChat() : addNote()
+  if (action === "brief") return openChat({ brief: q.kind })
   if (action === "money") return addFinance(null)
   if (action === "camera") return foodPhoto("camera")
   if (action === "food") return foodPhoto()
@@ -3380,5 +3701,6 @@ if (SHORTCUT_PARAM && !config.runsInWidget) {
   }
   await autoSyncSheet()   // еда, вода и деньги, добавленные сейчас, — сразу в таблицу (не успеет — догонит виджет)
   await scheduleMonthlyReport()
+  await scheduleBriefs()
 }
 Script.complete()

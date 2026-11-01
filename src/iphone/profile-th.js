@@ -13,6 +13,8 @@ const CONFIG = {
   agentModel: "claude-sonnet-5-5", // модель ассистента (если есть ключ Anthropic)
   aiProxy: "__AI_PROXY__",   // общий доступ к Claude через Google-скрипт владельца (подставляется при сборке)
   aiProxyToken: "__AI_PROXY_TOKEN__",
+  assistantChat: false,          // чат с помощником и маршруты в Claude Code — пока только в личной версии
+  briefs: { morning: "", evening: "" },
   monthlyReportNotification: true, // 1-го числа в 10:00 прислать уведомление с отчётом
   // Google Таблица с доходами и расходами (кнопка ▦). Пусто — кнопки нет
   sheetUrl: "",
