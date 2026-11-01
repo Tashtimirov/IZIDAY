@@ -209,3 +209,13 @@ body.chat #fab { display: none; }
 .chat-tools { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
 .chat-tools button { border: 0; background: var(--card); box-shadow: var(--shadow); border-radius: 16px; padding: 7px 12px; font-size: 13.5px; }
 .photo-prev { width: 100%; max-height: 220px; object-fit: cover; border-radius: 14px; margin: 6px 0; }
+
+.row.past { opacity: .45; }
+.day .n { font-weight: 600; color: var(--teal); }
+.agenda-day { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--sub); font: inherit; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding: 12px 0 4px; }
+.agenda-day:first-of-type { padding-top: 2px; }
+.agenda { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; font-size: 15px; }
+.agenda .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; }
+.agenda .at { color: var(--sub); font-size: 13px; min-width: 66px; font-variant-numeric: tabular-nums; }
+.agenda .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agenda.more { color: var(--sub); font-size: 13px; padding-left: 16px; }
