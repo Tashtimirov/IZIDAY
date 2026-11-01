@@ -319,3 +319,5 @@ main { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: tou
   padding-bottom: calc(var(--tabs) + 64px); }
 body.chat main { padding-bottom: calc(var(--tabs) + 76px); }
 .card { -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* iPhone со значка «Домой» занижает высоту экрана в CSS — берём её из JS (--app-h) */
+body { inset: 0 auto auto 0; height: var(--app-h, 100dvh); }

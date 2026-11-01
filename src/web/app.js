@@ -1367,6 +1367,18 @@ function photoPrompt() {
 
 // ───────────── Старт ─────────────
 document.querySelectorAll("[data-ico]").forEach(i => i.innerHTML = ICO[i.dataset.ico])
+// Настоящая высота экрана: в приложении со значка iOS отдаёт в CSS высоту без строки состояния, и внизу оставалась пустая полоса
+function fitHeight() {
+  let h = window.innerHeight
+  if (navigator.standalone || matchMedia("(display-mode: standalone)").matches) {
+    const land = matchMedia("(orientation: landscape)").matches
+    h = Math.max(h, land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height))
+  }
+  document.documentElement.style.setProperty("--app-h", h + "px")
+}
+fitHeight()
+addEventListener("resize", fitHeight)
+addEventListener("orientationchange", () => setTimeout(fitHeight, 300))
 $("#fab").innerHTML = ICO.mic
 // Микрофон: нажатие — сразу слушает команду для помощника; долгое нажатие — меню «Добавить»
 {
