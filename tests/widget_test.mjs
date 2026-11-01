@@ -64,8 +64,15 @@ texts.length = 0
 await app.buildWidget("large")
 check(!texts.some(t => /\d+\s*соб|событи[еяй]\b/.test(String(t))) && texts.includes("Йога"), "большой виджет: у дня названия событий, не число: " + texts.filter(t => /соб|Йога/.test(String(t))).join(", "))
 check(texts.includes("Турнир по паделу") && texts.includes("Ужин"), "два события в дне — оба названия")
-check(texts.includes("Врач") && texts.includes("+2 ещё") && !texts.includes("Кино"), "три события — первое название и «+2 ещё»")
+check(texts.includes("Врач") && texts.includes("+2") && !texts.includes("Кино"), "три события — первое название и «+2»")
 store.splice(-5)
+// сегодня всё прошло — под строкой дней полными названиями события ближайшего дня
+const today0 = store.splice(0, 1)
+texts.length = 0
+await app.buildWidget("large")
+check(texts.some(t => /СЕГОДНЯ БОЛЬШЕ НЕТ · СУББОТА, 24/.test(String(t))) && texts.filter(t => t === "Йога").length === 2,
+  "сегодня пусто — показан ближайший день с событиями: " + texts.filter(t => /СЕГОДНЯ|Йога/.test(String(t))).join(", "))
+store.unshift(...today0)
 const ev = app.upcoming(await app.getCalendar(app.weekDays())).map(e => e.title)
 check(ev.join() === "Созвон,Йога", "ближайшие встречи — сегодня и 2 дня вперёд, без прошедших: " + ev.join())
 check(urls.filter(u => typeof u === "string" && u.startsWith("scriptable")).every(u => u.includes("from=widget")), "все ссылки виджета помечены from=widget")

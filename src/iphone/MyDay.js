@@ -666,13 +666,14 @@ function contentWidth(family) {
 function stripLines(items) {
   const names = items.map(it => stripEmoji(it.title) || "Без названия")
   if (!names.length) return []   // день без событий: только «—» (раньше тут было undefined и виджет падал)
-  if (names.length === 1) return [{ text: names[0], lines: 2 }]
-  if (names.length === 2) return names.map(t => ({ text: t, lines: 1 }))
-  return [{ text: names[0], lines: 1 }, { text: `+${names.length - 1} ещё`, lines: 1, more: true }]
+  // ячейка узкая: название переносится по словам крупнее, а не сжимается в «Пра…»
+  if (names.length === 1) return [{ text: names[0], lines: 4 }]
+  if (names.length === 2) return names.map(t => ({ text: t, lines: 2 }))
+  return [{ text: names[0], lines: 3 }, { text: `+${names.length - 1}`, lines: 1, more: true }]
 }
 
 function weekStrip(parent, days, events) {
-  const GAP = 4, H = 76, today = new Date()
+  const GAP = 4, H = 90, today = new Date()
   const W = Math.floor((contentWidth() - GAP * 6) / 7)
   const LETTERS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
   const row = parent.addStack()
@@ -684,7 +685,7 @@ function weekStrip(parent, days, events) {
     cell.layoutVertically()
     cell.size = new Size(W, H)
     cell.cornerRadius = 10
-    cell.setPadding(5, 3, 5, 3)
+    cell.setPadding(5, 2, 5, 2)
     cell.backgroundColor = isToday ? C.todayBg : new Color(BRAND.gold, 0.1)
     cell.url = calshowURL(day)
     // каждая надпись — в своей строке между двумя пружинами, так она стоит ровно по центру ячейки
@@ -702,8 +703,8 @@ function weekStrip(parent, days, events) {
     if (!items.length) txt("—", Font.semiboldRoundedSystemFont(9), isToday ? C.todayFg : new Color(BRAND.gold, 0.35))
     stripLines(items).forEach((l, k) => {
       if (k) cell.addSpacer(1)
-      txt(l.text, l.more ? Font.boldSystemFont(8) : Font.semiboldSystemFont(8.5),
-        isToday ? C.todayFg : l.more ? C.gold : C.text, l.lines, 0.75)
+      txt(l.text, l.more ? Font.boldRoundedSystemFont(10) : Font.semiboldSystemFont(9.5),
+        isToday ? C.todayFg : l.more ? C.gold : C.text, l.lines, 0.85)
     })
     cell.addSpacer()
   })
@@ -712,9 +713,23 @@ function weekStrip(parent, days, events) {
 // Под строкой дней — события только сегодняшнего дня, каждое в одну строку: название и время справа
 function todayList(parent, events, n) {
   const now = new Date()
-  const evs = events.filter(e => e.endDate > now && e.startDate < new Date(startOfDay(now).getTime() + 864e5))
+  const dayEvs = d => events.filter(e => e.endDate > now && e.endDate > d && e.startDate < new Date(d.getTime() + 864e5))
     .sort((a, b) => (a.isAllDay ? 0 : a.startDate) - (b.isAllDay ? 0 : b.startDate))
-  if (!evs.length) { empty(parent, "Сегодня событий больше нет"); return 1 }
+  let evs = dayEvs(startOfDay(now)), later = null
+  // сегодня всё прошло — полными названиями события ближайшего дня: в узкой ячейке строки дней их не прочитать
+  for (let k = 1; !evs.length && k < 7; k++) {
+    const d = new Date(startOfDay(now)); d.setDate(d.getDate() + k)
+    evs = dayEvs(d); if (evs.length) later = d
+  }
+  if (!evs.length) { empty(parent, "Событий на неделе нет"); return 1 }
+  if (later) {
+    const DOW = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"]
+    const name = (later - startOfDay(now)) / 864e5 < 1.5 ? "завтра" : `${DOW[later.getDay()]}, ${later.getDate()}`
+    const h = parent.addText(`Сегодня больше нет · ${name}`.toUpperCase())
+    h.font = Font.boldSystemFont(10); h.textColor = C.gold
+    parent.addSpacer(6)
+    n = Math.max(1, n - 1)
+  }
   const shown = evs.length > n ? n - 1 : n
   evs.slice(0, shown).forEach((e, i) => {
     if (i) parent.addSpacer(6)
@@ -742,10 +757,10 @@ function todayList(parent, events, n) {
   })
   if (evs.length > shown) {
     parent.addSpacer(6)
-    const m = parent.addText(`ещё ${evs.length - shown} сегодня`)
+    const m = parent.addText(`ещё ${evs.length - shown} ${later ? "в этот день" : "сегодня"}`)
     m.font = Font.boldSystemFont(11); m.textColor = C.gold
   }
-  return Math.min(evs.length, n)
+  return Math.min(evs.length, n) + (later ? 1 : 0)
 }
 
 // Эмодзи в начале и в конце названия в узкой плашке только отнимают место
