@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Мой день">
+<meta name="theme-color" content="#0B4A33">
+<meta name="referrer" content="no-referrer">
+<title>Мой день</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="top">
+  <div class="top-row">
+    <div class="grow">
+      <div id="top-title">Мой день</div>
+      <div id="top-sub"></div>
+    </div>
+    <button id="sync" aria-label="Обновить"></button>
+  </div>
+</header>
+<main id="view"></main>
+<button id="fab" aria-label="Сказать помощнику"></button>
+<nav id="tabs">
+  <button data-tab="today"><i data-ico="today"></i><span>Сегодня</span></button>
+  <button data-tab="chat"><i data-ico="chat"></i><span>Помощник</span></button>
+  <button data-tab="money"><i data-ico="money"></i><span>Деньги</span></button>
+  <button data-tab="health"><i data-ico="health"></i><span>Здоровье</span></button>
+  <button data-tab="more"><i data-ico="more"></i><span>Ещё</span></button>
+</nav>
+<input id="photo" type="file" accept="image/*" capture="environment" hidden>
+<input id="photo-lib" type="file" accept="image/*" hidden>
+<div id="layer"></div>
+<div id="toast"></div>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
