@@ -1021,7 +1021,7 @@ function renderToday() {
   const counts = {}
   for (const e of v.events) for (let d = sod(e.s); d < e.e && d < addDays(t0, 7); d = addDays(d, 1)) counts[dayKey(d)] = (counts[dayKey(d)] || 0) + 1
   let html = ""
-  if (!D.conn) html += `<div class="banner"><b>Подключите приложение к виджету</b>В Scriptable: меню виджета → 📱 Приложение «Мой день» → «Подключить приложение». Тогда здесь появятся календарь, напоминания и ваши записи.</div>`
+  if (!D.conn) html += `<div class="banner"><b>Подключите приложение к виджету</b>В Scriptable: меню виджета → 📱 → «📋 Скопировать код подключения», затем нажмите кнопку ниже и вставьте код. Значок на экране «Домой» подключается отдельно от Safari.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="connect">🔗 Вставить код</button></div></div>`
   else if (!D.snap) html += `<div class="banner"><b>Ждём календарь от виджета</b>Он придёт при ближайшем обновлении виджета на экране «Домой» (обычно в течение 15 минут).</div>`
   html += `<div class="week">${[...Array(7)].map((_, i) => {
     const d = addDays(t0, i), n = counts[dayKey(d)] || 0
@@ -1244,7 +1244,7 @@ const DO = {
   expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
   "tab-money": () => setTab("money"), "tab-health": () => setTab("health"), report: () => showReport(),
   sheet: () => window.open(D.conn.sheetUrl, "_blank"),
-  sync: () => sync().then(ok => toast(ok ? "Обновлено" : `Не получилось: ${D.sync.error}`)),
+  sync: () => (!D.conn || !D.conn.hook) ? DO.connect() : sync().then(ok => toast(ok ? "Обновлено" : `Не получилось: ${D.sync.error || "нет связи"}`)),
   "run-widget": () => { sync().then(() => { location.href = `${(D.conn && D.conn.run) || "scriptable:///run/MyDay"}?action=hub` }) },
   connect: async () => {
     const t = await ui.ask("Подключить к виджету", "Вставьте код из виджета: Scriptable → меню → 📱 Приложение «Мой день» → «Скопировать код подключения».", "", { multiline: true, ok: "Подключить" })
