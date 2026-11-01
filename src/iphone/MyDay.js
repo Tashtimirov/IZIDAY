@@ -380,7 +380,7 @@ async function webAppSetupCode() {
     defaultEventMinutes: CONFIG.defaultEventMinutes, defaultReminderHour: CONFIG.defaultReminderHour, health: CONFIG.health, briefs: CONFIG.briefs,
     categories: CONFIG.categories, calendars: CONFIG.calendars.map(c => ({ calendar: c.calendar, list: c.list, hint: c.hint || "" })) }
   const data = { v: 1, hook: sheetHookOf(st), secret: await sheetSecretOf(st), key: OPENAI ? "" : (getAIKey() || ""),
-    routes: CONFIG.assistantChat ? loadRoutes() : [], sheetUrl: sheetUrlOf(st) || "", cfg }
+    routes: CONFIG.assistantChat ? loadRoutes() : [], sheetUrl: sheetUrlOf(st) || "", run: RUN, cfg }
   return Data.fromString(JSON.stringify(data)).toBase64String()
 }
 
