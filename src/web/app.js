@@ -763,7 +763,7 @@ function brief(kind) {
 
 // ── Голос: распознавание речи Safari, иначе — диктовка с клавиатуры ──
 let rec = null
-function micStart() {
+function micStart(auto) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
   const inp = $("#chat-in")
   if (!SR) { if (inp) inp.focus(); toast("Нажмите 🎤 на клавиатуре и говорите"); return }
@@ -783,6 +783,7 @@ function micStart() {
     if (inp) { inp.value = [base, final + interim].filter(Boolean).join(" "); grow(inp) }
   }
   rec.onerror = e => {
+    if (auto && e.error === "not-allowed") { rec = null; return micPrompt() }
     if (e.error === "not-allowed" || e.error === "service-not-allowed") { toast("Нет доступа к микрофону — скажите через 🎤 на клавиатуре"); if (inp) inp.focus() }
   }
   rec.onend = () => {
@@ -791,7 +792,7 @@ function micStart() {
     const t = [base, final].filter(Boolean).join(" ").trim()
     if (final.trim() && inp) { inp.value = ""; grow(inp); chatSend(t, { voice: true }) }
   }
-  try { rec.start() } catch (e) { rec = null; if (inp) inp.focus() }
+  try { rec.start() } catch (e) { rec = null; if (auto) return micPrompt(); if (inp) inp.focus() }
 }
 const grow = el => { el.style.height = "auto"; el.style.height = Math.min(120, el.scrollHeight) + "px" }
 
@@ -1308,7 +1309,7 @@ async function hashAction() {
   while (stack.length) stack[stack.length - 1].close()
   if (h.startsWith("setup=")) return connect(h.slice(6))
   const [a, arg] = h.split("=")
-  if (a === "voice") { setTab("chat"); return micPrompt() }
+  if (a === "voice") { setTab("chat"); return micStart(true) }
   if (a === "chat" || a === "note") return setTab("chat")
   if (a === "brief") { setTab("chat"); return brief(arg) }
   if (a === "money") return moneyForm("expense")
@@ -1336,7 +1337,16 @@ function photoPrompt() {
 // ───────────── Старт ─────────────
 document.querySelectorAll("[data-ico]").forEach(i => i.innerHTML = ICO[i.dataset.ico])
 $("#fab").innerHTML = ICO.mic
-$("#fab").onclick = () => addMenu()
+// Микрофон: нажатие — сразу слушает команду для помощника; долгое нажатие — меню «Добавить»
+{
+  const fab = $("#fab")
+  let lp = null, long = false
+  fab.addEventListener("pointerdown", () => { long = false; lp = setTimeout(() => { long = true; addMenu() }, 550) })
+  const stop = () => clearTimeout(lp)
+  fab.addEventListener("pointerup", stop); fab.addEventListener("pointercancel", stop); fab.addEventListener("pointerleave", stop)
+  fab.addEventListener("contextmenu", e => e.preventDefault())
+  fab.onclick = () => { if (long) return; if (tab !== "chat") setTab("chat"); micStart() }
+}
 $("#sync").innerHTML = ICO.sync
 $("#sync").onclick = () => DO.sync()
 $$("#tabs button").forEach(b => b.onclick = () => setTab(b.dataset.tab))
