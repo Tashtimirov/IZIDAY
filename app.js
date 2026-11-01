@@ -1336,4 +1336,4 @@ document.addEventListener("visibilitychange", () => {
   if (selDay < sod(new Date())) selDay = sod(new Date())
   sync()
 })
-if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {})
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {})

@@ -1,6 +1,6 @@
 // Приложение открывается мгновенно и без сети: оболочка (страница, код, значки) берётся из кэша,
 // а в фоне проверяется новая версия. Запросы к таблице и к Claude идут мимо кэша.
-const CACHE = "myday-868849c676"
+const CACHE = "myday-8bf1b035a7"
 const SHELL = ["./", "index.html", "style.css", "core.js", "app.js", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"]
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())) })
 self.addEventListener("activate", e => {
@@ -10,8 +10,12 @@ self.addEventListener("fetch", e => {
   const url = new URL(e.request.url)
   if (e.request.method !== "GET" || url.origin !== location.origin) return
   e.respondWith(caches.open(CACHE).then(async c => {
+    // Сначала сеть (чтобы значок на «Домой» сразу получал новую версию), кэш — если сети нет или она тормозит
+    const net = fetch(e.request, { cache: "no-store" }).then(r => { if (r.ok) c.put(e.request, r.clone()); return r })
+    const slow = new Promise(res => setTimeout(res, 3000))
+    const r = await Promise.race([net.catch(() => null), slow])
+    if (r) return r
     const hit = await c.match(e.request, { ignoreSearch: true })
-    const net = fetch(e.request).then(r => { if (r.ok) c.put(e.request, r.clone()); return r }).catch(() => hit)
     return hit || net
   }))
 })
