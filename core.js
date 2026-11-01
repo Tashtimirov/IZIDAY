@@ -39,6 +39,7 @@ const CONFIG = {
   assistantChat: false,
   webApp: "",                    // веб-приложение — только в личной версии          // чат с помощником и маршруты в Claude Code — пока только в личной версии
   briefs: { morning: "", evening: "" },
+  routes: [],
   monthlyReportNotification: true, // 1-го числа в 10:00 прислать уведомление с отчётом
   // Google Таблица с доходами и расходами (кнопка ▦). Пусто — кнопки нет
   sheetUrl: "",

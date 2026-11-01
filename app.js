@@ -762,37 +762,73 @@ function brief(kind) {
 }
 
 // ── Голос: распознавание речи Safari, иначе — диктовка с клавиатуры ──
-let rec = null
+// Слушает, пока человек говорит: отправляет только после паузы тишины (SILENCE_MS).
+// Повторное нажатие на 🎤 — отправить сразу. Если Safari сам обрывает распознавание раньше паузы — слушаем дальше.
+const SILENCE_MS = 2500, FIRST_WORD_MS = 8000
+let rec = null, voice = null
 function micStart(auto) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
   const inp = $("#chat-in")
   if (!SR) { if (inp) inp.focus(); toast("Нажмите 🎤 на клавиатуре и говорите"); return }
-  if (rec) { rec.stop(); return }
-  rec = new SR()
-  rec.lang = "ru-RU"
-  rec.interimResults = true
-  rec.continuous = false
-  let final = "", base = inp ? inp.value.trim() : ""
+  if (voice) return voiceFinish()
+  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false }
+  const v = voice
+  const show = (extra = "") => { if (inp) { inp.value = [v.base, v.done, extra].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); grow(inp) } }
+  const arm = ms => { clearTimeout(v.timer); v.timer = setTimeout(voiceFinish, ms) }
   $(".chat-bar .mic") && $(".chat-bar .mic").classList.add("on")
-  rec.onresult = e => {
-    let interim = ""
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) final += e.results[i][0].transcript
-      else interim += e.results[i][0].transcript
+  if (inp) inp.placeholder = "Слушаю… пауза — и отправлю"
+  const run = first => {
+    const r = new SR()
+    r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
+    let fin = "", all = ""
+    r.onresult = e => {
+      let interim = ""
+      fin = ""
+      for (let i = 0; i < e.results.length; i++) {
+        if (e.results[i].isFinal) fin += e.results[i][0].transcript + " "
+        else interim += e.results[i][0].transcript
+      }
+      all = fin + interim
+      show(all)
+      arm(SILENCE_MS)
     }
-    if (inp) { inp.value = [base, final + interim].filter(Boolean).join(" "); grow(inp) }
+    r.onerror = e => {
+      if (e.error === "no-speech" || e.error === "aborted") return
+      if (first && auto && e.error === "not-allowed") { voiceReset(); return micPrompt() }
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") { voiceReset(); toast("Нет доступа к микрофону — скажите через 🎤 на клавиатуре"); if (inp) inp.focus() }
+    }
+    r.onend = () => {
+      if (voice !== v) return
+      v.done = [v.done, all.trim()].filter(Boolean).join(" ")
+      if (v.finishing) return voiceSend(v)
+      // Safari закончил сам, а пауза ещё не набралась — продолжаем слушать
+      try { rec = run(false) } catch (e) { voiceSend(v) }
+    }
+    r.start()
+    return r
   }
-  rec.onerror = e => {
-    if (auto && e.error === "not-allowed") { rec = null; return micPrompt() }
-    if (e.error === "not-allowed" || e.error === "service-not-allowed") { toast("Нет доступа к микрофону — скажите через 🎤 на клавиатуре"); if (inp) inp.focus() }
-  }
-  rec.onend = () => {
-    rec = null
-    const b = $(".chat-bar .mic"); if (b) b.classList.remove("on")
-    const t = [base, final].filter(Boolean).join(" ").trim()
-    if (final.trim() && inp) { inp.value = ""; grow(inp); chatSend(t, { voice: true }) }
-  }
-  try { rec.start() } catch (e) { rec = null; if (auto) return micPrompt(); if (inp) inp.focus() }
+  try { rec = run(true); arm(FIRST_WORD_MS) } catch (e) { voiceReset(); if (auto) return micPrompt(); if (inp) inp.focus() }
+}
+function voiceFinish() {
+  const v = voice
+  if (!v || v.finishing) return
+  v.finishing = true
+  clearTimeout(v.timer)
+  try { rec && rec.stop() } catch (e) { voiceSend(v) }
+  setTimeout(() => { if (voice === v) voiceSend(v) }, 1500)   // если onend не пришёл
+}
+function voiceSend(v) {
+  if (voice !== v) return
+  const inp = $("#chat-in")
+  const t = [v.base, v.done].filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
+  voiceReset()
+  if (v.done.trim() && inp) { inp.value = ""; grow(inp); chatSend(t, { voice: true }) }
+}
+function voiceReset() {
+  if (voice) clearTimeout(voice.timer)
+  voice = null; rec = null
+  const b = $(".chat-bar .mic"); if (b) b.classList.remove("on")
+  const inp = $("#chat-in"); if (inp) inp.placeholder = "Напишите или скажите…"
 }
 const grow = el => { el.style.height = "auto"; el.style.height = Math.min(120, el.scrollHeight) + "px" }
 
