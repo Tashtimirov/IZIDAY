@@ -830,6 +830,8 @@ function voiceReset() {
   const b = $(".chat-bar .mic"); if (b) b.classList.remove("on")
   const inp = $("#chat-in"); if (inp) inp.placeholder = "Напишите или скажите…"
 }
+// Прокручивается только середина (main), шапка и нижнее меню стоят на месте
+const scrollView = end => { const m = $("#view"); if (m) m.scrollTop = end ? m.scrollHeight : 0 }
 const grow = el => { el.style.height = "auto"; el.style.height = Math.min(120, el.scrollHeight) + "px" }
 
 // ───────────── Формы ─────────────
@@ -1027,8 +1029,8 @@ function setTab(t) {
   $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t))
   document.body.classList.toggle("chat", t === "chat")
   render()
-  if (t === "chat") setTimeout(() => window.scrollTo(0, document.body.scrollHeight), 30)
-  else window.scrollTo(0, 0)
+  if (t === "chat") setTimeout(() => scrollView(true), 30)
+  else scrollView(false)
 }
 function render() {
   const fn = { today: renderToday, chat: renderChatHTML, money: renderMoney, health: renderHealth, more: renderMore }[tab]
@@ -1132,7 +1134,7 @@ function renderChat() {
   if (!list) return
   list.innerHTML = chatItems()
   bindChatList()
-  window.scrollTo(0, document.body.scrollHeight)
+  scrollView(true)
 }
 function bindChatList() {
   $$("[data-opt]").forEach(b => b.onclick = () => { b.classList.add("on"); chatSend(b.dataset.opt) })
