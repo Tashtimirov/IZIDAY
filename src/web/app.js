@@ -116,13 +116,26 @@ function mergeIn(key, incoming) {
 
 // ───────────── Обмен с таблицей (и через неё с виджетом) ─────────────
 let syncing = null
+// На iPhone Safari рвёт запрос («Load failed»), если приложение свернули или сменилась сеть — один повтор
 async function hubPost(h, timeout = 30000) {
+  try { return await hubPostOnce(h, timeout) } catch (e) {
+    if (e.name !== "TypeError") throw e
+    await sleep(1200)
+    try { return await hubPostOnce(h, timeout) } catch (e2) {
+      if (e2.name === "TypeError") throw new Error(`нет связи с таблицей (${e2.message})`)
+      throw e2
+    }
+  }
+}
+async function hubPostOnce(h, timeout) {
   const ctl = new AbortController()
   const t = setTimeout(() => ctl.abort(), timeout)
   try {
-    const r = await fetch(D.conn.hook, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, signal: ctl.signal,
+    const r = await fetch(D.conn.hook, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, signal: ctl.signal, credentials: "omit", cache: "no-store",
       body: JSON.stringify({ secret: D.conn.secret, hub: Object.assign({ from: "app" }, h) }) })
-    const j = await r.json()
+    const text = await r.text()
+    let j
+    try { j = JSON.parse(text) } catch (e) { throw new Error(r.ok ? "таблица ответила не данными — разверните скрипт заново с доступом «Все»" : `таблица ответила ошибкой ${r.status}`) }
     if (!j.ok) throw new Error(j.error === "forbidden" ? "таблица не приняла ключ — подключите приложение заново" : j.error || "ошибка таблицы")
     return j
   } finally { clearTimeout(t) }
@@ -1148,7 +1161,7 @@ function renderMore() {
   let html = ""
   if (!standalone()) html += `<div class="banner"><b>Поставьте на экран «Домой»</b>Нажмите «Поделиться» ⎋ внизу Safari → «На экран «Домой»». Приложение будет открываться отдельно и мгновенно.</div>`
   html += `<div class="card"><h2>Связь с виджетом</h2>`
-  if (c) html += `<div class="set"><span>Таблица</span><span class="ok">✓ Подключена</span></div>
+  if (c) html += `<div class="set"><span>Таблица</span><span class="ok">✓ ${esc((c.hook.match(/\/s\/(.{8})/) || [, "подключена"])[1])}</span></div>
       <div class="set"><span>Последний обмен</span><span>${esc(ago(D.sync.at))}</span></div>
       <div class="set"><span>Календарь от виджета</span><span>${esc(D.snap ? ago(D.snap.at) : "ещё не было")}</span></div>
       <div class="set"><span>Ключ Claude</span>${c.key ? '<span class="ok">✓ Есть</span>' : '<span class="exp">нет</span>'}</div>

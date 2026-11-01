@@ -147,7 +147,7 @@ const hv = await page.textContent("#view")
 check(hv.includes("Омлет с тостом") && /0,5 л/.test(hv), "здоровье: еда и вода", hv.slice(0, 200))
 await page.screenshot({ path: SHOTS + "4-health.png", fullPage: true })
 await page.click('[data-tab="more"]')
-check((await page.textContent("#view")).includes("✓ Подключена"), "«Ещё»: подключено")
+check((await page.textContent("#view")).includes("Последний обмен"), "«Ещё»: подключено")
 await page.screenshot({ path: SHOTS + "5-more.png", fullPage: true })
 
 // 8. действие из виджета: #water добавляет стакан
