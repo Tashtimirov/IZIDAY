@@ -14,7 +14,8 @@ const CONFIG = {
   agentModel: "gpt-5-mini",      // модель ChatGPT: понимает фото, вызывает инструменты
   aiProxy: "",   // общего доступа нет: у каждого свой ключ
   aiProxyToken: "",
-  assistantChat: false,          // чат с помощником и маршруты в Claude Code — пока только в личной версии
+  assistantChat: false,
+  webApp: "",                    // веб-приложение — только в личной версии          // чат с помощником и маршруты в Claude Code — пока только в личной версии
   briefs: { morning: "", evening: "" },
   monthlyReportNotification: true, // 1-го числа в 10:00 прислать уведомление с отчётом
   // Google Таблица с доходами и расходами (кнопка ▦). Пусто — кнопки нет

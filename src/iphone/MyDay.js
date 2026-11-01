@@ -57,6 +57,7 @@ const CONFIG = {
   monthlyReportNotification: true, // 1-го числа в 10:00 прислать уведомление с отчётом
   assistantChat: true,           // кнопка 💬 — чат с помощником Claude вместо заметок; 🎤 сразу слушает и пишет в этот чат
   briefs: { morning: "08:00", evening: "21:00" },   // утренняя и вечерняя сводка помощника (уведомление → чат); "" — без сводки
+  webApp: "__WEB_APP__",         // веб-приложение «Мой день» (build.py берёт web_app из secrets.json): кнопки виджета открывают его, а виджет передаёт ему календарь и напоминания
   // Google Таблица с доходами и расходами (кнопка ▦ в виджете)
   sheetUrl: "https://docs.google.com/spreadsheets/d/1dsrjcRimF85iZptC0WOyLImhe-llh4BOJmSgGzK_om8/edit",
   sheetSecret: "__SHEET_SECRET__",   // совпадает с ключом в скрипте таблицы
@@ -149,6 +150,11 @@ function chipColor(calTitle) {
 
 const RUN = URLScheme.forRunningScript()
 const WRUN = `${RUN}?from=widget`   // запуск из виджета: после операции — обратно на экран «Домой»
+// Веб-приложение «Мой день»: кнопки виджета открывают его вместо Scriptable (быстрее), иначе — этот скрипт
+const WEB_APP = /^https:\/\//.test(CONFIG.webApp || "") ? CONFIG.webApp.replace(/[#?].*$/, "") : ""
+const APP_ACTIONS = ["voice", "chat", "camera", "money", "water", "food", "health", "note"]
+const actURL = action => (WEB_APP && APP_ACTIONS.includes(action) ? `${WEB_APP}#${action}` : `${WRUN}&action=${action}`)
+const HOME_URL = WEB_APP || WRUN
 const CUR_RE = new RegExp(CONFIG.currencyWords, "gi")   // название валюты в речи — вырезается
 
 // ───────────── Хранилище ─────────────
@@ -295,6 +301,99 @@ async function autoSyncSheet() {
     if (st.sheetSigAll === await syncSig() && !cardDue) return
     await syncSheet(true)
   } catch (e) {}
+}
+
+// ── Связь с веб-приложением «Мой день» (CONFIG.webApp) через таблицу ──
+// Виджет отдаёт таблице новые записи (деньги, еда, вода, тренировки) и снимок того, что видит только iPhone:
+// события, напоминания, данные часов. Обратно получает записи приложения и команды для календаря и напоминаний.
+const HUB_FILES = { money: ["finance.json", "f", 0], food: ["food.json", "m", 120], water: ["water.json", "w", 60], workouts: ["workouts.json", "t", 400] }
+const HUB_TOOLS = ["create_event", "update_event", "delete_event", "create_reminder", "update_reminder", "delete_reminder"]
+let HUB_RUN = false   // команды из приложения пользователь уже подтвердил там — окон не показываем
+
+async function hubSnapshot() {
+  const from = startOfDay(new Date()), to = new Date(from.getTime() + 31 * 864e5)
+  from.setDate(from.getDate() - 1)
+  const list = await evRange(from, to), rep = await repeatingIds(from, to)
+  const events = list.sort((a, b) => a.startDate - b.startDate).slice(0, 300).map(e => Object.assign(evOut(e, rep.has(e.identifier)),
+    { color: e.calendar && e.calendar.color ? `#${e.calendar.color.hex}` : "" }))
+  let open = [], done = []
+  try { open = await Reminder.allIncomplete() } catch (e) {}
+  try { done = (await Reminder.allCompleted()).filter(r => r.completionDate && sameDay(r.completionDate, new Date())) } catch (e) {}
+  const rem = r => ({ id: r.identifier, title: r.title, completed: !!r.isCompleted, list: r.calendar ? r.calendar.title : "",
+    due: r.dueDate ? (r.dueDateIncludesTime ? isoLocal(r.dueDate) : isoLocal(r.dueDate).slice(0, 10)) : null,
+    recur: !!(r.hasRecurrenceRules), notes: r.notes || "" })
+  const names = async forRem => { try { return (forRem ? await Calendar.forReminders() : await Calendar.forEvents()).map(c => c.title) } catch (e) { return [] } }
+  return { events, reminders: open.slice(0, 200).map(rem).concat(done.slice(-30).map(rem)),
+    calendars: await names(false), lists: await names(true), watch: await loadHealth(), health: (await healthDays()).slice(-14) }
+}
+
+async function hubPost(st, h, timeout) {
+  const req = new Request(sheetHookOf(st))
+  req.method = "POST"
+  req.timeoutInterval = timeout
+  req.headers = { "content-type": "text/plain;charset=utf-8" }
+  req.body = JSON.stringify({ secret: await sheetSecretOf(st), hub: Object.assign({ from: "widget" }, h) })
+  return await req.loadJSON()
+}
+
+// Обмен с приложением: раз за запуск виджета и после операций в Scriptable. Возвращает число выполненных команд
+async function hubSync(timeout = 12) {
+  if (!WEB_APP) return 0
+  const st = await loadSettings()
+  if (!sheetHookOf(st)) return 0
+  const started = Date.now(), pushed = st.hubPushedAt || 0
+  try {
+    const lists = {}, raw = {}
+    for (const [key, [file, prefix]] of Object.entries(HUB_FILES)) {
+      raw[key] = withIds(await loadJSON(file), prefix)
+      lists[key] = raw[key].filter(x => (x.u || x.date || 0) > pushed - 60000)   // минута запаса: часы iPhone и записи с Mac
+    }
+    let res = await hubPost(st, { since: st.hubSince || 0, lists, snap: await hubSnapshot() }, timeout)
+    if (!res || !res.ok) return 0
+    for (const [key, [file, , days]] of Object.entries(HUB_FILES)) {
+      const got = (res.lists && res.lists[key]) || []
+      if (!got.length) continue
+      const merged = mergeSynced(withIds(await loadJSON(file), HUB_FILES[key][1]), got.map(x => { const y = Object.assign({}, x); delete y.s; return y }))
+      saveJSON(file, days ? keepDays(merged, days) : merged)
+    }
+    const done = []
+    HUB_RUN = true
+    try {
+      for (const op of res.ops || []) {
+        let result
+        try { result = HUB_TOOLS.includes(op.tool) ? await runTool(op.tool, op.input || {}) : { error: `команда ${op.tool} недоступна` } }
+        catch (e) { result = { error: String(e) } }
+        done.push({ id: op.id, result })
+      }
+    } finally { HUB_RUN = false }
+    // выполненные команды и свежий снимок (новое событие сразу видно в приложении)
+    if (done.length) res = await hubPost(st, { since: res.now, done, snap: await hubSnapshot() }, timeout) || res
+    await saveSettings({ hubSince: res.now || st.hubSince || 0, hubPushedAt: started, hubAt: Date.now() })
+    return done.length
+  } catch (e) { return 0 }
+}
+
+// Код для подключения приложения: таблица, ключ Claude, маршруты и личные настройки. Только в Связке ключей и в буфере обмена
+async function webAppSetupCode() {
+  const st = await loadSettings()
+  const cfg = { currency: CONFIG.currency, currencyIn: CONFIG.currencyIn, currencyWords: CONFIG.currencyWords, agentModel: CONFIG.agentModel,
+    defaultEventMinutes: CONFIG.defaultEventMinutes, defaultReminderHour: CONFIG.defaultReminderHour, health: CONFIG.health, briefs: CONFIG.briefs,
+    categories: CONFIG.categories, calendars: CONFIG.calendars.map(c => ({ calendar: c.calendar, list: c.list, hint: c.hint || "" })) }
+  const data = { v: 1, hook: sheetHookOf(st), secret: await sheetSecretOf(st), key: OPENAI ? "" : (getAIKey() || ""),
+    routes: CONFIG.assistantChat ? loadRoutes() : [], sheetUrl: sheetUrlOf(st) || "", cfg }
+  return Data.fromString(JSON.stringify(data)).toBase64String()
+}
+
+async function webAppMenu() {
+  const st = await loadSettings()
+  const last = st.hubAt ? `Последний обмен с приложением: ${WHEN.string(new Date(st.hubAt))}.` : "Обмена с приложением ещё не было."
+  const i = await choose("📱 Приложение «Мой день»", ["🔗 Подключить приложение на этом iPhone", "📋 Скопировать код подключения", "🔄 Обменяться сейчас", "🌐 Открыть приложение"],
+    `${last}\n\nПриложение открывается мгновенно, а виджет передаёт ему календарь, напоминания и данные часов. ` +
+    "Новые события и напоминания из приложения виджет вносит в iPhone при обновлении.\n\nКод подключения содержит ключ Claude и ключ таблицы — не пересылайте его.")
+  if (i === 0) { const c = await webAppSetupCode(); Pasteboard.copy(c); Safari.open(`${WEB_APP}#setup=${encodeURIComponent(c)}`) }
+  if (i === 1) { Pasteboard.copy(await webAppSetupCode()); await info("Код скопирован", "В приложении: «Ещё» → «Подключить» → вставьте код.") }
+  if (i === 2) { const n = await hubSync(25); await info("Готово", n ? `Выполнено команд из приложения: ${n}` : "Новых команд из приложения нет.") }
+  if (i === 3) Safari.open(WEB_APP)
 }
 
 // ───────────── Даты и числа ─────────────
@@ -736,7 +835,7 @@ function baseWidget() {
   g.locations = [0, 1]
   w.backgroundGradient = g
   w.setPadding(12, 12, 12, 12)
-  w.url = WRUN
+  w.url = HOME_URL
   w.refreshAfterDate = new Date(Date.now() + 5 * 60 * 1000)   // чаще обновляться: прошедшие события и выполненные дела уходят быстрее
   return w
 }
@@ -792,7 +891,7 @@ function dateHeader(parent, size, withButtons) {
     b.cornerRadius = bs / 2
     b.backgroundColor = C.btnBg
     b.centerAlignContent()
-    let url = action === "sheet" ? SHEET_URL : `${WRUN}&action=${action}`
+    let url = action === "sheet" ? SHEET_URL : actURL(action)
     if (action === "tracker") url = trackerLink()   // [личное]
     b.url = url
     b.addSpacer()
@@ -1177,7 +1276,7 @@ function healthStrip(parent, d, entries) {
   const part = (icon, text, color, action) => {
     const p = s.addStack()
     p.centerAlignContent()
-    p.url = (action === "food" || action === "health") && STATS_URL ? STATS_URL : `${WRUN}&action=${action}`   // калории и активность — в таблицу
+    p.url = (action === "food" || action === "health") && STATS_URL ? STATS_URL : actURL(action)   // калории и активность — в таблицу
     symbol(p, icon, color, 12)
     p.addSpacer(4)
     const t = p.addText(text)
@@ -1208,20 +1307,20 @@ function healthPanel(w, d, small) {
   }
   const line = (parent, text) => { const t = parent.addText(text); t.font = Font.systemFont(11); t.textColor = C.sub; t.lineLimit = 1; t.minimumScaleFactor = 0.7 }
   const cols = w.addStack(); cols.topAlignContent()
-  const left = cols.addStack(); left.layoutVertically(); left.size = new Size(W, 0); left.url = STATS_URL || `${WRUN}&action=food`
+  const left = cols.addStack(); left.layoutVertically(); left.size = new Size(W, 0); left.url = STATS_URL || actURL("food")
   sectionHeader(left, "fork.knife", "Еда", C.gold, d.food.length)
   left.addSpacer(3)
   big(left, nf(d.kcal), "ккал", C.text)
   if (!small) line(left, `Б ${nf(d.protein)} · Ж ${nf(d.fat)} · У ${nf(d.carbs)}`)
   left.addSpacer(6)
-  const wt = left.addStack(); wt.layoutVertically(); wt.url = `${WRUN}&action=water`
+  const wt = left.addStack(); wt.layoutVertically(); wt.url = actURL("water")
   const wl = wt.addStack(); wl.centerAlignContent(); symbol(wl, "drop.fill", C.notes, 11); wl.addSpacer(4)
   const wv = wl.addText(`${liters(d.water)} из ${liters(CONFIG.health.waterGoal)}`); wv.font = Font.semiboldRoundedSystemFont(11.5); wv.textColor = C.text
   wt.addSpacer(3)
   progressBar(wt, d.water / CONFIG.health.waterGoal, W - 6, C.notes)
   if (small) return
   cols.addSpacer(12)
-  const right = cols.addStack(); right.layoutVertically(); right.size = new Size(W, 0); right.url = STATS_URL || `${WRUN}&action=health`
+  const right = cols.addStack(); right.layoutVertically(); right.size = new Size(W, 0); right.url = STATS_URL || actURL("health")
   sectionHeader(right, "applewatch", "Активность", C.expense)
   right.addSpacer(3)
   const a = d.act
@@ -1250,7 +1349,7 @@ async function buildWidget(family, param) {
     const w = new ListWidget()
     const e = events[0]
     w.addText(e ? `${eventTime(e)} · ${e.title}` : rems[0] ? `☐ ${rems[0].title}` : "День свободен")
-    w.url = WRUN
+    w.url = HOME_URL
     return w
   }
   if (family === "accessoryCircular") {
@@ -1259,12 +1358,12 @@ async function buildWidget(family, param) {
     const n = w.addText(String(rems.length))
     n.font = Font.boldRoundedSystemFont(22); n.centerAlignText()
     const l = w.addText("дел"); l.font = Font.systemFont(10); l.centerAlignText()
-    w.url = `${WRUN}&action=voice`
+    w.url = actURL("voice")
     return w
   }
   if (family === "accessoryRectangular") {
     const w = new ListWidget()
-    w.url = WRUN
+    w.url = HOME_URL
     const lines = []
     if (events[0]) lines.push(`📅 ${eventTime(events[0])} ${events[0].title}`)
     rems.slice(0, events[0] ? 1 : 2).forEach(r => lines.push(`☐ ${r.title}`))
@@ -2896,6 +2995,7 @@ async function calendarByName(name, forReminders) {
 
 // ── Подтверждение опасных действий ──
 async function confirmAction(title, message) {
+  if (HUB_RUN) return true
   const a = new Alert()
   a.title = title
   a.message = message
@@ -3490,7 +3590,7 @@ async function scheduleBriefs() {
       n.identifier = id
       n.title = BRIEFS[kind].label
       n.body = kind === "morning" ? "Что сегодня: встречи, дела, деньги — нажмите" : "Итоги дня: сделано, потрачено, съедено, что перенести — нажмите"
-      n.openURL = `${RUN}?action=brief&kind=${kind}`
+      n.openURL = WEB_APP ? `${WEB_APP}#brief=${kind}` : `${RUN}?action=brief&kind=${kind}`
       n.setDailyTrigger(h, m || 0, true)
       await n.schedule()
     } catch (e) {}
@@ -3626,6 +3726,7 @@ async function menu() {
     ["⌨️ Команда текстом", async () => { const t = await ask("Команда", "Что сделать?", "Отправить"); if (t) await voiceCommand(t) }],
     [`🧠 Ассистент ${AI_NAME}`, aiSettings],
     ...(CONFIG.assistantChat ? [["🤖 Задачи в Claude Code", routesMenu], ["🌅 Утренняя и вечерняя сводка", briefsInfo]] : []),
+    ...(WEB_APP ? [["📱 Приложение «Мой день»", webAppMenu]] : []),
     ...(CONFIG.trackerUrl ? [["✓ Личный трекер", () => Safari.open(trackerLink())]] : []),   // [личное]
     ["▦ Google Таблица", sheetMenu],
     ["☁️ Синхронизация с Mac", syncStatus],
@@ -3674,6 +3775,7 @@ async function runAction(action, q) {
   if (action === "health") return healthMenu()
   if (action === "note") return addNote()
   if (action === "report") return report(q.month)
+  if (action === "hub") return hubSync(25)      // «Внести в iPhone сейчас» из приложения
   return menu()
 }
 
@@ -3688,6 +3790,7 @@ if (SHORTCUT_PARAM && !config.runsInWidget) {
   const st = await loadSettings()
   SHEET_URL = sheetUrlOf(st)
   STATS_URL = sheetTabUrl(st, "Еда и активность") || SHEET_URL   // пока таблица не прислала номер листа — просто таблица
+  await hubSync()                            // сначала обмен с приложением: виджет сразу покажет воду, еду и деньги оттуда
   Script.setWidget(await buildWidget(config.widgetFamily, args.widgetParameter))
   await autoSyncSheet()
 } else {
@@ -3701,6 +3804,7 @@ if (SHORTCUT_PARAM && !config.runsInWidget) {
     if (q.from === "widget" && homeOn()) goHome()
   }
   await autoSyncSheet()   // еда, вода и деньги, добавленные сейчас, — сразу в таблицу (не успеет — догонит виджет)
+  if (q.action !== "hub") await hubSync()
   await scheduleMonthlyReport()
   await scheduleBriefs()
 }

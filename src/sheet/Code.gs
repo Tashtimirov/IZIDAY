@@ -118,6 +118,7 @@ function doPost(e) {
   lock.waitLock(20000);
   try {
     ensureSheets_();
+    if (body.hub) return out_(hub_(body.hub));
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const deleted = new Set(body.deleted || []);
     let added = 0, removed = 0;
@@ -152,6 +153,103 @@ function onOpen() {
 }
 function setup() { ensureSheets_(); }
 function advice() { ensureSheets_(); writeAdvice_(); }
+
+// ── Связь виджета и веб-приложения «Мой день» ──
+// Таблица хранит общие списки (деньги, еда, вода, тренировки) на скрытом листе «_hub» и раздаёт их обоим.
+// Виджет присылает снимок того, что видит только iPhone (календарь, напоминания, часы), и выполняет
+// очередь команд приложения (создать или перенести событие, отметить напоминание). Каждая запись хранит
+// s — время, когда таблица её приняла: клиент получает только записи новее своего прошлого запроса.
+const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400 },   // сколько дней хранить (0 — всё)
+  tomb: 90, chunk: 45000, opsKeep: 3 };
+const ROUTE_URL = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/;
+
+function hub_(h) {
+  const now = Date.now(), since = Number(h.since) || 0, out = { ok: true, now, lists: {} };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  // 1. Списки: побеждает запись с более поздним u; изменившиеся уходят и в обычные листы таблицы
+  for (const key of Object.keys(HUB.lists)) {
+    const cur = hubGet_(key) || [];
+    const incoming = (h.lists && Array.isArray(h.lists[key])) ? h.lists[key] : [];
+    const map = new Map(cur.map(x => [x.id, x]));
+    const won = [];
+    for (const x of incoming) {
+      if (!x || !x.id) continue;
+      const old = map.get(x.id);
+      if (old && (Number(old.u) || 0) >= (Number(x.u) || 0)) continue;
+      const rec = Object.assign({}, x, { s: now });
+      map.set(x.id, rec);
+      won.push(rec);
+    }
+    const keepDays = HUB.lists[key], tomb = now - HUB.tomb * 864e5;
+    const list = [...map.values()].filter(x => (x.deleted ? (Number(x.u) || 0) > tomb : !keepDays || (Number(x.date) || 0) > now - keepDays * 864e5));
+    if (won.length) {
+      hubSet_(key, list);
+      if (LISTS[key]) syncList_(ss.getSheetByName(LISTS[key].name), LISTS[key], won.filter(x => !x.deleted), new Set(won.filter(x => x.deleted).map(x => x.id)));
+    }
+    out.lists[key] = list.filter(x => (Number(x.s) || 0) >= since);   // >=: в ту же миллисекунду могла прийти чужая запись
+  }
+  // 2. Снимок iPhone: присылает виджет, получает приложение
+  if (h.snap && h.from === "widget") hubSet_("snap", Object.assign({}, h.snap, { at: now }));
+  const snap = hubGet_("snap");
+  if (h.from === "app" && snap && snap.at > (Number(h.snapAt) || 0)) out.snap = snap;
+  // 3. Очередь команд для iPhone: приложение добавляет, виджет выполняет и сообщает результат
+  let ops = hubGet_("ops") || [];
+  const before = JSON.stringify(ops);
+  for (const op of h.ops || []) {
+    if (op && op.id && op.tool && !ops.some(o => o.id === op.id)) ops.push({ id: String(op.id), tool: String(op.tool), input: op.input || {}, at: now, state: "new" });
+  }
+  for (const d of h.done || []) {
+    const op = ops.find(o => o.id === d.id);
+    if (op && op.state === "new") Object.assign(op, { state: "done", result: d.result || {}, doneAt: now });
+  }
+  ops = ops.filter(o => o.state === "new" || o.doneAt > now - HUB.opsKeep * 864e5);
+  if (JSON.stringify(ops) !== before) hubSet_("ops", ops);
+  out.ops = h.from === "widget" ? ops.filter(o => o.state === "new") : ops.filter(o => o.state === "new" || o.doneAt >= since);
+  // 4. Задача в Claude Code (браузер не может обратиться к API рутин напрямую)
+  if (h.fire && ROUTE_URL.test(h.fire.url || "")) {
+    try {
+      const res = UrlFetchApp.fetch(h.fire.url, { method: "post", contentType: "application/json", muteHttpExceptions: true,
+        headers: { Authorization: "Bearer " + h.fire.token, "anthropic-version": "2023-06-01", "anthropic-beta": "experimental-cc-routine-2026-04-01" },
+        payload: JSON.stringify({ text: String(h.fire.text || "").slice(0, 60000) }) });
+      const j = JSON.parse(res.getContentText() || "{}");
+      out.fire = j.claude_code_session_url ? { ok: true, session_url: j.claude_code_session_url }
+        : { error: j.error ? j.error.type + ": " + j.error.message : "пустой ответ" };
+    } catch (err) { out.fire = { error: "нет связи: " + err }; }
+  }
+  out.url = ss.getUrl();
+  return out;
+}
+
+// Скрытый лист «_hub»: в столбце A ключ, в B число кусков, дальше JSON по кускам (в ячейку влезает 50 000 знаков).
+// Перед каждым куском «~»: иначе кусок вроде «=…» или «123» таблица прочитает как формулу или число
+function hubSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(HUB.name);
+  if (!sh) { sh = ss.insertSheet(HUB.name); if (sh.hideSheet) sh.hideSheet(); }
+  return sh;
+}
+function hubRow_(sh, key) {
+  const last = sh.getLastRow();
+  const keys = last ? sh.getRange(1, 1, last, 1).getValues() : [];
+  const i = keys.findIndex(r => r[0] === key);
+  return i >= 0 ? i + 1 : 0;
+}
+function hubGet_(key) {
+  const sh = hubSheet_(), r = hubRow_(sh, key);
+  if (!r) return null;
+  const n = Number(sh.getRange(r, 2).getValues()[0][0]) || 0;
+  if (!n) return null;
+  try { return JSON.parse(sh.getRange(r, 3, 1, n).getValues()[0].map(c => String(c).slice(1)).join("")); } catch (err) { return null; }
+}
+function hubSet_(key, value) {
+  const sh = hubSheet_(), s = JSON.stringify(value), parts = [];
+  for (let i = 0; i < s.length; i += HUB.chunk) parts.push("~" + s.slice(i, i + HUB.chunk));
+  const r = hubRow_(sh, key) || sh.getLastRow() + 1;
+  const old = Number(sh.getRange(r, 2).getValues()[0][0]) || 0;
+  const row = [key, parts.length].concat(parts);
+  for (let i = parts.length; i < old; i++) row.push("");   // хвост прежнего, более длинного значения
+  sh.getRange(r, 1, 1, row.length).setValues([row]);
+}
 
 // ── Расходы по карте ──
 // Скрипт раз в 15 минут читает письма Bangkok Bank и Kasikornbank (K PLUS) о платежах и складывает их на лист «Карта».
