@@ -178,6 +178,27 @@ await page.click('[data-opt="Да"]')
 const dr = await del; await settle()
 check(dr.ok && dr.deleted === wids.length - 1 && liveW().filter(w => wids.includes(w.id)).length === 1, "delete_record удалил лишнюю воду, одна осталась", dr)
 
+// фото и файл: вложение уходит Claude, в чате — миниатюра
+claudeQueue.push({ content: [{ type: "text", text: "Это чек 7-Eleven: итог 245 ฿." }], stop_reason: "end_turn" })
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQEAP2uD/H+Ug1hAAAAAElFTkSuQmCC", "base64")
+let n0 = claudeSeen.length
+await page.setInputFiles("#photo-lib", { name: "check.png", mimeType: "image/png", buffer: PNG })
+await page.waitForSelector("text=Это чек 7-Eleven", { timeout: 8000 }).catch(() => {})
+let sent = claudeSeen[n0] && claudeSeen[n0].body.messages.at(-1).content
+check(Array.isArray(sent) && sent[0].type === "image" && sent[0].source.media_type === "image/jpeg" && /вложение/.test(sent[1].text), "фото ушло Claude картинкой", sent && sent.map(c => c.type))
+check(/Чек из магазина/.test(claudeSeen[n0].body.system) && /Счёт, инвойс/.test(claudeSeen[n0].body.system), "правила для еды, счёта и чека в подсказке")
+check(await page.isVisible("#chat-list img.att"), "в чате видна миниатюра фото")
+check(await page.isVisible(".chat-bar .cam"), "в строке чата есть кнопка 📷")
+await page.screenshot({ path: SHOTS + "7-chat-photo.png" })
+claudeQueue.push({ content: [{ type: "text", text: "Счёт за интернет на 899 ฿." }], stop_reason: "end_turn" })
+n0 = claudeSeen.length
+await page.setInputFiles("#doc", { name: "bill.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%fake\n") })
+await page.waitForSelector("text=Счёт за интернет", { timeout: 8000 }).catch(() => {})
+sent = claudeSeen[n0] && claudeSeen[n0].body.messages.at(-1).content
+check(Array.isArray(sent) && sent[0].type === "document" && sent[0].source.media_type === "application/pdf", "PDF ушёл Claude документом", sent && sent.map(c => c.type))
+check((await page.textContent("#chat-list")).includes("📄 bill.pdf"), "в чате подпись файла")
+check(!JSON.stringify(claudeSeen.at(-1).body.messages.slice(0, -1)).includes('"type":"image"'), "старое фото не отправляется повторно")
+
 // голос: зелёная ➤ во время записи отправляет сразу, без паузы
 await page.evaluate(() => {
   class FakeSR { start() { window.__sr = this; setTimeout(() => this.onresult && this.onresult({ results: [Object.assign([{ transcript: "сколько я выпил воды" }], { isFinal: false })] }), 50) }
