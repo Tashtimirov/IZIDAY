@@ -962,7 +962,9 @@ const dropThinking = messages => messages.forEach(m => {
 })
 // Один ход помощника: Claude думает и вызывает инструменты, пока не даст ответ
 async function agentTurn(messages, system, tools) {
-  const ask = () => claude({ max_tokens: 16000, system, tools, messages, output_config: { effort: "high" } }, 150000, { smart: true, model: CHAT_MODEL })
+  // Кэш: описание инструментов одинаковое всегда, а внутри хода каждый шаг повторяет предыдущие — повтор стоит в 10 раз дешевле
+  const ctools = tools.map((t, i) => i === tools.length - 1 ? Object.assign({}, t, { cache_control: { type: "ephemeral" } }) : t)
+  const ask = () => claude({ max_tokens: 16000, system, tools: ctools, messages, output_config: { effort: "high" }, cache_control: { type: "ephemeral" } }, 150000, { smart: true, model: CHAT_MODEL })
   for (let step = 0; step < 14; step++) {
     let res
     try {
@@ -1009,7 +1011,7 @@ async function chatSend(text, opts = {}) {
   try { reply = await agentTurn(ctx, chatSystem(), chatTools()) } catch (e) { reply = `Ошибка: ${e.message || e}` }
   chatBusy = false
   D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice() })
-  if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-3000); D.chat = D.chat.slice(-200) }
+  if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
   D.chat.filter(m => m.thumb).slice(0, -12).forEach(m => { delete m.thumb })   // миниатюры только у последних фото — память телефона
   save(false)
   sync()
@@ -1602,7 +1604,7 @@ const DO = {
   "chat-clear": async () => {
     const b = await ui.confirm("Очистить чат?", `<div class="msg">Экран чата очистится. Помощник сохранит краткую сводку разговора в память и сможет найти его потом.</div>`, ["Отмена", "Очистить"])
     if (b === "Очистить") {
-      D.chatArchive = D.chatArchive.concat(D.chat.map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-3000)
+      D.chatArchive = D.chatArchive.concat(D.chat.map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500)
       D.chat = []; save(false); render(); memorize(true)
     }
   },
