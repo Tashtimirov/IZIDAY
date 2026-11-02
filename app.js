@@ -728,6 +728,14 @@ async function runTool(name, x) {
 }
 function cancelOp(id) { D.ops = D.ops.filter(o => !(o.id === id && o.state === "local")); save() }
 
+// Как в виджете: с 9 до 21, больше 3 часов без записи воды — подсказка
+function waterGap(h, now = new Date()) {
+  if (now.getHours() < 9 || now.getHours() >= 21 || h.water >= H().waterGoal) return 0
+  const start = new Date(now).setHours(9, 0, 0, 0)
+  const last = Math.max(start, ...today(D.water).map(w => w.date || 0))
+  const gap = (now - last) / 3600e3
+  return gap >= 3 ? Math.floor(gap) : 0
+}
 function dayHealth() {
   const food = today(D.food), workouts = today(D.workouts), v = iphone()
   const sum = k => food.reduce((s, m) => s + (+m[k] || 0), 0)
@@ -1209,7 +1217,7 @@ function renderToday() {
     const mini = (p, color, icon) => { const r = 23, c = 2 * Math.PI * r
       return `<span class="mr"><svg viewBox="0 0 56 56"><circle cx="28" cy="28" r="${r}" class="mr-t"/><circle cx="28" cy="28" r="${r}" stroke="${color}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - Math.max(0, Math.min(1, p || 0)))}"/></svg><i>${icon}</i></span>` }
     html += `<div class="card"><h2>За день</h2><div class="stats">
-      <button class="stat" data-do="water">${mini(h.water / g.waterGoal, "var(--teal)", "💧")}<div class="v">${liters(h.water)} л</div><div class="l">из ${liters(g.waterGoal)} · +стакан</div></button>
+      <button class="stat" data-do="water">${mini(h.water / g.waterGoal, "var(--teal)", "💧")}<div class="v">${liters(h.water)} л</div><div class="l">${waterGap(h) ? `<span class="exp">${waterGap(h)} ч без воды</span>` : `из ${liters(g.waterGoal)}`} · +стакан</div></button>
       <button class="stat" data-do="tab-health">${mini(h.kcal / (g.kcalGoal || 2000), "var(--gold)", "🍽")}<div class="v">${num(h.kcal)}</div><div class="l">ккал${h.active ? ` · −${num(h.active)}` : ""}</div></button>
       <button class="stat" data-do="tab-money">${mini(t.expense ? spent / Math.max(spent, t.expense / Math.max(1, t0.getDate())) : 0, "var(--red)", "฿")}<div class="v">−${num(spent)}</div><div class="l">сегодня · −${num(t.expense)} за мес.</div></button>
     </div></div>`
