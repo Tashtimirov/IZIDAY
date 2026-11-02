@@ -375,8 +375,13 @@ function addFood(m) {
   const now = Date.now()
   return upsert("food", Object.assign({ id: `m${now}-${Math.random().toString(36).slice(2, 6)}`, date: now }, m, { kcal: Math.round(+m.kcal || 0) }))
 }
-function addWater(ml) {
-  const now = Date.now()
+// Защита от случайных серий: из виджета (#water) второй стакан за минуту не пишется, в приложении — спрашиваем
+let lastWaterAt = 0
+async function addWater(ml, from) {
+  const now = Date.now(), last = Math.max(lastWaterAt, ...today(D.water).map(w => w.u || w.date || 0))
+  if (from === "widget" && now - last < 60e3) return toast(`💧 Стакан уже записан ${Math.max(1, Math.round((now - last) / 1000))} с назад`)
+  if (from !== "widget" && now - last < 10e3 && (await ui.confirm("Ещё стакан?", `<div class="msg">Только что уже добавлено ${ml} мл. Записать ещё один?</div>`, ["Отмена", "Записать"])) !== "Записать") return
+  lastWaterAt = now
   upsert("water", { id: `w${now}`, date: now, ml: Math.round(ml) })
   render()
   toast(`💧 +${ml} мл · сегодня ${liters(waterToday())} л`)
@@ -492,7 +497,7 @@ const AGENT_TOOLS = [
   { name: "delete_money", description: "Удалить ошибочную операцию по id.",
     input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "get_history", description: "Сводка по дням за период (до 92 дней): еда (ккал, БЖУ), вода, тренировки, шаги и активность с часов, расходы и доходы. " +
-      "details=true — ещё и сами записи (блюда, операции). Для вопросов «как я питался на неделе», «сколько потратил за октябрь по дням», «сколько шагов вчера».",
+      "details=true — ещё и сами записи с id (блюда, вода, операции). Для вопросов «как я питался на неделе», «сколько потратил за октябрь по дням», «сколько шагов вчера».",
     input_schema: { type: "object", properties: { from: { type: "string", description: "YYYY-MM-DD" }, to: { type: "string", description: "YYYY-MM-DD, по умолчанию сегодня" },
       details: { type: "boolean" } }, required: ["from"] } },
   { name: "read_sheet", description: "Прочитать таблицу виджета (Google Таблица) напрямую. Без sheet — список листов с колонками. " +
@@ -510,6 +515,8 @@ const AGENT_TOOLS = [
       query: { type: "string", description: "Место для поиска на карте: название, сеть или адрес" },
       radius_m: { type: "number", description: "Насколько близко, м. По умолчанию 1500 (за 15 минут машина проезжает много)" } }, required: ["title", "query"] } },
   { name: "list_places", description: "Активные и сработавшие напоминания по месту.", input_schema: { type: "object", properties: {} } },
+  { name: "delete_record", description: "Удалить запись о воде, еде или тренировке по id (id есть в get_health и get_history с details). Для случайных дублей (несколько одинаковых записей в одну минуту): удаляй лишние, одну оставь. Приложение само спросит подтверждение.",
+    input_schema: { type: "object", properties: { kind: { type: "string", enum: ["water", "food", "workouts"] }, ids: { type: "array", items: { type: "string" } } }, required: ["kind", "ids"] } },
   { name: "delete_place", description: "Убрать напоминание по месту по id.", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "ask_user", description: "Задать пользователю уточняющий вопрос и получить ответ. Используйте, только если без ответа нельзя выполнить команду правильно.",
     input_schema: { type: "object", properties: {
@@ -630,10 +637,11 @@ async function runTool(name, x) {
         const sum = (a, k) => Math.round(a.reduce((s, m) => s + (+m[k] || 0), 0))
         const row = { date: dayKey(d), kcal: sum(food, "kcal"), protein: sum(food, "protein"), fat: sum(food, "fat"), carbs: sum(food, "carbs"),
           water_ml: sum(inDay(D.water, d), "ml"), expense: sum(money.filter(e => e.type === "expense"), "amount"), income: sum(money.filter(e => e.type === "income"), "amount") }
-        if (wk.length) row.workouts = wk.map(w => ({ title: w.title, minutes: w.minutes, kcal: w.kcal }))
+        if (wk.length) row.workouts = wk.map(w => ({ id: w.id, title: w.title, minutes: w.minutes, kcal: w.kcal }))
         if (h) Object.assign(row, { steps: h.steps, active_kcal: h.active, exercise_min: h.exercise, sleep_h: h.sleep })
         if (x.details) {
-          if (food.length) row.food = food.map(m => ({ time: hm(new Date(m.date)), title: m.title, kcal: m.kcal }))
+          if (food.length) row.food = food.map(m => ({ id: m.id, time: hm(new Date(m.date)), title: m.title, kcal: m.kcal }))
+          const wa = inDay(D.water, d); if (wa.length) row.water = wa.map(w => ({ id: w.id, time: hm(new Date(w.date)), ml: w.ml }))
           if (money.length) row.money = money.map(e => ({ time: hm(new Date(e.date)), type: e.type, amount: e.amount, category: e.category, comment: e.comment, method: e.method }))
         }
         days.push(row)
@@ -668,6 +676,20 @@ async function runTool(name, x) {
     }
     case "list_places":
       return { places: live(D.places).map(p => ({ id: p.id, title: p.title, query: p.query, radius_m: p.radius, done: !!p.done, fired: p.firedAt ? iso(new Date(p.firedAt)) : null })) }
+    case "delete_record": {
+      const list = D[x.kind]
+      if (!Array.isArray(list)) return { error: "kind: water, food или workouts" }
+      const ids = [].concat(x.ids || []).map(String), have = new Set(live(list).map(e => e.id))
+      const gone = ids.filter(id => have.has(id)), missing = ids.filter(id => !have.has(id))
+      if (!gone.length) return { error: "записи не найдены", not_found: missing }
+      const recs = live(list).filter(e => gone.includes(e.id)), what = { water: "воды", food: "еды", workouts: "тренировок" }[x.kind]
+      const desc = x.kind === "water" ? `${recs.reduce((a, w) => a + (+w.ml || 0), 0)} мл` : recs.slice(0, 5).map(e => e.title).join(", ")
+      if (!(await chatConfirm(`Удалить ${gone.length} ${gone.length === 1 ? "запись" : gone.length < 5 ? "записи" : "записей"} ${what}? (${desc})`)))
+        return { cancelled: "пользователь отказался удалять" }
+      gone.forEach(id => remove(x.kind, id))
+      if (gone.length) render()
+      return { ok: gone.length > 0, deleted: gone.length, not_found: missing, today_water_ml: x.kind === "water" ? waterToday() : undefined }
+    }
     case "delete_place": {
       if (!live(D.places).some(p => p.id === x.id)) return { error: "нет такого напоминания" }
       remove("places", x.id)
@@ -706,8 +728,9 @@ async function runTool(name, x) {
     }
     case "get_health": {
       const d = dayHealth()
-      return { eaten_kcal: d.kcal, protein: d.protein, fat: d.fat, carbs: d.carbs, meals: d.food.map(m => ({ time: hm(new Date(m.date)), title: m.title, kcal: m.kcal })),
-        water_ml: d.water, water_goal_ml: H().waterGoal, workouts: d.workouts.map(w => ({ title: w.title, minutes: w.minutes, kcal: w.kcal })),
+      return { eaten_kcal: d.kcal, protein: d.protein, fat: d.fat, carbs: d.carbs, meals: d.food.map(m => ({ id: m.id, time: hm(new Date(m.date)), title: m.title, kcal: m.kcal })),
+        water_ml: d.water, water_goal_ml: H().waterGoal, water: today(D.water).map(w => ({ id: w.id, time: hm(new Date(w.date)), ml: w.ml })),
+        workouts: d.workouts.map(w => ({ id: w.id, title: w.title, minutes: w.minutes, kcal: w.kcal })),
         watch: d.watch || "нет данных с часов за сегодня" }
     }
     case "claude_code": {
@@ -761,7 +784,7 @@ function agentSystem() {
 - Календарь и напоминания iPhone приложение меняет через виджет: изменения ставятся в очередь и вносятся при обновлении виджета. Так и скажи коротко («внесу в календарь при обновлении виджета»), не извиняйся.
 ${cals.length ? `- Календари по словам пользователя: ${cals.map(x => `«${x.calendar}» (список напоминаний «${x.list}»)`).join(", ")}.${cals.filter(x => x.hint).map(x => ` ${x.hint} — «${x.calendar}».`).join("")} Если календарь не назван, не указывай его.
 ` : ""}- Деньги — ${c.currencyIn}. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.
-- «Съел», «выпил стакан воды» — add_food и add_water. На вопросы о калориях, шагах и воде смотри get_health.
+- «Съел», «выпил стакан воды» — add_food и add_water. «Удали лишнюю воду/еду/тренировку» — найди id через get_health (или get_history с details) и delete_record. На вопросы о калориях, шагах и воде смотри get_health.
 - Тренировка без часов («проплыл бассейн 10 раз», «час падела, часы забыл») — add_workout. Вес пользователя ${H().weight || 80} кг. Скажи, сколько ккал и минут записал.
 - Если пользователь спрашивает (что у меня завтра, сколько потратил), посмотри данные и ответь.
 - У тебя есть доступ ко всем данным пользователя: календарь и напоминания iPhone, деньги (и платежи по карте), еда, вода, тренировки, шаги и активность с часов — за сегодня и за прошлые дни.
@@ -885,10 +908,10 @@ function micStart(auto) {
   if (voice) return voiceFinish()
   voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false }
   const v = voice
-  const show = (extra = "") => { if (inp) { inp.value = [v.base, v.done, extra].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); grow(inp) } }
+  const show = (extra = "") => { v.text = [v.base, v.done, extra].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); const i = $("#chat-in"); if (i) { i.value = v.text; grow(i) } }
   const arm = ms => { clearTimeout(v.timer); v.timer = setTimeout(voiceFinish, ms) }
   $(".chat-bar .mic") && $(".chat-bar .mic").classList.add("on")
-  if (inp) inp.placeholder = "Слушаю… пауза — и отправлю"
+  if (inp) inp.placeholder = "Слушаю… ➤ — отправить сразу"
   const run = first => {
     const r = new SR()
     r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
@@ -935,6 +958,16 @@ function voiceSend(v) {
   const t = [v.base, v.done].filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
   voiceReset()
   if (v.done.trim() && inp) { inp.value = ""; grow(inp); chatSend(t, { voice: true }) }
+}
+// Зелёная ➤ во время записи: отправить то, что уже услышано, не дожидаясь паузы
+function voiceSendNow() {
+  const v = voice, i = $("#chat-in")
+  const t = ((i && i.value) || v.text || "").trim()
+  const r = rec
+  voiceReset()
+  try { r && r.abort() } catch (e) {}
+  if (i) { i.value = ""; grow(i) }
+  if (t) chatSend(t, { voice: true })
 }
 function voiceReset() {
   if (voice) clearTimeout(voice.timer)
@@ -1395,8 +1428,9 @@ function bind() {
   const inp = $("#chat-in", v)
   if (inp) {
     inp.oninput = () => grow(inp)
-    inp.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const t = inp.value; inp.value = ""; grow(inp); chatSend(t) } }
-    $(".chat-bar .send", v).onclick = () => { const t = inp.value; inp.value = ""; grow(inp); chatSend(t) }
+    inp.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (voice) return voiceSendNow(); const t = inp.value; inp.value = ""; grow(inp); chatSend(t) } }
+    $(".chat-bar .send", v).onclick = () => { if (voice) return voiceSendNow(); const t = inp.value; inp.value = ""; grow(inp); chatSend(t) }
+    if (voice) { $(".chat-bar .mic", v).classList.add("on"); inp.placeholder = "Слушаю… ➤ — отправить сразу"; if (voice.text) { inp.value = voice.text; grow(inp) } }
     $(".chat-bar .mic", v).onclick = () => micStart()
     bindChatList()
   }
@@ -1459,7 +1493,7 @@ async function hashAction() {
   if (a === "chat" || a === "note") return setTab("chat")
   if (a === "brief") { setTab("chat"); return brief(arg) }
   if (a === "money") return moneyForm("expense")
-  if (a === "water") return addWater(H().glass || 250)
+  if (a === "water") return addWater(H().glass || 250, "widget")
   if (a === "camera") return photoPrompt()
   if (a === "food") return foodMenu()
   if (a === "health") return setTab("health")

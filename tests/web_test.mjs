@@ -150,11 +150,50 @@ await page.click('[data-tab="more"]')
 check((await page.textContent("#view")).includes("Последний обмен"), "«Ещё»: подключено")
 await page.screenshot({ path: SHOTS + "5-more.png", fullPage: true })
 
-// 8. действие из виджета: #water добавляет стакан
-const before = hubState().lists.water.filter(w => !w.deleted).length
+// 8. действие из виджета: #water добавляет стакан, но серия случайных касаний не пишется
+const liveW = () => hubState().lists.water.filter(w => !w.deleted)
+const before = liveW().length
 await page.goto(BASE + "#water")
 await settle()
-check(hubState().lists.water.filter(w => !w.deleted).length === before + 1, "ссылка виджета #water добавила стакан")
+check(liveW().length === before, "#water через секунды после стакана в приложении — не пишется (защита от серии)", liveW().length)
+await page.evaluate(() => { const real = Date.now; Date.now = () => real() + 120e3 })   // прошло две минуты
+await page.evaluate(() => addWater(250, "widget")); await page.evaluate(() => addWater(250, "widget")); await page.evaluate(() => addWater(250, "widget"))
+await settle()
+check(liveW().length === before + 1, "из трёх быстрых #water записан один стакан", liveW().length)
+// в приложении второй стакан подряд — с вопросом
+const ask = page.evaluate(() => addWater(250))
+await page.waitForSelector(".sheet", { timeout: 3000 }).catch(() => {})
+check(await page.isVisible(".sheet"), "второй стакан за 10 с — спрашивает «Ещё стакан?»")
+await page.click('.sheet [data-b="Отмена"]')
+await ask; await settle()
+check(liveW().length === before + 1, "отказ — стакан не добавлен", liveW().length)
+
+// помощник удаляет лишнюю воду по id
+const wids = await page.evaluate(() => runTool("get_health", {}).then(r => r.water.map(w => w.id)))
+check(wids.length >= 2, "get_health отдаёт id записей воды", wids)
+await page.click('[data-tab="chat"]')
+const del = page.evaluate(ids => runTool("delete_record", { kind: "water", ids }), wids.slice(1))
+await page.waitForSelector('[data-opt="Да"]', { timeout: 5000 }).catch(() => {})
+await page.click('[data-opt="Да"]')
+const dr = await del; await settle()
+check(dr.ok && dr.deleted === wids.length - 1 && liveW().filter(w => wids.includes(w.id)).length === 1, "delete_record удалил лишнюю воду, одна осталась", dr)
+
+// голос: зелёная ➤ во время записи отправляет сразу, без паузы
+await page.evaluate(() => {
+  class FakeSR { start() { window.__sr = this; setTimeout(() => this.onresult && this.onresult({ results: [Object.assign([{ transcript: "сколько я выпил воды" }], { isFinal: false })] }), 50) }
+    stop() { setTimeout(() => this.onend && this.onend(), 10) } abort() { this.aborted = true } }
+  window.SpeechRecognition = window.webkitSpeechRecognition = FakeSR
+})
+claudeQueue.push({ content: [{ type: "text", text: "Сегодня 0,5 л." }], stop_reason: "end_turn" })
+const sentBefore = claudeSeen.length
+await page.click('[data-tab="today"]'); await page.click("#fab")
+await page.waitForTimeout(300)
+check(await page.evaluate(() => !!voice && $(".chat-bar .mic").classList.contains("on")), "золотая кнопка — сразу слушает")
+await page.click(".chat-bar .send")
+await page.waitForSelector("text=Сегодня 0,5 л", { timeout: 5000 }).catch(() => {})
+check(claudeSeen.length === sentBefore + 1 && JSON.stringify(claudeSeen.at(-1).body.messages).includes("сколько я выпил воды"), "➤ отправил услышанное сразу", claudeSeen.length - sentBefore)
+await page.waitForTimeout(3000)
+check(claudeSeen.length === sentBefore + 1 && await page.evaluate(() => !voice), "после ➤ запись остановлена, второй отправки нет", claudeSeen.length - sentBefore)
 // тёмная тема
 await page.emulateMedia({ colorScheme: "dark" })
 await page.click('[data-tab="today"]')
