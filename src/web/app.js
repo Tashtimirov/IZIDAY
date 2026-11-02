@@ -1070,19 +1070,25 @@ function micStart(auto) {
     r.onerror = e => {
       if (e.error === "no-speech" || e.error === "aborted") return
       if (first && auto && e.error === "not-allowed") { voiceReset(); return micPrompt() }
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") { voiceReset(); toast("Нет доступа к микрофону — скажите через 🎤 на клавиатуре"); if (inp) inp.focus() }
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") { voiceReset(); toast("Нет доступа к микрофону: Настройки → Safari → Микрофон (и Siri и Диктовка включены)"); if (inp) inp.focus(); return }
+      v.err = e.error   // сеть, занят микрофон и т. п. — не перезапускаем по кругу, отправляем услышанное
+      toast(`Микрофон: ${({ network: "нет сети для распознавания", "audio-capture": "микрофон занят другим приложением", "language-not-supported": "русский язык недоступен" })[e.error] || e.error}`)
     }
     r.onend = () => {
       if (voice !== v) return
       v.done = [v.done, all.trim()].filter(Boolean).join(" ")
-      if (v.finishing) return voiceSend(v)
+      if (v.finishing || v.err) return voiceSend(v)
       // Safari закончил сам, а пауза ещё не набралась — продолжаем слушать
       try { rec = run(false) } catch (e) { voiceSend(v) }
     }
     r.start()
     return r
   }
-  try { rec = run(true); arm(FIRST_WORD_MS) } catch (e) { voiceReset(); if (auto) return micPrompt(); if (inp) inp.focus() }
+  const fail = e => { voiceReset(); if (auto) return micPrompt(); toast(`Микрофон не запустился: ${e && (e.message || e.name) || e}`); if (inp) inp.focus() }
+  try { rec = run(true); arm(FIRST_WORD_MS) }
+  catch (e) {   // прошлая запись ещё не отпустила микрофон (например, сразу после ➤) — пробуем ещё раз чуть позже
+    setTimeout(() => { if (voice !== v) return; try { rec = run(true); arm(FIRST_WORD_MS) } catch (e2) { fail(e2) } }, 500)
+  }
 }
 function voiceFinish() {
   const v = voice
@@ -1105,7 +1111,7 @@ function voiceSendNow() {
   const t = ((i && i.value) || v.text || "").trim()
   const r = rec
   voiceReset()
-  try { r && r.abort() } catch (e) {}
+  try { r && r.stop() } catch (e) {}   // stop, не abort: Safari после abort иногда не отдаёт микрофон следующей записи
   if (i) { i.value = ""; grow(i) }
   if (t) chatSend(t, { voice: true })
 }

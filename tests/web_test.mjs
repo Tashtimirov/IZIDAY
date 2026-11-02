@@ -243,6 +243,25 @@ await page.waitForSelector("text=Сегодня 0,5 л", { timeout: 5000 }).catc
 check(claudeSeen.length === sentBefore + 1 && JSON.stringify(claudeSeen.at(-1).body.messages).includes("сколько я выпил воды"), "➤ отправил услышанное сразу", claudeSeen.length - sentBefore)
 await page.waitForTimeout(3000)
 check(claudeSeen.length === sentBefore + 1 && await page.evaluate(() => !voice), "после ➤ запись остановлена, второй отправки нет", claudeSeen.length - sentBefore)
+// как Safari: пока прошлая запись не закончилась, новая не стартует; после ➤ микрофон снова работает
+await page.evaluate(() => {
+  window.__busy = false; window.__starts = 0
+  class SafariSR { start() { if (window.__busy) throw new Error("already started"); window.__busy = true; window.__starts++; window.__sr = this }
+    stop() { setTimeout(() => { window.__busy = false; this.onend && this.onend() }, 200) } abort() { this.stop() } }
+  window.SpeechRecognition = window.webkitSpeechRecognition = SafariSR
+})
+await page.click(".chat-bar .mic"); await page.waitForTimeout(100)
+await page.evaluate(() => { const r = window.__sr; r.onresult({ results: [Object.assign([{ transcript: "привет" }], { isFinal: true })] }) })
+claudeQueue.push({ content: [{ type: "text", text: "Привет!" }], stop_reason: "end_turn" })
+await page.click(".chat-bar .send")
+await page.click(".chat-bar .mic"); await page.waitForTimeout(900)
+check(await page.evaluate(() => !!voice && window.__starts === 2), "сразу после ➤ микрофон запускается снова", await page.evaluate(() => [!!voice, window.__starts]))
+// ошибка распознавания — без бесконечного перезапуска, с подсказкой
+await page.evaluate(() => { const r = window.__sr; r.onerror({ error: "network" }); window.__busy = false; r.onend() })
+await page.waitForTimeout(300)
+check(await page.evaluate(() => !voice && window.__starts === 2), "ошибка сети: запись остановлена, не перезапускается по кругу")
+check(/нет сети/.test(await page.textContent("#toast")), "и видно, что случилось")
+await page.waitForTimeout(2500)
 // тёмная тема
 await page.emulateMedia({ colorScheme: "dark" })
 await page.click('[data-tab="today"]')
