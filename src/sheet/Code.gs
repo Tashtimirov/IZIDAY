@@ -253,16 +253,24 @@ function geo_(g) {
     const t = x.tags || {}, addr = [t["addr:street"], t["addr:housenumber"]].filter(String).join(" ");
     return { name: [t.name || t.brand || q, t.branch, addr || t["addr:city"] || ""].filter(String).join(", "), lat: lat, lng: lng };
   };
+  // Сначала Nominatim (отвечает за секунды), Overpass — запасной
+  try {
+    let url = "https://nominatim.openstreetmap.org/search?format=json&limit=8&accept-language=ru&q=" + encodeURIComponent(q);
+    if (near) { const k = km / 111; url += "&bounded=1&viewbox=" + [near.lng - k, near.lat + k, near.lng + k, near.lat - k].join(","); }
+    const res = UrlFetchApp.fetch(url, { headers: ua, muteHttpExceptions: true });
+    if (res.getResponseCode() === 200) {
+      const out = JSON.parse(res.getContentText()).filter(x => !/^(city|town|state|country|administrative|suburb|county)$/.test(x.type))
+        .map(x => ({ name: x.display_name, lat: Number(x.lat), lng: Number(x.lon) }));
+      if (out.length) return { source: "nominatim", results: out };
+    }
+  } catch (e) {}
   try {
     if (near && q) {
       const re = q.replace(/[^\p{L}\p{N} &'-]/gu, "").trim() || "-";   // без спецсимволов регулярного выражения
-      const data = "[out:json][timeout:20];(nwr[\"name\"~\"" + re + "\",i](around:" + km * 1000 + "," + near.lat + "," + near.lng + ");" +
+      const data = "[out:json][timeout:8];(nwr[\"name\"~\"" + re + "\",i](around:" + km * 1000 + "," + near.lat + "," + near.lng + ");" +
         "nwr[\"brand\"~\"" + re + "\",i](around:" + km * 1000 + "," + near.lat + "," + near.lng + "););out center 40;";
-      let res = null;
-      for (const host of ["https://overpass-api.de", "https://overpass.kumi.systems", "https://maps.mail.ru/osm/tools/overpass"]) {   // основной сервер бывает перегружен
-        try { res = UrlFetchApp.fetch(host + "/api/interpreter", { method: "post", payload: { data: data }, headers: ua, muteHttpExceptions: true }); } catch (e) { res = null; }
-        if (res && res.getResponseCode() === 200) break;
-      }
+      let res = null;   // один сервер и только если Nominatim ничего не нашёл: перегруженный Overpass может висеть минуту
+      try { res = UrlFetchApp.fetch("https://overpass-api.de/api/interpreter", { method: "post", payload: { data: data }, headers: ua, muteHttpExceptions: true }); } catch (e) { res = null; }
       if (res && res.getResponseCode() === 200) {
         const seen = {}, out = [];
         for (const x of JSON.parse(res.getContentText()).elements || []) {
@@ -274,16 +282,6 @@ function geo_(g) {
         }
         if (out.length) return { source: "osm", results: out.slice(0, 15) };
       }
-    }
-  } catch (e) {}
-  try {
-    let url = "https://nominatim.openstreetmap.org/search?format=json&limit=8&accept-language=ru&q=" + encodeURIComponent(q);
-    if (near) { const k = km / 111; url += "&bounded=1&viewbox=" + [near.lng - k, near.lat + k, near.lng + k, near.lat - k].join(","); }
-    const res = UrlFetchApp.fetch(url, { headers: ua, muteHttpExceptions: true });
-    if (res.getResponseCode() === 200) {
-      const out = JSON.parse(res.getContentText()).filter(x => !/^(city|town|state|country|administrative|suburb|county)$/.test(x.type))
-        .map(x => ({ name: x.display_name, lat: Number(x.lat), lng: Number(x.lon) }));
-      if (out.length) return { source: "nominatim", results: out };
     }
   } catch (e) {}
   try {
