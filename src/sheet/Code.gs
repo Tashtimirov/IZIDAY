@@ -241,16 +241,53 @@ function route_(r) {
     return out;
   } catch (e) { return { error: String(e) }; }
 }
-// Поиск места по названию или адресу; near — {lat,lng}, рядом ищем в первую очередь
+// Поиск места: сетевые магазины и заведения — по карте OpenStreetMap (Overpass: филиалы по названию или бренду рядом),
+// потом Nominatim, адреса — Геокодер Google. near — {lat,lng}; города и районы целиком не возвращаем
 function geo_(g) {
+  const q = String(g.query || "").trim(), near = g.near && g.near.lat != null ? g.near : null;
+  const km = Math.max(3, Math.min(Number(g.km) || 40, 80));
+  const ua = { "User-Agent": "IZIDAY personal assistant (Google Apps Script)" };
+  const fromOsm = (x, lat, lng) => {
+    const t = x.tags || {}, addr = [t["addr:street"], t["addr:housenumber"]].filter(String).join(" ");
+    return { name: [t.name || t.brand || q, t.branch, addr || t["addr:city"] || ""].filter(String).join(", "), lat: lat, lng: lng };
+  };
+  try {
+    if (near && q) {
+      const re = q.replace(/[^\p{L}\p{N} &'-]/gu, "").trim() || "-";   // без спецсимволов регулярного выражения
+      const data = "[out:json][timeout:20];(nwr[\"name\"~\"" + re + "\",i](around:" + km * 1000 + "," + near.lat + "," + near.lng + ");" +
+        "nwr[\"brand\"~\"" + re + "\",i](around:" + km * 1000 + "," + near.lat + "," + near.lng + "););out center 40;";
+      const res = UrlFetchApp.fetch("https://overpass-api.de/api/interpreter", { method: "post", payload: { data: data }, headers: ua, muteHttpExceptions: true });
+      if (res.getResponseCode() === 200) {
+        const seen = {}, out = [];
+        for (const x of JSON.parse(res.getContentText()).elements || []) {
+          const lat = x.lat != null ? x.lat : x.center && x.center.lat, lng = x.lon != null ? x.lon : x.center && x.center.lon;
+          if (lat == null || !(x.tags && (x.tags.shop || x.tags.amenity || x.tags.brand || x.tags.leisure || x.tags.tourism || x.tags.office))) continue;
+          const key = Math.round(lat * 500) + ":" + Math.round(lng * 500);   // одно место, отмеченное и точкой, и зданием
+          if (seen[key]) continue;
+          seen[key] = 1; out.push(fromOsm(x, lat, lng));
+        }
+        if (out.length) return { source: "osm", results: out.slice(0, 15) };
+      }
+    }
+  } catch (e) {}
+  try {
+    let url = "https://nominatim.openstreetmap.org/search?format=json&limit=8&accept-language=ru&q=" + encodeURIComponent(q);
+    if (near) { const k = km / 111; url += "&bounded=1&viewbox=" + [near.lng - k, near.lat + k, near.lng + k, near.lat - k].join(","); }
+    const res = UrlFetchApp.fetch(url, { headers: ua, muteHttpExceptions: true });
+    if (res.getResponseCode() === 200) {
+      const out = JSON.parse(res.getContentText()).filter(x => !/^(city|town|state|country|administrative|suburb|county)$/.test(x.type))
+        .map(x => ({ name: x.display_name, lat: Number(x.lat), lng: Number(x.lon) }));
+      if (out.length) return { source: "nominatim", results: out };
+    }
+  } catch (e) {}
   try {
     const gc = Maps.newGeocoder().setLanguage("ru");
-    if (g.near && g.near.lat != null) { const k = Math.max(5, Math.min(Number(g.km) || 40, 200)) / 111;
-      gc.setBounds(g.near.lat - k, g.near.lng - k, g.near.lat + k, g.near.lng + k); }
-    const res = gc.geocode(String(g.query || ""));
-    return { status: res.status, results: (res.results || []).slice(0, 8).map(x => ({ name: x.formatted_address,
-      lat: x.geometry.location.lat, lng: x.geometry.location.lng })) };
-  } catch (e) { return { error: String(e) }; }
+    if (near) { const k = km / 111; gc.setBounds(near.lat - k, near.lng - k, near.lat + k, near.lng + k); }
+    const res = gc.geocode(q);
+    const out = (res.results || []).filter(x => !(x.types || []).some(t => /^(locality|political|country|administrative_area_level_\d|sublocality.*)$/.test(t)))
+      .slice(0, 8).map(x => ({ name: x.formatted_address, lat: x.geometry.location.lat, lng: x.geometry.location.lng }));
+    return { source: "google", status: res.status, results: out };
+  } catch (e) { return { error: String(e), results: [] }; }
 }
 
 // Без имени листа — список листов с заголовками и числом строк. С именем — строки (последние limit),

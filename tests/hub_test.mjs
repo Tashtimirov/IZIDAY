@@ -29,7 +29,7 @@ const ss = { getSheetByName: n => sheets.find(s => s.name === n) || null, insert
   getSheets: () => sheets, deleteSheet: s => sheets.splice(sheets.indexOf(s), 1), getName: () => "Мой день", getUrl: () => "https://docs.google.com/spreadsheets/d/T/edit",
   setActiveSheet: s => { ss.active = s }, moveActiveSheet: i => { sheets.splice(sheets.indexOf(ss.active), 1); sheets.splice(i - 1, 0, ss.active) },
   getSpreadsheetTimeZone: () => "Asia/Bangkok" }
-const props = {}, fetched = []
+const props = {}, fetched = [], overpassQ = []
 const g = {
   Maps: { DirectionFinder: { Mode: { DRIVING: "driving", WALKING: "walking", TRANSIT: "transit" } },
     newDirectionFinder: () => { const f = { o: null, d: null, setLanguage: () => f, setMode: m => (f.m = m, f), setDepart: () => f,
@@ -44,7 +44,14 @@ const g = {
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = v } }) },
   ContentService: { createTextOutput: s => ({ setMimeType: () => JSON.parse(s) }), MimeType: { JSON: 1 } },
-  UrlFetchApp: { fetch: (url, o) => { fetched.push({ url, o }); return { getContentText: () => JSON.stringify({ claude_code_session_url: "https://claude.ai/code/session_x" }) } } },
+  UrlFetchApp: { fetch: (url, o) => {
+    if (/overpass/.test(url)) { overpassQ.push(o.payload.data); return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ elements: /Decathlon/.test(o.payload.data) ? [
+      { type: "node", lat: 13.7201, lon: 100.5502, tags: { name: "Decathlon", branch: "Rama 4", shop: "sports", "addr:street": "Rama IV Rd" } },
+      { type: "way", center: { lat: 13.7202, lon: 100.5503 }, tags: { name: "Decathlon", shop: "sports" } },
+      { type: "node", lat: 13.6683, lon: 100.6347, tags: { brand: "Decathlon", name: "Decathlon Bangna", shop: "sports" } },
+      { type: "node", lat: 13.70, lon: 100.50, tags: { name: "Decathlon street" } }] : [] }) } }
+    if (/nominatim/.test(url)) return { getResponseCode: () => 200, getContentText: () => "[]" }
+    fetched.push({ url, o }); return { getContentText: () => JSON.stringify({ claude_code_session_url: "https://claude.ai/code/session_x" }) } } },
 }
 const gs = new Function(...Object.keys(g), code + "; return { doPost }")(...Object.values(g))
 let fail = 0
@@ -117,7 +124,10 @@ check("неизвестный лист — ошибка и список", a.read
 a = hub({ from: "app", route: { from: { lat: 13.75, lng: 100.5 }, to: { lat: 13.72, lng: 100.55 }, mode: "driving" } })
 check("маршрут: минуты, км, с пробками", a.route && a.route.minutes === 25 && a.route.km === 12.3 && a.route.minutes_in_traffic === 31, a.route)
 a = hub({ from: "app", geo: { query: "Decathlon", near: { lat: 13.75, lng: 100.5 } } })
-check("поиск места: точки с координатами", a.geo && a.geo.results.length === 2 && a.geo.results[0].lat === 13.72, a.geo)
+check("поиск сети по OpenStreetMap: два филиала, без дублей и без «улицы»", a.geo && a.geo.source === "osm" && a.geo.results.length === 2 && /Rama 4/.test(a.geo.results[0].name), a.geo)
+check("запрос к карте без спецсимволов", overpassQ.at(-1).includes('"name"~"Decathlon",i') && /around:40000,13.75,100.5/.test(overpassQ.at(-1)), overpassQ.at(-1))
+a = hub({ from: "app", geo: { query: "Аэропорт (Суварнабхуми)", near: { lat: 13.75, lng: 100.5 } } })
+check("не нашлось на карте — Геокодер Google", a.geo.source === "google" && a.geo.results.length === 2 && !/[()]/.test(overpassQ.at(-1).match(/~"[^"]*"/)[0]), a.geo)
 check("без ключа — отказ", gs.doPost({ postData: { contents: JSON.stringify({ secret: "x".repeat(32), hub: { from: "app" } }) } }).error === "forbidden")
 console.log(fail ? `\n✗ ошибок: ${fail}` : "\nВсё в порядке")
 process.exit(fail ? 1 : 0)
