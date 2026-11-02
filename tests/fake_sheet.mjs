@@ -31,7 +31,15 @@ export function sheetScript() {
     getSpreadsheetTimeZone: () => "Asia/Bangkok" }
   const props = {}
   const g = {
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss },
+    Maps: { DirectionFinder: { Mode: { DRIVING: "driving", WALKING: "walking", TRANSIT: "transit" } },
+    newDirectionFinder: () => { const f = { o: null, d: null, setLanguage: () => f, setMode: m => (f.m = m, f), setDepart: () => f,
+      setOrigin: (...a) => (f.o = a, f), setDestination: (...a) => (f.d = a, f),
+      getDirections: () => (globalThis.__mapsCalls = (globalThis.__mapsCalls || []).concat([{ o: f.o, d: f.d, m: f.m }]), { status: "OK", routes: [{ legs: [{ duration: { value: 1500 }, distance: { value: 12345 },
+        duration_in_traffic: { value: 1860 }, start_address: "Сукхумвит", end_address: "Decathlon Rama 4" }] }] }) }; return f },
+    newGeocoder: () => { const gc = { setLanguage: () => gc, setBounds: () => gc, setRegion: () => gc,
+      geocode: q => ({ status: "OK", results: /нигде/.test(q) ? [] : [{ formatted_address: "Decathlon Rama 4", geometry: { location: { lat: 13.72, lng: 100.55 } } },
+        { formatted_address: "Decathlon Chiang Mai", geometry: { location: { lat: 18.79, lng: 98.98 } } }] }) }; return gc } },
+  SpreadsheetApp: { getActiveSpreadsheet: () => ss },
   Utilities: { formatDate: (d, tz, f) => { const z = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}` } },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = v } }) },

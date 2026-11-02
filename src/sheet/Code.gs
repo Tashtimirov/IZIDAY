@@ -159,7 +159,7 @@ function advice() { ensureSheets_(); writeAdvice_(); }
 // Виджет присылает снимок того, что видит только iPhone (календарь, напоминания, часы), и выполняет
 // очередь команд приложения (создать или перенести событие, отметить напоминание). Каждая запись хранит
 // s — время, когда таблица её приняла: клиент получает только записи новее своего прошлого запроса.
-const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400 },   // сколько дней хранить (0 — всё)
+const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0 },   // сколько дней хранить (0 — всё)
   tomb: 90, chunk: 45000, opsKeep: 3 };
 const ROUTE_URL = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/;
 
@@ -216,10 +216,41 @@ function hub_(h) {
         : { error: j.error ? j.error.type + ": " + j.error.message : "пустой ответ" };
     } catch (err) { out.fire = { error: "нет связи: " + err }; }
   }
+  // 6. Карты Google: дорога до точки и поиск места рядом
+  if (h.route) out.route = route_(h.route);
+  if (h.geo) out.geo = geo_(h.geo);
   // 5. Чтение любого листа для помощника (только чтение; скрытый «_hub» не отдаётся)
   if (h.read) out.read = readSheet_(ss, h.read);
   out.url = ss.getUrl();
   return out;
+}
+
+// Время и расстояние в пути (встроенный сервис Карт Apps Script, ключ не нужен). from/to — {lat,lng} или адрес
+function route_(r) {
+  try {
+    const M = Maps.DirectionFinder.Mode, f = Maps.newDirectionFinder().setLanguage("ru")
+      .setMode(r.mode === "walking" ? M.WALKING : r.mode === "transit" ? M.TRANSIT : M.DRIVING);
+    const at = (x, fn) => x && x.lat != null ? f[fn](Number(x.lat), Number(x.lng)) : f[fn](String(x || ""));
+    at(r.from, "setOrigin"); at(r.to, "setDestination");
+    if (r.mode !== "walking") f.setDepart(new Date());
+    const d = f.getDirections();
+    if (!d || d.status !== "OK" || !d.routes || !d.routes.length) return { error: "маршрут не найден" + (d && d.status ? " (" + d.status + ")" : "") };
+    const leg = d.routes[0].legs[0];
+    const out = { minutes: Math.round(leg.duration.value / 60), km: Math.round(leg.distance.value / 100) / 10, from: leg.start_address, to: leg.end_address };
+    if (leg.duration_in_traffic) out.minutes_in_traffic = Math.round(leg.duration_in_traffic.value / 60);
+    return out;
+  } catch (e) { return { error: String(e) }; }
+}
+// Поиск места по названию или адресу; near — {lat,lng}, рядом ищем в первую очередь
+function geo_(g) {
+  try {
+    const gc = Maps.newGeocoder().setLanguage("ru");
+    if (g.near && g.near.lat != null) { const k = Math.max(5, Math.min(Number(g.km) || 40, 200)) / 111;
+      gc.setBounds(g.near.lat - k, g.near.lng - k, g.near.lat + k, g.near.lng + k); }
+    const res = gc.geocode(String(g.query || ""));
+    return { status: res.status, results: (res.results || []).slice(0, 8).map(x => ({ name: x.formatted_address,
+      lat: x.geometry.location.lat, lng: x.geometry.location.lng })) };
+  } catch (e) { return { error: String(e) }; }
 }
 
 // Без имени листа — список листов с заголовками и числом строк. С именем — строки (последние limit),

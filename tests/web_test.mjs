@@ -27,7 +27,7 @@ const iso = d => `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${
 sheet.post({ secret: SECRET, hub: { from: "widget", since: 0,
   lists: { money: [{ id: "f1", date: Date.now() - 3600e3, u: Date.now() - 3600e3, type: "expense", amount: 450, method: "cash", category: "Транспорт", comment: "такси" }],
            water: [{ id: "w1", date: Date.now() - 1800e3, u: Date.now() - 1800e3, ml: 250 }],
-           food: [{ id: "m1", date: Date.now() - 7200e3, u: Date.now() - 7200e3, title: "Омлет с тостом", kcal: 420, protein: 24, fat: 22, carbs: 30 }], workouts: [] },
+           food: [{ id: "m1", date: Math.max(Date.now() - 7200e3, new Date().setHours(0, 1, 0, 0)), u: Date.now() - 7200e3, title: "Омлет с тостом", kcal: 420, protein: 24, fat: 22, carbs: 30 }], workouts: [] },
   snap: { events: [
       { id: "E1", title: "Созвон с командой", start: iso(day(0, 23, 0)), end: iso(day(0, 23, 30)), calendar: "Работа", color: "#2E6B57", all_day: false, location: "", repeats: false },
       { id: "E2", title: "Падел", start: iso(day(1, 19)), end: iso(day(1, 21)), calendar: "Личное", color: "#0FA89C", all_day: false, location: "Padel Club", repeats: true }],
@@ -160,6 +160,19 @@ await page.emulateMedia({ colorScheme: "dark" })
 await page.click('[data-tab="today"]')
 await page.screenshot({ path: SHOTS + "6-today-dark.png", fullPage: true })
 
+// место: сколько ехать и «напомни, когда буду рядом»
+await ctx.grantPermissions(["geolocation"]); await ctx.setGeolocation({ latitude: 13.75, longitude: 100.5 })
+const rt = await page.evaluate(() => runTool("route_to", { to: "Декатлон" }))
+check(rt.minutes === 25 && rt.km === 12.3 && rt.place === "Decathlon Rama 4" && rt.from_location === "сейчас", "сколько ехать: минуты, км, ближайший филиал", rt)
+const rn = await page.evaluate(() => runTool("remind_near", { title: "Заехать в Декатлон", query: "Decathlon" }))
+check(rn.ok && rn.points.length === 1 && /Rama 4/.test(rn.points[0]), "напоминание по месту: только точки рядом (Чиангмай отброшен)", rn)
+await page.waitForTimeout(1500)
+const pl = hubState().lists.places || []
+check(pl.some(p => p.title === "Заехать в Декатлон" && p.radius === 1500 && p.points.length === 1), "место ушло в таблицу для виджета", pl)
+await page.click('[data-tab="today"]'); await page.click(".day:first-child")
+const tv = await page.textContent("#view"); check(tv.includes("напомню рядом: Decathlon"), "на «Сегодня» видно напоминание по месту", tv.slice(0, 600))
+const nf = await page.evaluate(() => runTool("remind_near", { title: "x", query: "нигде" }))
+check(nf.error, "место не нашлось — просьба уточнить", nf)
 check(!errors.length, "без ошибок в консоли", errors)
 await browser.close(); server.close()
 console.log(ok ? "\nWEB_OK" : "\nWEB_FAIL")

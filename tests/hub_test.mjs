@@ -31,6 +31,14 @@ const ss = { getSheetByName: n => sheets.find(s => s.name === n) || null, insert
   getSpreadsheetTimeZone: () => "Asia/Bangkok" }
 const props = {}, fetched = []
 const g = {
+  Maps: { DirectionFinder: { Mode: { DRIVING: "driving", WALKING: "walking", TRANSIT: "transit" } },
+    newDirectionFinder: () => { const f = { o: null, d: null, setLanguage: () => f, setMode: m => (f.m = m, f), setDepart: () => f,
+      setOrigin: (...a) => (f.o = a, f), setDestination: (...a) => (f.d = a, f),
+      getDirections: () => (globalThis.__mapsCalls = (globalThis.__mapsCalls || []).concat([{ o: f.o, d: f.d, m: f.m }]), { status: "OK", routes: [{ legs: [{ duration: { value: 1500 }, distance: { value: 12345 },
+        duration_in_traffic: { value: 1860 }, start_address: "Сукхумвит", end_address: "Decathlon Rama 4" }] }] }) }; return f },
+    newGeocoder: () => { const gc = { setLanguage: () => gc, setBounds: () => gc, setRegion: () => gc,
+      geocode: q => ({ status: "OK", results: /нигде/.test(q) ? [] : [{ formatted_address: "Decathlon Rama 4", geometry: { location: { lat: 13.72, lng: 100.55 } } },
+        { formatted_address: "Decathlon Chiang Mai", geometry: { location: { lat: 18.79, lng: 98.98 } } }] }) }; return gc } },
   SpreadsheetApp: { getActiveSpreadsheet: () => ss },
   Utilities: { formatDate: (d, tz, f) => { const z = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}` } },
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
@@ -105,6 +113,11 @@ a = hub({ from: "app", read: { sheet: "операции", limit: 5 } })
 check("строки листа: последние limit, даты строкой", a.read.rows.length === 5 && a.read.total > 5 && /^\d{4}-\d{2}-\d{2}/.test(a.read.rows[0][0]), a.read && a.read.rows && a.read.rows[0])
 a = hub({ from: "app", read: { sheet: "Нет такого" } })
 check("неизвестный лист — ошибка и список", a.read.error && a.read.sheets.includes("Операции"))
+// Карты: дорога и поиск места
+a = hub({ from: "app", route: { from: { lat: 13.75, lng: 100.5 }, to: { lat: 13.72, lng: 100.55 }, mode: "driving" } })
+check("маршрут: минуты, км, с пробками", a.route && a.route.minutes === 25 && a.route.km === 12.3 && a.route.minutes_in_traffic === 31, a.route)
+a = hub({ from: "app", geo: { query: "Decathlon", near: { lat: 13.75, lng: 100.5 } } })
+check("поиск места: точки с координатами", a.geo && a.geo.results.length === 2 && a.geo.results[0].lat === 13.72, a.geo)
 check("без ключа — отказ", gs.doPost({ postData: { contents: JSON.stringify({ secret: "x".repeat(32), hub: { from: "app" } }) } }).error === "forbidden")
 console.log(fail ? `\n✗ ошибок: ${fail}` : "\nВсё в порядке")
 process.exit(fail ? 1 : 0)

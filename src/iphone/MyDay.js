@@ -57,6 +57,7 @@ const CONFIG = {
   monthlyReportNotification: true, // 1-го числа в 10:00 прислать уведомление с отчётом
   assistantChat: true,           // кнопка 💬 — чат с помощником Claude вместо заметок; 🎤 сразу слушает и пишет в этот чат
   briefs: { morning: "08:00", evening: "21:00" },
+  eventAlertMinutes: 10,         // с веб-приложением виджет сам присылает уведомления о встречах (за N минут) и напоминаниях
   routes: "__ROUTES__",          // маршруты в Claude Code из secrets.json (routes); заданные в меню 🤖 важнее   // утренняя и вечерняя сводка помощника (уведомление → чат); "" — без сводки
   webApp: "__WEB_APP__",         // веб-приложение «Мой день» (build.py берёт web_app из secrets.json): кнопки виджета открывают его, а виджет передаёт ему календарь и напоминания
   // Google Таблица с доходами и расходами (кнопка ▦ в виджете)
@@ -307,7 +308,8 @@ async function autoSyncSheet() {
 // ── Связь с веб-приложением «Мой день» (CONFIG.webApp) через таблицу ──
 // Виджет отдаёт таблице новые записи (деньги, еда, вода, тренировки) и снимок того, что видит только iPhone:
 // события, напоминания, данные часов. Обратно получает записи приложения и команды для календаря и напоминаний.
-const HUB_FILES = { money: ["finance.json", "f", 0], food: ["food.json", "m", 120], water: ["water.json", "w", 60], workouts: ["workouts.json", "t", 400] }
+const HUB_FILES = { money: ["finance.json", "f", 0], food: ["food.json", "m", 120], water: ["water.json", "w", 60], workouts: ["workouts.json", "t", 400],
+  places: ["places.json", "p", 0] }   // места «напомни, когда буду рядом» — создаёт помощник в приложении
 const HUB_TOOLS = ["create_event", "update_event", "delete_event", "create_reminder", "update_reminder", "delete_reminder"]
 let HUB_RUN = false   // команды из приложения пользователь уже подтвердил там — окон не показываем
 
@@ -325,7 +327,83 @@ async function hubSnapshot() {
     recur: !!(r.hasRecurrenceRules), notes: r.notes || "" })
   const names = async forRem => { try { return (forRem ? await Calendar.forReminders() : await Calendar.forEvents()).map(c => c.title) } catch (e) { return [] } }
   return { events, reminders: open.slice(0, 200).map(rem).concat(done.slice(-30).map(rem)),
-    calendars: await names(false), lists: await names(true), watch: await loadHealth(), health: (await healthDays()).slice(-14) }
+    calendars: await names(false), lists: await names(true), watch: await loadHealth(), health: (await healthDays()).slice(-14), loc: await hereNow() }
+}
+
+// ── Где я: виджет раз за обновление (~15 мин) берёт место с точностью ~100 м — для «сколько ехать» и напоминаний по месту
+let HERE
+async function hereNow() {
+  if (HERE !== undefined) return HERE
+  HERE = null
+  if (!WEB_APP) return HERE
+  try {
+    Location.setAccuracyToHundredMeters()
+    const l = await Promise.race([Location.current(), new Promise(r => Timer.schedule(8000, false, () => r(null)))])
+    if (l && l.latitude != null) HERE = { lat: l.latitude, lng: l.longitude, at: Date.now() }
+  } catch (e) {}
+  return HERE
+}
+const distM = (a, b) => {
+  const R = 6371000, rad = x => x * Math.PI / 180, dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng)
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(h))
+}
+// Напоминание по месту: рядом с любой из точек — уведомление (один раз), отметка уходит в приложение
+async function placesCheck(here) {
+  if (!here || !WEB_APP) return
+  const list = withIds(await loadJSON("places.json"), "p")
+  let changed = false
+  for (const p of list) {
+    if (p.deleted || p.done) continue
+    const near = (p.points || []).map(q => ({ q, d: distM(here, q) })).sort((a, b) => a.d - b.d)[0]
+    if (!near || near.d > (p.radius || 1500)) continue
+    try {
+      const n = new Notification()
+      n.identifier = `myday-place-${p.id}`
+      n.title = `📍 ${p.title}`
+      n.body = `Вы рядом: ${near.q.name || p.query} — ${String(Math.round(near.d / 100) / 10).replace(".", ",")} км`
+      n.openURL = `${WEB_APP}#place=${encodeURIComponent(p.id)}`
+      n.sound = "default"
+      await n.schedule()
+    } catch (e) {}
+    Object.assign(p, { done: true, firedAt: Date.now(), u: Date.now() })
+    changed = true
+  }
+  if (changed) saveJSON("places.json", list)
+}
+// Уведомления о встречах (за CONFIG.eventAlertMinutes) и напоминаниях со временем на ближайшие 36 ч — от виджета, открывают приложение.
+// Уведомления Календаря и Напоминаний после этого можно выключить в настройках iPhone
+async function scheduleAgenda() {
+  if (!WEB_APP || CONFIG.agendaAlerts === false) return
+  try {
+    const now = new Date(), to = new Date(now.getTime() + 36 * 3600e3), want = new Map()
+    const hash = t => { let h = 0; for (const c of String(t)) h = (h * 31 + c.charCodeAt(0)) | 0; return (h >>> 0).toString(36) }
+    const lead = (CONFIG.eventAlertMinutes ?? 10) * 60e3
+    for (const e of await evRange(now, to)) {
+      if (e.isAllDay || e.startDate <= now) continue
+      const at = new Date(Math.max(e.startDate.getTime() - lead, now.getTime() + 30e3))
+      want.set(`myday-ag-e-${e.identifier}-${e.startDate.getTime()}-${hash(e.title)}`,
+        { at, title: `📅 ${e.title}`, body: `${eventTime(e)}${e.location ? " · " + e.location.split("\n")[0] : ""}` })
+    }
+    let rems = []
+    try { rems = await Reminder.allIncomplete() } catch (e) {}
+    for (const r of rems) if (r.dueDate && r.dueDateIncludesTime && r.dueDate > now && r.dueDate < to)
+      want.set(`myday-ag-r-${r.identifier}-${r.dueDate.getTime()}-${hash(r.title)}`, { at: r.dueDate, title: `⏰ ${r.title}`, body: r.calendar ? r.calendar.title : "" })
+    const have = new Set(), stale = []
+    for (const n of await Notification.allPending()) {
+      const id = n.identifier || ""
+      if (!id.startsWith("myday-ag-")) continue
+      if (want.has(id)) have.add(id); else stale.push(id)
+    }
+    if (stale.length) Notification.removePending(stale)
+    for (const [id, x] of want) {
+      if (have.has(id)) continue
+      const n = new Notification()
+      n.identifier = id; n.title = x.title; n.body = x.body; n.openURL = WEB_APP; n.sound = "default"
+      n.setTriggerDate(x.at)
+      await n.schedule()
+    }
+  } catch (e) {}
 }
 
 async function hubPost(st, h, timeout) {
@@ -1561,7 +1639,7 @@ async function createReminder(title, date, recur, listName) {
   if (date) {
     r.dueDate = date
     r.dueDateIncludesTime = true
-    if (CONFIG.notifyReminders && date > new Date()) {
+    if (CONFIG.notifyReminders && !WEB_APP && date > new Date()) {
       try {
         const n = new Notification()
         n.title = "⏰ Напоминание"
@@ -3166,7 +3244,7 @@ async function runTool(name, x) {
       if (d) {
         r.dueDate = d
         r.dueDateIncludesTime = /T|\s\d/.test(x.due)
-        if (r.dueDateIncludesTime && CONFIG.notifyReminders && d > new Date()) {
+        if (r.dueDateIncludesTime && CONFIG.notifyReminders && !WEB_APP && d > new Date()) {
           try { const n = new Notification(); n.title = "⏰ Напоминание"; n.body = x.title; n.setTriggerDate(d); await n.schedule() } catch (e) {}
         }
       }
@@ -3807,9 +3885,11 @@ if (SHORTCUT_PARAM && !config.runsInWidget) {
   const st = await loadSettings()
   SHEET_URL = sheetUrlOf(st)
   STATS_URL = sheetTabUrl(st, "Еда и активность") || SHEET_URL   // пока таблица не прислала номер листа — просто таблица
+  await placesCheck(await hereNow())         // рядом с местом из «напомни, когда буду рядом» — уведомление
   await hubSync()                            // сначала обмен с приложением: виджет сразу покажет воду, еду и деньги оттуда
   Script.setWidget(await buildWidget(config.widgetFamily, args.widgetParameter))
   await autoSyncSheet()
+  await scheduleAgenda()
 } else {
   // Сначала окно, потом всё остальное: раньше перед открытием ждали выгрузку в таблицу (до 30 с)
   const q = args.queryParameters || {}
@@ -3824,5 +3904,6 @@ if (SHORTCUT_PARAM && !config.runsInWidget) {
   if (q.action !== "hub") await hubSync()
   await scheduleMonthlyReport()
   await scheduleBriefs()
+  await scheduleAgenda()
 }
 Script.complete()

@@ -321,3 +321,4 @@ body.chat main { padding-bottom: calc(var(--tabs) + 76px); }
 .card { -webkit-backdrop-filter: none; backdrop-filter: none; }
 /* iPhone со значка «Домой» занижает высоту экрана в CSS — берём её из JS (--app-h) */
 body { inset: 0 auto auto 0; height: var(--app-h, 100dvh); }
+.row .pin { width: 24px; text-align: center; flex: none; }

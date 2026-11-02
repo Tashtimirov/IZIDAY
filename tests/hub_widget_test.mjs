@@ -32,6 +32,13 @@ class CalendarEvent {
 const reminders = [{ identifier: "R1", title: "Купить цветы", dueDate: at(1, 18), dueDateIncludesTime: true, isCompleted: false, calendar: { title: "Напоминания" }, save() {} }]
 class Reminder { static async allIncomplete() { return reminders.filter(r => !r.isCompleted) } static async allCompleted() { return reminders.filter(r => r.isCompleted) } }
 const alerts = []
+const pending = []   // запланированные уведомления
+class Notif {
+  async schedule() { const i = pending.findIndex(n => n.identifier && n.identifier === this.identifier); if (i >= 0) pending.splice(i, 1); pending.push(this) }
+  setTriggerDate(d) { this.at = d }
+  static async allPending() { return pending.slice() }
+  static removePending(ids) { for (const id of ids) { const i = pending.findIndex(n => n.identifier === id); if (i >= 0) pending.splice(i, 1) } }
+}
 class Alert { addAction() {} addDestructiveAction() {} addCancelAction() {} async presentAlert() { alerts.push(this.title); return -1 } }
 const sheet = sheetScript()
 const requests = []
@@ -44,11 +51,12 @@ const g = { Color, DateFormatter, CalendarEvent, Reminder, Alert, URLScheme: { f
   FileManager: { iCloud: () => fmo, local: () => fmo }, Keychain: { contains: () => false },
   Calendar: { forEvents: async () => [cal], forReminders: async () => [{ title: "Напоминания" }], defaultForEvents: async () => cal },
   ListWidget: stub(), LinearGradient: stub(), Font: stub(), Size: stub(), SFSymbol: stub(), Point: stub(), DrawContext: stub(),
-  Notification: class { async schedule() {} setTriggerDate() {} }, Safari: { open() {} },
+  Notification: Notif, Safari: { open() {} }, Timer: { schedule: (ms, rep, fn) => setTimeout(fn, ms) },
+  Location: { setAccuracyToHundredMeters() {}, current: async () => ({ latitude: 13.7563, longitude: 100.5018 }) },
   Request: class { async loadJSON() { const b = JSON.parse(this.body); requests.push(b); tick += 1000; return sheet.post(b) } } }
 let ok = true
 const check = (cond, msg, got) => { console.log(cond ? "   ✓" : "   ✗", msg, cond ? "" : JSON.stringify(got)); ok = ok && cond }
-const w = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { hubSync, buildWidget, loadSettings } })()")(...Object.values(g))
+const w = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { hubSync, buildWidget, loadSettings, placesCheck, hereNow, scheduleAgenda } })()")(...Object.values(g))
 
 // 1. первый обмен: виджет отдаёт всё и снимок
 let n = await w.hubSync()
@@ -101,5 +109,33 @@ const web = urls.filter(x => typeof x === "string" && x.startsWith(APP))
 check(web.includes(APP + "#voice") && web.includes(APP + "#chat") && web.includes(APP + "#money") && web.includes(APP + "#camera"), "кнопки шапки → приложение", web)
 check(urls.includes(APP), "нажатие на виджет — приложение")
 check(!urls.some(x => typeof x === "string" && /scriptable.*action=(voice|chat|money|camera|water)/.test(x)), "кнопки не открывают Scriptable")
+// 6. место: снимок несёт координаты, напоминание «когда буду рядом» срабатывает один раз и уходит в приложение
+check(requests[0].hub.snap.loc && Math.abs(requests[0].hub.snap.loc.lat - 13.7563) < 1e-6, "снимок: где сейчас iPhone", requests[0].hub.snap.loc)
+sheet.post({ secret: "s".repeat(32), hub: { from: "app", lists: { places: [
+  { id: "pNear", date: Date.now(), u: Date.now(), title: "Заехать в Декатлон", query: "Decathlon", radius: 1500, points: [{ name: "Decathlon Rama 4", lat: 13.7600, lng: 100.5050 }] },
+  { id: "pFar", date: Date.now(), u: Date.now(), title: "Купить кофе", query: "Starbucks Pattaya", radius: 1500, points: [{ name: "Pattaya", lat: 12.93, lng: 100.88 }] }] } } })
+await w.hubSync()
+await w.placesCheck(await w.hereNow())
+const pn = pending.filter(x => (x.identifier || "").startsWith("myday-place-"))
+check(pn.length === 1 && pn[0].title.includes("Декатлон") && pn[0].openURL.startsWith(APP + "#place="), "рядом с Декатлоном — уведомление, открывает приложение", pn.map(x => x.title))
+await w.placesCheck(await w.hereNow())
+check(pending.filter(x => (x.identifier || "").startsWith("myday-place-")).length === 1, "второй раз не напоминает")
+requests.length = 0
+await w.hubSync()
+check(requests[0].hub.lists.places.some(x => x.id === "pNear" && x.done) && !requests[0].hub.lists.places.some(x => x.id === "pFar" && x.done), "отметка «сработало» ушла в приложение", requests[0].hub.lists.places)
+
+// 7. уведомления о делах: встреча за 10 минут, напоминание вовремя — открывают приложение; лишние убираются
+store.push({ identifier: "E9", title: "Встреча с застройщиком", startDate: at(1, 14), endDate: at(1, 15), calendar: cal, location: "Офис\nэтаж 3" })
+reminders.push({ identifier: "R9", title: "Позвонить маме", dueDate: at(1, 16), dueDateIncludesTime: true, isCompleted: false, calendar: { title: "Текущие" }, save() {} })
+pending.push(Object.assign(new Notif(), { identifier: "myday-ag-e-OLD-1-x", title: "старое" }))
+await w.scheduleAgenda()
+const ag = pending.filter(x => (x.identifier || "").startsWith("myday-ag-"))
+const ev = ag.find(x => x.title === "📅 Встреча с застройщиком"), rm = ag.find(x => x.title === "⏰ Позвонить маме")
+check(ev && ev.at.getHours() === 13 && ev.at.getMinutes() === 50 && ev.openURL === APP && /Офис/.test(ev.body) && !/этаж/.test(ev.body), "встреча: уведомление за 10 минут", ev && { at: String(ev.at), body: ev.body })
+check(rm && rm.at.getHours() === 16, "напоминание со временем: уведомление вовремя", rm && String(rm.at))
+check(!ag.some(x => x.title === "старое"), "устаревшее уведомление убрано")
+const cnt = ag.length
+await w.scheduleAgenda()
+check(pending.filter(x => (x.identifier || "").startsWith("myday-ag-")).length === cnt, "повторный запуск не дублирует")
 console.log(ok ? "\nHUB_WIDGET_OK" : "\nHUB_WIDGET_FAIL")
 process.exit(ok ? 0 : 1)
