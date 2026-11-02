@@ -69,7 +69,7 @@ const ICO = {
 // ───────────── Данные на телефоне ─────────────
 // Записи — как в виджете: { id, date, u (время изменения), ... }; удалённые остаются «надгробиями» { id, deleted, u },
 // чтобы удаление дошло до виджета и таблицы
-const LISTS = { money: 0, food: 120, water: 60, workouts: 400 }
+const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0 }   // places — «напомни, когда буду рядом» (проверяет виджет)
 let D = {}
 function load() {
   try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
@@ -181,6 +181,23 @@ function sync() {
 // Команда выполнена на iPhone: сообщить, если не вышло
 function opDone(o) {
   if (o.result && o.result.error) toast(`iPhone: не получилось — ${o.result.error}`)
+}
+
+// ───────────── Где я: сейчас — у браузера (только пока приложение открыто), иначе — последнее место от виджета ─────────────
+const distM = (a, b) => {
+  const R = 6371000, rad = v => v * Math.PI / 180, dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng)
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(h))
+}
+const nearest = (here, list) => list.slice().sort((a, b) => distM(here, a) - distM(here, b))[0] || null
+function whereAmI() {
+  const fromWidget = () => { const l = D.snap && D.snap.loc; return l && l.lat != null ? { lat: l.lat, lng: l.lng, src: `по виджету, ${ago(l.at)}` } : null }
+  if (!navigator.geolocation) return Promise.resolve(fromWidget())
+  return new Promise(res => {
+    const t = setTimeout(() => res(fromWidget()), 9000)
+    navigator.geolocation.getCurrentPosition(p => { clearTimeout(t); res({ lat: p.coords.latitude, lng: p.coords.longitude, src: "сейчас" }) },
+      () => { clearTimeout(t); res(fromWidget()) }, { enableHighAccuracy: false, maximumAge: 120000, timeout: 8000 })
+  })
 }
 
 // ───────────── Календарь и напоминания iPhone (снимок от виджета + команды в очереди) ─────────────
@@ -483,6 +500,17 @@ const AGENT_TOOLS = [
       "«Карта» (платежи по банковской карте из писем банка), «Итоги: …», «Еда и активность» и другие. Используй, когда нужны данные старше, чем есть в get_history, или лист, которого нет в других инструментах.",
     input_schema: { type: "object", properties: { sheet: { type: "string" }, from: { type: "string", description: "YYYY-MM-DD" }, to: { type: "string", description: "YYYY-MM-DD" },
       limit: { type: "number", description: "сколько последних строк, по умолчанию 200" } } } },
+  { name: "route_to", description: "Сколько ехать (или идти) от того места, где сейчас пользователь, до точки: минуты и километры по Google Картам. " +
+      "to — название места или адрес («Декатлон», «аэропорт Суварнабхуми», «Central World»).",
+    input_schema: { type: "object", properties: { to: { type: "string" }, mode: { type: "string", enum: ["driving", "walking", "transit"], description: "по умолчанию на машине" } }, required: ["to"] } },
+  { name: "remind_near", description: "Напомнить, когда пользователь окажется рядом с местом («напомни заехать в Декатлон, когда буду рядом»). " +
+      "Находит точки места рядом с пользователем (у сетей — несколько филиалов). Проверяет виджет примерно раз в 15 минут и присылает уведомление. " +
+      "Если место не нашлось — попроси уточнить адрес или район.",
+    input_schema: { type: "object", properties: { title: { type: "string", description: "Что сделать: «Заехать в Декатлон — купить мяч»" },
+      query: { type: "string", description: "Место для поиска на карте: название, сеть или адрес" },
+      radius_m: { type: "number", description: "Насколько близко, м. По умолчанию 1500 (за 15 минут машина проезжает много)" } }, required: ["title", "query"] } },
+  { name: "list_places", description: "Активные и сработавшие напоминания по месту.", input_schema: { type: "object", properties: {} } },
+  { name: "delete_place", description: "Убрать напоминание по месту по id.", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "ask_user", description: "Задать пользователю уточняющий вопрос и получить ответ. Используйте, только если без ответа нельзя выполнить команду правильно.",
     input_schema: { type: "object", properties: {
       question: { type: "string" },
@@ -612,6 +640,39 @@ async function runTool(name, x) {
       }
       return { days, note: Object.keys(hd).length ? "шаги и активность с часов есть только за дни, которые прислал виджет (обычно последние 14)" : "данных с часов нет" }
     }
+    case "route_to": {
+      const here = await whereAmI()
+      if (!here) return { error: "не знаю, где пользователь: разрешите приложению доступ к геопозиции или обновите виджет" }
+      try {
+        let to = x.to
+        const g = await hubPost({ geo: { query: x.to, near: here, km: 60 } }, 30000)
+        const best = nearest(here, (g.geo && g.geo.results) || [])
+        if (best) to = { lat: best.lat, lng: best.lng }
+        const res = await hubPost({ route: { from: here, to, mode: x.mode || "driving" } }, 30000)
+        if (!res.route) return { error: "скрипт таблицы старый: разверните новую версию Code.gs" }
+        return Object.assign({ place: best ? best.name : x.to, from_location: here.src }, res.route)
+      } catch (e) { return { error: String(e.message || e) } }
+    }
+    case "remind_near": {
+      const here = await whereAmI()
+      try {
+        const g = await hubPost({ geo: { query: x.query, near: here || undefined, km: 60 } }, 30000)
+        if (!g.geo) return { error: "скрипт таблицы старый: разверните новую версию Code.gs" }
+        let pts = (g.geo.results || []).map(r => ({ name: r.name, lat: r.lat, lng: r.lng }))
+        if (here) pts = pts.filter(p => distM(here, p) < 80000)
+        if (!pts.length) return { error: `«${x.query}» не нашлось рядом — уточните адрес или район` }
+        const p = upsert("places", { id: uid("p"), date: Date.now(), title: x.title, query: x.query, points: pts.slice(0, 8), radius: Math.round(+x.radius_m || 1500), done: false })
+        return { ok: true, id: p.id, points: p.points.map(q => q.name + (here ? ` (${Math.round(distM(here, q) / 100) / 10} км от вас)` : "")),
+          note: "напомнит виджет, когда окажетесь в радиусе; проверка примерно раз в 15 минут" }
+      } catch (e) { return { error: String(e.message || e) } }
+    }
+    case "list_places":
+      return { places: live(D.places).map(p => ({ id: p.id, title: p.title, query: p.query, radius_m: p.radius, done: !!p.done, fired: p.firedAt ? iso(new Date(p.firedAt)) : null })) }
+    case "delete_place": {
+      if (!live(D.places).some(p => p.id === x.id)) return { error: "нет такого напоминания" }
+      remove("places", x.id)
+      return { ok: true }
+    }
     case "read_sheet": {
       try {
         const res = await hubPost({ read: { sheet: x.sheet || "", from: x.from || "", to: x.to || "", limit: x.limit || 200 } }, 45000)
@@ -696,7 +757,9 @@ ${cals.length ? `- Календари по словам пользователя
 - Тренировка без часов («проплыл бассейн 10 раз», «час падела, часы забыл») — add_workout. Вес пользователя ${H().weight || 80} кг. Скажи, сколько ккал и минут записал.
 - Если пользователь спрашивает (что у меня завтра, сколько потратил), посмотри данные и ответь.
 - У тебя есть доступ ко всем данным пользователя: календарь и напоминания iPhone, деньги (и платежи по карте), еда, вода, тренировки, шаги и активность с часов — за сегодня и за прошлые дни.
-  История по дням — get_history; любой лист таблицы виджета целиком — read_sheet. Не говори, что данных нет, пока не посмотрел. Замечай закономерности (недобор воды, перерасход, мало шагов) и говори о них, когда к месту.
+  История по дням — get_history; любой лист таблицы виджета целиком — read_sheet.
+- «Сколько ехать до …», «далеко ли …» — route_to: ответь минутами и километрами (если есть minutes_in_traffic — с учётом пробок).
+- «Напомни, когда буду рядом с …», «напомни заехать в …» — remind_near. Скажи, какие точки нашлись, и что напомнит виджет при проезде рядом. Не говори, что данных нет, пока не посмотрел. Замечай закономерности (недобор воды, перерасход, мало шагов) и говори о них, когда к месту.
 - Удаление и перенос пользователь подтверждает сам — не спрашивай отдельно «точно удалить?» или «точно перенести?».`
 }
 function chatSystem() {
@@ -1134,6 +1197,9 @@ function renderToday() {
   html += rems.length ? rems.slice(0, 25).map(r => `<div class="row ${r.pending ? "pending" : ""}"><button class="check ${remLate(r) ? "late" : ""}" data-check="${esc(r.id)}"></button>
     <div class="grow"><div class="t">${esc(r.title)}</div>${r.due || r.list ? `<div class="s ${remLate(r) ? "exp" : ""}">${esc(remLabel(r))}${r.due && r.list ? " · " : ""}${esc(r.list || "")}</div>` : ""}</div></div>`).join("")
     : `<div class="empty">${isToday ? "Всё сделано" : "На этот день напоминаний нет"}</div>`
+  const near = live(D.places).filter(p => !p.done)
+  if (isToday && near.length) html += near.map(p => `<div class="row"><span class="pin">📍</span><div class="grow"><div class="t">${esc(p.title)}</div>
+    <div class="s">напомню рядом: ${esc(p.query)} · ${(p.points || []).length} ${plural((p.points || []).length, "точка", "точки", "точек")}</div></div></div>`).join("")
   html += `</div>`
 
   if (isToday) {
@@ -1390,6 +1456,7 @@ async function hashAction() {
   if (a === "food") return foodMenu()
   if (a === "health") return setTab("health")
   if (a === "today") return setTab("today")
+  if (a === "place") { const p = D.places.find(z => z.id === arg); setTab("today"); if (p) ui.info(`📍 ${p.title}`, `Вы рядом: ${p.query}.`) }
 }
 // Safari включает микрофон и камеру только по нажатию — одна большая кнопка
 function micPrompt() {
