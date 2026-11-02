@@ -239,12 +239,12 @@ async function syncSheet(silent, timeout = 30) {
   const st = await loadSettings()
   const hook = sheetHookOf(st)
   if (!hook) return silent ? null : { ok: false, error: "автозапись отключена" }
-  const all = await rawMoney(), food = await rawFood(), water = await rawWater(), health = await healthDays()
+  const all = await rawMoney(), food = await rawFood(), water = await rawWater(), health = await healthDays(), workouts = await rawWorkouts()
   const live = list => list.filter(x => !x.deleted).sort((a, b) => a.date - b.date)
-  // всё целиком: деньги, еда, вода и активность по дням (таблица обновит строку каждого дня)
+  // всё целиком: деньги, еда, вода, тренировки и активность по дням (таблица обновит строку каждого дня)
   const body = { secret: await sheetSecretOf(st),
-    entries: live(all), food: live(food), water: live(water), health,
-    deleted: [...all, ...food, ...water].filter(x => x.deleted).map(x => x.id) }
+    entries: live(all), food: live(food), water: live(water), workouts: live(workouts), health,
+    deleted: [...all, ...food, ...water, ...workouts].filter(x => x.deleted).map(x => x.id) }
   try {
     const req = new Request(hook)
     req.method = "POST"
@@ -272,8 +272,8 @@ const moneySig = all => `${all.length}:${all.reduce((m, x) => Math.max(m, x.u ||
 // То же для всего, что уходит в таблицу с iPhone (Mac следит только за деньгами — sheetSig)
 async function syncSig() {
   const h = await loadHealth(true)
-  // «v2» — один раз выгрузить всё заново: старый скрипт таблицы еду, воду и шаги не принимал
-  return ["v2", moneySig(await rawMoney()), moneySig(await rawFood()), moneySig(await rawWater()), moneySig(await rawWorkouts()), h ? h.updated : 0].join("|")
+  // «v3» — один раз выгрузить всё заново: тренировки появились в таблице (лист «Тренировки»)
+  return ["v3", moneySig(await rawMoney()), moneySig(await rawFood()), moneySig(await rawWater()), moneySig(await rawWorkouts()), h ? h.updated : 0].join("|")
 }
 // Ссылка на таблицу: из настроек (таблица сама сообщает её при первой записи), иначе встроенная
 const sheetUrlOf = st => st.sheetUrl || CONFIG.sheetUrl
@@ -1363,6 +1363,17 @@ function progressBar(parent, frac, width, color) {
   bg.addSpacer()
 }
 
+// Подсказка про воду вместо расписания уведомлений: с 9:00 до 21:00, если больше 3 часов не было записи воды.
+// Возвращает часы без воды или 0. Отсчёт — от последней записи сегодня, без записей — от 9:00
+function waterGap(d, now = new Date()) {
+  const h = now.getHours()
+  if (h < 9 || h >= 21 || (d.water || 0) >= CONFIG.health.waterGoal) return 0
+  const start = new Date(now); start.setHours(9, 0, 0, 0)
+  const last = Math.max(start.getTime(), ...((d.waterList || []).map(w => w.date || 0)))
+  const gap = (now.getTime() - last) / 3600e3
+  return gap >= 3 ? Math.floor(gap) : 0
+}
+
 // Одна строка: еда · вода · активность, каждая часть открывает своё
 function healthStrip(parent, d, entries) {
   const s = parent.addStack()
@@ -1380,7 +1391,10 @@ function healthStrip(parent, d, entries) {
   // калории одной частью: съедено / сожжено (часы + тренировки со слов)
   part("flame.fill", `${nf(d.kcal)} / ${a && a.active != null ? nf(a.active) : "—"}${entries ? "" : " ккал"}`, C.gold, "food")
   s.addSpacer()
-  part("drop.fill", `${liters(d.water)} / ${liters(CONFIG.health.waterGoal)}`, C.notes, "water")
+  const gap = waterGap(d)
+  // давно не пили — вода подсвечивается и пишет, сколько часов без воды; нажатие добавляет стакан
+  if (gap) part("drop.fill", `${gap} ч без воды`, C.overdue, "water")
+  else part("drop.fill", `${liters(d.water)} / ${liters(CONFIG.health.waterGoal)}`, C.notes, "water")
   s.addSpacer()
   part(a && a.steps != null ? "figure.walk" : "applewatch", a && a.steps != null ? `${nf(a.steps)} ш.` : "часы", C.expense, "health")
   if (entries) {   // большой виджет: доходы и расходы за месяц, нажатие — отчёт

@@ -20,6 +20,8 @@ const LISTS = {
            row: x => [new Date(x.date), txt_(x.title), num_(x.kcal), num_(x.protein), num_(x.fat), num_(x.carbs)] },
   water: { name: "Вода", head: ["Дата", "Мл", "ID"], formats: [DT, "0"],
            row: x => [new Date(x.date), num_(x.ml)] },
+  workouts: { name: "Тренировки", head: ["Дата", "Тренировка", "Минуты", "Ккал", "ID"], formats: [DT, "", "0", "0"],
+           row: x => [new Date(x.date), txt_(x.title), num_(x.minutes), num_(x.kcal)] },
 };
 // Активность с часов: одна строка на день, обновляется в течение дня
 const ACTIVITY = { name: "Активность", head: ["День", "Шаги", "Сожжено ккал", "Упражнения, мин", "Дистанция, км", "Сон, ч", "Обновлено"],
@@ -123,7 +125,7 @@ function doPost(e) {
     const deleted = new Set(body.deleted || []);
     let added = 0, removed = 0;
     // деньги — в body.entries (так шлют и старые версии виджета), еда и вода — в body.food и body.water
-    const lists = { money: body.entries, food: body.food, water: body.water };
+    const lists = { money: body.entries, food: body.food, water: body.water, workouts: body.workouts };
     for (const key of Object.keys(LISTS)) {
       if (!Array.isArray(lists[key])) continue;
       const r = syncList_(ss.getSheetByName(LISTS[key].name), LISTS[key], lists[key], deleted);
@@ -256,8 +258,12 @@ function geo_(g) {
       const re = q.replace(/[^\p{L}\p{N} &'-]/gu, "").trim() || "-";   // без спецсимволов регулярного выражения
       const data = "[out:json][timeout:20];(nwr[\"name\"~\"" + re + "\",i](around:" + km * 1000 + "," + near.lat + "," + near.lng + ");" +
         "nwr[\"brand\"~\"" + re + "\",i](around:" + km * 1000 + "," + near.lat + "," + near.lng + "););out center 40;";
-      const res = UrlFetchApp.fetch("https://overpass-api.de/api/interpreter", { method: "post", payload: { data: data }, headers: ua, muteHttpExceptions: true });
-      if (res.getResponseCode() === 200) {
+      let res = null;
+      for (const host of ["https://overpass-api.de", "https://overpass.kumi.systems", "https://maps.mail.ru/osm/tools/overpass"]) {   // основной сервер бывает перегружен
+        try { res = UrlFetchApp.fetch(host + "/api/interpreter", { method: "post", payload: { data: data }, headers: ua, muteHttpExceptions: true }); } catch (e) { res = null; }
+        if (res && res.getResponseCode() === 200) break;
+      }
+      if (res && res.getResponseCode() === 200) {
         const seen = {}, out = [];
         for (const x of JSON.parse(res.getContentText()).elements || []) {
           const lat = x.lat != null ? x.lat : x.center && x.center.lat, lng = x.lon != null ? x.lon : x.center && x.center.lon;

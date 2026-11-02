@@ -56,7 +56,7 @@ const g = { Color, DateFormatter, CalendarEvent, Reminder, Alert, URLScheme: { f
   Request: class { async loadJSON() { const b = JSON.parse(this.body); requests.push(b); tick += 1000; return sheet.post(b) } } }
 let ok = true
 const check = (cond, msg, got) => { console.log(cond ? "   ✓" : "   ✗", msg, cond ? "" : JSON.stringify(got)); ok = ok && cond }
-const w = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { hubSync, buildWidget, loadSettings, placesCheck, hereNow, scheduleAgenda } })()")(...Object.values(g))
+const w = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { hubSync, buildWidget, loadSettings, placesCheck, hereNow, scheduleAgenda, waterGap } })()")(...Object.values(g))
 
 // 1. первый обмен: виджет отдаёт всё и снимок
 let n = await w.hubSync()
@@ -137,5 +137,12 @@ check(!ag.some(x => x.title === "старое"), "устаревшее увед�
 const cnt = ag.length
 await w.scheduleAgenda()
 check(pending.filter(x => (x.identifier || "").startsWith("myday-ag-")).length === cnt, "повторный запуск не дублирует")
+// 8. вода: подсказка вместо уведомлений — с 9 до 21, больше 3 часов без записи
+const wd = (ml, ...times) => ({ water: ml, waterList: times.map(t => ({ date: t.getTime(), ml: 250 })) })
+check(w.waterGap(wd(250, at(1, 10)), new RealDate(2026, 10, 1, 12, 30)) === 0, "2,5 ч без воды — без подсказки")
+check(w.waterGap(wd(250, at(1, 10)), new RealDate(2026, 10, 1, 13, 40)) === 3, "3,7 ч без воды — «3 ч без воды»")
+check(w.waterGap(wd(0), new RealDate(2026, 10, 1, 12, 10)) === 3, "без воды с утра — отсчёт от 9:00")
+check(w.waterGap(wd(0), new RealDate(2026, 10, 1, 8, 50)) === 0 && w.waterGap(wd(0), new RealDate(2026, 10, 1, 21, 5)) === 0, "до 9 и после 21 — тихо")
+check(w.waterGap(wd(2000, at(1, 9)), new RealDate(2026, 10, 1, 15, 0)) === 0, "норма выпита — тихо")
 console.log(ok ? "\nHUB_WIDGET_OK" : "\nHUB_WIDGET_FAIL")
 process.exit(ok ? 0 : 1)

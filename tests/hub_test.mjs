@@ -128,6 +128,12 @@ check("поиск сети по OpenStreetMap: два филиала, без д�
 check("запрос к карте без спецсимволов", overpassQ.at(-1).includes('"name"~"Decathlon",i') && /around:40000,13.75,100.5/.test(overpassQ.at(-1)), overpassQ.at(-1))
 a = hub({ from: "app", geo: { query: "Аэропорт (Суварнабхуми)", near: { lat: 13.75, lng: 100.5 } } })
 check("не нашлось на карте — Геокодер Google", a.geo.source === "google" && a.geo.results.length === 2 && !/[()]/.test(overpassQ.at(-1).match(/~"[^"]*"/)[0]), a.geo)
+// тренировки — на свой лист: и от виджета (обычная выгрузка), и из приложения (через _hub)
+gs.doPost({ postData: { contents: JSON.stringify({ secret: KEY, workouts: [{ id: "tW1", date: now, title: "Плавание 180 м", minutes: 7, kcal: 65 }] }) } })
+hub({ from: "app", lists: { workouts: [{ id: "tW2", date: now + 1, u: now + 1, title: "Падел 60 мин", minutes: 60, kcal: 520 }] } })
+const wsh = ss.getSheetByName("Тренировки")
+const wrows = wsh ? wsh.cells.slice(1).filter(r => r && r[0]) : []
+check("лист «Тренировки»: от виджета и из приложения", wrows.length === 2 && wrows.some(r => r[1] === "Плавание 180 м" && r[2] === 7) && wrows.some(r => r[1] === "Падел 60 мин"), wrows)
 check("без ключа — отказ", gs.doPost({ postData: { contents: JSON.stringify({ secret: "x".repeat(32), hub: { from: "app" } }) } }).error === "forbidden")
 console.log(fail ? `\n✗ ошибок: ${fail}` : "\nВсё в порядке")
 process.exit(fail ? 1 : 0)
