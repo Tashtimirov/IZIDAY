@@ -59,10 +59,16 @@ await page.route("https://api.anthropic.com/**", async route => {
   const req = route.request()
   if (req.method() === "OPTIONS") return route.fulfill({ status: 200, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*" } })
   const body = JSON.parse(req.postData())
+  if (body.model === "claude-haiku-5-5") {   // фоновая память: сводка разговора
+    memSeen.push(body)
+    return route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" },
+      body: JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ summary: "Обсуждали такси и падел; падел на завтра удалён.", facts: ["Играет в падел по вторникам"], outdated: [] }) }], stop_reason: "end_turn" }) })
+  }
   claudeSeen.push({ body, headers: req.headers() })
   const next = claudeQueue.shift() || { content: [{ type: "text", text: "Готово." }], stop_reason: "end_turn" }
   await route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(next) })
 })
+const memSeen = []
 const hubState = () => sheet.post({ secret: SECRET, hub: { from: "app", since: 0 } })
 const settle = () => page.waitForTimeout(1600)
 
@@ -198,6 +204,28 @@ sent = claudeSeen[n0] && claudeSeen[n0].body.messages.at(-1).content
 check(Array.isArray(sent) && sent[0].type === "document" && sent[0].source.media_type === "application/pdf", "PDF ушёл Claude документом", sent && sent.map(c => c.type))
 check((await page.textContent("#chat-list")).includes("📄 bill.pdf"), "в чате подпись файла")
 check(!JSON.stringify(claudeSeen.at(-1).body.messages.slice(0, -1)).includes('"type":"image"'), "старое фото не отправляется повторно")
+
+// помощник: сильная модель с размышлением, память и поиск по прошлым чатам
+const last = claudeSeen.at(-1)
+check(last.body.model === "claude-opus-5-5" && last.body.output_config.effort === "high" && last.body.fallbacks === "default" && last.headers["anthropic-beta"] === "server-side-fallback-2026-07-01", "чат — Opus 5.5, effort high, запасная модель при отказе", { m: last.body.model, oc: last.body.output_config })
+check(/Твоя память о пользователе/.test(last.body.system) && last.body.tools.some(t => t.name === "search_chats") && last.body.tools.some(t => t.name === "remember"), "в подсказке память, есть remember и search_chats")
+const rem = await page.evaluate(() => runTool("remember", { text: "Жена — Алия" }))
+const rem2 = await page.evaluate(() => runTool("remember", { text: "жена — алия" }))
+check(rem.ok && rem2.note === "уже помню", "remember: запомнил, дубль не пишет", [rem, rem2])
+await settle()
+check((hubState().lists.memory || []).some(m => m.text === "Жена — Алия" && m.kind === "fact"), "факт ушёл в таблицу")
+check(sheet.ss.getSheetByName("Память помощника") && sheet.ss.getSheetByName("Память помощника").getLastRow() >= 2, "…и на лист «Память помощника»")
+const sc = await page.evaluate(() => runTool("search_chats", { query: "падела завтра" }))
+check(sc.messages && sc.messages.some(m => /падел/i.test(m.text)), "search_chats находит прошлый разговор про падел", sc)
+// разговор закончился 4 часа назад → сводка в память
+await page.evaluate(() => { const real = Date.now; Date.now = () => real() + 4 * 3600e3; return memorize() })
+await page.waitForTimeout(500)
+const mem = await page.evaluate(() => live(D.memory).map(m => m.kind + ":" + m.text))
+check(memSeen.length === 1 && mem.some(t => t.startsWith("chat:Обсуждали такси")) && mem.includes("fact:Играет в падел по вторникам"), "после паузы разговор сложен в память (сводка + новый факт)", mem)
+const sys2 = await page.evaluate(() => chatSystem())
+check(sys2.includes("Обсуждали такси") && sys2.includes("Играет в падел"), "сводка и факт попадают в подсказку следующего разговора")
+await page.evaluate(() => runTool("forget", { id: live(D.memory).find(m => m.text === "Жена — Алия").id }))
+check(!(await page.evaluate(() => chatSystem())).includes("Алия"), "forget убирает факт")
 
 // голос: зелёная ➤ во время записи отправляет сразу, без паузы
 await page.evaluate(() => {

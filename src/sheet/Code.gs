@@ -22,6 +22,8 @@ const LISTS = {
            row: x => [new Date(x.date), num_(x.ml)] },
   workouts: { name: "Тренировки", head: ["Дата", "Тренировка", "Минуты", "Ккал", "ID"], formats: [DT, "", "0", "0"],
            row: x => [new Date(x.date), txt_(x.title), num_(x.minutes), num_(x.kcal)] },
+  memory: { name: "Память помощника", head: ["Дата", "Что", "Текст", "ID"], formats: [DT, ""],
+           row: x => [new Date(x.date), x.kind === "chat" ? "разговор" : "факт", txt_(x.text)] },
 };
 // Активность с часов: одна строка на день, обновляется в течение дня
 const ACTIVITY = { name: "Активность", head: ["День", "Шаги", "Сожжено ккал", "Упражнения, мин", "Дистанция, км", "Сон, ч", "Обновлено"],
@@ -161,7 +163,7 @@ function advice() { ensureSheets_(); writeAdvice_(); }
 // Виджет присылает снимок того, что видит только iPhone (календарь, напоминания, часы), и выполняет
 // очередь команд приложения (создать или перенести событие, отметить напоминание). Каждая запись хранит
 // s — время, когда таблица её приняла: клиент получает только записи новее своего прошлого запроса.
-const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0 },   // сколько дней хранить (0 — всё)
+const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0 },   // сколько дней хранить (0 — всё)
   tomb: 90, chunk: 45000, opsKeep: 3 };
 const ROUTE_URL = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/;
 

@@ -70,11 +70,11 @@ const ICO = {
 // ───────────── Данные на телефоне ─────────────
 // Записи — как в виджете: { id, date, u (время изменения), ... }; удалённые остаются «надгробиями» { id, deleted, u },
 // чтобы удаление дошло до виджета и таблицы
-const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0 }   // places — «напомни, когда буду рядом» (проверяет виджет)
+const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0 }   // places — «напомни, когда буду рядом» (проверяет виджет)
 let D = {}
 function load() {
   try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
-  for (const k of [...Object.keys(LISTS), "chat", "ops"]) if (!Array.isArray(D[k])) D[k] = []
+  for (const k of [...Object.keys(LISTS), "chat", "ops", "chatArchive"]) if (!Array.isArray(D[k])) D[k] = []
   D.conn = D.conn || null
   D.sync = Object.assign({ since: 0, pushedAt: 0, snapAt: 0, at: 0, error: "" }, D.sync || {})
   applyCfg()
@@ -318,19 +318,30 @@ const ui = {
 
 // ───────────── Claude ─────────────
 const aiKey = () => (D.conn && D.conn.key) || ""
-async function claude(body, timeout = 90000) {
+async function claude(body, timeout = 90000, opts = {}) {
   if (!aiKey()) throw new Error("нет ключа Claude — подключите приложение кодом из виджета («Ещё»)")
   const ctl = new AbortController()
   const t = setTimeout(() => ctl.abort(), timeout)
-  try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: ctl.signal,
-      headers: { "x-api-key": aiKey(), "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-dangerous-direct-browser-access": "true" },
-      body: JSON.stringify(Object.assign({ model: core.CONFIG.agentModel || "claude-sonnet-5-5" }, body)) })
+  const send = async (b, beta) => {
+    const headers = { "x-api-key": aiKey(), "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-dangerous-direct-browser-access": "true" }
+    if (beta) headers["anthropic-beta"] = beta
+    const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: ctl.signal, headers, body: JSON.stringify(b) })
     return await r.json()
+  }
+  try {
+    const base = Object.assign({ model: opts.model || core.CONFIG.agentModel || "claude-sonnet-5-5" }, body)
+    if (!opts.smart) return await send(base)
+    // Помощник в чате: самая сильная модель с размышлением; если отказ фильтра — сервер сам переспросит другую модель
+    let res = await send(Object.assign({}, base, { fallbacks: "default" }), "server-side-fallback-2026-07-01")
+    if (res && res.error && /fallback|beta/i.test(res.error.message || "")) res = await send(base)
+    if (res && res.error && /model/i.test(res.error.message || "") && res.error.type !== "overloaded_error")   // модель недоступна ключу — обычная модель виджета
+      res = await send(Object.assign({}, body, { model: core.CONFIG.agentModel || "claude-sonnet-5-5", output_config: undefined }))
+    return res
   } catch (e) {
     throw new Error(e.name === "AbortError" ? "Claude долго не отвечает" : "нет связи с Claude")
   } finally { clearTimeout(t) }
 }
+const CHAT_MODEL = "claude-opus-5-5"
 
 // ── Еда по фото ──
 const FOOD_SCHEMA = { type: "object", additionalProperties: false, properties: {
@@ -537,6 +548,14 @@ const AGENT_TOOLS = [
       query: { type: "string", description: "Место для поиска на карте: название, сеть или адрес" },
       radius_m: { type: "number", description: "Насколько близко, м. По умолчанию 1500 (за 15 минут машина проезжает много)" } }, required: ["title", "query"] } },
   { name: "list_places", description: "Активные и сработавшие напоминания по месту.", input_schema: { type: "object", properties: {} } },
+  { name: "remember", description: "Запомнить надолго факт о пользователе: люди и отношения, предпочтения, привычки, цели и планы, здоровье, работа и проекты, важные даты, договорённости. " +
+      "Пиши коротко и самодостаточно, с датой, если важна («Жена — Алия, ДР 14 марта», «Цель на 2027: пробежать полумарафон»). Если факт изменился — сначала forget старый.",
+    input_schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
+  { name: "forget", description: "Забыть факт из памяти по id (устарел, неверен или пользователь попросил).", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "search_chats", description: "Поиск по всем прошлым разговорам с пользователем (дословные сообщения и сводки). Используй, когда пользователь ссылается на прошлое " +
+      "(«как мы договаривались», «что я говорил про…», «помнишь…») или нужна подробность, которой нет в памяти.",
+    input_schema: { type: "object", properties: { query: { type: "string", description: "Ключевые слова; несколько вариантов через пробел" },
+      from: { type: "string", description: "YYYY-MM-DD" }, to: { type: "string", description: "YYYY-MM-DD" } }, required: ["query"] } },
   { name: "delete_record", description: "Удалить запись о воде, еде или тренировке по id (id есть в get_health и get_history с details). Для случайных дублей (несколько одинаковых записей в одну минуту): удаляй лишние, одну оставь. Приложение само спросит подтверждение.",
     input_schema: { type: "object", properties: { kind: { type: "string", enum: ["water", "food", "workouts"] }, ids: { type: "array", items: { type: "string" } } }, required: ["kind", "ids"] } },
   { name: "delete_place", description: "Убрать напоминание по месту по id.", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
@@ -698,6 +717,21 @@ async function runTool(name, x) {
     }
     case "list_places":
       return { places: live(D.places).map(p => ({ id: p.id, title: p.title, query: p.query, radius_m: p.radius, done: !!p.done, fired: p.firedAt ? iso(new Date(p.firedAt)) : null })) }
+    case "remember": {
+      const t = String(x.text || "").trim()
+      if (!t) return { error: "пустой факт" }
+      const dup = memFacts().find(f => f.text.toLowerCase() === t.toLowerCase())
+      if (dup) return { ok: true, id: dup.id, note: "уже помню" }
+      const f = upsert("memory", { id: uid("k"), date: Date.now(), kind: "fact", text: t.slice(0, 500) })
+      return { ok: true, id: f.id }
+    }
+    case "forget": {
+      if (!live(D.memory).some(f => f.id === x.id)) return { error: "нет такого факта" }
+      remove("memory", x.id)
+      return { ok: true }
+    }
+    case "search_chats":
+      return searchChats(x.query, x.from, x.to)
     case "delete_record": {
       const list = D[x.kind]
       if (!Array.isArray(list)) return { error: "kind: water, food или workouts" }
@@ -821,15 +855,82 @@ ${cals.length ? `- Календари по словам пользователя
 - «Напомни, когда буду рядом с …», «напомни заехать в …» — remind_near. Скажи, какие точки нашлись, и что напомнит виджет при проезде рядом. Не говори, что данных нет, пока не посмотрел. Замечай закономерности (недобор воды, перерасход, мало шагов) и говори о них, когда к месту.
 - Удаление и перенос пользователь подтверждает сам — не спрашивай отдельно «точно удалить?» или «точно перенести?».`
 }
+// ── Память помощника: факты о человеке и сводки прошлых разговоров (лист «Память помощника» в таблице) ──
+const memFacts = () => live(D.memory).filter(m => m.kind === "fact").sort((a, b) => a.date - b.date)
+const memChats = () => live(D.memory).filter(m => m.kind === "chat").sort((a, b) => a.date - b.date)
+const GAP = 3 * 3600e3   // пауза дольше трёх часов — новый разговор
+function memoryBlock() {
+  const f = memFacts().slice(-120), c = memChats().slice(-15)
+  const d = t => { const x = new Date(t); return `${x.getDate()} ${MON_GEN[x.getMonth()].slice(0, 3)}` }
+  return `
+Твоя память о пользователе (храни и пополняй: remember / forget):
+${f.length ? f.map(m => `- ${m.text} [${m.id}]`).join("\n") : "- пока пусто"}
+Прошлые разговоры, кратко (подробности — search_chats):
+${c.length ? c.map(m => `- ${d(m.date)}: ${m.text}`).join("\n") : "- пока нет"}`
+}
+const words = q => String(q || "").toLowerCase().replace(/ё/g, "е").split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 2).map(w => w.length > 5 ? w.slice(0, -2) : w)   // грубая основа слова: «падела» ≈ «падел»
+function searchChats(query, from, to) {
+  const ws = words(query), f = parseIso(from), t = to ? +addDays(sod(parseIso(to) || new Date()), 1) : Infinity
+  if (!ws.length) return { error: "нужны слова для поиска" }
+  const all = [...D.chatArchive, ...D.chat].filter(m => !m.local && m.text)
+  const score = txt => { const l = String(txt).toLowerCase().replace(/ё/g, "е"); return ws.reduce((s, w) => s + (l.includes(w) ? 1 : 0), 0) }
+  const hits = []
+  all.forEach((m, i) => { if ((f && m.at < +f) || m.at >= t) return; const sc = score(m.prompt || m.text); if (sc) hits.push({ sc, i }) })
+  hits.sort((a, b) => b.sc - a.sc || all[b.i].at - all[a.i].at)
+  const shown = new Set(), out = []
+  for (const h of hits.slice(0, 12)) for (const j of [h.i - 1, h.i, h.i + 1]) {
+    const m = all[j]; if (!m || shown.has(j) || m.local) continue; shown.add(j)
+    out.push({ at: iso(new Date(m.at)).replace("T", " "), who: m.role === "user" ? "пользователь" : "ты", text: String(m.text).slice(0, 400) })
+  }
+  out.sort((a, b) => a.at < b.at ? -1 : 1)
+  const sums = memChats().filter(m => score(m.text)).slice(-8).map(m => ({ date: iso(new Date(m.date)).slice(0, 10), summary: m.text }))
+  return { messages: out, summaries: sums, note: out.length || sums.length ? undefined : "ничего не нашлось — попробуй другие слова" }
+}
+// Закончившийся разговор (пауза > 3 ч или «Очистить») — коротко в память и новые факты. Дешёвая быстрая модель, в фоне.
+const MEM_SCHEMA = { type: "object", additionalProperties: false, required: ["summary", "facts", "outdated"], properties: {
+  summary: { type: "string", description: "1–3 предложения: о чём говорили, что решили, что сделали, что осталось открытым" },
+  facts: { type: "array", items: { type: "string" }, description: "Новые устойчивые факты о пользователе, которых ещё нет в памяти. Пусто, если нет." },
+  outdated: { type: "array", items: { type: "string" }, description: "id фактов из памяти, которые этот разговор опроверг или заменил" } } }
+let memBusy = false
+async function memorize(force) {
+  if (memBusy || !aiKey()) return
+  const done = D.memAt || 0
+  const msgs = [...D.chatArchive, ...D.chat].filter(m => m.at > done && !m.local && m.text)
+  if (!msgs.length) return
+  const lastAt = msgs[msgs.length - 1].at
+  if (!force && Date.now() - lastAt < GAP) return
+  if (msgs.length < 2 && !force) { D.memAt = lastAt; return save(false) }
+  memBusy = true
+  try {
+    const conv = msgs.slice(-80).map(m => `${m.role === "user" ? "Пользователь" : "Помощник"} (${iso(new Date(m.at)).replace("T", " ")}): ${String(m.text).slice(0, 1200)}`).join("\n")
+    const res = await claude({ max_tokens: 3000, output_config: { format: { type: "json_schema", schema: MEM_SCHEMA } },
+      system: "Ты ведёшь долговременную память личного помощника. По разговору составь краткую сводку и выпиши только новые устойчивые факты о пользователе " +
+        "(люди, предпочтения, цели, планы, здоровье, работа, договорённости, даты). Не записывай разовые мелочи (что выпил воды, разовую покупку). Пиши по-русски.",
+      messages: [{ role: "user", content: `Память сейчас:\n${memFacts().map(f => `- ${f.text} [${f.id}]`).join("\n") || "- пусто"}\n\nРазговор:\n${conv}` }] }, 60000, { model: "claude-haiku-5-5" })
+    const txt = res && res.content && (res.content.find(c => c.type === "text") || {}).text
+    if (!txt) return
+    const j = JSON.parse(txt)
+    if (j.summary) upsert("memory", { id: uid("c"), date: msgs[0].at, kind: "chat", text: String(j.summary).slice(0, 600) })
+    for (const t of j.facts || []) if (t && !memFacts().some(f => f.text.toLowerCase() === t.toLowerCase())) upsert("memory", { id: uid("k"), date: Date.now(), kind: "fact", text: String(t).slice(0, 500) })
+    for (const id of j.outdated || []) if (memFacts().some(f => f.id === id)) remove("memory", id)
+    D.memAt = lastAt
+    save()
+  } catch (e) { /* попробуем при следующем сообщении */ } finally { memBusy = false }
+}
+
 function chatSystem() {
   const r = routes()
-  return agentSystem() + `
+  return agentSystem() + memoryBlock() + `
 
 Это постоянный чат. Ты — личный помощник, секретарь и друг пользователя: помогаешь в любом деле — в жизни и в работе.
 - Дела (встречи, напоминания, деньги, еда, вода, тренировки) делай сам инструментами, потом коротко скажи, что сделал.
 - Когда просят совета или делятся чем-то личным — отвечай как умный друг: честно, по существу, с заботой, думай на годы вперёд, а не только о сегодняшнем дне. Можно мягко не согласиться.
 - Длина ответа: обычно 1–6 строк; совет или разбор — сколько нужно, но без воды. Без Markdown-заголовков и таблиц, короткие списки можно.
 - В начале сообщений пользователя в квадратных скобках время, когда оно отправлено; сам время в скобках не пиши.
+- Понимай с полуслова: учитывай память, прошлые разговоры и данные (календарь, деньги, здоровье). Связывай новое с прошлым («в прошлый раз вы говорили…»), если это к месту. Если пользователь ссылается на прошлое, а в памяти нет — поищи search_chats, прежде чем переспрашивать.
+- Узнал о пользователе что-то устойчивое (люди, предпочтения, цели, планы, договорённости) — запомни через remember, не спрашивая разрешения и не объявляя об этом. Попросят забыть — forget.
+- Голосовые сообщения распознаются с ошибками: восстанавливай смысл по контексту и памяти; уточняй, только если цена ошибки высока.
+- Перед ответом подумай, что человек на самом деле хочет и что ему пригодится дальше; можно одним предложением предложить следующий шаг.
 ${r.length ? `- Сложную задачу, которую не решить здесь за пару сообщений (код, разбор документов, исследование, подготовка текста или плана, многошаговая работа), передай через claude_code. Рабочую — в маршрут нужного рабочего проекта по его описанию; личную, не связанную с работой, — в маршрут для личных задач. Если неясно, что именно нужно, сначала коротко уточни. После передачи скажи одной строкой, куда передал; ссылка на сессию покажется сама.`
   : "- Передавать задачи в Claude Code пока нельзя: маршруты не подключены (в виджете: меню → 🤖 Задачи в Claude Code, потом подключить приложение заново). Сложную задачу честно назови сложной и предложи подключить."}`
 }
@@ -845,7 +946,7 @@ const BRIEFS = {
 }
 function chatContext() {
   const out = []
-  for (const m of D.chat.slice(-30)) {
+  for (const m of D.chat.slice(-40)) {
     let content = m.prompt || m.text
     if (!content || m.local) continue
     if (m.role === "user") { const d = new Date(m.at || Date.now()); content = `[${d.getDate()} ${MON_GEN[d.getMonth()].slice(0, 3)} ${hm(d)}] ${content}` }
@@ -861,15 +962,17 @@ const dropThinking = messages => messages.forEach(m => {
 })
 // Один ход помощника: Claude думает и вызывает инструменты, пока не даст ответ
 async function agentTurn(messages, system, tools) {
+  const ask = () => claude({ max_tokens: 16000, system, tools, messages, output_config: { effort: "high" } }, 150000, { smart: true, model: CHAT_MODEL })
   for (let step = 0; step < 14; step++) {
     let res
     try {
-      res = await claude({ max_tokens: 2000, system, tools, messages })
-      if (res && res.error && /thinking/i.test(res.error.message || "")) { dropThinking(messages); res = await claude({ max_tokens: 2000, system, tools, messages }) }
+      res = await ask()
+      if (res && res.error && /thinking/i.test(res.error.message || "")) { dropThinking(messages); res = await ask() }
     } catch (e) { return `Нет связи с Claude: ${e.message || e}` }
     if (!res || res.error) return `Claude ответил ошибкой: ${res && res.error ? res.error.message || res.error.type : "пустой ответ"}`
     messages.push({ role: "assistant", content: res.content })
     const uses = (res.content || []).filter(c => c.type === "tool_use")
+    if (res.stop_reason === "refusal") return "Не могу с этим помочь — попробуйте сформулировать иначе."
     if (!uses.length || res.stop_reason !== "tool_use") return (res.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim() || "Готово."
     const results = []
     for (const u of uses) {
@@ -889,6 +992,7 @@ async function chatSend(text, opts = {}) {
   // ответ на вопрос помощника (ask_user или подтверждение)
   if (askWait) { const w = askWait; askWait = null; D.chat.push({ role: "user", text, at: Date.now(), voice: !!opts.voice, local: true }); save(false); renderChat(); w(text); return }
   if (chatBusy) { toast("Помощник ещё отвечает…"); return }
+  memorize()
   if (!aiKey()) { setTab("more"); return ui.info("Нужен ключ Claude", "Подключите приложение кодом из виджета: в Scriptable меню → 📱 Приложение «Мой день» → «Подключить приложение».") }
   const item = { role: "user", text: opts.label || text, prompt: opts.label ? text : undefined, at: Date.now(), voice: !!opts.voice, thumb: opts.attach && opts.attach.thumb || undefined }
   D.chat.push(item)
@@ -905,7 +1009,7 @@ async function chatSend(text, opts = {}) {
   try { reply = await agentTurn(ctx, chatSystem(), chatTools()) } catch (e) { reply = `Ошибка: ${e.message || e}` }
   chatBusy = false
   D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice() })
-  D.chat = D.chat.slice(-200)
+  if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-3000); D.chat = D.chat.slice(-200) }
   D.chat.filter(m => m.thumb).slice(0, -12).forEach(m => { delete m.thumb })   // миниатюры только у последних фото — память телефона
   save(false)
   sync()
@@ -1296,7 +1400,7 @@ function renderToday() {
 let dayEvsCache = []
 
 function renderChatHTML() {
-  return `<div class="chat-tools"><button data-brief="morning">☀️ Утренняя сводка</button><button data-brief="evening">🌙 Вечерняя</button><button data-do="chat-clear">🧹 Очистить</button></div>
+  return `<div class="chat-tools"><button data-brief="morning">☀️ Утренняя сводка</button><button data-brief="evening">🌙 Вечерняя</button><button data-do="memory">🧠 Память</button><button data-do="chat-clear">🧹 Очистить</button></div>
     <div class="chat-list" id="chat-list">${chatItems()}</div>
     <div class="chat-bar"><button class="cam" aria-label="Фото или файл">${ICO.cam}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
     <button class="mic" aria-label="Сказать">${ICO.mic}</button><button class="send" aria-label="Отправить">${ICO.send}</button></div>`
@@ -1486,9 +1590,21 @@ const DO = {
     const b = await ui.confirm("Отключить?", `<div class="msg">Ключи удалятся с этого телефона. Записи останутся в таблице и в виджете.</div>`, ["Отмена", "Отключить"])
     if (b === "Отключить") { D = {}; localStorage.removeItem(STORE); load(); render() }
   },
+  memory: async () => {
+    while (true) {
+      const f = memFacts().slice().reverse()
+      if (!f.length) return ui.info("🧠 Память помощника", "Пока пусто. Помощник запоминает важное из разговоров сам; можно сказать «запомни, что…».")
+      const i = await ui.choose("🧠 Память помощника", `${f.length} ${plural(f.length, "факт", "факта", "фактов")} · ${memChats().length} ${plural(memChats().length, "разговор", "разговора", "разговоров")} в сводках. Нажмите факт, чтобы забыть его.`, f.map(m => m.text))
+      if (i < 0) return
+      if ((await ui.confirm("Забыть?", `<div class="msg">${esc(f[i].text)}</div>`, ["Отмена", "Забыть"])) === "Забыть") { remove("memory", f[i].id); save() }
+    }
+  },
   "chat-clear": async () => {
-    const b = await ui.confirm("Очистить чат?", `<div class="msg">Переписка удалится с этого телефона.</div>`, ["Отмена", "Очистить"])
-    if (b === "Очистить") { D.chat = []; save(false); render() }
+    const b = await ui.confirm("Очистить чат?", `<div class="msg">Экран чата очистится. Помощник сохранит краткую сводку разговора в память и сможет найти его потом.</div>`, ["Отмена", "Очистить"])
+    if (b === "Очистить") {
+      D.chatArchive = D.chatArchive.concat(D.chat.map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-3000)
+      D.chat = []; save(false); render(); memorize(true)
+    }
   },
 }
 
@@ -1595,6 +1711,7 @@ onPhoto($("#photo")); onPhoto($("#photo-lib")); onPhoto($("#doc"))
 load()
 setTab("today")
 hashAction()
+setTimeout(memorize, 8000)   // прошлый разговор закончился — сложить в память
 window.addEventListener("hashchange", hashAction)
 sync()
 setInterval(() => { if (document.visibilityState === "visible") sync() }, 60000)
