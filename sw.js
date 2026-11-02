@@ -1,6 +1,6 @@
 // Приложение открывается мгновенно и без сети: оболочка (страница, код, значки) берётся из кэша,
 // а в фоне проверяется новая версия. Запросы к таблице и к Claude идут мимо кэша.
-const CACHE = "myday-ead0b59fcc"
+const CACHE = "myday-0a7f456b3f"
 const SHELL = ["./", "index.html", "style.css", "core.js", "app.js", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"]
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())) })
 self.addEventListener("activate", e => {
