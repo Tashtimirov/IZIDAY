@@ -322,3 +322,13 @@ body.chat main { padding-bottom: calc(var(--tabs) + 76px); }
 /* iPhone со значка «Домой» занижает высоту экрана в CSS — берём её из JS (--app-h) */
 body { inset: 0 auto auto 0; height: var(--app-h, 100dvh); }
 .row .pin { width: 24px; text-align: center; flex: none; }
+
+/* iPhone со значка: «окно» страницы короче экрана, и всё, что привязано к нему (меню, кнопка, окна), висело выше края,
+   а ниже оставалась пустая полоса. Теперь страница не обрезается по этому окну, а меню и окна привязаны к body,
+   высота которого — настоящая высота экрана (--app-h из JS) */
+html { height: var(--app-h, 100%); overflow: visible; }
+body { overflow: visible; }
+main { overflow-x: hidden; }
+#tabs, #fab, #layer, #toast, .chat-bar { position: absolute; }
+body.kb .chat-bar { bottom: var(--kb); }
+body.kb #tabs, body.kb #fab { visibility: hidden; }

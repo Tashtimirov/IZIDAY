@@ -1494,6 +1494,16 @@ function fitHeight() {
 }
 fitHeight()
 addEventListener("resize", fitHeight)
+// Клавиатура: поднять строку ввода чата над ней (окно страницы на iPhone при этом не уменьшается)
+if (window.visualViewport) {
+  const kb = () => {
+    const app = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-h")) || innerHeight
+    const hidden = Math.max(0, app - visualViewport.height - visualViewport.offsetTop)
+    document.documentElement.style.setProperty("--kb", hidden > 80 ? hidden + "px" : "0px")
+    document.body.classList.toggle("kb", hidden > 80)
+  }
+  visualViewport.addEventListener("resize", kb); visualViewport.addEventListener("scroll", kb)
+}
 addEventListener("orientationchange", () => setTimeout(fitHeight, 300))
 $("#fab").innerHTML = ICO.mic
 // Микрофон: нажатие — сразу слушает команду для помощника; долгое нажатие — меню «Добавить»
