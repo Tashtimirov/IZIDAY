@@ -56,6 +56,7 @@ function toast(t) {
 }
 
 const ICO = {
+  cam: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.8l1.4-2h4.6l1.4 2h1.8A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.5"/></svg>',
   today: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/><path d="M8.5 15l2 2 4-4"/></svg>',
   chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h0A1.5 1.5 0 0 1 4 14.5z"/><path d="M8.5 8.5h7M8.5 11.5h4.5"/></svg>',
   money: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="13" rx="3"/><path d="M2.5 10h19"/><path d="M6.5 15h4"/></svg>',
@@ -433,8 +434,29 @@ function onPhoto(input) {
     const f = input.files && input.files[0]
     input.value = ""
     if (!f) return
-    try { foodFlow(await shrinkPhoto(f)) } catch (e) { ui.info("Фото", e.message) }
+    try { await scanFile(f) } catch (e) { ui.info("Фото", e.message) }
   }
+}
+// ── Фото или файл → помощник сам понимает, что это: еда, счёт, чек или другое ──
+const SCAN_PROMPT = "Разбери это вложение по правилам для фото и документов."
+function fileB64(f) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(new Error("не удалось прочитать файл")); r.readAsDataURL(f) })
+}
+async function scanFile(f) {
+  let att
+  if (/pdf$/i.test(f.type) || /\.pdf$/i.test(f.name || "")) {
+    if (f.size > 20e6) throw new Error("Файл больше 20 МБ — сократите его или сфотографируйте нужную страницу")
+    att = { type: "document", media_type: "application/pdf", data: (await fileB64(f)).split(",")[1], name: f.name || "документ.pdf" }
+  } else if (/^image\//.test(f.type) || /\.(jpe?g|png|heic|webp|gif)$/i.test(f.name || "")) {
+    const url = await shrinkPhoto(f, 1568)
+    att = { type: "image", media_type: "image/jpeg", data: url.split(",")[1], thumb: await shrinkData(url, 360) }
+  } else throw new Error("Можно фото или PDF")
+  chatSend(SCAN_PROMPT, { label: att.type === "document" ? `📄 ${att.name}` : "📷 Фото", attach: att })
+}
+function shrinkData(url, max) {
+  return new Promise(res => { const img = new Image(); img.onload = () => { const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement("canvas")
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); res(c.toDataURL("image/jpeg", .7)) }
+    img.onerror = () => res(""); img.src = url })
 }
 
 // ───────────── Помощник (чат) ─────────────
@@ -784,6 +806,12 @@ function agentSystem() {
 - Календарь и напоминания iPhone приложение меняет через виджет: изменения ставятся в очередь и вносятся при обновлении виджета. Так и скажи коротко («внесу в календарь при обновлении виджета»), не извиняйся.
 ${cals.length ? `- Календари по словам пользователя: ${cals.map(x => `«${x.calendar}» (список напоминаний «${x.list}»)`).join(", ")}.${cals.filter(x => x.hint).map(x => ` ${x.hint} — «${x.calendar}».`).join("")} Если календарь не назван, не указывай его.
 ` : ""}- Деньги — ${c.currencyIn}. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.
+- Фото или файл от пользователя — сначала пойми, что это, и действуй:
+  • Еда или блюдо: что это, порция, ккал и БЖУ одной строкой; спроси ask_user «Записать в еду?» [Да, Нет] и при «Да» — add_food.
+  • Счёт, инвойс, квитанция к оплате (коммуналка, интернет, аренда, штраф и т. п.): от кого, за что, сумма с валютой, срок оплаты (если есть — и сколько дней осталось), номер счёта/реквизиты кратко. Если есть срок или его можно понять — спроси ask_user «Напомнить об оплате?» [За день до срока, В день срока, Не нужно] и создай create_reminder «Оплатить <от кого> — <сумма>» на 10:00 нужного дня. Счёт ещё не оплачен — расход не записывай.
+  • Чек из магазина, кафе или ресторана: где и когда, позиции списком «название — цена» (переведи на русский, оригинал в скобках, если неясно), скидки и сервисный сбор, итог. Затем ask_user «Записать расход <итог>?» [Наличные, Карта / перевод, Не записывать] и add_money с подходящей категорией и коротким комментарием (магазин, 2–3 главных позиции). Дата — из чека, если не сегодня.
+  • Другое (документ, скриншот, визитка…): кратко перескажи главное и предложи, что можно сделать (событие, напоминание, расход).
+  Отвечай коротко, без лишних вступлений.
 - «Съел», «выпил стакан воды» — add_food и add_water. «Удали лишнюю воду/еду/тренировку» — найди id через get_health (или get_history с details) и delete_record. На вопросы о калориях, шагах и воде смотри get_health.
 - Тренировка без часов («проплыл бассейн 10 раз», «час падела, часы забыл») — add_workout. Вес пользователя ${H().weight || 80} кг. Скажи, сколько ккал и минут записал.
 - Если пользователь спрашивает (что у меня завтра, сколько потратил), посмотри данные и ответь.
@@ -862,17 +890,23 @@ async function chatSend(text, opts = {}) {
   if (askWait) { const w = askWait; askWait = null; D.chat.push({ role: "user", text, at: Date.now(), voice: !!opts.voice, local: true }); save(false); renderChat(); w(text); return }
   if (chatBusy) { toast("Помощник ещё отвечает…"); return }
   if (!aiKey()) { setTab("more"); return ui.info("Нужен ключ Claude", "Подключите приложение кодом из виджета: в Scriptable меню → 📱 Приложение «Мой день» → «Подключить приложение».") }
-  const item = { role: "user", text: opts.label || text, prompt: opts.label ? text : undefined, at: Date.now(), voice: !!opts.voice }
+  const item = { role: "user", text: opts.label || text, prompt: opts.label ? text : undefined, at: Date.now(), voice: !!opts.voice, thumb: opts.attach && opts.attach.thumb || undefined }
   D.chat.push(item)
   chatBusy = true
   chatLinks = []
   save(false)
   if (tab !== "chat") setTab("chat"); else renderChat()
   let reply
-  try { reply = await agentTurn(chatContext(), chatSystem(), chatTools()) } catch (e) { reply = `Ошибка: ${e.message || e}` }
+  const ctx = chatContext()
+  if (opts.attach && ctx.length) {   // само вложение уходит только в этот запрос; в истории остаются миниатюра и ответ помощника
+    const a = opts.attach, last = ctx[ctx.length - 1]
+    last.content = [{ type: a.type, source: { type: "base64", media_type: a.media_type, data: a.data } }, { type: "text", text: last.content }]
+  }
+  try { reply = await agentTurn(ctx, chatSystem(), chatTools()) } catch (e) { reply = `Ошибка: ${e.message || e}` }
   chatBusy = false
   D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice() })
   D.chat = D.chat.slice(-200)
+  D.chat.filter(m => m.thumb).slice(0, -12).forEach(m => { delete m.thumb })   // миниатюры только у последних фото — память телефона
   save(false)
   sync()
   if (tab === "chat") renderChat()
@@ -1161,7 +1195,7 @@ async function eventSheet(e) {
 async function addMenu() {
   const glass = H().glass || 250
   const opts = [["💬 Сказать помощнику", () => { setTab("chat"); setTimeout(micStart, 300) }], ["➖ Расход", () => moneyForm("expense")], ["➕ Доход", () => moneyForm("income")],
-    ["📷 Еда по фото", () => $("#photo").click()], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()],
+    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()],
     ["⏰ Напоминание", reminderForm], ["📅 Событие", eventForm]]
   const i = await ui.choose("Добавить", "", opts.map(o => o[0]))
   if (i >= 0) opts[i][1]()
@@ -1264,7 +1298,7 @@ let dayEvsCache = []
 function renderChatHTML() {
   return `<div class="chat-tools"><button data-brief="morning">☀️ Утренняя сводка</button><button data-brief="evening">🌙 Вечерняя</button><button data-do="chat-clear">🧹 Очистить</button></div>
     <div class="chat-list" id="chat-list">${chatItems()}</div>
-    <div class="chat-bar"><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
+    <div class="chat-bar"><button class="cam" aria-label="Фото или файл">${ICO.cam}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
     <button class="mic" aria-label="Сказать">${ICO.mic}</button><button class="send" aria-label="Отправить">${ICO.send}</button></div>`
 }
 const linkify = s => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`)
@@ -1273,7 +1307,7 @@ function chatItems() {
   const last = D.chat.length - 1
   return D.chat.slice(-60).map((m, i, arr) => {
     const isLast = i === arr.length - 1 && askWait
-    return `<div class="m ${m.role}">${m.voice ? "🎤 " : ""}${linkify(m.text)}${(m.links || []).length ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>` : ""}` +
+    return `<div class="m ${m.role}">${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? "🎤 " : ""}${linkify(m.text)}${(m.links || []).length ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>` : ""}` +
       `${m.opts && m.opts.length && isLast ? `<div class="opts">${m.opts.map(o => `<button data-opt="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}<span class="tm">${hm(new Date(m.at || Date.now()))}</span></div>`
   }).join("") + (chatBusy && !askWait ? `<div class="typing"><i></i><i></i><i></i></div>` : "") + (last < 0 ? "" : "")
 }
@@ -1432,12 +1466,13 @@ function bind() {
     $(".chat-bar .send", v).onclick = () => { if (voice) return voiceSendNow(); const t = inp.value; inp.value = ""; grow(inp); chatSend(t) }
     if (voice) { $(".chat-bar .mic", v).classList.add("on"); inp.placeholder = "Слушаю… ➤ — отправить сразу"; if (voice.text) { inp.value = voice.text; grow(inp) } }
     $(".chat-bar .mic", v).onclick = () => micStart()
+    $(".chat-bar .cam", v).onclick = () => photoPrompt()
     bindChatList()
   }
 }
 
 const DO = {
-  event: () => eventForm(), reminder: () => reminderForm(), food: () => foodMenu(), workout: () => workoutForm(), photo: () => $("#photo").click(),
+  event: () => eventForm(), reminder: () => reminderForm(), food: () => foodMenu(), workout: () => workoutForm(), photo: () => photoPrompt(),
   expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
   "tab-money": () => setTab("money"), "tab-health": () => setTab("health"), report: () => showReport(),
   sheet: () => window.open(D.conn.sheetUrl, "_blank"),
@@ -1508,8 +1543,11 @@ function micPrompt() {
   $(".btn", s.el).onclick = () => { s.close(); micStart() }
 }
 function photoPrompt() {
-  const s = sheet(`<h3>📷 Еда по фото</h3><div class="btns"><button class="btn gold" data-a="cam" style="padding:18px;font-size:18px">Сфотографировать</button></div>
-    <div class="btns"><button class="btn" data-a="lib">Выбрать из фото</button><button class="btn" data-a="txt">Описать словами</button></div>`)
+  const s = sheet(`<h3>📷 Фото или файл</h3><div class="msg">Еда — посчитаю калории. Счёт — от кого, сумма и срок, напомню оплатить. Чек — что куплено и почём, запишу расход.</div>
+    <div class="btns"><button class="btn gold" data-a="cam" style="padding:18px;font-size:18px">Сфотографировать</button></div>
+    <div class="btns"><button class="btn" data-a="lib">Из фото</button><button class="btn" data-a="doc">Файл / PDF</button></div>
+    <div class="btns"><button class="btn" data-a="txt">Описать еду словами</button></div>`)
+  $('[data-a="doc"]', s.el).onclick = () => { s.close(); $("#doc").click() }
   $('[data-a="cam"]', s.el).onclick = () => { s.close(); $("#photo").click() }
   $('[data-a="lib"]', s.el).onclick = () => { s.close(); $("#photo-lib").click() }
   $('[data-a="txt"]', s.el).onclick = async () => { s.close(); const t = await ui.ask("Что съели?", "Например: тарелка том яма и рис", "", { ok: "Посчитать" }); if (t) foodFlow(null, t) }
@@ -1553,7 +1591,7 @@ $("#fab").innerHTML = ICO.mic
 $("#sync").innerHTML = ICO.sync
 $("#sync").onclick = () => DO.sync()
 $$("#tabs button").forEach(b => b.onclick = () => setTab(b.dataset.tab))
-onPhoto($("#photo")); onPhoto($("#photo-lib"))
+onPhoto($("#photo")); onPhoto($("#photo-lib")); onPhoto($("#doc"))
 load()
 setTab("today")
 hashAction()
