@@ -65,13 +65,14 @@ const ICO = {
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><rect x="8.5" y="2.5" width="7" height="12" rx="3.5"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5"/></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="#fff"/></svg>',
   send: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></svg>',
+  find: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>',
   sync: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9"/><path d="M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2"/></svg>',
 }
 
 // ───────────── Данные на телефоне ─────────────
 // Записи — как в виджете: { id, date, u (время изменения), ... }; удалённые остаются «надгробиями» { id, deleted, u },
 // чтобы удаление дошло до виджета и таблицы
-const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60 }   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
+const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0 }   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
 let D = {}
 function load() {
   try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
@@ -599,6 +600,17 @@ const AGENT_TOOLS = [
       category: { type: "string", description: "Строго одна из категорий из системного сообщения" },
       comment: { type: "string" }, date: { type: "string", description: "Только если не сегодня, YYYY-MM-DD" } },
       required: ["type", "amount", "method", "category"] } },
+  { name: "set_budget", description: "Лимит расходов на месяц по категории (0 — убрать лимит).",
+    input_schema: { type: "object", properties: { category: { type: "string", description: "Категория расходов из системного сообщения" }, limit: { type: "number" } }, required: ["category", "limit"] } },
+  { name: "add_recurring", description: "Добавить регулярный ежемесячный платёж (аренда, интернет, подписка). В срок он появится в «Сегодня», оплату пользователь отметит одним нажатием. paid_now=true — уже оплачен в этом месяце (запишет расход).",
+    input_schema: { type: "object", properties: { title: { type: "string" }, amount: { type: "number" }, day: { type: "number", description: "Число месяца, 1–31" },
+      method: { type: "string", enum: ["cash", "transfer"] }, category: { type: "string" }, paid_now: { type: "boolean" } }, required: ["title", "amount", "day", "category"] } },
+  { name: "pay_recurring", description: "Отметить регулярный платёж оплаченным в этом месяце (запишет расход). id из get_money.recurring.",
+    input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "log_weight", description: "Записать вес пользователя в кг.", input_schema: { type: "object", properties: { kg: { type: "number" }, date: { type: "string", description: "YYYY-MM-DD, если не сегодня" } }, required: ["kg"] } },
+  { name: "mark_habit", description: "Отметить привычку за день (или снять отметку done=false). Для «хочу бросить» отметка значит, что было (выпил, курил). Если такой привычки нет и create=true — создать.",
+    input_schema: { type: "object", properties: { habit: { type: "string", description: "Название привычки" }, day: { type: "string", description: "YYYY-MM-DD, по умолчанию сегодня" },
+      done: { type: "boolean" }, create: { type: "boolean" }, bad: { type: "boolean", description: "При создании: true — привычка, которую бросают" } }, required: ["habit"] } },
   { name: "get_money", description: "Операции и итоги по деньгам за месяц.",
     input_schema: { type: "object", properties: { month: { type: "string", description: "YYYY-MM, по умолчанию текущий" } } } },
   { name: "delete_money", description: "Удалить ошибочную операцию по id.",
@@ -752,13 +764,16 @@ async function runTool(name, x) {
       if (d) d.setHours(12, 0, 0, 0)
       const rec = upsert("money", { id: `f${now}-${Math.random().toString(36).slice(2, 6)}`, date: d ? d.getTime() : now, type: x.type, amount: x.amount,
         method: x.method, category: x.category, comment: x.comment || "" })
-      return { ok: true, id: rec.id }
+      const bs = x.type === "expense" && budgetState(x.category, core.monthKey(new Date(rec.date)))
+      return { ok: true, id: rec.id, ...(bs ? { budget: { limit: bs.limit, spent_this_month: bs.spent, left: bs.left, warn: bs.p >= 0.8 ? "скажи пользователю, сколько осталось по лимиту" : undefined } } : {}) }
     }
     case "get_money": {
       const key = x.month || core.monthKey(new Date())
       const t = core.monthTotals(live(D.money), key)
       return { month: key, income: t.income, expense: t.expense, cash: t.cash, transfer: t.transfer, by_category: t.cats,
-        items: t.items.slice(-60).map(e => ({ id: e.id, date: iso(new Date(e.date)), type: e.type, amount: e.amount, method: e.method, category: e.category, comment: e.comment })) }
+        items: t.items.slice(-60).map(e => ({ id: e.id, date: iso(new Date(e.date)), type: e.type, amount: e.amount, method: e.method, category: e.category, comment: e.comment })),
+        budgets: live(D.budgets).filter(b => b.limit > 0).map(b => { const s = budgetState(b.category, key); return { category: b.category, limit: b.limit, spent: s.spent, left: s.left } }),
+        recurring: live(D.recur).map(r => ({ id: r.id, title: r.title, amount: r.amount, day: r.day, category: r.category, paid: recurPaid(r, key), due: dayKey(recurDue(r, monthStart(key))) })) }
     }
     case "get_history": {
       const d0 = parseIso(x.from), d1 = x.to ? parseIso(x.to) : sod(new Date())
@@ -904,12 +919,51 @@ async function runTool(name, x) {
       const w = upsert("workouts", { id: `t${now}-${Math.random().toString(36).slice(2, 6)}`, date: +when, title: x.title, minutes: Math.round(+x.minutes || 0), kcal: Math.round(+x.kcal || 0) })
       return { ok: true, id: w.id }
     }
+    case "set_budget": {
+      const names = core.CONFIG.categories.expense.map(c => c[0])
+      if (!names.includes(x.category)) return { error: `категория должна быть одной из: ${names.join(", ")}` }
+      setBudget(x.category, x.limit)
+      const s = budgetState(x.category)
+      return s ? { ok: true, limit: s.limit, spent_this_month: s.spent, left: s.left } : { ok: true, note: "лимит убран" }
+    }
+    case "add_recurring": {
+      const names = core.CONFIG.categories.expense.map(c => c[0])
+      if (!names.includes(x.category)) return { error: `категория должна быть одной из: ${names.join(", ")}` }
+      if (!(x.amount > 0) || !(x.day >= 1 && x.day <= 31)) return { error: "нужны сумма > 0 и число месяца 1–31" }
+      const r = upsert("recur", { id: uid("p"), date: Date.now(), type: "expense", title: x.title, amount: x.amount, day: Math.round(x.day), method: x.method || "transfer", category: x.category, paid: {} })
+      if (x.paid_now) recurPay(r)
+      return { ok: true, id: r.id }
+    }
+    case "pay_recurring": {
+      const r = live(D.recur).find(z => z.id === x.id)
+      if (!r) return { error: "нет такого платежа" }
+      if (recurPaid(r)) return { ok: true, note: "уже отмечен оплаченным в этом месяце" }
+      const m = recurPay(r)
+      return { ok: true, money_id: m.id }
+    }
+    case "log_weight": {
+      if (!(x.kg > 20 && x.kg < 400)) return { error: "вес в кг" }
+      const d = parseIso(x.date); if (d) d.setHours(9, 0, 0, 0)
+      logWeight(x.kg, d ? +d : Date.now())
+      const w = weights(), month = w.filter(z => z.date > Date.now() - 30 * 864e5)
+      return { ok: true, kg: x.kg, change_30d: month.length > 1 ? Math.round((month[month.length - 1].kg - month[0].kg) * 10) / 10 : null }
+    }
+    case "mark_habit": {
+      let h = findHabit(x.habit)
+      if (!h && x.create) h = upsert("habits", { id: uid("h"), date: Date.now(), title: String(x.habit).trim(), emoji: x.bad ? "🚫" : "✓", bad: !!x.bad })
+      if (!h) return { error: "нет такой привычки", habits: habitList().map(z => z.title) }
+      const d = parseIso(x.day) || new Date()
+      habitToggle(h, d, x.done !== false)
+      return { ok: true, habit: h.title, day: dayKey(d), done: x.done !== false, streak_days: habitStreak(h) }
+    }
     case "get_health": {
       const d = dayHealth()
       return { eaten_kcal: d.kcal, protein: d.protein, fat: d.fat, carbs: d.carbs, meals: d.food.map(m => ({ id: m.id, time: hm(new Date(m.date)), title: m.title, kcal: m.kcal })),
         water_ml: d.water, water_goal_ml: H().waterGoal, water: today(D.water).map(w => ({ id: w.id, time: hm(new Date(w.date)), ml: w.ml })),
         workouts: d.workouts.map(w => ({ id: w.id, title: w.title, minutes: w.minutes, kcal: w.kcal })),
-        watch: d.watch || "нет данных с часов за сегодня" }
+        watch: d.watch || "нет данных с часов за сегодня",
+        weight: (w => w ? { kg: w.kg, date: dayKey(new Date(w.date)) } : null)(weights().pop()),
+        habits: habitList().map(h => ({ title: h.title, kind: h.bad ? "бросает" : "делает", done_today: habitOn(h, new Date()), streak_days: habitStreak(h) })) }
     }
     case "claude_code": {
       const r = routes().find(z => z.name === x.route)
@@ -983,6 +1037,8 @@ ${cals.length ? `- Календари по словам пользователя
 - «Этот платёж не вноси / он по работе» про платёж, которого ещё нет в расходах (придёт по карте позже) — сразу skip_card_payment, не проси пользователя напомнить потом.
 - Любой вопрос о платеже или переводе (особенно «что это за платёж?» или когда ты сам спрашиваешь о непонятной трате): всегда называй дату и точное время платежа и место, где был пользователь в тот момент, — where_was_i по времени платежа: адрес и ссылка на Google Карты (ссылкой целиком). Если точка далека по времени — так и скажи. Платежи по карте — лист «Карта» (read_sheet), остальные — get_money.
 - Почта Gmail пользователя: mail_search → mail_read, ответы mail_reply, новые письма mail_send, черновики mail_draft, разбор mail_modify. Про письма отвечай по сути: от кого, что хотят, срок, что сделать; длинные — пересказывай. Найдёшь в письме встречу, срок оплаты или задачу — предложи событие или напоминание. Пиши письма сам, от первого лица пользователя, коротко и по-деловому; отправка — только когда пользователь попросил отправить или ответить (подтверждение приложение покажет само).
+- Лимиты расходов по категориям — set_budget; при записи расхода, если инструмент вернул budget.warn, коротко скажи, сколько осталось. Регулярные платежи (аренда, подписки) — add_recurring и pay_recurring; список и лимиты — в get_money.
+- Привычки (зарядка, чтение; «бросаю пить/курить») — mark_habit; «сегодня не пил» для привычки «бросаю» — done=false. Вес («вешу 78,5») — log_weight. Серии и вес — в get_health.
 - «Съел», «выпил стакан воды» — add_food и add_water. «Удали лишнюю воду/еду/тренировку» — найди id через get_health (или get_history с details) и delete_record. На вопросы о калориях, шагах и воде смотри get_health.
 - Тренировка без часов («проплыл бассейн 10 раз», «час падела, часы забыл») — add_workout. Вес пользователя ${H().weight || 80} кг. Скажи, сколько ккал и минут записал.
 - Если пользователь спрашивает (что у меня завтра, сколько потратил), посмотри данные и ответь.
@@ -1107,7 +1163,7 @@ ${r.length ? `- Сложную задачу, которую не решить з
 }
 const BRIEFS = {
   morning: { label: "☀️ Утренняя сводка", prompt: "Сделай утреннюю сводку на сегодня. Посмотри события и напоминания на сегодня (и просроченные), " +
-    "траты за месяц, важные непрочитанные письма за сутки (mail_search «is:unread newer_than:1d -category:promotions -category:social», если почта доступна). Расскажи: что сегодня по порядку со временем, что важно не забыть, что просрочено; сколько потрачено в этом месяце. " +
+    "траты за месяц (и лимиты, если близко к превышению), регулярные платежи к оплате в ближайшие дни, важные непрочитанные письма за сутки (mail_search «is:unread newer_than:1d -category:promotions -category:social», если почта доступна). Расскажи: что сегодня по порядку со временем, что важно не забыть, что просрочено; сколько потрачено в этом месяце. " +
     "В конце одна короткая дружеская мысль или совет на день. Ничего не меняй." },
   evening: { label: "🌙 Вечерняя сводка", prompt: "Сделай вечернюю сводку за сегодня. Посмотри события и напоминания (вместе с выполненными), " +
     "деньги и еду с водой и активностью за сегодня, события на завтра. Расскажи: что сделано, что не сделано; сколько потрачено сегодня " +
@@ -1374,7 +1430,8 @@ function moneyForm(type, entry) {
       const rec = upsert("money", Object.assign({}, entry || { id: `f${Date.now()}-${Math.random().toString(36).slice(2, 6)}` }, { type, amount, method,
         category: cat || cats[cats.length - 1], comment: $("#m-com", s.el).value.trim(), date }))
       done = true; s.close(); render()
-      toast(`${type === "expense" ? "−" : "+"}${core.money(amount)} · ${rec.category}`)
+      const bn = type === "expense" ? budgetNote(rec.category, rec.date) : ""
+      toast(`${type === "expense" ? "−" : "+"}${core.money(amount)} · ${rec.category}${bn ? " · " + bn : ""}`)
     }
   })
 }
@@ -1553,8 +1610,8 @@ function renderTop() {
   else if (D.sync.error) sub = `⚠️ ${D.sync.error}`
   else if (tab === "money") { const t = core.monthTotals(live(D.money), monthKey || core.monthKey(new Date())); sub = `${core.monthTitle(monthKey || core.monthKey(new Date()))} · −${core.money(t.expense)}` }
   else {
-    const p = pendingOps().length
-    sub = `iPhone: ${v.at ? ago(v.at) : "ждём виджет"}` + (p ? ` · ⏳ ${p} в очереди` : "")
+    const p = gcalOn() ? 0 : pendingOps().length
+    sub = gcalOn() ? `Обновлено ${ago(D.sync.at)}` : `iPhone: ${v.at ? ago(v.at) : "ждём виджет"}` + (p ? ` · ⏳ ${p} в очереди` : "")
   }
   $("#top-sub").textContent = sub
 }
@@ -1567,8 +1624,8 @@ function renderToday() {
   const counts = {}
   let html = ""
   if (!D.conn) html += `<div class="banner"><b>Подключите приложение к виджету</b>Нажмите «Подключить»: откроется Scriptable, сам скопирует код, а вы вернётесь сюда кнопкой «◀ IZIDAY» слева вверху и нажмёте «Вставить».<div class="btns" style="margin-top:8px"><button class="btn" data-do="connect">Ввести код</button><button class="btn primary" data-do="autoconnect">🔗 Подключить</button></div></div>`
-  else if (D.snap && pendingOps().length) html += `<div class="banner"><b>📲 ${pendingOps().length} ${plural(pendingOps().length, "изменение ждёт", "изменения ждут", "изменений ждут")} внесения в iPhone</b>Календарь и напоминания iPhone меняет только Scriptable. Нажмите — он внесёт сейчас и вернёт вас сюда.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="run-widget">Внести сейчас</button></div></div>`
-  else if (!D.snap) html += `<div class="banner"><b>Ждём календарь от виджета</b>Он придёт при ближайшем обновлении виджета на экране «Домой» (обычно в течение 15 минут).</div>`
+  else if (!gcalOn() && D.snap && pendingOps().length) html += `<div class="banner"><b>📲 ${pendingOps().length} ${plural(pendingOps().length, "изменение ждёт", "изменения ждут", "изменений ждут")} внесения в iPhone</b>Календарь и напоминания iPhone меняет только Scriptable. Нажмите — он внесёт сейчас и вернёт вас сюда.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="run-widget">Внести сейчас</button></div></div>`
+  else if (!gcalOn() && D.gcal && D.gcal.error) html += `<div class="banner"><b>Google Календарь не ответил</b>${esc(D.gcal.error)}</div>`
   const wOff = Math.floor(Math.round((sod(selDay) - t0) / 864e5) / 7), w0 = addDays(t0, wOff * 7), w6 = addDays(w0, 6)
   for (const e of v.events) for (let d = sod(e.s); d < e.e && d <= w6; d = addDays(d, 1)) counts[dayKey(d)] = (counts[dayKey(d)] || 0) + 1
   html += `<div class="month wnav"><button data-shift="-7" aria-label="Неделя назад">‹</button><b>${wOff === 0 ? "Эта неделя" : `${w0.getDate()} ${MONTHS_GEN[w0.getMonth()]} – ${w6.getDate()} ${MONTHS_GEN[w6.getMonth()]}`}</b><button data-shift="7" aria-label="Неделя вперёд">›</button></div>`
@@ -1588,13 +1645,13 @@ function renderToday() {
     return `<div class="row ${e.pending ? "pending" : ""} ${past ? "past" : ""}" data-ev="${i}"><div class="bar-l" style="background:${esc(e.color || "var(--teal)")}"></div>
       <div class="time" style="${e.all_day ? "font-size:11.5px" : ""}">${t}</div>
       <div class="grow"><div class="t">${esc(e.title || "(без названия)")}</div><div class="s">${e.all_day ? "" : hm(e.s) + "–" + hm(e.e)}${e.location ? " · " + esc(e.location) : ""}${e.calendar ? " · " + esc(e.calendar) : ""}</div></div></div>`
-  }).join("") : `<div class="empty">${D.snap ? "Ничего не запланировано" : "Календарь ещё не пришёл от виджета"}</div>`
+  }).join("") : `<div class="empty">${gcalOn() || D.snap ? "Ничего не запланировано" : "Загружаю Google Календарь…"}</div>`
   html += `</div>`
   dayEvsCache = dayEvs
 
 
   const isPast = selDay < t0
-  if (isPast) return html + dayRecap(selDay)
+  if (isPast) return html + (habitList().length ? habitsCard(selDay) : "") + dayRecap(selDay)
   let rems = openRems(v)
   if (isToday) rems = rems.filter(r => !remDue(r) || remDue(r) < addDays(t0, 1))
   else rems = rems.filter(r => remDue(r) && sameDay(remDue(r), selDay))
@@ -1603,11 +1660,15 @@ function renderToday() {
   html += rems.length ? rems.slice(0, 25).map(r => `<div class="row ${r.pending ? "pending" : ""}"><button class="check ${remLate(r) ? "late" : ""}" data-check="${esc(r.id)}"></button>
     <div class="grow"><div class="t">${esc(r.title)}</div>${r.due || r.list ? `<div class="s ${remLate(r) ? "exp" : ""}">${esc(remLabel(r))}${r.due && r.list ? " · " : ""}${esc(r.list || "")}</div>` : ""}</div></div>`).join("")
     : `<div class="empty">${isToday ? "Всё сделано" : "На этот день напоминаний нет"}</div>`
+  const bills = isToday ? recurSoon() : []
+  if (bills.length) html += bills.map(r => `<div class="row" data-recur="${esc(r.id)}"><span class="pin">🔁</span><div class="grow"><div class="t">${esc(r.title)} · ${esc(core.money(r.amount))}</div>
+    <div class="s ${recurDue(r) < sod(now) ? "exp" : ""}">оплатить ${esc(recurLabel(r))}</div></div><button class="btn small" data-recur-pay="${esc(r.id)}">Оплачено</button></div>`).join("")
   const near = live(D.places).filter(p => !p.done)
   if (isToday && near.length) html += near.map(p => `<div class="row"><span class="pin">📍</span><div class="grow"><div class="t">${esc(p.title)}</div>
     <div class="s">напомню рядом: ${esc(p.query)} · ${(p.points || []).length} ${plural((p.points || []).length, "точка", "точки", "точек")}</div></div></div>`).join("")
   html += `</div>`
 
+  if (isToday) html += habitsCard(selDay)
   if (isToday) {
     const h = dayHealth(), g = H()
     const t = core.monthTotals(live(D.money), core.monthKey(t0))
@@ -1621,7 +1682,7 @@ function renderToday() {
     </div></div>`
   }
   const failed = D.ops.filter(o => o.state === "done" && o.result && o.result.error)
-  if (failed.length) html += `<div class="card"><h2>Не внеслось в iPhone</h2>${failed.map(o => `<div class="row"><div class="grow"><div class="t">${esc(OP_LABEL[o.tool] || o.tool)}: ${esc((o.input || {}).title || "")}</div><div class="s exp">${esc(o.result.error)}</div></div></div>`).join("")}</div>`
+  if (failed.length && !gcalOn()) html += `<div class="card"><h2>Не внеслось в iPhone</h2>${failed.map(o => `<div class="row"><div class="grow"><div class="t">${esc(OP_LABEL[o.tool] || o.tool)}: ${esc((o.input || {}).title || "")}</div><div class="s exp">${esc(o.result.error)}</div></div></div>`).join("")}</div>`
   return html
 }
 let dayEvsCache = []
@@ -1668,9 +1729,22 @@ function renderMoney() {
       <div class="muted small">💵 −${num(t.cash.expense)} · 💳 −${num(t.transfer.expense)}</div>
       <div class="muted small">Баланс ${bal < 0 ? "−" : "+"}${esc(core.money(bal))}</div>
     </div><div class="btns" style="margin-top:12px"><button class="btn primary" data-do="expense">− Расход</button><button class="btn teal" data-do="income">+ Доход</button></div></div>`
-  const cats = Object.entries(t.cats.expense).sort((a, b) => b[1] - a[1])
-  if (cats.length) html += `<div class="card"><h2>Куда ушли деньги</h2>` + cats.map(([n, v]) => `<div class="cat"><div class="top"><span>${esc(n)}</span><b>${esc(core.money(v))}</b></div>
-      <div class="prog gold"><div style="width:${v / cats[0][1] * 100}%"></div></div></div>`).join("") + `</div>`
+  const cats = Object.entries(t.cats.expense)
+  for (const b of live(D.budgets)) if (b.limit > 0 && !cats.some(c => c[0] === b.category)) cats.push([b.category, 0])
+  cats.sort((a, b) => b[1] - a[1])
+  const top = Math.max(1, ...cats.map(c => c[1]))
+  html += `<div class="card"><h2>Куда ушли деньги<button class="act" data-do="budgets">Лимиты</button></h2>` + (cats.length ? cats.map(([n, v]) => {
+      const lim = budgetOf(n), p = lim ? v / lim : v / top
+      return `<div class="cat"><div class="top"><span>${esc(n)}</span><b>${esc(core.money(v))}${lim ? `<span class="muted small"> из ${num(lim)}</span>` : ""}</b></div>
+      <div class="prog ${lim && p > 1 ? "red" : lim && p >= 0.8 ? "warn" : "gold"}"><div style="width:${Math.min(1, p) * 100}%"></div></div>${lim && p > 1 ? `<div class="s exp small">превышено на ${esc(core.money(v - lim))}</div>` : ""}</div>`
+    }).join("") : `<div class="empty">Расходов пока нет. «Лимиты» — сколько готовы тратить в месяц по категориям.</div>`) + `</div>`
+  const rec = live(D.recur).sort((a, b) => (a.day || 0) - (b.day || 0)), rk = monthKey
+  html += `<div class="card"><h2>Регулярные платежи<button class="act" data-do="recur-add">+ Добавить</button></h2>` + (rec.length ? rec.map(r => {
+      const paid = recurPaid(r, rk), late = !paid && rk === core.monthKey(now) && recurDue(r) < sod(now)
+      return `<div class="row" data-recur="${esc(r.id)}"><div class="grow"><div class="t">${esc(r.title)}</div><div class="s ${late ? "exp" : ""}">${r.day} числа · ${rk === core.monthKey(now) ? esc(recurLabel(r)) : paid ? "✓ оплачено" : "не оплачено"}</div></div>
+        <div class="amt ${paid ? "inc" : ""}">${paid ? "✓ " : ""}${esc(core.money(r.amount))}</div></div>`
+    }).join("") + `<div class="muted small" style="margin-top:6px">В месяц: ${esc(core.money(rec.filter(r => r.type !== "income").reduce((s, r) => s + r.amount, 0)))}</div>`
+    : `<div class="empty">Аренда, интернет, подписки: в срок появятся в «Сегодня», оплата записывается в расходы одним нажатием.</div>`) + `</div>`
   const items = t.items.slice().reverse()
   html += `<div class="card"><h2>Операции<span class="muted small" style="text-transform:none;letter-spacing:0">${items.length}</span></h2>`
   if (!items.length) html += `<div class="empty">Скажите помощнику «потратил 300 на такси» или нажмите «− Расход»</div>`
@@ -1738,6 +1812,7 @@ function renderHealth() {
   const kc = days.map(d => live(D.food).filter(f => sameDay(f.date, d)).reduce((s, f) => s + (f.kcal || 0), 0))
   const wa = days.map(d => live(D.water).filter(w => sameDay(w.date, d)).reduce((s, w) => s + (w.ml || 0), 0))
   const mk = Math.max(1, ...kc), mw = Math.max(1, ...wa)
+  html += weightCard()
   html += `<div class="card"><h2>Неделя: калории</h2><div class="chart">${days.map((d, i) => `<div class="col"><div class="lbl">${kc[i] ? num(kc[i]) : ""}</div><div class="b" style="height:${kc[i] / mk * 100}%"></div><div class="lbl">${WD[d.getDay()]}</div></div>`).join("")}</div></div>`
   html += `<div class="card"><h2>Неделя: вода</h2><div class="chart">${days.map((d, i) => `<div class="col"><div class="lbl">${wa[i] ? liters(wa[i]) : ""}</div><div class="b w" style="height:${wa[i] / mw * 100}%"></div><div class="lbl">${WD[d.getDay()]}</div></div>`).join("")}</div></div>`
   const money = onDay(D.money, day), spent = money.filter(e => e.type === "expense").reduce((s, e) => s + e.amount, 0)
@@ -1755,12 +1830,12 @@ function renderMore() {
   if (c) html += `<div class="set"><span>Таблица</span><span class="ok">✓ ${esc((c.hook.match(/\/s\/(.{8})/) || [, "подключена"])[1])}</span></div>
       <div class="set"><span>Последний обмен</span><span>${esc(ago(D.sync.at))}</span></div>
       <div class="set"><span>Уведомления на iPhone</span><span>${D.snap && D.snap.notif ? `${D.snap.notif.mine} запланировано` : "виджет старой версии — обновите MyDay.js"}</span></div>
-      <div class="set"><span>Календарь от виджета</span><span>${esc(D.snap ? ago(D.snap.at) : "ещё не было")}</span></div>
+      <div class="set"><span>Google Календарь</span>${gcalOn() ? `<span class="ok">✓ ${esc(ago(D.gcal.at))}</span>` : `<span class="exp">${esc((D.gcal && D.gcal.error) || "загружается")}</span>`}</div>
       <div class="set"><span>Ключ Claude</span>${c.key ? '<span class="ok">✓ Есть</span>' : '<span class="exp">нет</span>'}</div>
       <div class="set"><span>Маршруты в Claude Code</span><span>${routes().length ? esc(routes().map(r => r.name).join(", ")) : "нет"}</span></div>
       ${D.sync.error ? `<div class="msg exp small">${esc(D.sync.error)}</div>` : ""}
-      <div class="btns" style="margin-top:10px"><button class="btn" data-do="sync">🔄 Обменяться сейчас</button>${pendingOps().length ? '<button class="btn primary" data-do="run-widget">📲 Внести в iPhone сейчас</button>' : ""}</div>
-      ${pendingOps().length ? `<div class="muted small" style="margin-top:8px">В очереди ${pendingOps().length}: ${esc(pendingOps().map(o => OP_LABEL[o.tool] || o.tool).join(", "))}. Виджет внесёт их сам при обновлении; кнопка «Внести сейчас» на секунду откроет Scriptable.</div>` : ""}`
+      <div class="btns" style="margin-top:10px"><button class="btn" data-do="sync">🔄 Обменяться сейчас</button>${!gcalOn() && pendingOps().length ? '<button class="btn primary" data-do="run-widget">📲 Внести в iPhone сейчас</button>' : ""}</div>
+      ${!gcalOn() && pendingOps().length ? `<div class="muted small" style="margin-top:8px">В очереди ${pendingOps().length}: ${esc(pendingOps().map(o => OP_LABEL[o.tool] || o.tool).join(", "))}. Виджет внесёт их сам при обновлении; кнопка «Внести сейчас» на секунду откроет Scriptable.</div>` : ""}`
   html += `<div class="btns" style="margin-top:10px"><button class="btn ${c ? "" : "primary"}" data-do="connect">${c ? "Подключить заново" : "🔗 Подключить"}</button>${c ? '<button class="btn red" data-do="disconnect">Отключить</button>' : ""}</div>
     <div class="muted small" style="margin-top:8px">Код подключения даёт виджет: в Scriptable меню → 📱 Приложение «Мой день». В нём ключ Claude и ключ таблицы — он хранится только на этом телефоне.</div></div>`
   const g = H()
@@ -1906,6 +1981,20 @@ function bind() {
     if (D.conn) { D.conn.cfg = D.conn.cfg || {}; D.conn.cfg.health = core.CONFIG.health }
     save(false); toast("Сохранено")
   })
+  $$("[data-habit]", v).forEach(b => b.onclick = () => {
+    const h = D.habits.find(z => z.id === b.dataset.habit)
+    const on = habitToggle(h, selDay > sod(new Date()) ? new Date() : selDay)
+    if (navigator.vibrate) navigator.vibrate(10)
+    render()
+    if (on && !h.bad) { const st = habitStreak(h); if (st > 1) toast(`🔥 ${st} ${plural(st, "день", "дня", "дней")} подряд`) }
+  })
+  $$("[data-recur]", v).forEach(el => el.onclick = () => recurAsk(D.recur.find(z => z.id === el.dataset.recur)))
+  $$("[data-recur-pay]", v).forEach(b => b.onclick = ev => {
+    ev.stopPropagation()
+    const r = D.recur.find(z => z.id === b.dataset.recurPay)
+    recurPay(r); render()
+    const n = budgetNote(r.category); toast(`−${core.money(r.amount)} · ${r.title}${n ? " · " + n : ""}`)
+  })
   $$("[data-brief]", v).forEach(b => b.onclick = () => brief(b.dataset.brief))
   $$("[data-do]", v).forEach(b => b.onclick = () => DO[b.dataset.do]())
   const inp = $("#chat-in", v)
@@ -1928,6 +2017,7 @@ const DO = {
   expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
   "tab-money": () => setTab("money"), "tab-health": () => setTab("health"), report: () => showReport("month"),
   sheet: () => window.open(D.conn.sheetUrl, "_blank"),
+  budgets: () => budgetForm(), "recur-add": () => recurForm(), habits: () => habitsForm(), weight: () => weightForm(), search: () => searchSheet(),
   sync: () => (!D.conn || !D.conn.hook) ? DO.connect() : sync().then(ok => toast(ok ? "Обновлено" : `Не получилось: ${D.sync.error || "нет связи"}`)),
   "run-widget": () => sync().then(runWidgetNow),
   autoconnect: () => autoConnect(),
@@ -1955,6 +2045,239 @@ const DO = {
       D.chat = []; save(false); render(); memorize(true)
     }
   },
+}
+
+// ───────────── Бюджеты, регулярные платежи, привычки, вес, поиск ─────────────
+// budgets: { id: "b:<категория>", category, limit } — лимит расходов на месяц
+// recur:   { id, title, type, amount, method, category, day (число месяца), paid: { "YYYY-MM": id операции } }
+// habits:  { id, title, emoji, bad (true — хочу бросить), archived }
+// hlog:    { id: "h:<привычка>:<YYYY-MM-DD>", date, habit, day } — отметка за день; снятая отметка — «надгробие»
+// weight:  { id, date, kg }
+const budgetOf = cat => { const b = live(D.budgets).find(x => x.category === cat); return b && b.limit > 0 ? b.limit : 0 }
+function setBudget(cat, limit) {
+  limit = Math.round(+limit || 0)
+  if (limit > 0) upsert("budgets", { id: "b:" + cat, date: Date.now(), category: cat, limit })
+  else if (D.budgets.some(x => x.id === "b:" + cat && !x.deleted)) remove("budgets", "b:" + cat)
+}
+function budgetState(cat, key = core.monthKey(new Date())) {
+  const limit = budgetOf(cat)
+  if (!limit) return null
+  const spent = core.monthTotals(live(D.money), key).cats.expense[cat] || 0
+  return { category: cat, limit, spent, left: limit - spent, p: spent / limit }
+}
+// Строка-предупреждение после расхода: «⚠️ Еда: 9 200 из 10 000 ฿»
+function budgetNote(cat, date = Date.now()) {
+  const b = budgetState(cat, core.monthKey(new Date(date)))
+  if (!b || b.p < 0.8) return ""
+  return b.p > 1 ? `⚠️ ${cat}: лимит превышен на ${core.money(b.spent - b.limit)}` : `⚠️ ${cat}: ${num(b.spent)} из ${core.money(b.limit)}`
+}
+function budgetForm() {
+  const cats = core.CONFIG.categories.expense.map(c => c[0])
+  const t = core.monthTotals(live(D.money), core.monthKey(new Date()))
+  const s = sheet(`<h3>Лимиты на месяц</h3><div class="msg">Сколько готовы тратить в месяц по категории. Пусто — без лимита. Помощник предупредит, когда потрачено 80%.</div>
+    ${cats.map(c => `<div class="set"><span>${esc(c)}<span class="muted small"> · ${num(t.cats.expense[c] || 0)}</span></span><input type="number" inputmode="numeric" data-b="${esc(c)}" value="${budgetOf(c) || ""}" placeholder="—"></div>`).join("")}
+    <div class="btns" style="margin-top:12px"><button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  $('[data-a="ok"]', s.el).onclick = () => { $$("[data-b]", s.el).forEach(i => { if (Math.round(+i.value || 0) !== budgetOf(i.dataset.b)) setBudget(i.dataset.b, i.value) }); s.close(); render(); toast("Лимиты сохранены") }
+}
+
+// Регулярные платежи: срок в этом месяце, оплачен ли
+function recurDue(r, at = new Date()) {
+  const y = at.getFullYear(), m = at.getMonth(), last = new Date(y, m + 1, 0).getDate()
+  return new Date(y, m, Math.min(Math.max(1, r.day || 1), last))
+}
+const recurPaid = (r, key = core.monthKey(new Date())) => !!(r.paid && r.paid[key])
+// Неоплаченные в этом месяце, срок через 3 дня или раньше
+const recurSoon = () => live(D.recur).filter(r => r.type !== "income" && !recurPaid(r) && recurDue(r) < addDays(sod(new Date()), 4)).sort((a, b) => recurDue(a) - recurDue(b))
+function recurPay(r) {
+  const now = new Date(), key = core.monthKey(now)
+  const m = upsert("money", { id: `f${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, date: +now, type: r.type || "expense", amount: r.amount, method: r.method || "transfer",
+    category: r.category, comment: r.title })
+  upsert("recur", Object.assign({}, r, { paid: Object.assign({}, r.paid, { [key]: m.id }) }))
+  return m
+}
+function recurLabel(r) {
+  if (recurPaid(r)) return "✓ оплачено в этом месяце"
+  const d = recurDue(r), t0 = sod(new Date()), n = Math.round((d - t0) / 864e5)
+  return n < 0 ? `просрочено с ${d.getDate()} ${MONTHS_GEN[d.getMonth()]}` : n === 0 ? "сегодня" : n === 1 ? "завтра" : `${d.getDate()} ${MONTHS_GEN[d.getMonth()]}`
+}
+function recurForm(r) {
+  const e = r || { title: "", amount: "", day: new Date().getDate(), method: "transfer", category: "", type: "expense" }
+  const cats = core.CONFIG.categories.expense.map(c => c[0])
+  let cat = e.category || "", method = e.method
+  const s = sheet(`<h3>${r ? "Регулярный платёж" : "🔁 Новый регулярный платёж"}</h3>
+    <div class="field"><input id="p-t" placeholder="Что: аренда, интернет, Netflix" value="${esc(e.title)}"></div>
+    <div class="field"><label>Сумма, ${esc(core.CONFIG.currency)}</label><input id="p-a" type="number" inputmode="decimal" value="${e.amount}"></div>
+    <div class="field"><label>Какого числа каждый месяц</label><input id="p-d" type="number" inputmode="numeric" min="1" max="31" value="${e.day}"></div>
+    <div class="field"><div class="seg" id="p-m"><button data-m="cash">💵 Наличные</button><button data-m="transfer">💳 Перевод / карта</button></div></div>
+    <div class="field"><label>Категория</label><div class="chips" id="p-c">${cats.map(c => `<button class="chip" data-c="${esc(c)}">${esc(c)}</button>`).join("")}</div></div>
+    <div class="btns">${r ? '<button class="btn red" data-a="del">Удалить</button>' : ""}<button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
+  const paint = () => { $$("#p-m button", s.el).forEach(b => b.classList.toggle("on", b.dataset.m === method)); $$("#p-c .chip", s.el).forEach(b => b.classList.toggle("on", b.dataset.c === cat)) }
+  paint()
+  $$("#p-m button", s.el).forEach(b => b.onclick = () => { method = b.dataset.m; paint() })
+  $$("#p-c .chip", s.el).forEach(b => b.onclick = () => { cat = b.dataset.c; paint() })
+  $("#p-t", s.el).oninput = ev => { if (r) return; const p = core.parseMoney(" " + ev.target.value + " ", "expense"); if (p.category && p.category !== "Другое") { cat = p.category; paint() } }
+  if (!r) setTimeout(() => $("#p-t", s.el).focus(), 250)
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  if (r) $('[data-a="del"]', s.el).onclick = async () => {
+    if ((await ui.confirm("Удалить платёж?", `<div class="msg">${esc(r.title)} больше не будет напоминать. Прошлые операции останутся.</div>`, ["Отмена", "Удалить"])) !== "Удалить") return
+    remove("recur", r.id); s.close(); render()
+  }
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const title = $("#p-t", s.el).value.trim(), amount = parseFloat(String($("#p-a", s.el).value).replace(",", ".")), day = Math.round(+$("#p-d", s.el).value)
+    if (!title) return toast("Напишите, что за платёж")
+    if (!(amount > 0)) return toast("Введите сумму")
+    if (!(day >= 1 && day <= 31)) return toast("Число от 1 до 31")
+    upsert("recur", Object.assign({}, r || { id: uid("p"), date: Date.now(), type: "expense", paid: {} }, { title, amount, day, method, category: cat || cats[cats.length - 1] }))
+    s.close(); render(); toast("🔁 Сохранено")
+  }
+}
+async function recurAsk(r) {
+  const b = await ui.confirm(r.title, `<div class="msg">${esc(core.money(r.amount))} · ${r.method === "cash" ? "💵 наличные" : "💳 перевод"} · ${esc(r.category)} · каждое ${r.day} число<br>${esc(recurLabel(r))}</div>`,
+    recurPaid(r) ? ["Изменить", "Готово"] : ["Изменить", "✓ Оплачено"])
+  if (b === "Изменить") return recurForm(r)
+  if (b === "✓ Оплачено") { recurPay(r); render(); const n = budgetNote(r.category); toast(`−${core.money(r.amount)} · ${r.title}${n ? " · " + n : ""}`) }
+}
+
+// Привычки
+const habitList = () => live(D.habits).filter(h => !h.archived).sort((a, b) => (a.date || 0) - (b.date || 0))
+const hlogId = (h, d) => `h:${h.id}:${dayKey(d)}`
+const habitOn = (h, d) => D.hlog.some(x => x.id === hlogId(h, d) && !x.deleted)
+function habitToggle(h, d, on = !habitOn(h, d)) {
+  if (on) upsert("hlog", { id: hlogId(h, d), date: +sod(d), habit: h.id, day: dayKey(d) })
+  else if (habitOn(h, d)) remove("hlog", hlogId(h, d))
+  return on
+}
+// Серия: для полезной — дни подряд с отметкой (сегодня можно ещё не отметить); для вредной — дни без неё
+function habitStreak(h, at = new Date()) {
+  let d = sod(at), n = 0
+  if (h.bad) {
+    const start = sod(h.date || Date.now())
+    for (; n < 3650 && d >= start && !habitOn(h, d); d = addDays(d, -1)) n++
+    return n
+  }
+  if (!habitOn(h, d)) d = addDays(d, -1)
+  for (; n < 3650 && habitOn(h, d); d = addDays(d, -1)) n++
+  return n
+}
+const habitCount = (h, from, to) => D.hlog.filter(x => !x.deleted && x.habit === h.id && x.date >= +from && x.date < +to).length
+// «алкоголь» найдёт «Без алкоголя»: сравниваем основы слов без окончаний
+const stems = s => String(s || "").toLowerCase().replace(/ё/g, "е").split(/[^a-zа-я0-9]+/).filter(w => w.length > 2 && !["без", "не", "бросаю", "бросить"].includes(w)).map(w => w.slice(0, Math.max(3, w.length - 2)))
+function findHabit(q) {
+  const s = String(q || "").toLowerCase().trim(), qs = stems(q)
+  return habitList().find(h => h.id === q || h.title.toLowerCase() === s) || habitList().find(h => h.title.toLowerCase().includes(s) || s.includes(h.title.toLowerCase())) ||
+    habitList().find(h => { const hs = stems(h.title); return qs.length && qs.every(w => hs.some(x => x.startsWith(w) || w.startsWith(x))) })
+}
+function habitsCard(day) {
+  const list = habitList(), isT = sameDay(day, new Date())
+  let html = `<div class="card"><h2>Привычки<button class="act" data-do="habits">${list.length ? "Изменить" : "+ Добавить"}</button></h2>`
+  if (!list.length) return html + `<div class="empty">Отмечайте каждый день то, что хотите делать (зарядка, чтение) или бросить (алкоголь, курение) — приложение посчитает серию.</div></div>`
+  html += `<div class="habits">${list.map(h => {
+    const on = habitOn(h, day), st = habitStreak(h, day)
+    const sub = h.bad ? (on ? "было" : `${st} ${plural(st, "день", "дня", "дней")} без`) : (st ? `${st} ${plural(st, "день", "дня", "дней")} подряд` : isT ? "ещё не сегодня" : "не было")
+    return `<button class="habit ${on ? "on" : ""} ${h.bad ? "bad" : ""}" data-habit="${esc(h.id)}"><i>${esc(h.emoji || (h.bad ? "🚫" : "✓"))}</i><b>${esc(h.title)}</b><span>${esc(sub)}</span></button>`
+  }).join("")}</div></div>`
+  return html
+}
+const HABIT_EMOJI = ["🏃", "📖", "🧘", "💪", "🥗", "😴", "🍷", "🚬", "📵", "🍬", "💊", "✍️"]
+function habitsForm() {
+  const s = sheet(`<h3>Привычки</h3>
+    <div id="h-list">${habitList().map(h => `<div class="row"><span>${esc(h.emoji || "✓")}</span><div class="grow"><div class="t">${esc(h.title)}</div><div class="s">${h.bad ? "бросаю" : "хочу делать"}</div></div><button class="btn small red" data-del="${esc(h.id)}">Убрать</button></div>`).join("") || '<div class="empty">Пока нет привычек</div>'}</div>
+    <div class="field" style="margin-top:12px"><label>Новая привычка</label><input id="h-t" placeholder="Зарядка, чтение, без алкоголя…"></div>
+    <div class="field"><div class="chips" id="h-e">${HABIT_EMOJI.map(e => `<button class="chip" data-e="${e}">${e}</button>`).join("")}</div></div>
+    <div class="field"><div class="seg" id="h-k"><button data-k="good" class="on">✓ Хочу делать</button><button data-k="bad">🚫 Хочу бросить</button></div></div>
+    <div class="btns"><button class="btn" data-a="no">Готово</button><button class="btn primary" data-a="ok">Добавить</button></div>`, { onClose: () => render() })
+  let emoji = "", bad = false
+  const paint = () => { $$("#h-e .chip", s.el).forEach(b => b.classList.toggle("on", b.dataset.e === emoji)); $$("#h-k button", s.el).forEach(b => b.classList.toggle("on", (b.dataset.k === "bad") === bad)) }
+  $$("#h-e .chip", s.el).forEach(b => b.onclick = () => { emoji = b.dataset.e; paint() })
+  $$("#h-k button", s.el).forEach(b => b.onclick = () => { bad = b.dataset.k === "bad"; paint() })
+  $("#h-t", s.el).oninput = ev => { if (/алког|кур|сигар|сладк|соцсет|телефон|без /i.test(ev.target.value) && !bad) { bad = true; paint() } }
+  $$("[data-del]", s.el).forEach(b => b.onclick = async () => {
+    const h = D.habits.find(x => x.id === b.dataset.del)
+    if ((await ui.confirm("Убрать привычку?", `<div class="msg">«${esc(h.title)}» исчезнет с экрана. Отметки сохранятся в истории.</div>`, ["Отмена", "Убрать"])) !== "Убрать") return
+    upsert("habits", Object.assign({}, h, { archived: true })); s.close(); habitsForm()
+  })
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const title = $("#h-t", s.el).value.trim()
+    if (!title) return toast("Напишите привычку")
+    upsert("habits", { id: uid("h"), date: Date.now(), title, emoji: emoji || (bad ? "🚫" : "✓"), bad })
+    s.close(); habitsForm(); toast("Добавлено")
+  }
+}
+
+// Вес
+const weights = () => live(D.weight).filter(w => w.kg > 0).sort((a, b) => a.date - b.date)
+function logWeight(kg, date = Date.now()) {
+  kg = Math.round(+kg * 10) / 10
+  const d = new Date(date), old = live(D.weight).find(w => sameDay(w.date, d))
+  const rec = upsert("weight", Object.assign({}, old || { id: uid("w") }, { date: +d, kg }))
+  if (sameDay(d, new Date()) || !weights().some(w => w.date > +d)) {   // последний вес — для расчёта тренировок
+    core.CONFIG.health = Object.assign({}, core.CONFIG.health, { weight: Math.round(kg) })
+    if (D.conn) { D.conn.cfg = D.conn.cfg || {}; D.conn.cfg.health = core.CONFIG.health }
+    save()
+  }
+  return rec
+}
+const kgs = n => (Math.round(n * 10) / 10).toString().replace(".", ",")
+function weightCard() {
+  const list = weights(), last = list[list.length - 1]
+  let html = `<div class="card"><h2>Вес<button class="act" data-do="weight">+ Записать</button></h2>`
+  if (!last) return html + `<div class="empty">Взвешивайтесь раз в несколько дней — здесь появится график. Можно сказать помощнику «вешу 78,5».</div></div>`
+  const month = list.filter(w => w.date > Date.now() - 30 * 864e5), first = month[0] || last, diff = last.kg - first.kg
+  html += `<div class="wt"><b>${kgs(last.kg)} кг</b><span class="muted small">${esc(dayName(new Date(last.date)))}${month.length > 1 ? ` · за 30 дней ${diff > 0 ? "+" : diff < 0 ? "−" : "±"}${kgs(Math.abs(diff))} кг` : ""}</span></div>`
+  const pts = list.slice(-30)
+  if (pts.length > 1) {
+    const lo = Math.min(...pts.map(w => w.kg)) - 0.5, hi = Math.max(...pts.map(w => w.kg)) + 0.5, t0 = pts[0].date, t1 = pts[pts.length - 1].date
+    const xy = pts.map(w => [((w.date - t0) / Math.max(1, t1 - t0)) * 300, 70 - ((w.kg - lo) / (hi - lo)) * 64].map(v => v.toFixed(1)))
+    html += `<svg class="spark" viewBox="-4 0 308 74" preserveAspectRatio="none"><polyline points="${xy.map(p => p.join(",")).join(" ")}"/>${xy.slice(-1).map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="3.5"/>`).join("")}</svg>`
+  }
+  return html + `</div>`
+}
+async function weightForm() {
+  const last = weights().pop()
+  const t = await ui.ask("⚖️ Вес", "В килограммах, например 78,5", last ? kgs(last.kg) : "", { type: "text", ok: "Сохранить" })
+  const kg = parseFloat(String(t || "").replace(",", "."))
+  if (!(kg > 20 && kg < 400)) { if (t) toast("Не понял вес"); return }
+  logWeight(kg); render(); toast(`⚖️ ${kgs(kg)} кг`)
+}
+
+// Поиск по всему: операции, еда, напоминания, события, регулярные платежи, привычки, чат
+function searchAll(q) {
+  const s = q.toLowerCase().trim(), n = parseFloat(s.replace(",", "."))
+  if (s.length < 2 && !(n > 0)) return []
+  const has = (...xs) => xs.some(x => x != null && String(x).toLowerCase().includes(s))
+  const out = []
+  for (const e of live(D.money).sort((a, b) => b.date - a.date)) if (has(e.category, e.comment) || (n > 0 && Math.abs(e.amount - n) < 0.5))
+    out.push({ g: "Деньги", t: `${e.type === "expense" ? "−" : "+"}${core.money(e.amount)} · ${e.category}`, s: `${dayName(new Date(e.date))}${e.comment ? " · " + e.comment : ""}`, open: () => moneyForm(null, e) })
+  for (const r of live(D.recur)) if (has(r.title, r.category) || (n > 0 && Math.abs(r.amount - n) < 0.5)) out.push({ g: "Регулярные платежи", t: r.title, s: `${core.money(r.amount)} · ${recurLabel(r)}`, open: () => recurAsk(r) })
+  for (const r of live(D.rems).sort((a, b) => (b.u || 0) - (a.u || 0))) if (has(r.title, r.notes)) out.push({ g: "Напоминания", t: (r.done ? "✓ " : "") + r.title, s: remLabel(r) || (r.done ? "выполнено" : "без срока") })
+  for (const e of iphone().events) if (has(e.title, e.location)) out.push({ g: "Календарь", t: e.title, s: `${dayName(e.s)} ${e.all_day ? "" : hm(e.s)}${e.location ? " · " + e.location : ""}`, open: () => eventSheet(e) })
+  for (const f of live(D.food).sort((a, b) => b.date - a.date)) if (has(f.title)) out.push({ g: "Еда", t: f.title, s: `${dayName(new Date(f.date))} · ${num(f.kcal)} ккал`, open: () => foodForm(f) })
+  for (const h of live(D.habits)) if (has(h.title)) out.push({ g: "Привычки", t: `${h.emoji || ""} ${h.title}`, s: h.bad ? "бросаю" : `${habitStreak(h)} дн. подряд` })
+  for (const m of D.chat.concat(D.chatArchive || []).filter(m => m.text && !m.local).sort((a, b) => (b.at || 0) - (a.at || 0))) if (has(m.text)) {
+    const i = m.text.toLowerCase().indexOf(s), cut = m.text.slice(Math.max(0, i - 40), i + 80)
+    out.push({ g: "Чат", t: (m.role === "user" ? "Вы: " : "Помощник: ") + (i > 40 ? "…" : "") + cut, s: m.at ? `${dayName(new Date(m.at))}, ${hm(new Date(m.at))}` : "" })
+  }
+  return out
+}
+function searchSheet() {
+  const s = sheet(`<h3>Поиск</h3><div class="field"><input id="q" type="search" placeholder="Такси, аренда, 1500, стоматолог…" autocomplete="off"></div><div id="q-res" class="q-res"></div>`)
+  const inp = $("#q", s.el), box = $("#q-res", s.el)
+  let res = []
+  const run = () => {
+    res = searchAll(inp.value)
+    const groups = {}
+    res.forEach((r, i) => { (groups[r.g] = groups[r.g] || []).push(i) })
+    box.innerHTML = !inp.value.trim() ? `<div class="empty">Ищет по деньгам, напоминаниям, календарю, еде, привычкам и чату. Можно искать по сумме.</div>`
+      : !res.length ? `<div class="empty">Ничего не нашлось</div>`
+      : Object.entries(groups).map(([g, ids]) => `<div class="day-h">${esc(g)} · ${ids.length}</div>` + ids.slice(0, 15).map(i => `<div class="row" data-q="${i}"><div class="grow"><div class="t">${esc(res[i].t)}</div>${res[i].s ? `<div class="s">${esc(res[i].s)}</div>` : ""}</div></div>`).join("")).join("")
+    $$("[data-q]", box).forEach(el => el.onclick = () => { const r = res[+el.dataset.q]; if (r.open) { s.close(); r.open() } })
+  }
+  let t = null
+  inp.oninput = () => { clearTimeout(t); t = setTimeout(run, 150) }
+  run()
+  setTimeout(() => inp.focus(), 250)
 }
 
 // ───────────── Подключение ─────────────
@@ -2111,6 +2434,8 @@ $("#fab").innerHTML = ICO.mic
 }
 $("#sync").innerHTML = ICO.sync
 $("#sync").onclick = () => DO.sync()
+$("#find").innerHTML = ICO.find
+$("#find").onclick = () => searchSheet()
 $$("#tabs button").forEach(b => b.onclick = () => setTab(b.dataset.tab))
 onPhoto($("#photo")); onPhoto($("#photo-lib")); onPhoto($("#doc"))
 load()

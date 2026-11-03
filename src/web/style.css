@@ -440,3 +440,23 @@ button:active, .stat:active, .day:active, .sheet .opt:active { transform: scale(
 .month.wnav { margin: 0 0 6px; }
 .month.wnav b { font-size: 14px; font-weight: 600; color: var(--sub); }
 .month.wnav button { width: 32px; height: 32px; font-size: 16px; }
+
+/* поиск, привычки, вес, лимиты */
+#find { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--card); color: var(--accent); box-shadow: var(--shadow); padding: 10px; flex: none; }
+.top-row #find + #sync { margin-left: -4px; }
+.prog.warn > div { background: var(--orange); }
+.habits { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.habit { border: 0; background: var(--sand); border-radius: 16px; padding: 10px 8px 9px; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; transition: background .2s, transform .15s; }
+.habit i { font-style: normal; font-size: 22px; line-height: 1.1; filter: grayscale(.6); opacity: .7; }
+.habit b { font-size: 13.5px; font-weight: 600; line-height: 1.2; overflow: hidden; max-width: 100%; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.habit span { font-size: 11px; color: var(--sub); }
+.habit.on { background: color-mix(in srgb, var(--accent) 18%, var(--card)); }
+.habit.on i { filter: none; opacity: 1; }
+.habit.on.bad { background: color-mix(in srgb, var(--red) 16%, var(--card)); }
+.wt { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.wt b { font: 700 26px var(--display); letter-spacing: -.02em; }
+.spark { width: 100%; height: 74px; margin-top: 8px; display: block; overflow: visible; }
+.spark polyline { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.spark circle { fill: var(--accent); }
+.q-res { max-height: 60vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.q-res .day-h { margin-top: 10px; }
