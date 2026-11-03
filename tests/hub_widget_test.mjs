@@ -36,6 +36,7 @@ const pending = []   // запланированные уведомления
 class Notif {
   async schedule() { const i = pending.findIndex(n => n.identifier && n.identifier === this.identifier); if (i >= 0) pending.splice(i, 1); pending.push(this) }
   setTriggerDate(d) { this.at = d }
+  addAction(t, u) { (this.actions ||= []).push([t, u]) }
   static async allPending() { return pending.slice() }
   static removePending(ids) { for (const id of ids) { const i = pending.findIndex(n => n.identifier === id); if (i >= 0) pending.splice(i, 1) } }
 }
@@ -146,6 +147,10 @@ const ev = ag.find(x => x.title === "📅 Встреча с застройщик
 check(ev && ev.at.getHours() === 13 && ev.at.getMinutes() === 50 && ev.openURL === APP && /Офис/.test(ev.body) && !/этаж/.test(ev.body), "встреча: уведомление за 10 минут", ev && { at: String(ev.at), body: ev.body })
 check(rm && rm.at.getHours() === 16, "напоминание со временем: уведомление вовремя", rm && String(rm.at))
 check(!ag.some(x => x.title === "старое"), "устаревшее уведомление убрано")
+const fu = ag.filter(x => (x.identifier || "").startsWith("myday-ag-f-R9-")).sort((a, b) => a.at - b.at)
+check(fu.length === 3 && fu[0].at.getHours() === 17 && fu[1].at.getHours() === 19 && fu[2].at.getHours() === 10 && fu[0].title === "⏰ Выполнил?" && fu[0].openURL === APP + "#rem=R9",
+  "не отмечено: «Выполнил?» через час, ещё через 2 ч, утром снова", fu.map(x => [x.title, String(x.at.getHours())]))
+check(fu[0].actions && fu[0].actions.some(a => a[1] === APP + "#remdone=R9") && fu[0].actions.some(a => a[1] === APP + "#remlater=R9"), "в уведомлении кнопки «Сделано» и «Через час»")
 const cnt = ag.length
 await w.scheduleAgenda()
 check(pending.filter(x => (x.identifier || "").startsWith("myday-ag-")).length === cnt, "повторный запуск не дублирует")

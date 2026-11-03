@@ -428,7 +428,23 @@ async function scheduleAgenda() {
     let rems = []
     try { rems = await Reminder.allIncomplete() } catch (e) {}
     for (const r of rems) if (r.dueDate && r.dueDateIncludesTime && r.dueDate > now && r.dueDate < to)
-      want.set(`myday-ag-r-${r.identifier}-${r.dueDate.getTime()}-${hash(r.title)}`, { at: r.dueDate, title: `⏰ ${r.title}`, body: r.calendar ? r.calendar.title : "" })
+      want.set(`myday-ag-r-${r.identifier}-${r.dueDate.getTime()}-${hash(r.title)}`, { at: r.dueDate, title: `⏰ ${r.title}`, body: r.calendar ? r.calendar.title : "", rem: r.identifier })
+    // Контроль: напоминание не отмечено — «Выполнил?» через час и через 3 часа после срока, дальше раз в день в 10:00 (до 3 дней);
+    // напоминание на день без времени — в 13:00 и 18:00, просроченное — в 10:00. Отметили — вопросы исчезают сами.
+    for (const r of rems) {
+      if (!r.dueDate) continue
+      const due = r.dueDate.getTime(), times = []
+      if (r.dueDateIncludesTime) times.push(due + 3600e3, due + 3 * 3600e3)
+      else { const d0 = startOfDay(r.dueDate); times.push(d0.getTime() + 13 * 3600e3, d0.getTime() + 18 * 3600e3) }
+      for (let k = 1; k <= 3; k++) { const d = startOfDay(new Date(due + k * 864e5)); d.setHours(10, 0, 0, 0); times.push(d.getTime()) }
+      times.forEach((t, i) => {
+        if (t <= now.getTime() || t > to.getTime()) return
+        const late = t - due > 864e5
+        want.set(`myday-ag-f-${r.identifier}-${t}-${hash(r.title)}`, { at: new Date(t), rem: r.identifier,
+          title: i === 0 ? "⏰ Выполнил?" : late ? "⏰ Всё ещё не сделано" : "⏰ Напоминаю ещё раз",
+          body: `«${r.title}» — сделано? Если нет — перенесём или скажи, что мешает.`, url: `${WEB_APP}#rem=${encodeURIComponent(r.identifier)}` })
+      })
+    }
     // подсказки помощника на день (план составляет IZIDAY): вода, еда, подготовка к делам, идеи
     for (const x of withIds(await loadJSON("nudges.json"), "n")) {
       if (x.deleted || !x.date || x.date <= now.getTime() || x.date > to.getTime()) continue
@@ -445,6 +461,10 @@ async function scheduleAgenda() {
       if (have.has(id)) continue
       const n = new Notification()
       n.identifier = id; n.title = x.title; n.body = x.body; n.openURL = x.url || WEB_APP; n.sound = "default"
+      if (x.rem) {   // долгое нажатие на уведомление: ответить, не открывая приложение
+        const q = encodeURIComponent(x.rem)
+        try { n.addAction("✅ Сделано", `${WEB_APP}#remdone=${q}`); n.addAction("⏰ Через час", `${WEB_APP}#remlater=${q}`) } catch (e) {}
+      }
       n.setTriggerDate(x.at)
       await n.schedule()
     }

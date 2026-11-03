@@ -291,6 +291,16 @@ await page.waitForTimeout(200)
 check(await page.inputValue("#chat-in") === "напомни купить хлеп" && !(await page.textContent("#chat-list")).includes("купить хлеп"), "✎: сообщение вернулось в строку для правки", await page.inputValue("#chat-in"))
 await page.fill("#chat-in", "")
 
+// «Выполнил?» из уведомления: перенос на час уходит в очередь виджета
+await page.evaluate(() => { location.hash = "rem=R2" })
+await page.waitForSelector(".sheet .opt", { timeout: 3000 }).catch(() => {})
+check((await page.textContent(".sheet")).includes("Оплатить интернет"), "#rem открывает вопрос по напоминанию")
+await page.click('.sheet .opt:has-text("Через час")')
+await settle()
+check(hubState().ops.some(o => o.tool === "update_reminder" && o.input.id === "R2" && o.input.due), "перенос на час — в очереди для виджета")
+await page.evaluate(() => { location.hash = "remdone=R2" }); await settle()
+check(hubState().ops.some(o => o.tool === "update_reminder" && o.input.id === "R2" && o.input.completed), "«Сделано» из уведомления отмечает напоминание")
+
 // голос: зелёная ➤ во время записи отправляет сразу, без паузы
 await page.evaluate(() => {
   class FakeSR { start() { window.__sr = this; setTimeout(() => this.onresult && this.onresult({ results: [Object.assign([{ transcript: "сколько я выпил воды" }], { isFinal: false })] }), 50) }
