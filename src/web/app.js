@@ -154,13 +154,11 @@ function sync() {
         const started = Date.now(), lists = {}
         for (const k of Object.keys(LISTS)) lists[k] = D[k].filter(x => (x.u || 0) > D.sync.pushedAt - 60000)
         const ops = D.ops.filter(o => o.state === "local").map(o => ({ id: o.id, tool: o.tool, input: o.input }))
-        const wantCal = calForce || !D.gcal || Date.now() - (D.gcal.at || 0) > 120e3
-        calForce = false
-        const res = await hubPost(Object.assign({ since: D.sync.since, snapAt: D.sync.snapAt, lists, ops }, wantCal ? { cal: { action: "list" } } : {}))
+        const res = await hubPost({ since: D.sync.since, snapAt: D.sync.snapAt, lists, ops }, 60000)
         for (const k of Object.keys(LISTS)) mergeIn(k, res.lists && res.lists[k])
         if (res.snap) { D.snap = res.snap; D.sync.snapAt = res.snap.at }
-        if (res.cal) D.gcal = res.cal.events ? { ok: true, at: Date.now(), events: res.cal.events, calendars: res.cal.calendars || [] } : { ok: false, at: Date.now(), error: res.cal.error || "" }
         migrateRems()
+        dropWaterRems()
         for (const o of D.ops) if (o.state === "local" && ops.some(x => x.id === o.id)) o.state = "sent"
         for (const so of res.ops || []) {
           const o = D.ops.find(x => x.id === so.id)
@@ -173,6 +171,7 @@ function sync() {
       } while (state.again)
       if (!stack.length && tab !== "chat") render()
       else renderTop()
+      calRefresh()   // Google Календарь — отдельным запросом, чтобы не задерживать обмен
       return true
     } catch (e) {
       D.sync.error = e.name === "AbortError" ? "таблица не ответила" : String(e.message || e)
@@ -184,7 +183,17 @@ function sync() {
   syncing = state
   return state.p
 }
-let calForce = false
+let calForce = false, calBusy = false
+async function calRefresh() {
+  if (calBusy || !D.conn || !(calForce || !D.gcal || Date.now() - (D.gcal.at || 0) > 120e3)) return
+  calBusy = true; calForce = false
+  try {
+    const r = (await hubPost({ cal: { action: "list" } }, 60000)).cal
+    if (r) D.gcal = r.events ? { ok: true, at: Date.now(), events: r.events, calendars: r.calendars || [] } : { ok: !!(D.gcal && D.gcal.ok), at: Date.now(), events: (D.gcal && D.gcal.events) || [], error: r.error || "" }
+    save(false)
+    if (!stack.length && tab !== "chat") render()
+  } catch (e) {} finally { calBusy = false }
+}
 // Google Календарь — через таблицу (Apps Script). Пока доступ не выдан — по-старому, через календарь iPhone
 const gcalOn = () => !!(D.gcal && D.gcal.ok)
 async function calDo(action, input) {
@@ -225,6 +234,14 @@ function remSet(id, patch) {
   }
   if (patch.completed === false) Object.assign(y, { done: false, doneAt: null })
   return upsert("rems", y)
+}
+// Напоминания про воду не нужны (пользователь: «захламляет») — о воде помощник напоминает сам подсказками plan_day
+const WATER_REM = /💧|(стакан|выпе?й|попей|попить|пить)[^]{0,20}вод/i
+function dropWaterRems() {
+  if (D.waterRemsDropped) return
+  for (const r of live(D.rems)) if (!r.done && WATER_REM.test(r.title || "")) remove("rems", r.id)
+  D.waterRemsDropped = true
+  save()
 }
 // Один раз: невыполненные напоминания iPhone и ещё не внесённые команды — в напоминания приложения
 function migrateRems() {
@@ -705,6 +722,7 @@ async function runTool(name, x) {
     }
     case "create_reminder": {
       if (!String(x.title || "").trim()) return { error: "нужен текст" }
+      if (WATER_REM.test(x.title)) return { error: "про воду напоминания не создаются — пользователь не хочет их в списке. Используй plan_day (подсказка-уведомление)" }
       if (x.due && !parseIso(x.due)) return { error: "срок — YYYY-MM-DDTHH:MM или YYYY-MM-DD" }
       const r = remAdd(x)
       return { ok: true, id: r.id, note: "Сохранено в IZIDAY; уведомление придёт от виджета IZIDAY в срок" }
@@ -942,6 +960,7 @@ function agentSystem() {
 - Время без «утра/вечера»: встречи, спорт, свидания, ужины после 6 обычно вечером; созвоны и работа — днём. Если перепутать дорого и неясно — спроси.
 - Уточняй через ask_user, только если без ответа нельзя сделать правильно: не названо новое время переноса, несколько подходящих событий, не указан способ оплаты (наличные или перевод). Давай короткие варианты ответа.
 - Календарь — Google Календарь пользователя: события создаёшь, переносишь и удаляешь сразу (create_event/update_event/delete_event). Если инструмент ответил, что изменение ушло в очередь виджета, — скажи коротко «внесу при обновлении виджета».
+- Про воду НЕ создавай напоминаний (они захламляют список) — о воде напоминай сам: подсказки plan_day в нужное время и вопросы в чате.
 - Напоминания живут в IZIDAY, а не в Напоминаниях iPhone: create_reminder сохраняет их в приложении, уведомление в срок и контроль «Выполнил?» — от IZIDAY. Повторяющиеся (каждый день, по будням) — через repeat. В Напоминания iPhone ничего не вноси.
 ${cals.length ? `- Календари по словам пользователя: ${cals.map(x => `«${x.calendar}» (список напоминаний «${x.list}»)`).join(", ")}.${cals.filter(x => x.hint).map(x => ` ${x.hint} — «${x.calendar}».`).join("")} Если календарь не назван, не указывай его.
 ` : ""}- Деньги — ${c.currencyIn}. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.

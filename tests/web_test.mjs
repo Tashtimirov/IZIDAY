@@ -304,6 +304,10 @@ check(r2() && /T/.test(r2().due || "") && !r2().done, "перенос на ча�
 await page.evaluate(() => { location.hash = "remdone=R2" }); await settle()
 check(r2().done, "«Сделано» из уведомления отмечает напоминание")
 
+// напоминания про воду: старые убираются, новые не создаются
+const wr = await page.evaluate(() => { remAdd({ title: "💧 Выпей стакан воды", due: iso(new Date()) }); D.waterRemsDropped = false; dropWaterRems(); return { left: live(D.rems).some(r => /воды/.test(r.title)), tool: runTool("create_reminder", { title: "Выпить стакан воды" }) } })
+const wt = await page.evaluate(() => runTool("create_reminder", { title: "Выпить стакан воды" }))
+check(!wr.left && wt.error, "напоминания про воду убраны и не создаются", wt)
 // напоминания помощника — в приложении, с повтором
 const cr = await page.evaluate(() => runTool("create_reminder", { title: "Выпить витамины", due: iso(new Date(Date.now() - 3600e3)), repeat: { freq: "daily" } }))
 check(cr.ok && /^r/.test(cr.id), "create_reminder сохраняет в приложении", cr)
@@ -316,6 +320,7 @@ check(hubState().lists.rems.some(r => r.id === cr.id), "напоминание �
 sheet.cal.off = false
 sheet.cal.mk("Встреча в Google", new Date(Date.now() + 2 * 3600e3), new Date(Date.now() + 3 * 3600e3))
 await page.evaluate(() => { D.gcal = null; return sync() })
+await page.waitForFunction(() => D.gcal && D.gcal.ok, null, { timeout: 8000 })
 const ge = await page.evaluate(() => runTool("get_events", { start: iso(new Date(Date.now() - 864e5)), end: iso(new Date(Date.now() + 864e5)) }))
 check(ge.source === "Google Календарь" && ge.events.some(e => e.title === "Встреча в Google"), "события — из Google Календаря", ge)
 const ce = await page.evaluate(() => runTool("create_event", { title: "Стоматолог", start: iso(new Date(Date.now() + 26 * 3600e3)), end: iso(new Date(Date.now() + 27 * 3600e3)) }))

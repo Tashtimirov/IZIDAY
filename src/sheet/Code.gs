@@ -313,9 +313,9 @@ function cal_(c) {
   const fmt = (d, day) => Utilities.formatDate(d, tz, day ? "yyyy-MM-dd" : "yyyy-MM-dd'T'HH:mm");
   const parse = v => { const m = String(v || "").match(/^(\d{4})-(\d\d)-(\d\d)(?:[T ](\d\d):(\d\d))?/); if (!m) throw new Error("нет даты: " + v);
     return Utilities.parseDate(`${m[1]}-${m[2]}-${m[3]} ${m[4] || "00"}:${m[5] || "00"}`, tz, "yyyy-MM-dd HH:mm"); };
-  const ev = e => { const all = e.isAllDayEvent(), cal = CalendarApp.getCalendarById(e.getOriginalCalendarId());
+  const ev = (e, calName) => { const all = e.isAllDayEvent(), cal = calName != null ? null : CalendarApp.getCalendarById(e.getOriginalCalendarId());
     return { id: e.getId(), title: e.getTitle(), start: fmt(e.getStartTime(), all), end: fmt(all ? new Date(e.getEndTime().getTime() - 864e5) : e.getEndTime(), all), all_day: all,
-      location: e.getLocation() || "", notes: String(e.getDescription() || "").slice(0, 300), calendar: cal ? cal.getName() : "", recurring: e.isRecurringEvent() }; };
+      location: e.getLocation() || "", notes: String(e.getDescription() || "").slice(0, 300), calendar: calName != null ? calName : cal ? cal.getName() : "", recurring: e.isRecurringEvent() }; };
   const cals = () => CalendarApp.getAllCalendars().filter(k => !k.isHidden());
   const find = (id, start) => { for (const k of cals()) { let e = null; try { e = k.getEventById(id); } catch (x) {}
       if (e) { if (start && e.isRecurringEvent()) { const d = parse(start), hit = k.getEvents(new Date(d.getTime() - 6e4), new Date(d.getTime() + 864e5)).find(x => x.getId() === id); if (hit) return hit; } return e; } }
@@ -323,10 +323,10 @@ function cal_(c) {
   const a = c.action || "list";
   if (a === "list") {
     const from = c.from ? parse(c.from) : new Date(Date.now() - 2 * 864e5), to = c.to ? parse(c.to) : new Date(Date.now() + 45 * 864e5);
-    const out = [];
-    for (const k of cals()) for (const e of k.getEvents(from, to)) out.push(ev(e));
+    const out = [], list = cals(), def = CalendarApp.getDefaultCalendar().getId(), info = [];
+    for (const k of list) { const name = k.getName(); info.push({ name, primary: k.getId() === def }); for (const e of k.getEvents(from, to)) out.push(ev(e, name)); }   // имя календаря — из цикла: getCalendarById на каждое событие очень медленный
     out.sort((x, y) => x.start < y.start ? -1 : 1);
-    return { events: out.slice(0, 600), calendars: cals().map(k => ({ name: k.getName(), primary: k.isOwnedByMe() && k.getId() === CalendarApp.getDefaultCalendar().getId() })) };
+    return { events: out.slice(0, 600), calendars: info };
   }
   if (a === "create") {
     const k = (c.calendar && cals().find(x => x.getName() === c.calendar)) || CalendarApp.getDefaultCalendar();
