@@ -1772,9 +1772,12 @@ document.addEventListener("visibilitychange", () => {
 })
 if ("serviceWorker" in navigator && location.protocol === "https:") {
   navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => r.update()).catch(() => {})
-  // Пришла новая версия — перезагрузиться сразу, а не со следующего запуска
-  const had = !!navigator.serviceWorker.controller
-  let reloaded = false
-  navigator.serviceWorker.addEventListener("controllerchange", () => { if (had && !reloaded) { reloaded = true; location.reload() } })
+  // Пришла новая версия: в первые секунды после запуска — перезагрузиться сразу; если уже пользуетесь —
+  // тихо перезагрузиться, когда приложение уйдёт в фон (перезагрузка заново спрашивает микрофон у iOS)
+  const had = !!navigator.serviceWorker.controller, born = Date.now()
+  let reloaded = false, pending = false
+  const reload = () => { if (!reloaded) { reloaded = true; location.reload() } }
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!had) return; if (Date.now() - born < 4000) reload(); else pending = true })
+  document.addEventListener("visibilitychange", () => { if (pending && document.visibilityState === "hidden") reload() })
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {}) })
 }
