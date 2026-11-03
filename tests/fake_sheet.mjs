@@ -1,5 +1,7 @@
 // Поддельная Google Таблица для скрипта src/sheet/Code.gs: doPost работает в Node как в Apps Script
 import fs from "fs"
+import crypto from "crypto"
+const sbytes = buf => [...buf].map(b => b > 127 ? b - 256 : b)   // как byte[] в Apps Script
 // Почта: две цепочки; отправленное и действия складываются в mail.log
 function fakeMail() {
   const log = []
@@ -70,7 +72,7 @@ export function sheetScript() {
     getSheets: () => sheets, deleteSheet: s => sheets.splice(sheets.indexOf(s), 1), getName: () => "Мой день", getUrl: () => "https://docs.google.com/spreadsheets/d/T/edit",
     setActiveSheet: s => { ss.active = s }, moveActiveSheet: i => { sheets.splice(sheets.indexOf(ss.active), 1); sheets.splice(i - 1, 0, ss.active) },
     getSpreadsheetTimeZone: () => "Asia/Bangkok" }
-  const props = {}
+  const props = {}, triggers = [], pushes = []
   const g = {
     Maps: { DirectionFinder: { Mode: { DRIVING: "driving", WALKING: "walking", TRANSIT: "transit" } },
     newDirectionFinder: () => { const f = { o: null, d: null, setLanguage: () => f, setMode: m => (f.m = m, f), setDepart: () => f,
@@ -82,16 +84,25 @@ export function sheetScript() {
       geocode: q => ({ status: "OK", results: /нигде/.test(q) ? [] : [{ formatted_address: "Decathlon Rama 4", geometry: { location: { lat: 13.72, lng: 100.55 } } },
         { formatted_address: "Decathlon Chiang Mai", geometry: { location: { lat: 18.79, lng: 98.98 } } }] }) }; return gc } },
   SpreadsheetApp: { getActiveSpreadsheet: () => ss },
-  Utilities: { formatDate: (d, tz, f) => { const z = n => String(n).padStart(2, "0"), day = `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`, t = `${z(d.getHours())}:${z(d.getMinutes())}`
+  Utilities: {
+    DigestAlgorithm: { SHA_256: "sha256" }, Charset: { UTF_8: "utf8" },
+    computeDigest: (alg, v) => sbytes(crypto.createHash(alg).update(typeof v === "string" ? Buffer.from(v, "utf8") : Buffer.from(v.map(b => b & 255))).digest()),
+    base64EncodeWebSafe: b => Buffer.from(b.map(x => x & 255)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_"),
+    getUuid: () => crypto.randomUUID(),
+    newBlob: s => ({ getBytes: () => sbytes(Buffer.from(s, "utf8")) }),
+    formatDate: (d, tz, f) => { const z = n => String(n).padStart(2, "0"), day = `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`, t = `${z(d.getHours())}:${z(d.getMinutes())}`
       if (f === "yyyyMMdd") return day.replace(/-/g, "")
       if (f === "yyyyMMdd'T'HHmmss'Z'") return d.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "")
+      if (f === "HH:mm") return t
+      if (f === "H") return String(d.getHours())
       return f === "yyyy-MM-dd" ? day : f === "yyyy-MM-dd'T'HH:mm" ? `${day}T${t}` : `${day} ${t}` },
     parseDate: (s, tz, f) => { const m = s.match(/(\d+)-(\d+)-(\d+) (\d+):(\d+)/); return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) } },
   CalendarApp: cal.api,
-    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    LockService: { getScriptLock: () => ({ waitLock() {}, tryLock() { return true }, releaseLock() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = v } }) },
     ContentService: { createTextOutput: s => ({ setMimeType: () => JSON.parse(s) }), MimeType: { JSON: 1 } },
-    ScriptApp: { getOAuthToken: () => "tok" },
+    ScriptApp: { getOAuthToken: () => "tok", getProjectTriggers: () => triggers,
+      newTrigger: fn => { const t = { fn, getHandlerFunction: () => fn }; const b = { timeBased: () => b, everyMinutes: m => { t.every = m; return b }, create: () => { triggers.push(t); return t } }; return b } },
     // API Календаря (обрезка серии): GET по iCalUID — главное событие с правилом, PATCH — новое правило
     UrlFetchApp: { fetch: (url, o = {}) => {
       if (/googleapis\.com\/calendar/.test(url)) {
@@ -100,9 +111,10 @@ export function sheetScript() {
         cal.log.push(["cut", url.split("/").pop(), JSON.parse(o.payload).recurrence[0]])
         return { getResponseCode: () => 200, getContentText: () => "{}" }
       }
+      if (/push\.example/.test(url)) { pushes.push({ url, headers: o.headers }); return { getResponseCode: () => /gone/.test(url) ? 410 : 201, getContentText: () => "" } }
       return { getContentText: () => JSON.stringify({ claude_code_session_url: "https://claude.ai/code/session_test" }) } } },
     GmailApp: mail.api,
   }
-  const gs = new Function(...Object.keys(g), code + "; return { doPost }")(...Object.values(g))
-  return { ss, mail, cal, post: body => gs.doPost({ postData: { contents: typeof body === "string" ? body : JSON.stringify(body) } }) }
+  const gs = new Function(...Object.keys(g), code + "; return { doPost, pushTick: typeof pushTick === 'function' ? pushTick : null }")(...Object.values(g))
+  return { ss, mail, cal, props, triggers, pushes, pushTick: gs.pushTick, post: body => gs.doPost({ postData: { contents: typeof body === "string" ? body : JSON.stringify(body) } }) }
 }

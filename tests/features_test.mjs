@@ -179,7 +179,14 @@ check(/думаю/.test(st1) && /готовлю ответ/.test(st2), "у «…
 await page.waitForTimeout(2000)
 check((await page.textContent("#chat-list")).includes("Потрачено немного."), "ответ пришёл, подпись ушла")
 
-// 9. тёмная тема
+// 9. уведомления: карточка в «Ещё», адрес таблицы для сервис-воркера
+await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await page.waitForTimeout(200)
+await page.click('[data-tab="more"]'); await page.waitForTimeout(500)
+check((await today()).includes("Уведомления") && (await page.textContent("#push-btns")).length > 0, "в «Ещё» — карточка уведомлений", await page.textContent("#push-btns").catch(() => ""))
+const cc = await page.evaluate(async () => { const r = await (await caches.open("myday-conn")).match("conn"); return r ? r.json() : null }).catch(e => String(e))
+check(cc === null || (cc && cc.hook === "https://script.google.com/macros/s/TEST/exec"), "сервис-воркер знает адрес таблицы (на https)", cc)
+
+// 10. тёмная тема
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await page.waitForTimeout(300)
 await page.emulateMedia({ colorScheme: "dark" })
 await page.click('[data-tab="today"]'); await page.waitForTimeout(500)

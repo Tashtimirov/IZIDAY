@@ -170,6 +170,7 @@ const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 4
 const ROUTE_URL = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/;
 
 function hub_(h) {
+  if (h.push) { try { return { ok: true, push: push_(h.push, h.from) }; } catch (e) { return { ok: true, push: { error: String(e.message || e) } }; } }
   const now = Date.now(), since = Number(h.since) || 0, out = { ok: true, now, lists: {} };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   // 1. Списки: побеждает запись с более поздним u; изменившиеся уходят и в обычные листы таблицы
@@ -229,6 +230,7 @@ function hub_(h) {
   if (h.read) out.read = readSheet_(ss, h.read);
   if (h.cal) { try { out.cal = cal_(h.cal); } catch (e) { out.cal = { error: String(e.message || e) }; } }
   if (h.mail) { try { out.mail = mail_(h.mail); } catch (e) { out.mail = { error: String(e.message || e) }; } }
+  out.pushOn = pushOn_();
   out.url = ss.getUrl();
   return out;
 }
@@ -828,4 +830,198 @@ function num_(v) { const n = Number(v); return isFinite(n) ? Math.round(n * 10) 
 
 function out_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ═════════════ Пуш-уведомления IZIDAY (Web Push) ═════════════
+// Расписание подсказок живёт здесь, в таблице: каждые 5 минут pushTick() смотрит подсказки помощника, напоминания,
+// воду и ближайшие события с адресом (сколько ехать — по Картам Google) и шлёт пуш в приложение на iPhone.
+// Пуш приходит пустым (без шифрования содержимого) — приложение само забирает текст из «исходящих» (push: outbox).
+// Ключи VAPID (P-256) создаются здесь при первом запросе и хранятся в свойствах скрипта.
+const PUSH = { tick: 5, sub: "https://tashtimirov.github.io/IZIDAY/", water: [2, 3.5, 5], waterFrom: 9, waterTo: 21, buffer: 10, look: 3 * 3600e3 };
+
+function push_(p, from) {
+  const a = p.action;
+  if (a === "key") return { key: vapid_().pub };
+  if (a === "subscribe") {
+    const s = p.sub || {};
+    if (!/^https:\/\//.test(s.endpoint || "") || !s.keys) throw new Error("нет подписки");
+    const subs = (hubGet_("push_subs") || []).filter(x => x.endpoint !== s.endpoint);
+    subs.push({ endpoint: s.endpoint, keys: s.keys, at: Date.now(), ua: String(p.ua || "").slice(0, 120) });
+    hubSet_("push_subs", subs.slice(-5));
+    if (p.cfg) hubSet_("push_cfg", p.cfg);
+    pushTrigger_();
+    return { ok: true, subs: subs.length };
+  }
+  if (a === "unsubscribe") { hubSet_("push_subs", (hubGet_("push_subs") || []).filter(x => x.endpoint !== (p.endpoint || ""))); return { ok: true }; }
+  if (a === "here") { if (p.lat != null) hubSet_("push_here", { lat: Number(p.lat), lng: Number(p.lng), at: Number(p.at) || Date.now() }); return { ok: true }; }
+  if (a === "outbox") { const since = Date.now() - 2 * 3600e3; return { items: (hubGet_("push_out") || []).filter(x => x.at > since) }; }
+  if (a === "test") { const r = pushSend_([{ id: "test" + Date.now(), title: "🔔 IZIDAY", body: "Уведомления работают. Подсказки будут приходить сюда.", url: "./" }]); return r; }
+  if (a === "status") return { subs: (hubGet_("push_subs") || []).length, trigger: ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === "pushTick"), last: hubGet_("push_last") || null };
+  if (a === "tick") return pushTick();
+  throw new Error("неизвестное действие push: " + a);
+}
+// Виджет новой версии (snap.pushAware) молчит про воду, подсказки и напоминания, когда их шлёт таблица
+function pushOn_() { const s = hubGet_("push_subs"); return !!(s && s.length); }
+function pushTrigger_() {
+  if (ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === "pushTick")) return;
+  ScriptApp.newTrigger("pushTick").timeBased().everyMinutes(PUSH.tick).create();
+}
+
+// Каждые 5 минут: что пора сказать
+function pushTick() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { busy: true };
+  try {
+    const subs = hubGet_("push_subs") || [];
+    if (!subs.length) return { subs: 0 };
+    const now = Date.now(), from = now - 15 * 60e3;   // окно с запасом на пропущенный запуск; повторы отсекает push_sent
+    const sent = hubGet_("push_sent") || {}, items = [];
+    const once = (id, x) => { if (sent[id]) return; sent[id] = now; items.push(Object.assign({ id }, x)); };
+    const snap = hubGet_("snap") || {}, full = !!snap.pushAware;   // старый виджет сам шлёт воду, подсказки и напоминания
+    const alive = l => (hubGet_(l) || []).filter(x => x && !x.deleted);
+    const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+    const hourOf = t => Number(Utilities.formatDate(new Date(t), tz, "H")), dayOf = t => Utilities.formatDate(new Date(t), tz, "yyyy-MM-dd");
+    if (full) {
+      // 1. подсказки помощника (plan_day)
+      for (const n of alive("nudges")) if (n.date > from && n.date <= now + 60e3) once("n:" + n.id + ":" + n.date, { title: n.title || "💡 IZIDAY", body: n.text || "", url: "./#chat" });
+      // 2. напоминания: в срок, потом «Выполнил?» через 1 и 3 часа, дальше раз в день в 10:00 (до 3 дней);
+      //    на день без времени — в 13:00 и 18:00. Отметили выполненным — вопросы прекращаются
+      for (const r of alive("rems")) {
+        if (r.done || !r.due) continue;
+        const d = pushParse_(r.due, tz); if (!d) continue;
+        const due = d.getTime(), timed = /T/.test(r.due), url = "./#rem=" + encodeURIComponent(r.id), times = [];
+        if (timed) times.push([due, "⏰ Напоминание", r.title], [due + 3600e3, "⏰ Выполнил?"], [due + 3 * 3600e3, "⏰ Напоминаю ещё раз"]);
+        else times.push([due + 13 * 3600e3, "⏰ Напоминание", r.title], [due + 18 * 3600e3, "⏰ Напоминаю ещё раз"]);
+        for (let k = 1; k <= 3; k++) times.push([pushParse_(Utilities.formatDate(new Date(due + k * 864e5 + 12 * 3600e3), tz, "yyyy-MM-dd") + "T10:00", tz).getTime(), "⏰ Всё ещё не сделано"]);
+        times.forEach(([t, title, body], i) => { if (t > from && t <= now + 60e3)
+          once("r" + i + ":" + r.id + ":" + r.due, { title, body: body || `«${r.title}» — сделано? Если нет — перенесём или скажи, что мешает.`, url }); });
+      }
+      // 3. вода: через 2 ч после последнего стакана, потом настойчивее (9:00–21:00, пока не выпита норма)
+      const h = hourOf(now), today = dayOf(now);
+      if (h >= PUSH.waterFrom && h < PUSH.waterTo) {
+        const water = alive("water").filter(w => dayOf(w.date) === today), goal = Number((hubGet_("push_cfg") || {}).waterGoal) || 2000;
+        const drank = water.reduce((s, w) => s + (Number(w.ml) || 0), 0);
+        if (drank < goal) {
+          const start = pushParse_(today + "T" + String(PUSH.waterFrom).padStart(2, "0") + ":00", tz).getTime();
+          const lastW = Math.max(start, ...water.map(w => Number(w.date) || 0));
+          const texts = ["💧 Пора стакан воды", "💧 Вода ждёт", "💧 Почему не пьёшь?"];
+          PUSH.water.forEach((hh, i) => {
+            const t = lastW + hh * 3600e3, gap = Math.floor((now - lastW) / 3600e3);
+            if (t <= now + 60e3 && (i === PUSH.water.length - 1 || lastW + PUSH.water[i + 1] * 3600e3 > now))
+              once("w:" + lastW + ":" + i, { title: texts[i], body: i === 0 ? `${gap >= 2 ? gap + " ч без воды. " : ""}Выпито ${Math.round(drank / 100) / 10} л из ${goal / 1000}. Нажми — запишу стакан.` :
+                i === 1 ? `${gap} ч ни глотка. Давай прямо сейчас стакан.` : `${gap} ч без воды. Что мешает? Выпей стакан и скажи мне, как помочь не забывать.`, url: i === 2 ? "./#chat" : "./#water" });
+          });
+        }
+      }
+    }
+    // 4. «Пора выезжать»: события с адресом в ближайшие 3 часа, дорога от того места, где пользователь сейчас
+    const here = pushHere_(), travel = hubGet_("push_travel") || {};
+    if (here) {
+      for (const k of CalendarApp.getAllCalendars().filter(c => !c.isHidden())) for (const e of k.getEvents(new Date(now), new Date(now + PUSH.look))) {
+        const loc = String(e.getLocation() || "").trim();
+        if (!loc || e.isAllDayEvent() || /^https?:|zoom|meet\.google|teams|онлайн|online/i.test(loc)) continue;   // созвон — ехать не нужно
+        const start = e.getStartTime().getTime(), key = e.getId() + ":" + start;
+        let tr = travel[key];
+        if (!tr || now - tr.at > (start - now < 3600e3 ? 10 : 25) * 60e3) {   // ближе к выезду — пересчитываем чаще (пробки)
+          const r = route_({ from: here, to: loc, mode: "driving" });
+          tr = travel[key] = r.error ? { at: now, error: r.error } : { at: now, min: r.minutes_in_traffic || r.minutes, base: r.minutes, km: r.km };
+        }
+        if (!tr.min || tr.min < 4) continue;   // уже на месте или рядом
+        const leave = start - (tr.min + PUSH.buffer) * 60e3;
+        const at = Utilities.formatDate(new Date(start), tz, "HH:mm");
+        if (leave - 20 * 60e3 <= now && leave - 20 * 60e3 > from - 60e3 && leave - now > 15 * 60e3)
+          once("g20:" + key, { title: "🚗 Через 20 минут выезжать", body: `«${e.getTitle()}» в ${at}. Ехать ~${tr.min} мин (${tr.km} км).`, url: "./" });
+        if (leave <= now + 60e3 && start > now)
+          once("g:" + key, { title: "🚗 Пора выезжать", body: `«${e.getTitle()}» в ${at}, ехать ~${tr.min} мин${tr.min > (tr.base || 0) ? " с пробками" : ""}. Выезжай сейчас — будешь за ${Math.max(0, Math.round((start - now) / 60e3) - tr.min)} мин.`, url: "./" });
+      }
+      for (const k of Object.keys(travel)) if (now - travel[k].at > 6 * 3600e3) delete travel[k];
+      hubSet_("push_travel", travel);
+    }
+    for (const k of Object.keys(sent)) if (now - sent[k] > 3 * 864e5) delete sent[k];
+    hubSet_("push_sent", sent);
+    const res = items.length ? pushSend_(items) : { sent: 0 };
+    hubSet_("push_last", { at: now, items: items.length, res });
+    return res;
+  } finally { lock.releaseLock(); }
+}
+function pushParse_(s, tz) {
+  const m = String(s || "").match(/^(\d{4})-(\d\d)-(\d\d)(?:[T ](\d\d):(\d\d))?/);
+  return m ? Utilities.parseDate(`${m[1]}-${m[2]}-${m[3]} ${m[4] || "00"}:${m[5] || "00"}`, tz, "yyyy-MM-dd HH:mm") : null;
+}
+// Где пользователь: последнее место от приложения или от виджета (не старше 12 часов)
+function pushHere_() {
+  const a = hubGet_("push_here"), locs = (hubGet_("locs") || []).filter(x => x && !x.deleted && x.lat != null).sort((x, y) => (y.date || 0) - (x.date || 0));
+  const b = locs[0] ? { lat: locs[0].lat, lng: locs[0].lng, at: locs[0].date } : null;
+  const best = [a, b].filter(Boolean).sort((x, y) => (y.at || 0) - (x.at || 0))[0];
+  return best && Date.now() - best.at < 12 * 3600e3 ? { lat: best.lat, lng: best.lng } : null;
+}
+// Отправка: текст кладётся в «исходящие», на каждое устройство — пустой пуш с подписью VAPID
+function pushSend_(items) {
+  const out = (hubGet_("push_out") || []).filter(x => x.at > Date.now() - 864e5);
+  for (const x of items) out.push(Object.assign({ at: Date.now() }, x));
+  hubSet_("push_out", out.slice(-60));
+  let subs = hubGet_("push_subs") || [], ok = 0;
+  const errors = [], gone = [];
+  for (const s of subs) {
+    try {
+      const r = UrlFetchApp.fetch(s.endpoint, { method: "post", muteHttpExceptions: true, payload: "",
+        headers: { TTL: "3600", Urgency: "high", Authorization: vapidAuth_(s.endpoint) } });
+      const c = r.getResponseCode();
+      if (c >= 200 && c < 300) ok++;
+      else { errors.push(c + " " + String(r.getContentText()).slice(0, 120)); if (c === 404 || c === 410) gone.push(s.endpoint); }
+    } catch (e) { errors.push(String(e).slice(0, 120)); }
+  }
+  if (gone.length) hubSet_("push_subs", subs.filter(s => gone.indexOf(s.endpoint) < 0));
+  return { sent: ok, items: items.length, errors };
+}
+
+// ── VAPID: подпись ES256 (ECDSA P-256 + SHA-256) на BigInt — в Apps Script нет готовой ──
+const P256 = (() => {
+  const p = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffffn, n = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+  const G = [0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296n, 0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5n];
+  const mod = (a, m = p) => { const r = a % m; return r < 0n ? r + m : r; };
+  const inv = (a, m = p) => { let [o, r] = [mod(a, m), m], [x, y] = [1n, 0n]; while (r) { const q = o / r; [o, r] = [r, o - q * r]; [x, y] = [y, x - q * y]; } return mod(x, m); };
+  // точки в координатах Якоби [X, Y, Z]; null — бесконечность
+  const dbl = P => { if (!P) return null; const [X, Y, Z] = P; if (!Y) return null;
+    const d = mod(4n * X * Y * Y), m = mod(3n * (X - Z * Z) * (X + Z * Z)), X3 = mod(m * m - 2n * d);
+    return [X3, mod(m * (d - X3) - 8n * Y * Y * Y * Y), mod(2n * Y * Z)]; };
+  const add = (P, Q) => { if (!P) return Q; if (!Q) return P;
+    const [X1, Y1, Z1] = P, [X2, Y2, Z2] = Q, z1 = mod(Z1 * Z1), z2 = mod(Z2 * Z2);
+    const U1 = mod(X1 * z2), U2 = mod(X2 * z1), S1 = mod(Y1 * Z2 * z2), S2 = mod(Y2 * Z1 * z1);
+    if (U1 === U2) return S1 === S2 ? dbl(P) : null;
+    const H = mod(U2 - U1), R = mod(S2 - S1), H2 = mod(H * H), H3 = mod(H * H2), X3 = mod(R * R - H3 - 2n * U1 * H2);
+    return [X3, mod(R * (U1 * H2 - X3) - S1 * H3), mod(H * Z1 * Z2)]; };
+  const mul = (k, P = [G[0], G[1], 1n]) => { let R = null; for (let i = 255; i >= 0; i--) { R = dbl(R); if ((k >> BigInt(i)) & 1n) R = add(R, P); } return R; };
+  const affine = P => { const zi = inv(P[2]), z2 = mod(zi * zi); return [mod(P[0] * z2), mod(P[1] * z2 * zi)]; };
+  return { p, n, mod, inv, mul, affine };
+})();
+const big_ = bytes => bytes.reduce((a, b) => (a << 8n) | BigInt(b & 255), 0n);
+const bytes32_ = x => { const out = []; for (let i = 31; i >= 0; i--) out.push(Number((x >> BigInt(i * 8)) & 255n)); return out; };
+const b64u_ = bytes => Utilities.base64EncodeWebSafe(bytes.map(b => (b > 127 ? b - 256 : b))).replace(/=+$/, "");
+const rand32_ = () => Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + Math.random() + Date.now() + Utilities.getUuid()).map(b => b & 255);
+function vapid_() {
+  const props = PropertiesService.getScriptProperties();
+  let v = props.getProperty("VAPID");
+  if (v) return JSON.parse(v);
+  let d = 0n;
+  while (d === 0n || d >= P256.n) d = big_(rand32_());
+  const [x, y] = P256.affine(P256.mul(d));
+  v = { d: d.toString(16), pub: b64u_([4].concat(bytes32_(x), bytes32_(y))) };
+  props.setProperty("VAPID", JSON.stringify(v));
+  return v;
+}
+function es256_(msg, d) {
+  const z = big_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, msg, Utilities.Charset.UTF_8));
+  for (;;) {
+    const k = P256.mod(big_(rand32_()), P256.n); if (!k) continue;
+    const r = P256.mod(P256.affine(P256.mul(k))[0], P256.n); if (!r) continue;
+    const s = P256.mod(P256.inv(k, P256.n) * (z + r * d), P256.n); if (!s) continue;
+    return b64u_(bytes32_(r).concat(bytes32_(s)));
+  }
+}
+function vapidAuth_(endpoint) {
+  const v = vapid_(), aud = endpoint.match(/^https:\/\/[^/]+/)[0];
+  const enc = o => b64u_(Utilities.newBlob(JSON.stringify(o)).getBytes());
+  const head = enc({ typ: "JWT", alg: "ES256" }) + "." + enc({ aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: PUSH.sub });
+  return `vapid t=${head}.${es256_(head, BigInt("0x" + v.d))}, k=${v.pub}`;
 }

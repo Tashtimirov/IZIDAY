@@ -172,6 +172,7 @@ function sync() {
       } while (state.again)
       if (!stack.length && tab !== "chat") render()
       else renderTop()
+      pushHere()
       calRefresh()   // Google Календарь — отдельным запросом, чтобы не задерживать обмен
       return true
     } catch (e) {
@@ -1637,6 +1638,7 @@ function render() {
   v.innerHTML = html
   bind()
   stripInit(keep)
+  if (tab === "more") pushCard()
   renderTop()
 }
 const TITLES = { chat: "Помощник", money: "Деньги", health: "Здоровье", more: "Ещё" }
@@ -1666,6 +1668,7 @@ function renderToday() {
   else if (!gcalOn() && D.snap && pendingOps().length) html += `<div class="banner"><b>📲 ${pendingOps().length} ${plural(pendingOps().length, "изменение ждёт", "изменения ждут", "изменений ждут")} внесения в iPhone</b>Календарь и напоминания iPhone меняет только Scriptable. Нажмите — он внесёт сейчас и вернёт вас сюда.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="run-widget">Внести сейчас</button></div></div>`
   else if (!gcalOn() && D.gcal && D.gcal.error) html += `<div class="banner"><b>Google Календарь не ответил</b>${esc(D.gcal.error)}</div>`
   // Дни — лентой-каруселью: листаются пальцем, 7 видно сразу; лента ±10 недель вокруг выбранной недели
+  if (D.conn && standalone() && pushAble() && Notification.permission === "default") html += `<div class="banner"><b>🔔 Включите уведомления</b>Подсказки про воду, «пора выезжать» и напоминания будут приходить пушем.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="push-on">Включить</button></div></div>`
   const wOff = Math.floor(Math.round((sod(selDay) - t0) / 864e5) / 7), w0 = addDays(t0, wOff * 7)
   const wc = stripCenter || w0, s0 = addDays(wc, -70), s1 = addDays(wc, 77)
   for (const e of v.events) for (let d = sod(e.s); d < e.e && d < s1; d = addDays(d, 1)) if (d >= s0) counts[dayKey(d)] = (counts[dayKey(d)] || 0) + 1
@@ -1912,6 +1915,9 @@ function renderMore() {
   html += `<div class="btns" style="margin-top:10px"><button class="btn ${c ? "" : "primary"}" data-do="connect">${c ? "Подключить заново" : "🔗 Подключить"}</button>${c ? '<button class="btn red" data-do="disconnect">Отключить</button>' : ""}</div>
     <div class="muted small" style="margin-top:8px">Код подключения даёт виджет: в Scriptable меню → 📱 Приложение «Мой день». В нём ключ Claude и ключ таблицы — он хранится только на этом телефоне.</div></div>`
   const g = H()
+  html += `<div class="card"><h2>Уведомления</h2><div class="set"><span>Подсказки и напоминания</span><span id="push-state">…</span></div>
+    <div class="muted small">Подсказки помощника, напоминания, вода и «пора выезжать» приходят прямо от IZIDAY: их по расписанию (каждые 5 минут) отправляет таблица. Для «пора выезжать» разрешите приложению место.</div>
+    <div class="btns" id="push-btns" style="margin-top:10px"></div></div>`
   html += `<div class="card"><h2>Цели</h2>
     <div class="set"><span>Вода в день, мл</span><input type="number" data-set="waterGoal" value="${g.waterGoal}"></div>
     <div class="set"><span>Стакан, мл</span><input type="number" data-set="glass" value="${g.glass}"></div>
@@ -2088,6 +2094,7 @@ function bind() {
 const DO = {
   event: () => eventForm(), reminder: () => reminderForm(), food: () => foodMenu(), workout: () => workoutForm(), photo: () => photoPrompt(),
   expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
+  "push-on": () => pushEnable(),
   "go-today": () => { selDay = sod(new Date()); stripCenter = null; stripJump = true; render(); if (stripJump) stripInit(null) },
   "tab-money": () => setTab("money"), "tab-health": () => setTab("health"), report: () => showReport("month"),
   sheet: () => window.open(D.conn.sheetUrl, "_blank"),
@@ -2354,6 +2361,68 @@ function searchSheet() {
   setTimeout(() => inp.focus(), 250)
 }
 
+// ───────────── Пуш-уведомления: подписка у таблицы, она по расписанию шлёт подсказки ─────────────
+const pushAble = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window
+const b64uBytes = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0))
+// Сервис-воркеру нужны адрес таблицы и ключ, чтобы забрать текст пуша
+async function pushConn() {
+  if (!("caches" in window)) return
+  try { const c = await caches.open("myday-conn"); await c.put("conn", new Response(JSON.stringify(D.conn ? { hook: D.conn.hook, secret: D.conn.secret } : {}))) } catch (e) {}
+}
+async function pushSub() {
+  const reg = await navigator.serviceWorker.ready
+  return reg.pushManager.getSubscription()
+}
+async function pushEnable() {
+  if (!D.conn) return toast("Сначала подключите приложение")
+  if (!pushAble()) return ui.info("Уведомления", standalone() ? "Этот телефон не умеет получать уведомления от сайтов: нужна iOS 16.4 или новее." : "Сначала поставьте IZIDAY на экран «Домой» (Поделиться → На экран «Домой») и откройте оттуда — уведомления работают только так.")
+  const perm = await Notification.requestPermission()
+  if (perm !== "granted") return ui.info("Уведомления выключены", "Разрешите их: Настройки → Уведомления → IZIDAY.")
+  try {
+    await pushConn()
+    const key = ((await hubPost({ push: { action: "key" } })).push || {}).key
+    if (!key) throw new Error("таблица не дала ключ — обновите скрипт таблицы")
+    const reg = await navigator.serviceWorker.ready
+    let sub = await reg.pushManager.getSubscription()
+    if (sub && D.pushKey && D.pushKey !== key) { await sub.unsubscribe(); sub = null }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(key) })
+    const r = (await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: { waterGoal: H().waterGoal } } })).push || {}
+    if (r.error) throw new Error(r.error)
+    D.pushKey = key; D.pushAt = Date.now(); save(false)
+    pushHere(true)
+    render(); toast("🔔 Уведомления включены")
+  } catch (e) { ui.info("Не получилось включить", String(e.message || e)) }
+}
+async function pushTest() {
+  try { const r = (await hubPost({ push: { action: "test" } })).push || {}; toast(r.sent ? "🔔 Отправил — сейчас придёт" : `Не дошло: ${(r.errors || [r.error || "нет подписки"]).join("; ")}`) }
+  catch (e) { toast("Не получилось: " + e.message) }
+}
+// Раз в день обновить подписку у таблицы (на случай, если iPhone выдал новую)
+async function pushKeep() {
+  if (!D.conn || !pushAble() || Notification.permission !== "granted" || Date.now() - (D.pushAt || 0) < 864e5) return
+  try { const sub = await pushSub(); if (!sub) return
+    await pushConn(); await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: { waterGoal: H().waterGoal } } }); D.pushAt = Date.now(); save(false) } catch (e) {}
+}
+// Где я — для «пора выезжать» (только если место уже разрешено; не чаще раза в 10 минут, пока приложение открыто)
+let hereAt = 0
+async function pushHere(force) {
+  if (!D.conn || !navigator.geolocation || (!force && Date.now() - hereAt < 10 * 60e3)) return
+  try { if (navigator.permissions) { const p = await navigator.permissions.query({ name: "geolocation" }); if (p.state !== "granted" && !force) return } } catch (e) {}
+  hereAt = Date.now()
+  navigator.geolocation.getCurrentPosition(p => hubPost({ push: { action: "here", lat: p.coords.latitude, lng: p.coords.longitude, at: Date.now() } }).catch(() => {}),
+    () => {}, { enableHighAccuracy: false, maximumAge: 300000, timeout: 10000 })
+}
+async function pushCard() {
+  const el = $("#push-state")
+  if (!el) return
+  let on = false
+  try { on = pushAble() && Notification.permission === "granted" && !!(await pushSub()) } catch (e) {}
+  el.innerHTML = on ? '<span class="ok">✓ Включены</span>' : '<span class="exp">выключены</span>'
+  const b = $("#push-btns")
+  if (b) b.innerHTML = on ? '<button class="btn" data-push="test">🔔 Проверить</button>' : '<button class="btn primary" data-push="on">🔔 Включить уведомления</button>'
+  $$("[data-push]").forEach(x => x.onclick = () => x.dataset.push === "on" ? pushEnable() : pushTest())
+}
+
 // ───────────── Подключение ─────────────
 function decodeSetup(code) {
   const s = String(code || "").trim().replace(/^.*#setup=/, "")
@@ -2371,6 +2440,7 @@ async function connect(code) {
   if (fresh) D.sync = { since: 0, pushedAt: 0, snapAt: 0, at: 0, error: "" }
   applyCfg()
   save(false)
+  pushConn()
   render()
   toast("Подключаюсь…")
   const ok = await sync()
@@ -2513,7 +2583,9 @@ $("#find").onclick = () => searchSheet()
 $$("#tabs button").forEach(b => b.onclick = () => setTab(b.dataset.tab))
 onPhoto($("#photo")); onPhoto($("#photo-lib")); onPhoto($("#doc"))
 load()
+pushConn()
 setTab("today")
+setTimeout(pushKeep, 5000)
 hashAction()
 setTimeout(memorize, 8000)   // прошлый разговор закончился — сложить в память
 setTimeout(autoPlan, 15000)   // первый раз за день — план подсказок

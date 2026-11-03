@@ -333,7 +333,7 @@ async function hubSnapshot() {
     due: r.dueDate ? (r.dueDateIncludesTime ? isoLocal(r.dueDate) : isoLocal(r.dueDate).slice(0, 10)) : null,
     recur: !!(r.hasRecurrenceRules), notes: r.notes || "" })
   const names = async forRem => { try { return (forRem ? await Calendar.forReminders() : await Calendar.forEvents()).map(c => c.title) } catch (e) { return [] } }
-  return { events, reminders: open.slice(0, 200).map(rem).concat(done.slice(-30).map(rem)),
+  return { pushAware: 1, events, reminders: open.slice(0, 200).map(rem).concat(done.slice(-30).map(rem)),
     calendars: await names(false), lists: await names(true), watch: await loadHealth(), health: (await healthDays()).slice(-60), loc: await hereNow(), notif: await notifInfo() }
 }
 // Для приложения: сколько уведомлений виджет поставил (видно в «Ещё» — проверить, что они вообще есть)
@@ -383,6 +383,7 @@ function waterNudgeLevel(gap, st, lastWater) {
 async function waterNudge() {
   if (!WEB_APP) return
   try {
+    if ((await loadSettings()).pushOn) { Notification.removePending(["myday-water"]); return }   // воду напоминает таблица пушем
     const d = await dayHealth(), gap = waterGap(d)
     if (!gap) return
     const st = await loadSettings(), lastWater = Math.max(0, ...((d.waterList || []).map(w => w.date || 0)))
@@ -453,8 +454,11 @@ async function scheduleAgenda() {
           body: `«${r.title}» — сделано? Если нет — перенесём или скажи, что мешает.`, url: `${WEB_APP}#rem=${encodeURIComponent(r.identifier)}` })
       })
     }
-    // подсказки помощника на день (план составляет IZIDAY): вода, еда, подготовка к делам, идеи
-    for (const x of withIds(await loadJSON("nudges.json"), "n")) {
+    // подсказки помощника на день (план составляет IZIDAY): вода, еда, подготовка к делам, идеи.
+    // Если включены пуши IZIDAY — их и напоминания шлёт таблица, виджет не дублирует
+    const pushOn = !!(await loadSettings()).pushOn
+    if (pushOn) for (const k of [...want.keys()]) if (want.get(k).rem) want.delete(k)
+    if (!pushOn) for (const x of withIds(await loadJSON("nudges.json"), "n")) {
       if (x.deleted || !x.date || x.date <= now.getTime() || x.date > to.getTime()) continue
       want.set(`myday-ag-n-${x.id}-${x.date}-${hash(x.text)}`, { at: new Date(x.date), title: x.title || "💡 IZIDAY", body: x.text || "", url: `${WEB_APP}#chat` })
     }
@@ -520,7 +524,7 @@ async function hubSync(timeout = 12) {
     } finally { HUB_RUN = false }
     // выполненные команды и свежий снимок (новое событие сразу видно в приложении)
     if (done.length) res = await hubPost(st, { since: res.now, done, snap: await hubSnapshot() }, timeout) || res
-    await saveSettings({ hubSince: res.now || st.hubSince || 0, hubPushedAt: started, hubAt: Date.now() })
+    await saveSettings({ hubSince: res.now || st.hubSince || 0, hubPushedAt: started, hubAt: Date.now(), pushOn: !!res.pushOn })   // pushOn — подсказки, напоминания и воду шлёт таблица пушем в IZIDAY
     return done.length
   } catch (e) { return 0 }
 }
