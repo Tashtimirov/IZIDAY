@@ -142,7 +142,7 @@ await settle()
 st = hubState()
 check(st.ops.some(o => o.tool === "delete_event" && o.input.id === "E2"), "удаление — в очереди для виджета", st.ops)
 await page.click('[data-tab="today"]')
-await page.click(".week .day:nth-child(2)")
+await page.click(`.day[data-day="${+day(1, 0)}"]`)
 check(!(await page.textContent("#view")).includes("Падел"), "удалённое событие сразу пропало из дня")
 
 // 6. виджет выполнил команды → приложение видит результат
@@ -378,7 +378,7 @@ check(rn.ok && rn.points.length === 1 && /Rama 4/.test(rn.points[0]), "напо�
 await page.waitForTimeout(1500)
 const pl = hubState().lists.places || []
 check(pl.some(p => p.title === "Заехать в Декатлон" && p.radius === 1500 && p.points.length === 1), "место ушло в таблицу для виджета", pl)
-await page.click('[data-tab="today"]'); await page.click(".day:first-child")
+await page.click('[data-tab="today"]'); await page.click(".day.td")
 const tv = await page.textContent("#view"); check(tv.includes("напомню рядом: Decathlon"), "на «Сегодня» видно напоминание по месту", tv.slice(0, 600))
 const nf = await page.evaluate(() => runTool("remind_near", { title: "x", query: "нигде" }))
 check(nf.error, "место не нашлось — просьба уточнить", nf)
@@ -393,7 +393,7 @@ const yd = await page.evaluate(() => {
   D.snap.health = [{ day: dayKey(y), steps: 12345, active: 520, exercise: 61 }]
   return +y
 })
-await page.click('[data-tab="today"]'); await page.click('[data-shift="-7"]'); await page.click(`.day[data-day="${yd}"]`)
+await page.click('[data-tab="today"]'); await page.click(`.day[data-day="${yd}"]`)
 const hyv = await page.textContent("#view")
 check(["Итоги дня", "Том ям вчера", "Прогулка у моря", "12 345", "777", "0,5 л"].every(x => hyv.includes(x)), "вчерашний день: еда, тренировка, шаги, вода, расходы", hyv.slice(0, 900))
 check(!hyv.includes("Напоминания"), "в прошлом дне нет списка напоминаний")

@@ -433,10 +433,10 @@ body { background: var(--bg); color: var(--text); letter-spacing: -.01em; }
 button, .stat, .row, .day, .card[data-do] { -webkit-tap-highlight-color: transparent; }
 button:active, .stat:active, .day:active, .sheet .opt:active { transform: scale(.96); }
 #fab:active { transform: scale(.92); }
-#view > * { animation: rise .38s cubic-bezier(.2,.8,.2,1) both; }
-#view > *:nth-child(2) { animation-delay: .04s } #view > *:nth-child(3) { animation-delay: .08s } #view > *:nth-child(4) { animation-delay: .12s }
+#view.anim > * { animation: rise .38s cubic-bezier(.2,.8,.2,1) both; }
+#view.anim > *:nth-child(2) { animation-delay: .04s } #view.anim > *:nth-child(3) { animation-delay: .08s } #view.anim > *:nth-child(4) { animation-delay: .12s }
 @keyframes rise { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
-@media (prefers-reduced-motion: reduce) { #view > * { animation: none } * { transition: none !important } }
+@media (prefers-reduced-motion: reduce) { #view.anim > * { animation: none } * { transition: none !important } }
 .month.wnav { margin: 0 0 6px; }
 .month.wnav b { font-size: 14px; font-weight: 600; color: var(--sub); }
 .month.wnav button { width: 32px; height: 32px; font-size: 16px; }
@@ -462,3 +462,11 @@ button:active, .stat:active, .day:active, .sheet .opt:active { transform: scale(
 .q-res .day-h { margin-top: 10px; }
 .typing { display: flex; align-items: center; gap: 0; }
 .typing .st { margin-left: 8px; font-size: 13px; color: var(--sub); }
+/* лента дней — карусель */
+.week.strip { display: grid; grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: calc((100% - 36px) / 7); gap: 6px; overflow-x: auto; overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory; scrollbar-width: none; -webkit-overflow-scrolling: touch; padding: 4px 0 6px; margin: 0 -2px; }
+.week.strip::-webkit-scrollbar { display: none; }
+.week.strip .day { scroll-snap-align: start; }
+.week.strip .day.td:not(.on) .dn { color: var(--accent); }
+.month.wnav .today-btn { width: auto; height: 30px; padding: 0 12px; border-radius: 15px; font-size: 13.5px; font-weight: 600; }
+.month.wnav .today-btn[hidden] { display: none; }

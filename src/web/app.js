@@ -1624,10 +1624,19 @@ function setTab(t) {
   if (t === "chat") setTimeout(() => scrollView(true), 30)
   else scrollView(false)
 }
+// Перерисовка: если ничего не поменялось — экран не трогаем (иначе при каждом обмене с таблицей он «моргает»);
+// плавное появление карточек — только при смене вкладки
+let lastHTML = "", lastTab = ""
 function render() {
   const fn = { today: renderToday, chat: renderChatHTML, money: renderMoney, health: renderHealth, more: renderMore }[tab]
-  $("#view").innerHTML = fn()
+  const html = fn(), v = $("#view")
+  if (html === lastHTML && tab === lastTab && v.firstChild) { renderTop(); return }
+  const strip = $("#strip", v), keep = strip && tab === lastTab ? strip.scrollLeft : null
+  v.classList.toggle("anim", tab !== lastTab)
+  lastHTML = html; lastTab = tab
+  v.innerHTML = html
   bind()
+  stripInit(keep)
   renderTop()
 }
 const TITLES = { chat: "Помощник", money: "Деньги", health: "Здоровье", more: "Ещё" }
@@ -1656,12 +1665,14 @@ function renderToday() {
   if (!D.conn) html += `<div class="banner"><b>Подключите приложение к виджету</b>Нажмите «Подключить»: откроется Scriptable, сам скопирует код, а вы вернётесь сюда кнопкой «◀ IZIDAY» слева вверху и нажмёте «Вставить».<div class="btns" style="margin-top:8px"><button class="btn" data-do="connect">Ввести код</button><button class="btn primary" data-do="autoconnect">🔗 Подключить</button></div></div>`
   else if (!gcalOn() && D.snap && pendingOps().length) html += `<div class="banner"><b>📲 ${pendingOps().length} ${plural(pendingOps().length, "изменение ждёт", "изменения ждут", "изменений ждут")} внесения в iPhone</b>Календарь и напоминания iPhone меняет только Scriptable. Нажмите — он внесёт сейчас и вернёт вас сюда.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="run-widget">Внести сейчас</button></div></div>`
   else if (!gcalOn() && D.gcal && D.gcal.error) html += `<div class="banner"><b>Google Календарь не ответил</b>${esc(D.gcal.error)}</div>`
-  const wOff = Math.floor(Math.round((sod(selDay) - t0) / 864e5) / 7), w0 = addDays(t0, wOff * 7), w6 = addDays(w0, 6)
-  for (const e of v.events) for (let d = sod(e.s); d < e.e && d <= w6; d = addDays(d, 1)) counts[dayKey(d)] = (counts[dayKey(d)] || 0) + 1
-  html += `<div class="month wnav"><button data-shift="-7" aria-label="Неделя назад">‹</button><b>${wOff === 0 ? "Эта неделя" : `${w0.getDate()} ${MONTHS_GEN[w0.getMonth()]} – ${w6.getDate()} ${MONTHS_GEN[w6.getMonth()]}`}</b><button data-shift="7" aria-label="Неделя вперёд">›</button></div>`
-  html += `<div class="week">${[...Array(7)].map((_, i) => {
-    const d = addDays(w0, i), n = counts[dayKey(d)] || 0
-    return `<button class="day ${sameDay(d, selDay) ? "on" : ""} ${d.getDay() % 6 === 0 ? "we" : ""}" data-day="${+d}">
+  // Дни — лентой-каруселью: листаются пальцем, 7 видно сразу; лента ±10 недель вокруг выбранной недели
+  const wOff = Math.floor(Math.round((sod(selDay) - t0) / 864e5) / 7), w0 = addDays(t0, wOff * 7)
+  const wc = stripCenter || w0, s0 = addDays(wc, -70), s1 = addDays(wc, 77)
+  for (const e of v.events) for (let d = sod(e.s); d < e.e && d < s1; d = addDays(d, 1)) if (d >= s0) counts[dayKey(d)] = (counts[dayKey(d)] || 0) + 1
+  html += `<div class="month wnav"><b id="wk-lbl">${esc(weekLabel(w0))}</b><button class="today-btn" data-do="go-today" ${wOff === 0 && isToday ? "hidden" : ""}>Сегодня</button></div>`
+  html += `<div class="week strip" id="strip" data-start="${+s0}" data-sel="${+wc}">${[...Array(147)].map((_, i) => {
+    const d = addDays(s0, i), n = counts[dayKey(d)] || 0
+    return `<button class="day ${sameDay(d, selDay) ? "on" : ""} ${sameDay(d, t0) ? "td" : ""} ${d.getDay() % 6 === 0 ? "we" : ""}" data-day="${+d}">
       <div class="wd">${WD[d.getDay()]}</div><div class="dn">${d.getDate()}</div><div class="n">${n ? n + " соб." : "—"}</div></button>`
   }).join("")}</div>`
   const onDay = d => v.events.filter(e => e.s < addDays(d, 1) && e.e > d).sort((a, b) => (b.all_day ? 1 : 0) - (a.all_day ? 1 : 0) || a.s - b.s)
@@ -1716,6 +1727,38 @@ function renderToday() {
   return html
 }
 let dayEvsCache = []
+function weekLabel(w0) {
+  const w6 = addDays(w0, 6), t = sod(new Date()), off = Math.round((w0 - addDays(t, 0)) / 864e5)
+  if (off <= 0 && off > -7) return "Эта неделя"
+  if (off >= 7 && off < 14) return "Следующая неделя"
+  if (off <= -7 && off > -14) return "Прошлая неделя"
+  return w0.getMonth() === w6.getMonth() ? `${w0.getDate()}–${w6.getDate()} ${MONTHS_GEN[w0.getMonth()]}` : `${w0.getDate()} ${MONTHS_GEN[w0.getMonth()].slice(0, 3)} – ${w6.getDate()} ${MONTHS_GEN[w6.getMonth()].slice(0, 3)}`
+}
+// Лента дней: после перерисовки — на неделю выбранного дня (или туда, где пальцем оставили); подпись — по видимой неделе
+let stripCenter = null, stripJump = false
+function stripInit(keep) {
+  const s = $("#strip")
+  if (!s) return
+  const col = s.children[1] ? s.children[1].offsetLeft - s.children[0].offsetLeft : 0
+  if (!col) return
+  const start = +s.dataset.start, idx = Math.round((+s.dataset.sel - start) / 864e5)
+  s.scrollLeft = keep != null && !stripJump ? keep : idx * col
+  stripJump = false
+  let t = null, touched = false   // перестраивать ленту только после пальца, не от прокрутки кодом
+  s.addEventListener("pointerdown", () => { touched = true }, { passive: true })
+  s.addEventListener("touchstart", () => { touched = true }, { passive: true })
+  s.onscroll = () => {
+    if (!touched) return
+    clearTimeout(t)
+    t = setTimeout(() => {
+      const first = addDays(new Date(start), Math.round(s.scrollLeft / col))
+      const lbl = $("#wk-lbl"); if (lbl) lbl.textContent = weekLabel(first)
+      const tb = $(".today-btn"); if (tb) tb.hidden = sameDay(selDay, new Date()) && Math.abs(Math.round((first - sod(new Date())) / 864e5)) < 4
+      // докрутили до края ленты — перестроить ленту вокруг видимой недели
+      if (s.scrollLeft < col * 7 || s.scrollLeft > s.scrollWidth - s.clientWidth - col * 7) { stripCenter = first; stripJump = true; render() }
+    }, 120)
+  }
+}
 
 function renderChatHTML() {
   return `<div class="chat-tools"><button data-brief="morning">☀️ Утренняя сводка</button><button data-brief="evening">🌙 Вечерняя</button><button data-do="memory">🧠 Память</button><button data-do="chat-clear">🧹 Очистить</button></div>
@@ -2045,6 +2088,7 @@ function bind() {
 const DO = {
   event: () => eventForm(), reminder: () => reminderForm(), food: () => foodMenu(), workout: () => workoutForm(), photo: () => photoPrompt(),
   expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
+  "go-today": () => { selDay = sod(new Date()); stripCenter = null; stripJump = true; render(); if (stripJump) stripInit(null) },
   "tab-money": () => setTab("money"), "tab-health": () => setTab("health"), report: () => showReport("month"),
   sheet: () => window.open(D.conn.sheetUrl, "_blank"),
   budgets: () => budgetForm(), "recur-add": () => recurForm(), habits: () => habitsForm(), weight: () => weightForm(), search: () => searchSheet(),
@@ -2478,7 +2522,7 @@ sync()
 setInterval(() => { if (document.visibilityState === "visible") sync() }, 60000)
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") { hiddenAt = Date.now(); return }
-  if (hiddenAt && Date.now() - hiddenAt > 30 * 60e3 && !sameDay(selDay, new Date())) selDay = sod(new Date())
+  if (hiddenAt && Date.now() - hiddenAt > 30 * 60e3 && !sameDay(selDay, new Date())) { selDay = sod(new Date()); stripCenter = null; stripJump = true }
   const back = runWidgetAt && Date.now() - runWidgetAt < 10 * 60e3
   runWidgetAt = 0
   sync().then(() => { if (back) { render(); toast(pendingOps().length ? "Ещё не всё внесено — откройте виджет ещё раз" : "✓ Внесено в iPhone") } })
