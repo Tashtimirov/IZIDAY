@@ -56,7 +56,7 @@ const g = { Color, DateFormatter, CalendarEvent, Reminder, Alert, URLScheme: { f
   Request: class { async loadJSON() { const b = JSON.parse(this.body); requests.push(b); tick += 1000; return sheet.post(b) } } }
 let ok = true
 const check = (cond, msg, got) => { console.log(cond ? "   ✓" : "   ✗", msg, cond ? "" : JSON.stringify(got)); ok = ok && cond }
-const w = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { hubSync, buildWidget, loadSettings, placesCheck, hereNow, scheduleAgenda, waterGap } })()")(...Object.values(g))
+const w = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { hubSync, buildWidget, loadSettings, placesCheck, hereNow, scheduleAgenda, waterGap, logLoc } })()")(...Object.values(g))
 
 // 1. первый обмен: виджет отдаёт всё и снимок
 let n = await w.hubSync()
@@ -123,6 +123,14 @@ check(pending.filter(x => (x.identifier || "").startsWith("myday-place-")).lengt
 requests.length = 0
 await w.hubSync()
 check(requests[0].hub.lists.places.some(x => x.id === "pNear" && x.done) && !requests[0].hub.lists.places.some(x => x.id === "pFar" && x.done), "отметка «сработало» ушла в приложение", requests[0].hub.lists.places)
+
+// история мест: одна точка, на том же месте в течение часа — не дублируется, уходит в таблицу
+await w.logLoc(await w.hereNow()); await w.logLoc(await w.hereNow())
+const locs = JSON.parse(files["/d/my-day/locs.json"])
+check(locs.length === 1 && Math.abs(locs[0].lat - 13.7563) < 1e-4, "история мест: точка записана один раз", locs)
+requests.length = 0
+await w.hubSync()
+check(requests[0].hub.lists.locs && requests[0].hub.lists.locs.length === 1, "история мест уходит в таблицу", requests[0].hub.lists.locs)
 
 // 7. уведомления о делах: встреча за 10 минут, напоминание вовремя — открывают приложение; лишние убираются
 store.push({ identifier: "E9", title: "Встреча с застройщиком", startDate: at(1, 14), endDate: at(1, 15), calendar: cal, location: "Офис\nэтаж 3" })

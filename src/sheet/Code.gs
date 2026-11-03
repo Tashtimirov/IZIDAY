@@ -163,7 +163,7 @@ function advice() { ensureSheets_(); writeAdvice_(); }
 // Виджет присылает снимок того, что видит только iPhone (календарь, напоминания, часы), и выполняет
 // очередь команд приложения (создать или перенести событие, отметить напоминание). Каждая запись хранит
 // s — время, когда таблица её приняла: клиент получает только записи новее своего прошлого запроса.
-const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0 },   // сколько дней хранить (0 — всё)
+const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60 },   // сколько дней хранить (0 — всё)
   tomb: 90, chunk: 45000, opsKeep: 3 };
 const ROUTE_URL = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/;
 
@@ -225,6 +225,7 @@ function hub_(h) {
   if (h.geo) out.geo = geo_(h.geo);
   // 5. Чтение любого листа для помощника (только чтение; скрытый «_hub» не отдаётся)
   if (h.read) out.read = readSheet_(ss, h.read);
+  if (h.mail) { try { out.mail = mail_(h.mail); } catch (e) { out.mail = { error: String(e.message || e) }; } }
   out.url = ss.getUrl();
   return out;
 }
@@ -248,6 +249,10 @@ function route_(r) {
 // Поиск места: сетевые магазины и заведения — по карте OpenStreetMap (Overpass: филиалы по названию или бренду рядом),
 // потом Nominatim, адреса — Геокодер Google. near — {lat,lng}; города и районы целиком не возвращаем
 function geo_(g) {
+  if (g.lat != null && g.lng != null) {   // обратный геокодинг: адрес точки (место платежа)
+    try { const r = Maps.newGeocoder().setLanguage("ru").reverseGeocode(Number(g.lat), Number(g.lng));
+      return { address: r.results && r.results[0] ? r.results[0].formatted_address : "" }; } catch (e) { return { address: "", error: String(e) }; }
+  }
   const q = String(g.query || "").trim(), near = g.near && g.near.lat != null ? g.near : null;
   const km = Math.max(3, Math.min(Number(g.km) || 40, 80));
   const ua = { "User-Agent": "IZIDAY personal assistant (Google Apps Script)" };
@@ -294,6 +299,52 @@ function geo_(g) {
       .slice(0, 8).map(x => ({ name: x.formatted_address, lat: x.geometry.location.lat, lng: x.geometry.location.lng }));
     return { source: "google", status: res.status, results: out };
   } catch (e) { return { error: String(e), results: [] }; }
+}
+
+// Почта Gmail для помощника: поиск, чтение, ответ, отправка, черновики, архив/метки/корзина.
+// Отправку и корзину приложение показывает человеку на подтверждение до запроса сюда.
+function mail_(m) {
+  const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), when = d => Utilities.formatDate(d, tz, "yyyy-MM-dd HH:mm");
+  const plain = (msg, n) => String(msg.getPlainBody() || "").replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim().slice(0, n);
+  const thread = id => { const t = GmailApp.getThreadById(String(id || "")); if (!t) throw new Error("нет письма с id " + id); return t; };
+  const a = m.action;
+  if (a === "search") {
+    const lim = Math.max(1, Math.min(Number(m.limit) || 10, 25));
+    return { threads: GmailApp.search(String(m.query || "in:inbox"), 0, lim).map(t => {
+      const ms = t.getMessages(), last = ms[ms.length - 1];
+      return { id: t.getId(), subject: t.getFirstMessageSubject(), from: last.getFrom(), date: when(t.getLastMessageDate()), messages: ms.length,
+        unread: t.isUnread(), starred: t.hasStarredMessages(), labels: t.getLabels().map(l => l.getName()), snippet: plain(last, 220) };
+    }) };
+  }
+  if (a === "read") {
+    const t = thread(m.id);
+    return { id: t.getId(), subject: t.getFirstMessageSubject(), labels: t.getLabels().map(l => l.getName()), messages: t.getMessages().slice(-8).map(x => ({
+      id: x.getId(), from: x.getFrom(), to: x.getTo(), cc: x.getCc(), date: when(x.getDate()), subject: x.getSubject(),
+      body: plain(x, 6000), attachments: x.getAttachments().map(f => f.getName()) })) };
+  }
+  const opts = o => { const r = {}; if (o.cc) r.cc = o.cc; if (o.bcc) r.bcc = o.bcc; return r; };
+  if (a === "send") { GmailApp.sendEmail(m.to, m.subject || "", m.body || "", opts(m)); return { ok: true }; }
+  if (a === "reply") { const t = thread(m.id), last = t.getMessages().slice(-1)[0]; m.all ? last.replyAll(m.body || "") : last.reply(m.body || ""); return { ok: true }; }
+  if (a === "draft") {
+    const d = m.id ? thread(m.id).getMessages().slice(-1)[0].createDraftReply(m.body || "") : GmailApp.createDraft(m.to, m.subject || "", m.body || "", opts(m));
+    return { ok: true, draft_id: d.getId() };
+  }
+  if (a === "modify") {
+    const ids = [].concat(m.ids || m.id || []), done = [];
+    for (const id of ids) {
+      const t = thread(id);
+      if (m.op === "archive") t.moveToArchive(); else if (m.op === "inbox") t.moveToInbox();
+      else if (m.op === "read") t.markRead(); else if (m.op === "unread") t.markUnread();
+      else if (m.op === "star") t.getMessages().slice(-1)[0].star(); else if (m.op === "unstar") t.getMessages().forEach(x => x.unstar());
+      else if (m.op === "trash") t.moveToTrash(); else if (m.op === "spam") t.moveToSpam();
+      else if (m.op === "label" || m.op === "unlabel") { const l = GmailApp.getUserLabelByName(m.label) || (m.op === "label" ? GmailApp.createLabel(m.label) : null); if (l) m.op === "label" ? t.addLabel(l) : t.removeLabel(l); }
+      else throw new Error("неизвестное действие " + m.op);
+      done.push(id);
+    }
+    return { ok: true, done: done };
+  }
+  if (a === "labels") return { labels: GmailApp.getUserLabels().map(l => l.getName()), unread_inbox: GmailApp.getInboxUnreadCount() };
+  throw new Error("неизвестное действие почты " + a);
 }
 
 // Без имени листа — список листов с заголовками и числом строк. С именем — строки (последние limit),

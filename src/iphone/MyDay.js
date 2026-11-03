@@ -309,7 +309,7 @@ async function autoSyncSheet() {
 // Виджет отдаёт таблице новые записи (деньги, еда, вода, тренировки) и снимок того, что видит только iPhone:
 // события, напоминания, данные часов. Обратно получает записи приложения и команды для календаря и напоминаний.
 const HUB_FILES = { money: ["finance.json", "f", 0], food: ["food.json", "m", 120], water: ["water.json", "w", 60], workouts: ["workouts.json", "t", 400],
-  places: ["places.json", "p", 0] }   // места «напомни, когда буду рядом» — создаёт помощник в приложении
+  places: ["places.json", "p", 0], locs: ["locs.json", "l", 60] }   // locs — где был iPhone (помощник показывает место платежа)   // места «напомни, когда буду рядом» — создаёт помощник в приложении
 const HUB_TOOLS = ["create_event", "update_event", "delete_event", "create_reminder", "update_reminder", "delete_reminder"]
 let HUB_RUN = false   // команды из приложения пользователь уже подтвердил там — окон не показываем
 
@@ -349,6 +349,14 @@ const distM = (a, b) => {
   return 2 * R * Math.asin(Math.sqrt(h))
 }
 // Напоминание по месту: рядом с любой из точек — уведомление (один раз), отметка уходит в приложение
+// Точка в историю мест: при переезде дальше 200 м или раз в час на месте; хранится 60 дней
+async function logLoc(here) {
+  if (!here || !WEB_APP) return
+  const list = withIds(await loadJSON("locs.json"), "l"), last = list.filter(x => !x.deleted).sort((a, b) => a.date - b.date).slice(-1)[0]
+  if (last && distM(last, here) < 200 && Date.now() - last.date < 3600e3) return
+  list.push({ id: `l${Date.now()}`, date: here.at || Date.now(), u: Date.now(), lat: Math.round(here.lat * 1e5) / 1e5, lng: Math.round(here.lng * 1e5) / 1e5 })
+  saveJSON("locs.json", keepDays(list, 60))
+}
 async function placesCheck(here) {
   if (!here || !WEB_APP) return
   const list = withIds(await loadJSON("places.json"), "p")
@@ -3900,6 +3908,7 @@ if (SHORTCUT_PARAM && !config.runsInWidget) {
   SHEET_URL = sheetUrlOf(st)
   STATS_URL = sheetTabUrl(st, "Еда и активность") || SHEET_URL   // пока таблица не прислала номер листа — просто таблица
   await placesCheck(await hereNow())         // рядом с местом из «напомни, когда буду рядом» — уведомление
+  await logLoc(await hereNow())              // история мест: где я был в момент платежа
   await hubSync()                            // сначала обмен с приложением: виджет сразу покажет воду, еду и деньги оттуда
   Script.setWidget(await buildWidget(config.widgetFamily, args.widgetParameter))
   await autoSyncSheet()

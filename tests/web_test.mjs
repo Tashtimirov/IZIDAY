@@ -227,6 +227,35 @@ check(sys2.includes("Обсуждали такси") && sys2.includes("Игра�
 await page.evaluate(() => runTool("forget", { id: live(D.memory).find(m => m.text === "Жена — Алия").id }))
 check(!(await page.evaluate(() => chatSystem())).includes("Алия"), "forget убирает факт")
 
+// место платежа: история мест от виджета → время, адрес и ссылка на карту
+const payAt = Date.now() - 5 * 3600e3
+sheet.post({ secret: SECRET, hub: { from: "widget", since: 0, lists: { locs: [{ id: "l1", date: payAt - 20 * 60e3, u: Date.now(), lat: 13.7466, lng: 100.5393 }, { id: "l2", date: payAt - 5 * 3600e3, u: Date.now(), lat: 13.70, lng: 100.60 }] } } })
+await page.evaluate(() => sync()); await settle()
+const wh = await page.evaluate(t => runTool("where_was_i", { time: t }), iso(new Date(payAt)))
+check(wh.lat === 13.7466 && Math.abs(wh.minutes_from_payment + 20) <= 1 && wh.link === "https://maps.google.com/?q=13.7466,100.5393" && /Central World/.test(wh.address), "where_was_i: ближайшая точка, адрес, ссылка на карту", wh)
+check(/где был пользователь в тот момент/.test(claudeSeen.at(-1).body.system), "правило: при вопросе о платеже — время и место")
+
+// почта: поиск, чтение, отправка только после «Да»
+const ms = await page.evaluate(() => runTool("mail_search", { query: "аренда" }))
+check(ms.threads && ms.threads.length === 1 && ms.threads[0].id === "T1" && /Аренда/.test(ms.threads[0].subject), "mail_search находит письмо", ms)
+const mr = await page.evaluate(() => runTool("mail_read", { id: "T1" }))
+check(mr.messages && /25 000 THB/.test(mr.messages[0].body), "mail_read читает письмо", mr)
+await page.click('[data-tab="chat"]')
+let sendP = page.evaluate(() => runTool("mail_send", { to: "rent@condo.th", subject: "Оплата", body: "Оплачу завтра." }))
+await page.waitForSelector('[data-opt="Нет"]', { timeout: 5000 }).catch(() => {})
+check((await page.textContent("#chat-list")).includes("Кому: rent@condo.th"), "перед отправкой видно, кому и что")
+await page.click('[data-opt="Нет"]')
+const sn = await sendP
+check(sn.cancelled && !sheet.mail.log.some(l => l[0] === "send"), "«Нет» — письмо не ушло", sn)
+sendP = page.evaluate(() => runTool("mail_reply", { id: "T1", body: "Спасибо, оплачу до 5-го." }))
+await page.waitForSelector('[data-opt="Да"]', { timeout: 5000 }).catch(() => {})
+await page.click('[data-opt="Да"]')
+const ry = await sendP
+check(ry.ok && sheet.mail.log.some(l => l[0] === "reply" && l[1] === "M1"), "«Да» — ответ ушёл в цепочку", ry)
+const ar = await page.evaluate(() => runTool("mail_modify", { ids: ["T2"], op: "archive" }))
+check(ar.ok && sheet.mail.log.some(l => l[0] === "archive" && l[1] === "T2"), "архив без лишних вопросов", ar)
+check(claudeSeen.at(-1).body.tools.some(t => t.name === "mail_send") && /Почта Gmail/.test(claudeSeen.at(-1).body.system), "почтовые инструменты у помощника")
+
 // голос: зелёная ➤ во время записи отправляет сразу, без паузы
 await page.evaluate(() => {
   class FakeSR { start() { window.__sr = this; setTimeout(() => this.onresult && this.onresult({ results: [Object.assign([{ transcript: "сколько я выпил воды" }], { isFinal: false })] }), 50) }

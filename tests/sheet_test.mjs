@@ -42,7 +42,7 @@ clock += 1000
 await app.receiveHealth({ day: "2026-10-20", steps: "3000", active: "120" })
 const hb = sent[sent.length - 1].health
 check("прошлый день из Здоровья — в историю, вместе с сегодняшним", hb.length === 2 && hb[0].day === "2026-10-20" && hb[0].steps === 3000 && hb[1].day === "2026-10-23", hb)
-const st2 = await app.loadSettings(); await app.saveSettings({ sheetSigAll: st2.sheetSigAll.replace(/^v2\|/, "") })
+const st2 = await app.loadSettings(); await app.saveSettings({ sheetSigAll: st2.sheetSigAll.replace(/^v\d+\|/, "") })
 const n0 = sent.length; await app.autoSyncSheet()
 check("после старой версии всё выгружается заново один раз", sent.length === n0 + 1 && sent[n0].food.length === 1, sent.length - n0)
 clock += 1000
