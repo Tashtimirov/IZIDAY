@@ -1014,6 +1014,7 @@ function chatSystem() {
 - Голосовые сообщения распознаются с ошибками: восстанавливай смысл по контексту и памяти; уточняй, только если цена ошибки высока.
 - Перед ответом подумай, что человек на самом деле хочет и что ему пригодится дальше; можно одним предложением предложить следующий шаг.
 - Ты ведёшь день пользователя: по календарю, здоровью, еде, воде и целям. Подсказки-уведомления на iPhone ставишь через plan_day (утром план составляется сам). Попросят «напоминай/подсказывай/веди меня» — обнови план.
+- Напоминания контролируешь ты: невыполненное в срок — спрашиваешь, сделал ли, напоминаешь снова, предлагаешь перенести и выясняешь причину (уведомления «Выполнил?» ставит виджет). Если пользователь пишет, почему не сделал — посочувствуй коротко, перенеси через update_reminder на реальное время по календарю и запомни повторяющуюся причину.
 - Учись: если пользователь поправил тебя, сказал «не так», «не надо», «лучше…», или видно его привычку — запомни это как предпочтение через remember («Предпочитает…», «Не любит…») и дальше делай так.
 ${r.length ? `- Сложную задачу, которую не решить здесь за пару сообщений (код, разбор документов, исследование, подготовка текста или плана, многошаговая работа), передай через claude_code. Рабочую — в маршрут нужного рабочего проекта по его описанию; личную, не связанную с работой, — в маршрут для личных задач. Если неясно, что именно нужно, сначала коротко уточни. После передачи скажи одной строкой, куда передал; ссылка на сессию покажется сама.`
   : "- Передавать задачи в Claude Code пока нельзя: маршруты не подключены (в виджете: меню → 🤖 Задачи в Claude Code, потом подключить приложение заново). Сложную задачу честно назови сложной и предложи подключить."}`
@@ -1775,7 +1776,7 @@ async function hashAction() {
   history.replaceState(null, "", location.pathname + location.search)
   while (stack.length) stack[stack.length - 1].close()
   if (h.startsWith("setup=")) return connect(h.slice(6))
-  const [a, arg] = h.split("=")
+  const eq = h.indexOf("="), a = eq < 0 ? h : h.slice(0, eq), arg = eq < 0 ? "" : h.slice(eq + 1)
   if (a === "voice") { setTab("chat"); return micStart(true) }
   if (a === "chat" || a === "note") return setTab("chat")
   if (a === "brief") { setTab("chat"); return brief(arg) }
@@ -1785,7 +1786,28 @@ async function hashAction() {
   if (a === "food") return foodMenu()
   if (a === "health") return setTab("health")
   if (a === "today") return setTab("today")
+  if (a === "rem") return remFollow(arg)
+  if (a === "remdone") { queueOp("update_reminder", { id: arg, completed: true }); setTab("today"); return toast("✓ Отмечено выполненным") }
+  if (a === "remlater") { queueOp("update_reminder", { id: arg, due: iso(new Date(Date.now() + 3600e3)) }); setTab("today"); return toast("⏰ Перенёс на час") }
   if (a === "place") { const p = D.places.find(z => z.id === arg); setTab("today"); if (p) ui.info(`📍 ${p.title}`, `Вы рядом: ${p.query}.`) }
+}
+// «Выполнил?» по напоминанию из уведомления: сделано / перенести / почему нет
+async function remFollow(id) {
+  setTab("today")
+  const r = (iphone().reminders || []).find(x => x.id === id)
+  if (!r) return ui.info("Напоминание", "Не нашёл его — возможно, уже выполнено или удалено.")
+  if (r.completed) return toast("✓ Уже выполнено")
+  const at = h => { const d = new Date(); d.setHours(h, 0, 0, 0); return d }
+  const opts = [["✅ Сделано", () => { queueOp("update_reminder", { id, completed: true }); toast("✓ Отлично!") }],
+    ["⏰ Через час", () => queueOp("update_reminder", { id, due: iso(new Date(Date.now() + 3600e3)) })],
+    ...(new Date().getHours() < 19 ? [["🌆 Вечером в 19:00", () => queueOp("update_reminder", { id, due: iso(at(19)) })]] : []),
+    ["📅 Завтра в 10:00", () => queueOp("update_reminder", { id, due: iso(addDays(at(10), 1)) })],
+    ["💬 Не сделал — почему…", async () => {
+      const why = await ui.ask("Что помешало?", `«${r.title}». Помощник учтёт и предложит, когда лучше сделать.`, "", { ok: "Отправить", multiline: true })
+      if (why) chatSend(`Не выполнил напоминание «${r.title}»${r.due ? ` (срок ${r.due.replace("T", " ")})` : ""}. Причина: ${why}. Перенеси на подходящее время (посмотри календарь), а если это повторяется — запомни и подскажи, как не откладывать.`)
+    }]]
+  const i = await ui.choose(`⏰ ${r.title}`, r.due ? `Срок: ${r.due.replace("T", " ")}. Выполнили?` : "Выполнили?", opts.map(o => o[0]))
+  if (i >= 0) { await opts[i][1](); render() }
 }
 // Safari включает микрофон и камеру только по нажатию — одна большая кнопка
 function micPrompt() {
