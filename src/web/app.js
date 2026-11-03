@@ -73,7 +73,7 @@ const ICO = {
 // ───────────── Данные на телефоне ─────────────
 // Записи — как в виджете: { id, date, u (время изменения), ... }; удалённые остаются «надгробиями» { id, deleted, u },
 // чтобы удаление дошло до виджета и таблицы
-const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90 }   // shop — покупки, kids — дела детей, fast — голодание   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
+const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90, goals: 0 }   // goals — цели, желания, мечты; shop — покупки, kids — дела детей, fast — голодание   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
 let D = {}
 function load() {
   try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
@@ -623,6 +623,12 @@ const AGENT_TOOLS = [
   { name: "delete_kids_item", description: "Убрать дело детей по id (из get_kids).", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "start_fast", description: "Начать интервальное голодание (по умолчанию 16 ч). Когда окно откроется — придёт пуш.", input_schema: { type: "object", properties: { hours: { type: "number" } } } },
   { name: "stop_fast", description: "Закончить голодание сейчас (поел).", input_schema: { type: "object", properties: {} } },
+  { name: "add_goal", description: "Цели: kind=month — цели на этот месяц; wish — «100 желаний» (любые желания, большие и маленькие); dream — «10 мечт», крупное на срок до года (due YYYY-MM-DD, не дальше года). " +
+      "Если пользователю трудно придумать — задавай по одному вопросу про разные стороны жизни (поездки, учёба, семья, тело, деньги, дом, люди, творчество) и записывай ответы.",
+    input_schema: { type: "object", properties: { kind: { type: "string", enum: ["month", "wish", "dream"] }, items: { type: "array", items: { type: "string" } }, due: { type: "string", description: "Для dream: YYYY-MM-DD" } }, required: ["kind", "items"] } },
+  { name: "get_goals", description: "Цели на месяц, 100 желаний, 10 мечт: что есть и что сбылось.", input_schema: { type: "object", properties: { kind: { type: "string", enum: ["month", "wish", "dream"] } } } },
+  { name: "goal_done", description: "Отметить цель, желание или мечту выполненной (done=false — снять отметку).", input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } }, kind: { type: "string", enum: ["month", "wish", "dream"] }, done: { type: "boolean" } }, required: ["items"] } },
+  { name: "delete_goal", description: "Убрать цель, желание или мечту по id (из get_goals).", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "set_protein_goal", description: "Цель по белку, г в день (по умолчанию 1,6 г на кг веса).", input_schema: { type: "object", properties: { grams: { type: "number" } }, required: ["grams"] } },
   { name: "log_weight", description: "Записать вес пользователя в кг.", input_schema: { type: "object", properties: { kg: { type: "number" }, date: { type: "string", description: "YYYY-MM-DD, если не сегодня" } }, required: ["kg"] } },
   { name: "mark_habit", description: "Отметить привычку за день (или снять отметку done=false). Для «хочу бросить» отметка значит, что было (выпил, курил). Если такой привычки нет и create=true — создать.",
@@ -987,6 +993,15 @@ async function runTool(name, x) {
     case "delete_kids_item": { if (!live(D.kids).some(k => k.id === x.id)) return { error: "нет такого" }; remove("kids", x.id); return { ok: true } }
     case "start_fast": { if (fastNow()) return { error: "голодание уже идёт", since: iso(new Date(fastNow().start)) }; const f = fastStart(x.hours); return { ok: true, hours: f.hours, window_opens: iso(new Date(f.start + f.hours * 3600e3)) } }
     case "stop_fast": { const f = fastStop(); return f ? { ok: true, fasted: durTxt(f.end - f.start) } : { error: "голодание не идёт" } }
+    case "add_goal": { const r = goalAdd(x.kind, x.items || [], x.due); if (r.error) return r
+      return { ok: true, added: r.added.map(g => g.title), total: r.total, max: GOAL_MAX[x.kind] || undefined, note: r.added.length < (x.items || []).length ? "часть уже есть или места кончились" : undefined } }
+    case "get_goals": { const kinds = x.kind ? [x.kind] : Object.keys(GOAL_KIND), out = {}
+      for (const k of kinds) out[k] = goalsOf(k).map(g => ({ id: g.id, title: g.title, done: !!g.done, due: g.due }))
+      if (!x.kind || x.kind === "month") out.month_left_from_last = goalsLeft().map(g => g.title)
+      return out }
+    case "goal_done": { const got = []; for (const t of x.items || []) { const g = goalFind(t, x.kind); if (g) { goalToggle(g.id, x.done !== false); got.push(g.title) } }
+      return got.length ? { ok: true, marked: got } : { error: "не нашёл такую цель", have: live(D.goals).filter(g => !x.kind || g.kind === x.kind).map(g => g.title).slice(0, 30) } }
+    case "delete_goal": { if (!live(D.goals).some(g => g.id === x.id)) return { error: "нет такой" }; remove("goals", x.id); return { ok: true } }
     case "set_protein_goal": {
       const n = Math.round(+x.grams)
       if (!(n >= 30 && n <= 400)) return { error: "цель белка — от 30 до 400 г" }
@@ -1665,7 +1680,7 @@ async function eventSheet(e) {
 async function addMenu() {
   const glass = H().glass || 250
   const opts = [["💬 Сказать помощнику", () => { setTab("chat"); setTimeout(micStart, 300) }], ["➖ Расход", () => moneyForm("expense")], ["➕ Доход", () => moneyForm("income")],
-    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()], ["🛒 Покупка", shopForm], ["👧 Дела детей", kidsForm],
+    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()], ["🛒 Покупка", shopForm], ["👧 Дела детей", kidsForm], ["🎯 Цель или желание", () => goalsForm("month")],
     ["⏰ Напоминание", reminderForm], ["📅 Событие", eventForm]]
   const i = await ui.choose("Добавить", "", opts.map(o => o[0]))
   if (i >= 0) opts[i][1]()
@@ -1771,6 +1786,7 @@ function renderToday() {
   html += kidsCard(selDay)
   if (isToday && shopOpen().length) html += shopCard()
   if (isToday) html += habitsCard(selDay)
+  if (isToday) html += goalsCard()
   if (isToday) {
     const h = dayHealth(), g = H()
     const t = core.monthTotals(live(D.money), core.monthKey(t0))
@@ -1983,6 +1999,7 @@ function renderMore() {
     <div class="set"><span>Стакан, мл</span><input type="number" data-set="glass" value="${g.glass}"></div>
     <div class="set"><span>Калории в день, ккал</span><input type="number" data-set="kcalGoal" value="${g.kcalGoal || 2000}"></div>
     <div class="set"><span>Вес, кг (для тренировок)</span><input type="number" data-set="weight" value="${g.weight}"></div></div>`
+  html += goalsMore()
   html += `<div class="card"><h2>Кнопки виджета</h2><div class="muted small">🎤 и 💬 открывают помощника, 📷 — еду по фото, ${esc(core.CONFIG.currency)} — расход, 💧 — стакан воды. Ссылки из виджета открываются в Safari — данные там те же, через таблицу.</div></div>`
   html += `<div class="muted small" style="text-align:center;margin:14px 0">Мой день · веб-приложение</div>`
   return html
@@ -2124,6 +2141,8 @@ function bind() {
   $$("[data-fast]", v).forEach(b => b.onclick = () => { const k = b.dataset.fast
     if (k === "stop") { const f = fastStop(); render(); return toast(f ? `Голодание: ${durTxt(f.end - f.start)}` : "") }
     const f = fastStart(+k); render(); toast(`⏱ Окно откроется в ${hm(new Date(f.start + f.hours * 3600e3))}`) })
+  $$("[data-goal]", v).forEach(b => b.onclick = () => { const g = goalToggle(b.dataset.goal); if (navigator.vibrate) navigator.vibrate(10); render(); if (g && g.done) toast("🎯 Готово!") })
+  $$("[data-goals]", v).forEach(b => b.onclick = () => goalsForm(b.dataset.goals))
   $$("[data-habit]", v).forEach(b => b.onclick = () => {
     const h = D.habits.find(z => z.id === b.dataset.habit)
     const on = habitToggle(h, selDay > sod(new Date()) ? new Date() : selDay)
@@ -2162,7 +2181,7 @@ const DO = {
   "go-today": () => { selDay = sod(new Date()); stripCenter = null; stripJump = true; render(); if (stripJump) stripInit(null) },
   "tab-money": () => setTab("money"), "tab-health": () => setTab("health"), report: () => showReport("month"),
   sheet: () => window.open(D.conn.sheetUrl, "_blank"),
-  budgets: () => budgetForm(), "recur-add": () => recurForm(), habits: () => habitsForm(), weight: () => weightForm(), shop: () => shopForm(), kids: () => kidsForm(), search: () => searchSheet(),
+  budgets: () => budgetForm(), "recur-add": () => recurForm(), habits: () => habitsForm(), weight: () => weightForm(), shop: () => shopForm(), kids: () => kidsForm(), goals: () => goalsForm("month"), search: () => searchSheet(),
   sync: () => (!D.conn || !D.conn.hook) ? DO.connect() : sync().then(ok => toast(ok ? "Обновлено" : `Не получилось: ${D.sync.error || "нет связи"}`)),
   "run-widget": () => sync().then(runWidgetNow),
   autoconnect: () => autoConnect(),
@@ -2465,6 +2484,83 @@ function fastCard() {
     <div class="btns" style="margin-top:10px"><button class="btn small" data-fast="stop">${left > 0 ? "Прервать" : "Поел — закончить"}</button></div></div>`
 }
 
+// ── Цели: на месяц, «100 желаний» (с подсказками), «10 мечт» — крупное, в пределах года ──
+const GOAL_KIND = { month: ["🎯", "На месяц"], wish: ["✨", "100 желаний"], dream: ["🌠", "10 мечт"] }
+const GOAL_MAX = { month: 0, wish: 100, dream: 10 }
+const WISH_HINTS = ["Куда хочу поехать?", "Чему хочу научиться?", "Что хочу попробовать впервые?", "Что хочу сделать вместе с детьми?", "Что хочу для семьи и дома?",
+  "Каким хочу чувствовать своё тело?", "Сколько хочу зарабатывать и откладывать?", "С кем хочу встретиться или подружиться?", "Какое приключение хочу пережить?",
+  "Что хочу сделать для других?", "Какие книги и фильмы хочу открыть?", "Что хочу создать своими руками?", "Какой рабочий навык хочу прокачать?",
+  "Что хочу купить себе в радость?", "Какой праздник хочу устроить?", "От чего хочу освободиться?", "Где хочу встретить рассвет?", "Каким спортом хочу заняться?",
+  "Что хочу сделать для родителей?", "О чём мечтал в детстве?"]
+const DREAM_HINTS = ["Большая поездка", "Дом, квартира, машина", "Свой проект или бизнес", "Сумма на счёте", "Форма и здоровье", "Новый уровень в работе", "Важное для семьи", "Навык, на который нужен год"]
+const curMonth = () => core.monthKey(new Date())
+const goalsOf = (kind, month = curMonth()) => live(D.goals).filter(g => g.title && g.kind === kind && (kind !== "month" || g.month === month))
+  .sort((a, b) => (!!a.done - !!b.done) || a.date - b.date)
+const yearAhead = () => dayKey(addDays(new Date(), 365))
+function goalAdd(kind, items, due) {
+  if (!GOAL_KIND[kind]) return { error: "kind: month, wish или dream" }
+  const have = goalsOf(kind), out = []
+  if (kind === "dream" && due) { if (!/^\d{4}-\d\d-\d\d$/.test(due)) due = ""; else if (due > yearAhead()) due = yearAhead() }
+  for (const t of items.map(s => String(s).trim()).filter(Boolean)) {
+    if (GOAL_MAX[kind] && have.length + out.length >= GOAL_MAX[kind]) break
+    if ([...have, ...out].some(g => normT(g.title) === normT(t))) continue
+    out.push(upsert("goals", Object.assign({ id: uid("o"), date: Date.now() + out.length, kind, title: t.charAt(0).toUpperCase() + t.slice(1), done: false },
+      kind === "month" ? { month: curMonth() } : {}, kind === "dream" ? { due: due || yearAhead() } : {})))
+  }
+  return { added: out, total: have.length + out.length }
+}
+function goalFind(t, kind) { const n = normT(t), l = live(D.goals).filter(g => g.title && (!kind || g.kind === kind) && (g.kind !== "month" || g.month === curMonth()))
+  return l.find(g => g.id === t || normT(g.title) === n) || l.find(g => normT(g.title).includes(n) || n.includes(normT(g.title))) }
+function goalToggle(id, done) { const g = D.goals.find(x => x.id === id); if (g) return upsert("goals", Object.assign({}, g, { done: done == null ? !g.done : !!done, doneAt: (done == null ? !g.done : done) ? Date.now() : 0 })) }
+const goalsLeft = () => { const p = new Date(); p.setDate(0); return goalsOf("month", core.monthKey(p)).filter(g => !g.done) }   // незавершённые прошлого месяца
+const dueTxt = d => { if (!d) return ""; const [y, m] = d.split("-").map(Number); return `до ${MON_GEN[m - 1]} ${y}` }
+function goalsCard() {
+  const l = goalsOf("month"), done = l.filter(g => g.done).length, day = new Date().getDate()
+  if (!l.length && day > 7) return ""
+  let html = `<div class="card" id="goals"><h2>🎯 Цели на месяц<button class="act" data-do="goals">${l.length ? `${done} из ${l.length}` : "+ Поставить"}</button></h2>`
+  if (!l.length) return html + `<div class="empty">Новый месяц — 3–5 целей на него. Можно сказать помощнику: «цели на месяц: …»${goalsLeft().length ? `. С прошлого осталось ${goalsLeft().length}.` : ""}</div></div>`
+  html += l.map(g => `<div class="row"><button class="check ${g.done ? "on" : ""}" data-goal="${esc(g.id)}"></button><div class="grow"><div class="t">${esc(g.title)}</div></div></div>`).join("")
+  return html + `<div class="prog"><div style="width:${done / l.length * 100}%"></div></div></div>`
+}
+function goalsMore() {
+  const n = k => goalsOf(k).length, d = k => goalsOf(k).filter(g => g.done).length
+  return `<div class="card"><h2>Цели и мечты</h2>${["month", "wish", "dream"].map(k => `<button class="row" style="width:100%;text-align:left;background:none;border:0;padding:10px 0" data-goals="${k}"><span class="pin">${GOAL_KIND[k][0]}</span>
+    <div class="grow"><div class="t">${GOAL_KIND[k][1]}</div><div class="s">${n(k) ? `${d(k)} ${k === "month" ? "сделано" : "сбылось"} из ${n(k)}${GOAL_MAX[k] ? ` · мест ${GOAL_MAX[k]}` : ""}` : k === "wish" ? "Пишите всё, чего хочется: большое и маленькое" : k === "dream" ? "Крупное, что сделаю за год" : "3–5 целей на этот месяц"}</div></div><span class="muted">›</span></button>`).join("")}</div>`
+}
+function goalsForm(kind = "month") {
+  const l = goalsOf(kind), hints = kind === "dream" ? DREAM_HINTS : WISH_HINTS, full = GOAL_MAX[kind] && l.length >= GOAL_MAX[kind]
+  let hi = Math.floor(Math.random() * hints.length)
+  const left = kind === "month" ? goalsLeft().filter(g => !l.some(x => normT(x.title) === normT(g.title))) : []
+  const s = sheet(`<h3>${GOAL_KIND[kind][0]} ${kind === "month" ? "Цели на " + esc(core.monthTitle(curMonth()).toLowerCase()) : GOAL_KIND[kind][1]}</h3>
+    <div class="seg" id="g-k">${Object.keys(GOAL_KIND).map(k => `<button data-k="${k}" class="${k === kind ? "on" : ""}">${GOAL_KIND[k][1]}</button>`).join("")}</div>
+    <div style="margin-top:10px">${l.map(g => `<div class="row"><button class="check ${g.done ? "on" : ""}" data-g="${esc(g.id)}"></button><div class="grow"><div class="t">${esc(g.title)}</div>${g.due ? `<div class="s">${esc(dueTxt(g.due))}</div>` : ""}</div><button class="btn small red" data-del="${esc(g.id)}">✕</button></div>`).join("")
+      || `<div class="empty">${kind === "wish" ? "Пишите всё, чего хочется, — большое и маленькое. Не получается? Нажмите «Подсказка» или «Помочь придумать»." : kind === "dream" ? "До 10 крупных мечт, которые реально сделать за год." : "3–5 целей на этот месяц."}</div>`}</div>
+    ${left.length ? `<button class="btn small" data-a="carry" style="margin-top:8px">Перенести с прошлого месяца (${left.length})</button>` : ""}
+    ${full ? `<div class="muted small" style="margin-top:12px">Все ${GOAL_MAX[kind]} мест заняты — отметьте сбывшееся или уберите лишнее.</div>` : `
+    <div class="field" style="margin-top:12px"><label>${kind === "month" ? "Новая цель" : kind === "wish" ? `Желание №${l.length + 1}` : `Мечта №${l.length + 1}`}</label><input id="g-t" placeholder="${esc(kind === "month" ? "Пробежать 50 км, прочитать книгу…" : hints[hi])}"></div>
+    ${kind === "dream" ? `<div class="field"><label>Срок (не дальше года)</label><input id="g-d" type="date" value="${yearAhead()}" max="${yearAhead()}" min="${dayKey(new Date())}"></div>` : ""}
+    ${kind !== "month" ? `<div class="muted small" id="g-h">💡 ${esc(hints[hi])}</div>` : ""}`}
+    <div class="btns" style="margin-top:10px">${kind !== "month" && !full ? '<button class="btn" data-a="hint">Подсказка</button>' : ""}<button class="btn" data-a="ai">Помочь придумать</button>${full ? "" : '<button class="btn primary" data-a="ok">Добавить</button>'}</div>`, { onClose: () => render() })
+  const again = k => { s.close(); goalsForm(k) }
+  $$("#g-k button", s.el).forEach(b => b.onclick = () => again(b.dataset.k))
+  $$("[data-g]", s.el).forEach(b => b.onclick = () => { const g = goalToggle(b.dataset.g); b.classList.toggle("on", !!(g && g.done)); if (g && g.done) toast(kind === "month" ? "🎯 Готово!" : "✨ Сбылось!") })
+  $$("[data-del]", s.el).forEach(b => b.onclick = () => { remove("goals", b.dataset.del); again(kind) })
+  const carry = $('[data-a="carry"]', s.el); if (carry) carry.onclick = () => { goalAdd("month", left.map(g => g.title)); again(kind) }
+  const hint = $('[data-a="hint"]', s.el); if (hint) hint.onclick = () => { hi = (hi + 1) % hints.length; $("#g-h", s.el).textContent = "💡 " + hints[hi]; $("#g-t", s.el).placeholder = hints[hi]; $("#g-t", s.el).focus() }
+  $('[data-a="ai"]', s.el).onclick = () => {
+    s.close(); setTab("chat")
+    const have = l.map(g => g.title).join("; ")
+    const q = kind === "wish" ? `Помоги дополнить мои «100 желаний» (сейчас ${l.length}${have ? ": " + have : ""}). Задавай по одному вопросу про разные стороны жизни и записывай мои ответы.`
+      : kind === "dream" ? `Помоги сформулировать крупные мечты на год (сейчас ${l.length} из 10${have ? ": " + have : ""}). Спроси, что для меня важно, и запиши мечты со сроком.`
+      : `Помоги поставить 3–5 целей на этот месяц${have ? ` (уже есть: ${have})` : ""}. Учти мои мечты на год и то, что не успел в прошлом месяце.`
+    setTimeout(() => chatSend(q), 30)
+  }
+  const ok = $('[data-a="ok"]', s.el)
+  if (ok) { const add = () => { const t = $("#g-t", s.el).value.trim(); if (!t) return toast("Напишите, что хотите")
+      const r = goalAdd(kind, [t], kind === "dream" ? $("#g-d", s.el).value : ""); again(kind); toast(r.added.length ? (kind === "wish" ? `✨ ${r.total} из 100` : "Добавлено") : "Уже есть") }
+    ok.onclick = add; $("#g-t", s.el).onkeydown = e => { if (e.key === "Enter") add() } }
+}
+
 // Поиск по всему: операции, еда, напоминания, события, регулярные платежи, привычки, чат
 function searchAll(q) {
   const s = q.toLowerCase().trim(), n = parseFloat(s.replace(",", "."))
@@ -2632,6 +2728,7 @@ async function hashAction() {
   if (a === "health") return setTab("health")
   if (a === "shop") { setTab("today"); return setTimeout(() => { const el = $("#shop"); if (el) el.scrollIntoView({ block: "start" }) }, 50) }
   if (a === "kids") return setTab("today")
+  if (a === "goals") { setTab("today"); return goalsForm(["wish", "dream"].includes(arg) ? arg : "month") }
   if (a === "today") return setTab("today")
   if (a === "rem") return remFollow(arg)
   if (a === "synced") { setTab("today"); return sync().then(() => { render(); toast("✓ Внесено в iPhone") }) }
