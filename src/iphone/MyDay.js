@@ -1055,7 +1055,7 @@ function baseWidget() {
 // Кнопки шапки — только три: голос, текст, фото (остальное есть в приложении)
 const BUTTONS = [
   ["mic.fill", "🎤", "voice"],
-  CONFIG.assistantChat ? ["keyboard", "⌨︎", "chat"] : ["square.and.pencil", "✎", "note"],
+  CONFIG.assistantChat ? ["square.and.pencil", "✎", "chat"] : ["square.and.pencil", "✎", "note"],
   ["camera.fill", "📷", "camera"],
 ]
 // Кнопки шапки: ▦ — только когда таблица подключена
@@ -1524,7 +1524,7 @@ function healthStrip(parent, d, entries) {
 
 // Средний/маленький виджет с параметром «здоровье»
 function healthPanel(w, d, small) {
-  const W = small ? 130 : 142
+  const W = small ? 130 : Math.floor((contentWidth() - 12) / 2)   // две колонки на всю ширину
   const big = (parent, value, unit, color) => {
     const r = parent.addStack(); r.bottomAlignContent()
     const v = r.addText(value); v.font = Font.boldRoundedSystemFont(small ? 18 : 20); v.textColor = color; v.lineLimit = 1; v.minimumScaleFactor = 0.6
@@ -1662,9 +1662,9 @@ async function buildWidget(family, param) {
     w.addSpacer(8)
     const cols = w.addStack()
     cols.topAlignContent()
-    const left = cols.addStack(); left.layoutVertically(); left.size = new Size(142, 0)
+    const left = cols.addStack(); left.layoutVertically(); left.size = new Size(Math.floor((contentWidth() - 12) / 2), 0)
     cols.addSpacer(12)
-    const right = cols.addStack(); right.layoutVertically(); right.size = new Size(142, 0)
+    const right = cols.addStack(); right.layoutVertically(); right.size = new Size(Math.floor((contentWidth() - 12) / 2), 0)
     sectionHeader(left, "calendar", "Встречи", C.events, events.length)
     left.addSpacer(5)
     addEvents(left, events, CONFIG.medium.events, 12)

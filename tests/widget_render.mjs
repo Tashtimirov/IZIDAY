@@ -33,6 +33,10 @@ Object.assign(Font, { systemFont: F(400), mediumSystemFont: F(500), semiboldSyst
   body: () => F(400)(17), caption1: () => F(400)(12), caption2: () => F(400)(11), footnote: () => F(400)(13), subheadline: () => F(400)(15) })
 const SYM = { "mic.fill": "🎙", "camera.fill": "📷", "tablecells.fill": "▦", checklist: "☑", "bubble.left.and.bubble.right.fill": "💬", "square.and.pencil": "✎", keyboard: "⌨︎",
   calendar: "📅", "checkmark.circle": "✓", "drop.fill": "💧", "flame.fill": "🔥", "figure.walk": "🚶", "fork.knife": "🍴", "banknote": "฿", "bahtsign.circle.fill": "฿" }
+// SF Symbols, нарисованные похоже (залитые, одним цветом)
+const SVG = { "mic.fill": '<rect x="8.5" y="2" width="7" height="13" rx="3.5"/><path d="M5 11a1 1 0 0 1 2 0 5 5 0 0 0 10 0 1 1 0 0 1 2 0 7 7 0 0 1-6 6.93V21h3a1 1 0 0 1 0 2H8a1 1 0 0 1 0-2h3v-3.07A7 7 0 0 1 5 11z"/>',
+  "camera.fill": '<path d="M9 3.5h6l1.6 2.5H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.4z"/><circle cx="12" cy="13" r="4" fill="#fff" fill-opacity=".9"/><circle cx="12" cy="13" r="2.6"/>',
+  "square.and.pencil": '<path d="M5 4h8a1 1 0 0 1 0 2H6v12h12v-7a1 1 0 0 1 2 0v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M18.4 2.6a2 2 0 0 1 2.9 2.9L12.5 14.3 9 15l.7-3.5z"/>' }
 const SFSymbol = { named: n => ({ image: { sym: n } }) }
 class Node {
   constructor(kind) { this.kind = kind; this.kids = []; this.dir = kind === "widget" ? "v" : "h"; this.align = "center"; this.pad = null; this.spacing = 0 }
@@ -66,7 +70,8 @@ function html(n, parentDir) {
   }
   if (n.kind === "image") {
     const s = n.imageSize || new Size(16, 16), c = css(n.tintColor) || "currentColor"
-    return `<div style="flex:0 0 auto;width:${s.width}px;height:${s.height}px;display:flex;align-items:center;justify-content:center;font-size:${s.height * 0.85}px;color:${c};line-height:1">${SYM[n.img.sym] || "●"}</div>`
+    const svg = SVG[n.img.sym]
+    return `<div style="flex:0 0 auto;width:${s.width}px;height:${s.height}px;display:flex;align-items:center;justify-content:center;font-size:${s.height * 0.85}px;color:${c};line-height:1">${svg ? `<svg viewBox="0 0 24 24" width="${s.width}" height="${s.height}" fill="${c}">${svg}</svg>` : SYM[n.img.sym] || "●"}</div>`
   }
   st.push("display:flex", `flex-direction:${n.dir === "v" ? "column" : "row"}`, `align-items:${n.dir === "v" ? "flex-start" : n.align}`, "min-width:0", "box-sizing:border-box")
   if (n.dir === "v") st.push("align-items:stretch")
@@ -120,7 +125,7 @@ const g = { Color, Size, Point, Font, SFSymbol, ListWidget, LinearGradient, Draw
   Safari: { open() {} }, Request: class { constructor(u) { this.u = u } async loadJSON() {
     if (/open-meteo/.test(this.u)) { const t = [], c = [0, 2, 3, 61, 80, 1, 95, 2, 0, 3], tt = [33, 32, 31, 29, 30, 32, 28, 31, 33, 32]
       for (let i = 0; i < 10; i++) t.push(dk(new Date(now.getTime() + i * 864e5))); return { daily: { time: t, weather_code: c, temperature_2m_max: tt } } }
-    return {} } async loadString() { return "" } }, Device: { locale: () => "ru_RU", isUsingDarkAppearance: () => MODE === "dark" },
+    return {} } async loadString() { return "" } }, Device: { screenSize: () => ({ width: 430, height: 932 }), locale: () => "ru_RU", isUsingDarkAppearance: () => MODE === "dark" },
   Location: { current: async () => ({ latitude: 13.73, longitude: 100.56 }), setAccuracyToHundredMeters() {}, setAccuracyToThreeKilometers() {} }, Script: { name: () => "MyDay", setWidget() {}, complete() {} },
   config: { runsInWidget: true, widgetFamily: "medium" }, args: { queryParameters: {}, widgetParameter: null }, Data: {}, Image: {}, Timer: { schedule: (ms, rep, f) => setTimeout(f, ms) }, WebView: class {}, UITable: class {}, Alert: class {}, QuickLook: {}, Pasteboard: {} }
 const app = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { buildWidget } })()")(...Object.values(g))
