@@ -353,7 +353,7 @@ async function hereNow() {
   if (!WEB_APP) return HERE
   try {
     Location.setAccuracyToHundredMeters()
-    const l = await Promise.race([Location.current(), new Promise(r => Timer.schedule(8000, false, () => r(null)))])
+    const l = await Promise.race([Location.current(), new Promise(r => Timer.schedule(config.runsInWidget ? 4000 : 8000, false, () => r(null)))])
     if (l && l.latitude != null) HERE = { lat: l.latitude, lng: l.longitude, at: Date.now() }
   } catch (e) {}
   return HERE
@@ -4151,6 +4151,8 @@ async function selfUpdate(force) {
 }
 
 // ───────────── Запуск ─────────────
+const T0 = Date.now(), WIDGET_BUDGET = 22000
+const upTo = (p, ms) => Promise.race([Promise.resolve(p).catch(() => null), new Promise(r => Timer.schedule(Math.max(0, ms), false, () => r(null)))])
 // Из Быстрой команды (без «Run In App») окна показывать нельзя: Scriptable падает с «Alerts are not supported in Siri»
 const SHORTCUT_PARAM = args.shortcutParameter ?? (args.plainTexts && args.plainTexts.length ? args.plainTexts.join("\n") : null)
 if (SHORTCUT_PARAM && !config.runsInWidget && quickText(SHORTCUT_PARAM)) {
@@ -4163,14 +4165,21 @@ if (SHORTCUT_PARAM && !config.runsInWidget && quickText(SHORTCUT_PARAM)) {
   const st = await loadSettings()
   SHEET_URL = sheetUrlOf(st)
   STATS_URL = sheetTabUrl(st, "Еда и активность") || SHEET_URL   // пока таблица не прислала номер листа — просто таблица
-  await placesCheck(await hereNow())         // рядом с местом из «напомни, когда буду рядом» — уведомление
-  await logLoc(await hereNow())              // история мест: где я был в момент платежа
-  await waterNudge()                         // давно не пили — уведомление
-  await hubSync()                            // сначала обмен с приложением: виджет сразу покажет воду, еду и деньги оттуда
+  // iOS даёт виджету ~30 с, при слабой сети или экономии заряда — меньше. Не успели — вместо виджета «Received timeout».
+  // Поэтому у каждого шага свой предел: не успевшее догонит следующее обновление, а виджет рисуется всегда
+  const left = () => WIDGET_BUDGET - (Date.now() - T0)
+  await upTo((async () => {
+    await placesCheck(await hereNow())       // рядом с местом из «напомни, когда буду рядом» — уведомление
+    await logLoc(await hereNow())            // история мест: где я был в момент платежа
+    await waterNudge()                       // давно не пили — уведомление
+  })(), 6000)
+  await upTo(hubSync(), Math.min(8000, left() - 8000))   // обмен с приложением: виджет сразу покажет воду, еду и деньги оттуда
   Script.setWidget(await buildWidget(config.widgetFamily, args.widgetParameter))
-  await autoSyncSheet()
-  await scheduleAgenda()
-  await selfUpdate()                         // новая версия виджета — сама, без ручной загрузки
+  await upTo((async () => {
+    await autoSyncSheet()
+    await scheduleAgenda()
+    await selfUpdate()                       // новая версия виджета — сама, без ручной загрузки
+  })(), left())
 } else {
   // Сначала окно, потом всё остальное: раньше перед открытием ждали выгрузку в таблицу (до 30 с)
   const q = args.queryParameters || {}
