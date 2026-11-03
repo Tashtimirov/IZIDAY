@@ -976,35 +976,36 @@ function pushSend_(items) {
 }
 
 // ── VAPID: подпись ES256 (ECDSA P-256 + SHA-256) на BigInt — в Apps Script нет готовой ──
+const B0 = BigInt(0), B1 = BigInt(1), B2 = BigInt(2), B3 = BigInt(3), B4 = BigInt(4), B8 = BigInt(8), B255 = BigInt(255);   // редактор Apps Script не принимает литералы вида 0n
 const P256 = (() => {
-  const p = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffffn, n = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
-  const G = [0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296n, 0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5n];
-  const mod = (a, m = p) => { const r = a % m; return r < 0n ? r + m : r; };
-  const inv = (a, m = p) => { let [o, r] = [mod(a, m), m], [x, y] = [1n, 0n]; while (r) { const q = o / r; [o, r] = [r, o - q * r]; [x, y] = [y, x - q * y]; } return mod(x, m); };
+  const p = BigInt("0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff"), n = BigInt("0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551");
+  const G = [BigInt("0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"), BigInt("0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5")];
+  const mod = (a, m = p) => { const r = a % m; return r < B0 ? r + m : r; };
+  const inv = (a, m = p) => { let [o, r] = [mod(a, m), m], [x, y] = [B1, B0]; while (r) { const q = o / r; [o, r] = [r, o - q * r]; [x, y] = [y, x - q * y]; } return mod(x, m); };
   // точки в координатах Якоби [X, Y, Z]; null — бесконечность
   const dbl = P => { if (!P) return null; const [X, Y, Z] = P; if (!Y) return null;
-    const d = mod(4n * X * Y * Y), m = mod(3n * (X - Z * Z) * (X + Z * Z)), X3 = mod(m * m - 2n * d);
-    return [X3, mod(m * (d - X3) - 8n * Y * Y * Y * Y), mod(2n * Y * Z)]; };
+    const d = mod(B4 * X * Y * Y), m = mod(B3 * (X - Z * Z) * (X + Z * Z)), X3 = mod(m * m - B2 * d);
+    return [X3, mod(m * (d - X3) - B8 * Y * Y * Y * Y), mod(B2 * Y * Z)]; };
   const add = (P, Q) => { if (!P) return Q; if (!Q) return P;
     const [X1, Y1, Z1] = P, [X2, Y2, Z2] = Q, z1 = mod(Z1 * Z1), z2 = mod(Z2 * Z2);
     const U1 = mod(X1 * z2), U2 = mod(X2 * z1), S1 = mod(Y1 * Z2 * z2), S2 = mod(Y2 * Z1 * z1);
     if (U1 === U2) return S1 === S2 ? dbl(P) : null;
-    const H = mod(U2 - U1), R = mod(S2 - S1), H2 = mod(H * H), H3 = mod(H * H2), X3 = mod(R * R - H3 - 2n * U1 * H2);
+    const H = mod(U2 - U1), R = mod(S2 - S1), H2 = mod(H * H), H3 = mod(H * H2), X3 = mod(R * R - H3 - B2 * U1 * H2);
     return [X3, mod(R * (U1 * H2 - X3) - S1 * H3), mod(H * Z1 * Z2)]; };
-  const mul = (k, P = [G[0], G[1], 1n]) => { let R = null; for (let i = 255; i >= 0; i--) { R = dbl(R); if ((k >> BigInt(i)) & 1n) R = add(R, P); } return R; };
+  const mul = (k, P = [G[0], G[1], B1]) => { let R = null; for (let i = 255; i >= 0; i--) { R = dbl(R); if ((k >> BigInt(i)) & B1) R = add(R, P); } return R; };
   const affine = P => { const zi = inv(P[2]), z2 = mod(zi * zi); return [mod(P[0] * z2), mod(P[1] * z2 * zi)]; };
   return { p, n, mod, inv, mul, affine };
 })();
-const big_ = bytes => bytes.reduce((a, b) => (a << 8n) | BigInt(b & 255), 0n);
-const bytes32_ = x => { const out = []; for (let i = 31; i >= 0; i--) out.push(Number((x >> BigInt(i * 8)) & 255n)); return out; };
+const big_ = bytes => bytes.reduce((a, b) => (a << B8) | BigInt(b & 255), B0);
+const bytes32_ = x => { const out = []; for (let i = 31; i >= 0; i--) out.push(Number((x >> BigInt(i * 8)) & B255)); return out; };
 const b64u_ = bytes => Utilities.base64EncodeWebSafe(bytes.map(b => (b > 127 ? b - 256 : b))).replace(/=+$/, "");
 const rand32_ = () => Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + Math.random() + Date.now() + Utilities.getUuid()).map(b => b & 255);
 function vapid_() {
   const props = PropertiesService.getScriptProperties();
   let v = props.getProperty("VAPID");
   if (v) return JSON.parse(v);
-  let d = 0n;
-  while (d === 0n || d >= P256.n) d = big_(rand32_());
+  let d = B0;
+  while (d === B0 || d >= P256.n) d = big_(rand32_());
   const [x, y] = P256.affine(P256.mul(d));
   v = { d: d.toString(16), pub: b64u_([4].concat(bytes32_(x), bytes32_(y))) };
   props.setProperty("VAPID", JSON.stringify(v));
