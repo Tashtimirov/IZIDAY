@@ -916,6 +916,7 @@ function pushTick() {
     }
     // 4. «Пора выезжать»: события с адресом в ближайшие 3 часа, дорога от того места, где пользователь сейчас
     const here = pushHere_(), travel = hubGet_("push_travel") || {};
+    const oldNote = here && here.old ? ` Считаю от места, где вы были ${here.old} ч назад — откройте IZIDAY, чтобы уточнить.` : "";
     if (here) {
       for (const k of CalendarApp.getAllCalendars().filter(c => !c.isHidden())) for (const e of k.getEvents(new Date(now), new Date(now + PUSH.look))) {
         const loc = String(e.getLocation() || "").trim();
@@ -930,9 +931,9 @@ function pushTick() {
         const leave = start - (tr.min + PUSH.buffer) * 60e3;
         const at = Utilities.formatDate(new Date(start), tz, "HH:mm");
         if (leave - 20 * 60e3 <= now && leave - 20 * 60e3 > from - 60e3 && leave - now > 15 * 60e3)
-          once("g20:" + key, { title: "🚗 Через 20 минут выезжать", body: `«${e.getTitle()}» в ${at}. Ехать ~${tr.min} мин (${tr.km} км).`, url: "./" });
+          once("g20:" + key, { title: "🚗 Через 20 минут выезжать", body: `«${e.getTitle()}» в ${at}. Ехать ~${tr.min} мин (${tr.km} км).${oldNote}`, url: "./" });
         if (leave <= now + 60e3 && start > now)
-          once("g:" + key, { title: "🚗 Пора выезжать", body: `«${e.getTitle()}» в ${at}, ехать ~${tr.min} мин${tr.min > (tr.base || 0) ? " с пробками" : ""}. Выезжай сейчас — будешь за ${Math.max(0, Math.round((start - now) / 60e3) - tr.min)} мин.`, url: "./" });
+          once("g:" + key, { title: "🚗 Пора выезжать", body: `«${e.getTitle()}» в ${at}, ехать ~${tr.min} мин${tr.min > (tr.base || 0) ? " с пробками" : ""}. Выезжай сейчас — будешь за ${Math.max(0, Math.round((start - now) / 60e3) - tr.min)} мин.${oldNote}`, url: "./" });
       }
       for (const k of Object.keys(travel)) if (now - travel[k].at > 6 * 3600e3) delete travel[k];
       hubSet_("push_travel", travel);
@@ -948,12 +949,14 @@ function pushParse_(s, tz) {
   const m = String(s || "").match(/^(\d{4})-(\d\d)-(\d\d)(?:[T ](\d\d):(\d\d))?/);
   return m ? Utilities.parseDate(`${m[1]}-${m[2]}-${m[3]} ${m[4] || "00"}:${m[5] || "00"}`, tz, "yyyy-MM-dd HH:mm") : null;
 }
-// Где пользователь: последнее место от приложения или от виджета (не старше 12 часов)
+// Где пользователь: последнее место от приложения или от виджета (не старше 3 суток; старше 12 ч — с пометкой)
 function pushHere_() {
   const a = hubGet_("push_here"), locs = (hubGet_("locs") || []).filter(x => x && !x.deleted && x.lat != null).sort((x, y) => (y.date || 0) - (x.date || 0));
   const b = locs[0] ? { lat: locs[0].lat, lng: locs[0].lng, at: locs[0].date } : null;
   const best = [a, b].filter(Boolean).sort((x, y) => (y.at || 0) - (x.at || 0))[0];
-  return best && Date.now() - best.at < 12 * 3600e3 ? { lat: best.lat, lng: best.lng } : null;
+  if (!best) return null;
+  const h = (Date.now() - best.at) / 3600e3;   // свежее 12 ч — как есть; до 3 суток — тоже считаем, но предупреждаем: лучше так, чем без подсказки
+  return h < 72 ? { lat: best.lat, lng: best.lng, old: h >= 12 ? Math.round(h) : 0 } : null;
 }
 // Отправка: текст кладётся в «исходящие», на каждое устройство — пустой пуш с подписью VAPID
 function pushSend_(items) {

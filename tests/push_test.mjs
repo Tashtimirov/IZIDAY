@@ -61,6 +61,12 @@ sh.pushes.length = 0
 r = sh.pushTick()
 check(!sh.pushes.length, "повторно то же самое не шлётся", r)
 
+// 4б. место старше 12 часов: подсказка всё равно приходит, с пометкой
+ev(39, "Забрать детей завтра")
+hub({ from: "widget", since: 0, lists: { locs: [{ id: "l1", date: now - 20 * 3600e3, u: now + 5, lat: 13.74, lng: 100.55 }] } })
+sh.pushTick()
+const out2 = hub({ from: "app", push: { action: "outbox" } }).push.items.map(x => x.title + " | " + x.body)
+check(out2.some(x => /Забрать детей завтра.*где вы были 20 ч назад/.test(x)), "место старое — «пора выезжать» всё равно, с пометкой", out2.slice(-2))
 // 5. исчезнувшая подписка удаляется
 hub({ from: "app", push: { action: "subscribe", sub: { endpoint: "https://push.example/gone", keys: { p256dh: "x", auth: "y" } } } })
 hub({ from: "app", push: { action: "test" } })
