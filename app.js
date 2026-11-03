@@ -90,24 +90,182 @@ ${e.length?"- Сложную задачу, которую не решить зд
       <div class="btns">${e?'<button class="btn red" data-a="del">Удалить</button>':""}<button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`,{onClose:()=>t(n)}),i=()=>{if(o)return;const d=(SPORTS.find(u=>u[0]===a)||SPORTS[SPORTS.length-1])[1];$("#w-k",r.el).value=Math.round(d*s*(+$("#w-m",r.el).value||0)/60)},l=()=>$$("#w-s .chip",r.el).forEach(d=>d.classList.toggle("on",d.dataset.s===a));l(),i(),$$("#w-s .chip",r.el).forEach(d=>d.onclick=()=>{a=d.dataset.s,o=!1,l(),i()}),$("#w-m",r.el).oninput=i,$("#w-k",r.el).oninput=()=>{o=!0},$('[data-a="no"]',r.el).onclick=()=>r.close(),e&&($('[data-a="del"]',r.el).onclick=()=>{remove("workouts",e.id),n=!0,r.close(),render()}),$('[data-a="ok"]',r.el).onclick=()=>{const d=Math.round(+$("#w-m",r.el).value),u=Math.round(+$("#w-k",r.el).value);if(!(d>0)){toast("Укажите минуты");return}const p=Date.now();upsert("workouts",Object.assign({},e||{id:`t${p}-${Math.random().toString(36).slice(2,6)}`,date:p},{title:`${a} ${d} мин`,minutes:d,kcal:u})),n=!0,r.close(),render()}})}const RDAY=["SU","MO","TU","WE","TH","FR","SA"],repeatOf=e=>e?e.freq==="daily"?{freq:"daily"}:{freq:"weekly",days:(e.days||[]).map(t=>RDAY[t])}:void 0;async function reminderForm(){const e=sheet(`<h3>⏰ Новое напоминание</h3>
     <div class="field"><input id="r-t" placeholder="Что сделать?"></div>
     <div class="field"><label>Когда (можно пусто)</label><input id="r-w" placeholder="завтра в 9, в пятницу в 18:30, каждый день в 8"></div>
-    <div class="btns"><button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`);setTimeout(()=>$("#r-t",e.el).focus(),250),$('[data-a="no"]',e.el).onclick=()=>e.close(),$('[data-a="ok"]',e.el).onclick=()=>{const t=$("#r-t",e.el).value.trim();if(!t){toast("Напишите, что напомнить");return}const s=$("#r-w",e.el).value.trim(),n={title:t};if(s){const a=core.parseWhen(" "+core.normalizeSpeech(s)+" ");if(!a.date){toast("Не понял, когда. Например: «завтра в 9»");return}n.due=iso(a.date),a.recur&&(n.repeat=repeatOf(a.recur))}remAdd(n),e.close(),render(),toast("⏰ Напоминание сохранено")}}async function eventForm(){const e=await ui.ask("📅 Событие","Название и время одной фразой: «завтра в 15 стоматолог», «в субботу с 12 до 14 обед с родителями»","",{ok:"Дальше"});if(!e)return;const t=core.buildActions([{text:core.normalizeSpeech(e),kind:"event"}])[0]||{};let s=t.date?new Date(t.date):null;if(!s||!t.hasTime){const i=await ui.ask(`📅 ${t.title||e}`,"Когда? Например: «завтра в 15:00», «в пятницу с 19 до 21»");if(!i)return;const l=core.parseWhen(" "+core.normalizeSpeech(i)+" ",s?sod(s):null);if(!l.date)return ui.info("Не понял время",i);s=l.date,t.minutes=l.minutes||t.minutes,t.recur=l.recur||t.recur}const n=new Date(+s+(t.minutes||core.CONFIG.defaultEventMinutes||60)*6e4),a=core.cap(t.title||e);if(await ui.confirm("Добавить в календарь?",`<div class="cmd-list">📅 ${esc(a)}
-${esc(core.cap(fullDate(s)))}, ${hm(s)}–${hm(n)}${t.recur?`
-🔁 `+esc(core.recurLabel(t.recur)):""}${t.calendar?`
-`+esc(t.calendar):""}</div>`,["Отмена","Добавить"])!=="Добавить")return;const r={title:a,start:iso(s),end:iso(n),repeat:repeatOf(t.recur),calendar:t.calendar||void 0};if(gcalOn()){const i=await calDo("create",r);return i.error?ui.info("Не получилось",i.error):toast("📅 Добавлено в Google Календарь")}queueOp("create_event",r),render(),toast("📅 Внесётся в календарь iPhone при обновлении виджета")}async function eventSheet(e){const t=e.all_day?"весь день":`${hm(e.s)}–${hm(e.e)}`,s=await ui.confirm(e.title||"(без названия)",`<div class="msg">${esc(core.cap(fullDate(e.s)))}, ${t}${e.location?`
-📍 `+esc(e.location):""}${e.calendar?`
-`+esc(e.calendar):""}${e.repeats?`
-🔁 повторяется`:""}${e.pending?`
-⏳ ещё не внесено в iPhone`:""}</div>`,e.pending?["Отменить"]:["Удалить","Перенести"]);if(s==="Отменить"){cancelOp(e.id.slice(3)),render();return}if(s==="Перенести"){const n=await ui.ask(`Куда перенести «${e.title}»?`,`Сейчас: ${shortDate(e.s)}, ${hm(e.s)}. Например: «на 20:00», «на пятницу в 15», «на час позже»`);if(!n)return;const a=core.buildMove("перенеси x на "+n.replace(/^на\s+/i,""));let o;if(a.shift)o=new Date(+e.s+a.shift*6e4);else if(a.toDay||a.toTime){o=new Date(a.toDay||sod(e.s));const[r,i]=a.toTime?a.toTime.split(":").map(Number):[e.s.getHours(),e.s.getMinutes()];o.setHours(r,i,0,0)}if(!o)return ui.info("Не понял, куда перенести",n);queueOp("update_event",{id:e.id,occurrence_start:e.start,start:iso(o),end:iso(new Date(+o+(e.e-e.s)))}),render(),toast(`↔️ ${shortDate(o)}, ${hm(o)} — внесётся при обновлении виджета`)}if(s==="Удалить"){let n=!1;if(e.repeats){const a=await ui.choose("Повторяющееся событие","",["Только это","Это и все следующие"]);if(a<0)return;n=a===1}queueOp("delete_event",{id:e.id,occurrence_start:e.start,all_future:n}),render(),toast("🗑 Удалится при обновлении виджета")}}async function addMenu(){const e=H().glass||250,t=[["💬 Сказать помощнику",()=>{setTab("chat"),setTimeout(micStart,300)}],["➖ Расход",()=>moneyForm("expense")],["➕ Доход",()=>moneyForm("income")],["📷 Фото: еда, счёт, чек",photoPrompt],["🍽 Еда",foodMenu],[`💧 Стакан воды ${e} мл`,()=>addWater(e)],["🏃 Тренировка",()=>workoutForm()],["⏰ Напоминание",reminderForm],["📅 Событие",eventForm]],s=await ui.choose("Добавить","",t.map(n=>n[0]));s>=0&&t[s][1]()}let tab="today",selDay=sod(new Date),monthKey=null;function setTab(e){tab=e,$$("#tabs button").forEach(t=>t.classList.toggle("on",t.dataset.tab===e)),document.body.classList.toggle("chat",e==="chat"),render(),e==="chat"?setTimeout(()=>scrollView(!0),30):scrollView(!1)}function render(){const e={today:renderToday,chat:renderChatHTML,money:renderMoney,health:renderHealth,more:renderMore}[tab];$("#view").innerHTML=e(),bind(),renderTop()}const TITLES={chat:"Помощник",money:"Деньги",health:"Здоровье",more:"Ещё"};function renderTop(){const e=iphone();if(tab==="today"){const s=new Date;$("#top-title").innerHTML=`${esc(core.cap(WDF[s.getDay()]))}<span class="dt">${s.getDate()} ${MONTHS_GEN[s.getMonth()]}</span>`}else $("#top-title").textContent=TITLES[tab];let t="";if(!D.conn)t="Не подключено к виджету";else if(D.sync.error)t=`⚠️ ${D.sync.error}`;else if(tab==="money"){const s=core.monthTotals(live(D.money),monthKey||core.monthKey(new Date));t=`${core.monthTitle(monthKey||core.monthKey(new Date))} · −${core.money(s.expense)}`}else{const s=pendingOps().length;t=`iPhone: ${e.at?ago(e.at):"ждём виджет"}`+(s?` · ⏳ ${s} в очереди`:"")}$("#top-sub").textContent=t}const WDF=["воскресенье","понедельник","вторник","среда","четверг","пятница","суббота"],MONTHS_GEN=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];function renderToday(){const e=new Date,t=sod(e),s=iphone(),n=sameDay(selDay,t),a={};for(const c of s.events)for(let m=sod(c.s);m<c.e&&m<addDays(t,7);m=addDays(m,1))a[dayKey(m)]=(a[dayKey(m)]||0)+1;let o="";D.conn?D.snap&&pendingOps().length?o+=`<div class="banner"><b>📲 ${pendingOps().length} ${plural(pendingOps().length,"изменение ждёт","изменения ждут","изменений ждут")} внесения в iPhone</b>Календарь и напоминания iPhone меняет только Scriptable. Нажмите — он внесёт сейчас и вернёт вас сюда.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="run-widget">Внести сейчас</button></div></div>`:D.snap||(o+='<div class="banner"><b>Ждём календарь от виджета</b>Он придёт при ближайшем обновлении виджета на экране «Домой» (обычно в течение 15 минут).</div>'):o+='<div class="banner"><b>Подключите приложение к виджету</b>В Scriptable: меню виджета → 📱 → «📋 Скопировать код подключения», затем нажмите кнопку ниже и вставьте код. Значок на экране «Домой» подключается отдельно от Safari.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="connect">🔗 Вставить код</button></div></div>',o+=`<div class="week">${[...Array(7)].map((c,m)=>{const h=addDays(t,m),y=a[dayKey(h)]||0;return`<button class="day ${sameDay(h,selDay)?"on":""} ${h.getDay()%6===0?"we":""}" data-day="${+h}">
-      <div class="wd">${WD[h.getDay()]}</div><div class="dn">${h.getDate()}</div><div class="n">${y?y+" соб.":"—"}</div></button>`}).join("")}</div>`;const i=(c=>s.events.filter(m=>m.s<addDays(c,1)&&m.e>c).sort((m,h)=>(h.all_day?1:0)-(m.all_day?1:0)||m.s-h.s))(selDay),l=i.length;o+=`<div class="card daycard"><div class="dayhead"><div><div class="dh-t">${n?"Сегодня":esc(core.cap(dayName(selDay)))}, ${selDay.getDate()} ${MONTHS_GEN[selDay.getMonth()]}</div>
-    <div class="dh-n">${l?`${l} ${plural(l,"событие","события","событий")}`:"Нет событий"}</div></div><button class="act" data-do="event">+ Событие</button></div>`,o+=i.length?i.map((c,m)=>{const h=c.all_day?"весь день":c.s<selDay?"до "+hm(c.e):hm(c.s),y=n&&!c.all_day&&c.e<=e;return`<div class="row ${c.pending?"pending":""} ${y?"past":""}" data-ev="${m}"><div class="bar-l" style="background:${esc(c.color||"var(--teal)")}"></div>
-      <div class="time" style="${c.all_day?"font-size:11.5px":""}">${h}</div>
-      <div class="grow"><div class="t">${esc(c.title||"(без названия)")}</div><div class="s">${c.all_day?"":hm(c.s)+"–"+hm(c.e)}${c.location?" · "+esc(c.location):""}${c.calendar?" · "+esc(c.calendar):""}</div></div></div>`}).join(""):`<div class="empty">${D.snap?"Ничего не запланировано":"Календарь ещё не пришёл от виджета"}</div>`,o+="</div>",dayEvsCache=i;let d=openRems(s);n?d=d.filter(c=>!remDue(c)||remDue(c)<addDays(t,1)):d=d.filter(c=>remDue(c)&&sameDay(remDue(c),selDay)),d.sort((c,m)=>!remDue(c)-!remDue(m)||(remDue(c)||0)-(remDue(m)||0)),o+='<div class="card"><h2>Напоминания<button class="act" data-do="reminder">+ Добавить</button></h2>',o+=d.length?d.slice(0,25).map(c=>`<div class="row ${c.pending?"pending":""}"><button class="check ${remLate(c)?"late":""}" data-check="${esc(c.id)}"></button>
-    <div class="grow"><div class="t">${esc(c.title)}</div>${c.due||c.list?`<div class="s ${remLate(c)?"exp":""}">${esc(remLabel(c))}${c.due&&c.list?" · ":""}${esc(c.list||"")}</div>`:""}</div></div>`).join(""):`<div class="empty">${n?"Всё сделано":"На этот день напоминаний нет"}</div>`;const u=live(D.places).filter(c=>!c.done);if(n&&u.length&&(o+=u.map(c=>`<div class="row"><span class="pin">📍</span><div class="grow"><div class="t">${esc(c.title)}</div>
-    <div class="s">напомню рядом: ${esc(c.query)} · ${(c.points||[]).length} ${plural((c.points||[]).length,"точка","точки","точек")}</div></div></div>`).join("")),o+="</div>",n){const c=dayHealth(),m=H(),h=core.monthTotals(live(D.money),core.monthKey(t)),y=live(D.money).filter(g=>g.type==="expense"&&sameDay(g.date,t)).reduce((g,f)=>g+f.amount,0),v=(g,f,b)=>{const k=2*Math.PI*23;return`<span class="mr"><svg viewBox="0 0 56 56"><circle cx="28" cy="28" r="23" class="mr-t"/><circle cx="28" cy="28" r="23" stroke="${f}" stroke-dasharray="${k}" stroke-dashoffset="${k*(1-Math.max(0,Math.min(1,g||0)))}"/></svg><i>${b}</i></span>`};o+=`<div class="card"><h2>За день</h2><div class="stats">
-      <button class="stat" data-do="water">${v(c.water/m.waterGoal,"var(--teal)","💧")}<div class="v">${liters(c.water)} л</div><div class="l">${waterGap(c)?`<span class="exp">${waterGap(c)} ч без воды</span>`:`из ${liters(m.waterGoal)}`} · +стакан</div></button>
-      <button class="stat" data-do="tab-health">${v(c.kcal/(m.kcalGoal||2e3),"var(--gold)","🍽")}<div class="v">${num(c.kcal)}</div><div class="l">ккал${c.active?` · −${num(c.active)}`:""}</div></button>
-      <button class="stat" data-do="tab-money">${v(h.expense?y/Math.max(y,h.expense/Math.max(1,t.getDate())):0,"var(--red)","฿")}<div class="v">−${num(y)}</div><div class="l">сегодня · −${num(h.expense)} за мес.</div></button>
-    </div></div>`}const p=D.ops.filter(c=>c.state==="done"&&c.result&&c.result.error);return p.length&&(o+=`<div class="card"><h2>Не внеслось в iPhone</h2>${p.map(c=>`<div class="row"><div class="grow"><div class="t">${esc(OP_LABEL[c.tool]||c.tool)}: ${esc((c.input||{}).title||"")}</div><div class="s exp">${esc(c.result.error)}</div></div></div>`).join("")}</div>`),o}let dayEvsCache=[];function renderChatHTML(){return`<div class="chat-tools"><button data-brief="morning">☀️ Утренняя сводка</button><button data-brief="evening">🌙 Вечерняя</button><button data-do="memory">🧠 Память</button><button data-do="chat-clear">🧹 Очистить</button></div>
+    <div class="btns"><button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
+  setTimeout(() => $("#r-t", s.el).focus(), 250)
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const title = $("#r-t", s.el).value.trim()
+    if (!title) { toast("Напишите, что напомнить"); return }
+    const wtext = $("#r-w", s.el).value.trim()
+    const x = { title }
+    if (wtext) {
+      const w = core.parseWhen(" " + core.normalizeSpeech(wtext) + " ")
+      if (!w.date) { toast("Не понял, когда. Например: «завтра в 9»"); return }
+      x.due = iso(w.date)
+      if (w.recur) x.repeat = repeatOf(w.recur)
+    }
+    remAdd(x)
+    s.close(); render(); toast("⏰ Напоминание сохранено")
+  }
+}
+async function eventForm() {
+  const t = await ui.ask("📅 Событие", "Название и время одной фразой: «завтра в 15 стоматолог», «в субботу с 12 до 14 обед с родителями»", "", { ok: "Дальше" })
+  if (!t) return
+  const a = core.buildActions([{ text: core.normalizeSpeech(t), kind: "event" }])[0] || {}
+  let date = a.date ? new Date(a.date) : null
+  if (!date || !a.hasTime) {
+    const w = await ui.ask(`📅 ${a.title || t}`, "Когда? Например: «завтра в 15:00», «в пятницу с 19 до 21»")
+    if (!w) return
+    const p = core.parseWhen(" " + core.normalizeSpeech(w) + " ", date ? sod(date) : null)
+    if (!p.date) return ui.info("Не понял время", w)
+    date = p.date; a.minutes = p.minutes || a.minutes; a.recur = p.recur || a.recur
+  }
+  const end = new Date(+date + (a.minutes || core.CONFIG.defaultEventMinutes || 60) * 60000)
+  const title = core.cap(a.title || t)
+  const b = await ui.confirm("Добавить в календарь?", `<div class="cmd-list">📅 ${esc(title)}\n${esc(core.cap(fullDate(date)))}, ${hm(date)}–${hm(end)}${a.recur ? "\n🔁 " + esc(core.recurLabel(a.recur)) : ""}${a.calendar ? "\n" + esc(a.calendar) : ""}</div>`, ["Отмена", "Добавить"])
+  if (b !== "Добавить") return
+  const ev = { title, start: iso(date), end: iso(end), repeat: repeatOf(a.recur), calendar: a.calendar || undefined }
+  if (gcalOn()) {
+    const r = await calDo("create", ev)
+    if (r.error) return ui.info("Не получилось", r.error)
+    return toast("📅 Добавлено в Google Календарь")
+  }
+  queueOp("create_event", ev)
+  render(); toast("📅 Внесётся в календарь iPhone при обновлении виджета")
+}
+async function eventSheet(e) {
+  const when = e.all_day ? "весь день" : `${hm(e.s)}–${hm(e.e)}`
+  const b = await ui.confirm(e.title || "(без названия)", `<div class="msg">${esc(core.cap(fullDate(e.s)))}, ${when}${e.location ? "\n📍 " + esc(e.location) : ""}${e.calendar ? "\n" + esc(e.calendar) : ""}${e.repeats ? "\n🔁 повторяется" : ""}${e.pending ? "\n⏳ ещё не внесено в iPhone" : ""}</div>`,
+    e.pending ? ["Отменить"] : ["Удалить", "Перенести"])
+  if (b === "Отменить") { cancelOp(e.id.slice(3)); render(); return }
+  if (b === "Перенести") {
+    const t = await ui.ask(`Куда перенести «${e.title}»?`, `Сейчас: ${shortDate(e.s)}, ${hm(e.s)}. Например: «на 20:00», «на пятницу в 15», «на час позже»`)
+    if (!t) return
+    const m = core.buildMove("перенеси x на " + t.replace(/^на\s+/i, ""))
+    let ns
+    if (m.shift) ns = new Date(+e.s + m.shift * 60000)
+    else if (m.toDay || m.toTime) {
+      ns = new Date(m.toDay || sod(e.s))
+      const [hh, mm] = m.toTime ? m.toTime.split(":").map(Number) : [e.s.getHours(), e.s.getMinutes()]
+      ns.setHours(hh, mm, 0, 0)
+    }
+    if (!ns) return ui.info("Не понял, куда перенести", t)
+    queueOp("update_event", { id: e.id, occurrence_start: e.start, start: iso(ns), end: iso(new Date(+ns + (e.e - e.s))) })
+    render(); toast(`↔️ ${shortDate(ns)}, ${hm(ns)} — внесётся при обновлении виджета`)
+  }
+  if (b === "Удалить") {
+    let all = false
+    if (e.repeats) { const i = await ui.choose("Повторяющееся событие", "", ["Только это", "Это и все следующие"]); if (i < 0) return; all = i === 1 }
+    queueOp("delete_event", { id: e.id, occurrence_start: e.start, all_future: all })
+    render(); toast("🗑 Удалится при обновлении виджета")
+  }
+}
+async function addMenu() {
+  const glass = H().glass || 250
+  const opts = [["💬 Сказать помощнику", () => { setTab("chat"); setTimeout(micStart, 300) }], ["➖ Расход", () => moneyForm("expense")], ["➕ Доход", () => moneyForm("income")],
+    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()],
+    ["⏰ Напоминание", reminderForm], ["📅 Событие", eventForm]]
+  const i = await ui.choose("Добавить", "", opts.map(o => o[0]))
+  if (i >= 0) opts[i][1]()
+}
+
+// ───────────── Экраны ─────────────
+let tab = "today", selDay = sod(new Date()), monthKey = null
+function setTab(t) {
+  tab = t
+  $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t))
+  document.body.classList.toggle("chat", t === "chat")
+  render()
+  if (t === "chat") setTimeout(() => scrollView(true), 30)
+  else scrollView(false)
+}
+function render() {
+  const fn = { today: renderToday, chat: renderChatHTML, money: renderMoney, health: renderHealth, more: renderMore }[tab]
+  $("#view").innerHTML = fn()
+  bind()
+  renderTop()
+}
+const TITLES = { chat: "Помощник", money: "Деньги", health: "Здоровье", more: "Ещё" }
+function renderTop() {
+  const v = iphone()
+  if (tab === "today") { const d = new Date(); $("#top-title").innerHTML = `${esc(core.cap(WDF[d.getDay()]))}<span class="dt">${d.getDate()} ${MONTHS_GEN[d.getMonth()]}</span>` }
+  else $("#top-title").textContent = TITLES[tab]
+  let sub = ""
+  if (!D.conn) sub = "Не подключено к виджету"
+  else if (D.sync.error) sub = `⚠️ ${D.sync.error}`
+  else if (tab === "money") { const t = core.monthTotals(live(D.money), monthKey || core.monthKey(new Date())); sub = `${core.monthTitle(monthKey || core.monthKey(new Date()))} · −${core.money(t.expense)}` }
+  else {
+    const p = pendingOps().length
+    sub = `iPhone: ${v.at ? ago(v.at) : "ждём виджет"}` + (p ? ` · ⏳ ${p} в очереди` : "")
+  }
+  $("#top-sub").textContent = sub
+}
+
+const WDF = ["воскресенье","понедельник","вторник","среда","четверг","пятница","суббота"]
+const MONTHS_GEN = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"]
+function renderToday() {
+  const now = new Date(), t0 = sod(now), v = iphone()
+  const isToday = sameDay(selDay, t0)
+  const counts = {}
+  for (const e of v.events) for (let d = sod(e.s); d < e.e && d < addDays(t0, 7); d = addDays(d, 1)) counts[dayKey(d)] = (counts[dayKey(d)] || 0) + 1
+  let html = ""
+  if (!D.conn) html += `<div class="banner"><b>Подключите приложение к виджету</b>Нажмите «Подключить»: откроется Scriptable, сам скопирует код, а вы вернётесь сюда кнопкой «◀ IZIDAY» слева вверху и нажмёте «Вставить».<div class="btns" style="margin-top:8px"><button class="btn" data-do="connect">Ввести код</button><button class="btn primary" data-do="autoconnect">🔗 Подключить</button></div></div>`
+  else if (D.snap && pendingOps().length) html += `<div class="banner"><b>📲 ${pendingOps().length} ${plural(pendingOps().length, "изменение ждёт", "изменения ждут", "изменений ждут")} внесения в iPhone</b>Календарь и напоминания iPhone меняет только Scriptable. Нажмите — он внесёт сейчас и вернёт вас сюда.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="run-widget">Внести сейчас</button></div></div>`
+  else if (!D.snap) html += `<div class="banner"><b>Ждём календарь от виджета</b>Он придёт при ближайшем обновлении виджета на экране «Домой» (обычно в течение 15 минут).</div>`
+  html += `<div class="week">${[...Array(7)].map((_, i) => {
+    const d = addDays(t0, i), n = counts[dayKey(d)] || 0
+    return `<button class="day ${sameDay(d, selDay) ? "on" : ""} ${d.getDay() % 6 === 0 ? "we" : ""}" data-day="${+d}">
+      <div class="wd">${WD[d.getDay()]}</div><div class="dn">${d.getDate()}</div><div class="n">${n ? n + " соб." : "—"}</div></button>`
+  }).join("")}</div>`
+  const onDay = d => v.events.filter(e => e.s < addDays(d, 1) && e.e > d).sort((a, b) => (b.all_day ? 1 : 0) - (a.all_day ? 1 : 0) || a.s - b.s)
+  const dayEvs = onDay(selDay)
+  const nSel = dayEvs.length
+  html += `<div class="card daycard"><div class="dayhead"><div><div class="dh-t">${isToday ? "Сегодня" : esc(core.cap(dayName(selDay)))}, ${selDay.getDate()} ${MONTHS_GEN[selDay.getMonth()]}</div>
+    <div class="dh-n">${nSel ? `${nSel} ${plural(nSel, "событие", "события", "событий")}` : "Нет событий"}</div></div><button class="act" data-do="event">+ Событие</button></div>`
+  html += dayEvs.length ? dayEvs.map((e, i) => {
+    const t = e.all_day ? "весь день" : e.s < selDay ? "до " + hm(e.e) : hm(e.s)
+    const past = isToday && !e.all_day && e.e <= now
+    return `<div class="row ${e.pending ? "pending" : ""} ${past ? "past" : ""}" data-ev="${i}"><div class="bar-l" style="background:${esc(e.color || "var(--teal)")}"></div>
+      <div class="time" style="${e.all_day ? "font-size:11.5px" : ""}">${t}</div>
+      <div class="grow"><div class="t">${esc(e.title || "(без названия)")}</div><div class="s">${e.all_day ? "" : hm(e.s) + "–" + hm(e.e)}${e.location ? " · " + esc(e.location) : ""}${e.calendar ? " · " + esc(e.calendar) : ""}</div></div></div>`
+  }).join("") : `<div class="empty">${D.snap ? "Ничего не запланировано" : "Календарь ещё не пришёл от виджета"}</div>`
+  html += `</div>`
+  dayEvsCache = dayEvs
+
+
+  let rems = openRems(v)
+  if (isToday) rems = rems.filter(r => !remDue(r) || remDue(r) < addDays(t0, 1))
+  else rems = rems.filter(r => remDue(r) && sameDay(remDue(r), selDay))
+  rems.sort((a, b) => (!remDue(a)) - (!remDue(b)) || (remDue(a) || 0) - (remDue(b) || 0))
+  html += `<div class="card"><h2>Напоминания<button class="act" data-do="reminder">+ Добавить</button></h2>`
+  html += rems.length ? rems.slice(0, 25).map(r => `<div class="row ${r.pending ? "pending" : ""}"><button class="check ${remLate(r) ? "late" : ""}" data-check="${esc(r.id)}"></button>
+    <div class="grow"><div class="t">${esc(r.title)}</div>${r.due || r.list ? `<div class="s ${remLate(r) ? "exp" : ""}">${esc(remLabel(r))}${r.due && r.list ? " · " : ""}${esc(r.list || "")}</div>` : ""}</div></div>`).join("")
+    : `<div class="empty">${isToday ? "Всё сделано" : "На этот день напоминаний нет"}</div>`
+  const near = live(D.places).filter(p => !p.done)
+  if (isToday && near.length) html += near.map(p => `<div class="row"><span class="pin">📍</span><div class="grow"><div class="t">${esc(p.title)}</div>
+    <div class="s">напомню рядом: ${esc(p.query)} · ${(p.points || []).length} ${plural((p.points || []).length, "точка", "точки", "точек")}</div></div></div>`).join("")
+  html += `</div>`
+
+  if (isToday) {
+    const h = dayHealth(), g = H()
+    const t = core.monthTotals(live(D.money), core.monthKey(t0))
+    const spent = live(D.money).filter(e => e.type === "expense" && sameDay(e.date, t0)).reduce((s, e) => s + e.amount, 0)
+    const mini = (p, color, icon) => { const r = 23, c = 2 * Math.PI * r
+      return `<span class="mr"><svg viewBox="0 0 56 56"><circle cx="28" cy="28" r="${r}" class="mr-t"/><circle cx="28" cy="28" r="${r}" stroke="${color}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - Math.max(0, Math.min(1, p || 0)))}"/></svg><i>${icon}</i></span>` }
+    html += `<div class="card"><h2>За день</h2><div class="stats">
+      <button class="stat" data-do="water">${mini(h.water / g.waterGoal, "var(--teal)", "💧")}<div class="v">${liters(h.water)} л</div><div class="l">${waterGap(h) ? `<span class="exp">${waterGap(h)} ч без воды</span>` : `из ${liters(g.waterGoal)}`} · +стакан</div></button>
+      <button class="stat" data-do="tab-health">${mini(h.kcal / (g.kcalGoal || 2000), "var(--gold)", "🍽")}<div class="v">${num(h.kcal)}</div><div class="l">ккал${h.active ? ` · −${num(h.active)}` : ""}</div></button>
+      <button class="stat" data-do="tab-money">${mini(t.expense ? spent / Math.max(spent, t.expense / Math.max(1, t0.getDate())) : 0, "var(--red)", "฿")}<div class="v">−${num(spent)}</div><div class="l">сегодня · −${num(t.expense)} за мес.</div></button>
+    </div></div>`
+  }
+  const failed = D.ops.filter(o => o.state === "done" && o.result && o.result.error)
+  if (failed.length) html += `<div class="card"><h2>Не внеслось в iPhone</h2>${failed.map(o => `<div class="row"><div class="grow"><div class="t">${esc(OP_LABEL[o.tool] || o.tool)}: ${esc((o.input || {}).title || "")}</div><div class="s exp">${esc(o.result.error)}</div></div></div>`).join("")}</div>`
+  return html
+}
+let dayEvsCache = []
+
+function renderChatHTML() {
+  return `<div class="chat-tools"><button data-brief="morning">☀️ Утренняя сводка</button><button data-brief="evening">🌙 Вечерняя</button><button data-do="memory">🧠 Память</button><button data-do="chat-clear">🧹 Очистить</button></div>
     <div class="chat-list" id="chat-list">${chatItems()}</div>
     <div class="chat-bar"><button class="cam" aria-label="Фото или файл">${ICO.cam}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
     <button class="mic" aria-label="Сказать">${ICO.mic}</button><button class="send" aria-label="Отправить">${ICO.send}</button></div>`}const linkify=e=>esc(e).replace(/https?:\/\/[^\s<]+/g,t=>`<a href="${t}" target="_blank" rel="noopener">${t}</a>`);function chatItems(){if(!D.chat.length)return'<div class="empty" style="text-align:center;padding:30px 10px">Я ваш помощник: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Нажмите 🎤 и скажите, например: «завтра в 10 встреча с Олей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>';const e=D.chat.length-1;return D.chat.slice(-60).map((t,s,n)=>{const a=s===n.length-1&&askWait,o=D.chat.length-n.length+s,r=t.role==="user"&&!t.local&&!t.thumb&&!t.prompt&&s>=n.length-6?`<button class="ed" data-edit="${o}" aria-label="Изменить">✎</button>`:"";return`<div class="m ${t.role}">${r}${t.thumb?`<img class="att" src="${esc(t.thumb)}" alt="">`:""}${t.voice?"🎤 ":""}${linkify(t.text)}${(t.links||[]).length?`<div class="links">${t.links.map(i=>`<a href="${esc(i)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>`:""}${t.opts&&t.opts.length&&a?`<div class="opts">${t.opts.map(i=>`<button data-opt="${esc(i)}">${esc(i)}</button>`).join("")}</div>`:""}<span class="tm">${hm(new Date(t.at||Date.now()))}</span></div>`}).join("")+(chatBusy&&!askWait?'<div class="typing"><i></i><i></i><i></i></div>':"")+(e<0,"")}function renderChat(){const e=$("#chat-list");e&&(e.innerHTML=chatItems(),bindChatList(),scrollView(!0))}function bindChatList(){$$("[data-opt]").forEach(e=>e.onclick=()=>{e.classList.add("on"),chatSend(e.dataset.opt)}),$$("[data-edit]").forEach(e=>e.onclick=t=>{t.stopPropagation(),chatEdit(+e.dataset.edit)})}function renderMoney(){const e=new Date;monthKey=monthKey||core.monthKey(e);const t=core.monthTotals(live(D.money),monthKey),s=t.income-t.expense;let n=`<div class="month"><button data-mon="-1">‹</button><b>${esc(core.monthTitle(monthKey))}</b><button data-mon="1" ${monthKey>=core.monthKey(e)?"disabled style=opacity:.3":""}>›</button></div>
@@ -147,7 +305,210 @@ ${esc(core.cap(fullDate(s)))}, ${hm(s)}–${hm(n)}${t.recur?`
     <div class="set"><span>Вес, кг (для тренировок)</span><input type="number" data-set="weight" value="${s.weight}"></div></div>`,t+=`<div class="card"><h2>Кнопки виджета</h2><div class="muted small">🎤 и 💬 открывают помощника, 📷 — еду по фото, ${esc(core.CONFIG.currency)} — расход, 💧 — стакан воды. Ссылки из виджета открываются в Safari — данные там те же, через таблицу.</div></div>`,t+='<div class="muted small" style="text-align:center;margin:14px 0">Мой день · веб-приложение</div>',t}function showReport(){const e=monthKey||core.monthKey(new Date),t=sheet(`<h3>Отчёт · ${esc(core.monthTitle(e))}</h3><iframe class="report"></iframe>
     <div class="btns"><button class="btn" data-a="share">Отправить текстом</button><button class="btn primary" data-a="close">Закрыть</button></div>`);$("iframe",t.el).srcdoc=core.reportHTML(e,live(D.money)),$('[data-a="close"]',t.el).onclick=()=>t.close(),$('[data-a="share"]',t.el).onclick=()=>{const s=core.reportText(e,live(D.money));navigator.share?navigator.share({text:s}).catch(()=>{}):navigator.clipboard.writeText(s).then(()=>toast("Скопировано"))}}function bind(){const e=$("#view");$$("[data-day]",e).forEach(s=>s.onclick=()=>{selDay=new Date(+s.dataset.day),render()}),$$("[data-ev]",e).forEach(s=>s.onclick=()=>eventSheet(dayEvsCache[+s.dataset.ev])),$$("[data-check]",e).forEach(s=>s.onclick=n=>{n.stopPropagation();const a=s.dataset.check;s.classList.add("on"),s.closest(".row").classList.add("done-anim"),remSet(a,{completed:!0}),toast("✓ Выполнено"),setTimeout(render,380)}),$$("[data-money]",e).forEach(s=>s.onclick=()=>moneyForm(null,D.money.find(n=>n.id===s.dataset.money))),$$("[data-food]",e).forEach(s=>s.onclick=()=>foodForm(D.food.find(n=>n.id===s.dataset.food))),$$("[data-wk]",e).forEach(s=>s.onclick=()=>workoutForm(D.workouts.find(n=>n.id===s.dataset.wk))),$$("[data-mon]",e).forEach(s=>s.onclick=()=>{const[n,a]=monthKey.split("-").map(Number);monthKey=core.monthKey(new Date(n,a-1+ +s.dataset.mon,1)),render()}),$$("[data-water]",e).forEach(s=>s.onclick=async()=>{const n=s.dataset.water;if(n==="undo"){const a=today(D.water).pop();a&&(remove("water",a.id),render(),toast(`Убрано ${a.ml} мл`));return}if(n==="other"){const a=await ui.ask("💧 Сколько выпили?","В миллилитрах","",{type:"number"});a&&+a&&addWater(Math.round(+a))}else addWater(+n)}),$$("[data-set]",e).forEach(s=>s.onchange=()=>{const n=Math.round(+s.value);if(!(n>0)){s.value=H()[s.dataset.set];return}core.CONFIG.health=Object.assign({},core.CONFIG.health,{[s.dataset.set]:n}),D.conn&&(D.conn.cfg=D.conn.cfg||{},D.conn.cfg.health=core.CONFIG.health),save(!1),toast("Сохранено")}),$$("[data-brief]",e).forEach(s=>s.onclick=()=>brief(s.dataset.brief)),$$("[data-do]",e).forEach(s=>s.onclick=()=>DO[s.dataset.do]());const t=$("#chat-in",e);t&&(t.oninput=()=>grow(t),t.onkeydown=s=>{if(s.key==="Enter"&&!s.shiftKey){if(s.preventDefault(),voice)return voiceSendNow();const n=t.value;t.value="",grow(t),chatSend(n)}},$(".chat-bar .send",e).onclick=()=>{if(voice)return voiceSendNow();if(chatBusy&&!askWait&&!t.value.trim())return chatStop();const s=t.value;t.value="",grow(t),chatSend(s)},chatBusy&&!askWait&&setBusyUI(!0),t.addEventListener("focus",()=>{if(voice){const s=t.value,n=rec;voiceReset();try{n&&n.stop()}catch{}t.value=s,grow(t),toast("✎ Поправьте и нажмите ➤")}}),voice&&($(".chat-bar .mic",e).classList.add("on"),t.placeholder="Слушаю… ➤ — отправить сразу",voice.text&&(t.value=voice.text,grow(t))),$(".chat-bar .mic",e).onclick=()=>micStart(),$(".chat-bar .cam",e).onclick=()=>photoPrompt(),bindChatList())}const DO={event:()=>eventForm(),reminder:()=>reminderForm(),food:()=>foodMenu(),workout:()=>workoutForm(),photo:()=>photoPrompt(),expense:()=>moneyForm("expense"),income:()=>moneyForm("income"),water:()=>addWater(H().glass||250),"tab-money":()=>setTab("money"),"tab-health":()=>setTab("health"),report:()=>showReport(),sheet:()=>window.open(D.conn.sheetUrl,"_blank"),sync:()=>!D.conn||!D.conn.hook?DO.connect():sync().then(e=>toast(e?"Обновлено":`Не получилось: ${D.sync.error||"нет связи"}`)),"run-widget":()=>sync().then(runWidgetNow),connect:async()=>{const e=await ui.ask("Подключить к виджету","Вставьте код из виджета: Scriptable → меню → 📱 Приложение «Мой день» → «Скопировать код подключения».","",{multiline:!0,ok:"Подключить"});e&&connect(e)},disconnect:async()=>{await ui.confirm("Отключить?",'<div class="msg">Ключи удалятся с этого телефона. Записи останутся в таблице и в виджете.</div>',["Отмена","Отключить"])==="Отключить"&&(D={},localStorage.removeItem(STORE),load(),render())},memory:async()=>{for(;;){const e=memFacts().slice().reverse();if(!e.length)return ui.info("🧠 Память помощника","Пока пусто. Помощник запоминает важное из разговоров сам; можно сказать «запомни, что…».");const t=await ui.choose("🧠 Память помощника",`${e.length} ${plural(e.length,"факт","факта","фактов")} · ${memChats().length} ${plural(memChats().length,"разговор","разговора","разговоров")} в сводках. Нажмите факт, чтобы забыть его.`,e.map(s=>s.text));if(t<0)return;await ui.confirm("Забыть?",`<div class="msg">${esc(e[t].text)}</div>`,["Отмена","Забыть"])==="Забыть"&&(remove("memory",e[t].id),save())}},"chat-clear":async()=>{await ui.confirm("Очистить чат?",'<div class="msg">Экран чата очистится. Помощник сохранит краткую сводку разговора в память и сможет найти его потом.</div>',["Отмена","Очистить"])==="Очистить"&&(D.chatArchive=D.chatArchive.concat(D.chat.map(t=>({role:t.role,text:t.text,prompt:t.prompt,at:t.at,local:t.local}))).slice(-1500),D.chat=[],save(!1),render(),memorize(!0))}};function decodeSetup(e){const t=String(e||"").trim().replace(/^.*#setup=/,""),s=atob(decodeURIComponent(t).replace(/\s+/g,"")),n=new TextDecoder().decode(Uint8Array.from(s,o=>o.charCodeAt(0))),a=JSON.parse(n);if(!a||!/^https:\/\/script\.google(usercontent)?\.com\//.test(a.hook||"")||!a.secret)throw new Error("в коде нет ссылки на таблицу");return a}async function connect(e){let t;try{t=decodeSetup(e)}catch(a){return ui.info("Не тот код","Скопируйте код подключения в виджете ещё раз. "+(a.message||""))}const s=!D.conn||D.conn.hook!==t.hook;D.conn={hook:t.hook,secret:t.secret,key:t.key||"",routes:t.routes||[],sheetUrl:t.sheetUrl||"",cfg:t.cfg||null,run:t.run||""},s&&(D.sync={since:0,pushedAt:0,snapAt:0,at:0,error:""}),applyCfg(),save(!1),render(),toast("Подключаюсь…"),await sync()?toast(D.snap?"✓ Подключено":"✓ Подключено. Календарь придёт с обновлением виджета"):ui.info("Таблица не ответила",D.sync.error+`
 
-Проверьте, что в таблицу вставлен новый Code.gs и веб-приложение развёрнуто заново (новая версия).`)}async function hashAction(){const e=decodeURIComponent(location.hash.replace(/^#/,""));if(!e)return;for(history.replaceState(null,"",location.pathname+location.search);stack.length;)stack[stack.length-1].close();if(e.startsWith("setup="))return connect(e.slice(6));const t=e.indexOf("="),s=t<0?e:e.slice(0,t),n=t<0?"":e.slice(t+1);if(s==="voice")return setTab("chat"),micStart(!0);if(s==="chat"||s==="note")return setTab("chat");if(s==="brief")return setTab("chat"),brief(n);if(s==="money")return moneyForm("expense");if(s==="water")return addWater(H().glass||250,"widget");if(s==="camera")return photoPrompt();if(s==="food")return foodMenu();if(s==="health")return setTab("health");if(s==="today")return setTab("today");if(s==="rem")return remFollow(n);if(s==="synced")return setTab("today"),sync().then(()=>{render(),toast("✓ Внесено в iPhone")});if(s==="remdone")return remSet(n,{completed:!0}),setTab("today"),toast("✓ Отмечено выполненным");if(s==="remlater")return remSet(n,{due:iso(new Date(Date.now()+36e5))}),setTab("today"),toast("⏰ Перенёс на час");if(s==="place"){const a=D.places.find(o=>o.id===n);setTab("today"),a&&ui.info(`📍 ${a.title}`,`Вы рядом: ${a.query}.`)}}function runWidgetNow(){const e=D.conn&&D.conn.run||"scriptable:///run/MyDay",t=decodeURIComponent((e.split("/run/")[1]||"MyDay").split("?")[0]);runWidgetAt=Date.now(),location.href=`scriptable:///run/${encodeURIComponent(t)}?action=hub`}let runWidgetAt=0;async function remFollow(e){setTab("today");const t=(iphone().reminders||[]).find(o=>o.id===e);if(!t)return ui.info("Напоминание","Не нашёл его — возможно, уже выполнено или удалено.");if(t.completed)return toast("✓ Уже выполнено");const s=o=>{const r=new Date;return r.setHours(o,0,0,0),r},n=[["✅ Сделано",()=>{remSet(e,{completed:!0}),toast("✓ Отлично!")}],["⏰ Через час",()=>remSet(e,{due:iso(new Date(Date.now()+36e5))})],...new Date().getHours()<19?[["🌆 Вечером в 19:00",()=>remSet(e,{due:iso(s(19))})]]:[],["📅 Завтра в 10:00",()=>remSet(e,{due:iso(addDays(s(10),1))})],["💬 Не сделал — почему…",async()=>{const o=await ui.ask("Что помешало?",`«${t.title}». Помощник учтёт и предложит, когда лучше сделать.`,"",{ok:"Отправить",multiline:!0});o&&chatSend(`Не выполнил напоминание «${t.title}»${t.due?` (срок ${t.due.replace("T"," ")})`:""}. Причина: ${o}. Перенеси на подходящее время (посмотри календарь), а если это повторяется — запомни и подскажи, как не откладывать.`)}]],a=await ui.choose(`⏰ ${t.title}`,t.due?`Срок: ${t.due.replace("T"," ")}. Выполнили?`:"Выполнили?",n.map(o=>o[0]));a>=0&&(await n[a][1](),render())}function micPrompt(){if(!(window.SpeechRecognition||window.webkitSpeechRecognition)){const s=$("#chat-in");s&&s.focus();return}const t=sheet('<h3>🎤 Скажите помощнику</h3><div class="btns"><button class="btn gold" style="padding:18px;font-size:18px">Нажмите и говорите</button></div>');$(".btn",t.el).onclick=()=>{t.close(),micStart()}}function photoPrompt(){const e=sheet(`<h3>📷 Фото или файл</h3><div class="msg">Еда — посчитаю калории. Счёт — от кого, сумма и срок, напомню оплатить. Чек — что куплено и почём, запишу расход.</div>
+function showReport() {
+  const key = monthKey || core.monthKey(new Date())
+  const s = sheet(`<h3>Отчёт · ${esc(core.monthTitle(key))}</h3><iframe class="report"></iframe>
+    <div class="btns"><button class="btn" data-a="share">Отправить текстом</button><button class="btn primary" data-a="close">Закрыть</button></div>`)
+  $("iframe", s.el).srcdoc = core.reportHTML(key, live(D.money))
+  $('[data-a="close"]', s.el).onclick = () => s.close()
+  $('[data-a="share"]', s.el).onclick = () => {
+    const text = core.reportText(key, live(D.money))
+    if (navigator.share) navigator.share({ text }).catch(() => {}); else navigator.clipboard.writeText(text).then(() => toast("Скопировано"))
+  }
+}
+
+function bind() {
+  const v = $("#view")
+  $$("[data-day]", v).forEach(b => b.onclick = () => { selDay = new Date(+b.dataset.day); render() })
+  $$("[data-ev]", v).forEach(el => el.onclick = () => eventSheet(dayEvsCache[+el.dataset.ev]))
+  $$("[data-check]", v).forEach(b => b.onclick = ev => {
+    ev.stopPropagation()
+    const id = b.dataset.check
+    b.classList.add("on")
+    b.closest(".row").classList.add("done-anim")
+    remSet(id, { completed: true })
+    toast("✓ Выполнено")
+    setTimeout(render, 380)
+  })
+  $$("[data-money]", v).forEach(el => el.onclick = () => moneyForm(null, D.money.find(e => e.id === el.dataset.money)))
+  $$("[data-food]", v).forEach(el => el.onclick = () => foodForm(D.food.find(e => e.id === el.dataset.food)))
+  $$("[data-wk]", v).forEach(el => el.onclick = () => workoutForm(D.workouts.find(e => e.id === el.dataset.wk)))
+  $$("[data-mon]", v).forEach(b => b.onclick = () => {
+    const [y, m] = monthKey.split("-").map(Number)
+    monthKey = core.monthKey(new Date(y, m - 1 + +b.dataset.mon, 1)); render()
+  })
+  $$("[data-water]", v).forEach(b => b.onclick = async () => {
+    const w = b.dataset.water
+    if (w === "undo") { const last = today(D.water).pop(); if (last) { remove("water", last.id); render(); toast(`Убрано ${last.ml} мл`) } return }
+    if (w === "other") { const t = await ui.ask("💧 Сколько выпили?", "В миллилитрах", "", { type: "number" }); if (t && +t) addWater(Math.round(+t)) }
+    else addWater(+w)
+  })
+  $$("[data-set]", v).forEach(inp => inp.onchange = () => {
+    const n = Math.round(+inp.value)
+    if (!(n > 0)) { inp.value = H()[inp.dataset.set]; return }
+    core.CONFIG.health = Object.assign({}, core.CONFIG.health, { [inp.dataset.set]: n })
+    if (D.conn) { D.conn.cfg = D.conn.cfg || {}; D.conn.cfg.health = core.CONFIG.health }
+    save(false); toast("Сохранено")
+  })
+  $$("[data-brief]", v).forEach(b => b.onclick = () => brief(b.dataset.brief))
+  $$("[data-do]", v).forEach(b => b.onclick = () => DO[b.dataset.do]())
+  const inp = $("#chat-in", v)
+  if (inp) {
+    inp.oninput = () => grow(inp)
+    inp.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (voice) return voiceSendNow(); const t = inp.value; inp.value = ""; grow(inp); chatSend(t) } }
+    $(".chat-bar .send", v).onclick = () => { if (voice) return voiceSendNow(); if (chatBusy && !askWait && !inp.value.trim()) return chatStop(); const t = inp.value; inp.value = ""; grow(inp); chatSend(t) }
+    if (chatBusy && !askWait) setBusyUI(true)
+    // тронули текст во время записи — не отправлять по паузе: можно поправить и нажать ➤
+    inp.addEventListener("focus", () => { if (voice) { const t = inp.value, r = rec; voiceReset(); try { r && r.stop() } catch (e) {} inp.value = t; grow(inp); toast("✎ Поправьте и нажмите ➤") } })
+    if (voice) { $(".chat-bar .mic", v).classList.add("on"); inp.placeholder = "Слушаю… ➤ — отправить сразу"; if (voice.text) { inp.value = voice.text; grow(inp) } }
+    $(".chat-bar .mic", v).onclick = () => micStart()
+    $(".chat-bar .cam", v).onclick = () => photoPrompt()
+    bindChatList()
+  }
+}
+
+const DO = {
+  event: () => eventForm(), reminder: () => reminderForm(), food: () => foodMenu(), workout: () => workoutForm(), photo: () => photoPrompt(),
+  expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
+  "tab-money": () => setTab("money"), "tab-health": () => setTab("health"), report: () => showReport(),
+  sheet: () => window.open(D.conn.sheetUrl, "_blank"),
+  sync: () => (!D.conn || !D.conn.hook) ? DO.connect() : sync().then(ok => toast(ok ? "Обновлено" : `Не получилось: ${D.sync.error || "нет связи"}`)),
+  "run-widget": () => sync().then(runWidgetNow),
+  autoconnect: () => autoConnect(),
+  connect: async () => {
+    const t = await ui.ask("Подключить к виджету", "Вставьте код из виджета: Scriptable → меню → 📱 Приложение «Мой день» → «Скопировать код подключения».", "", { multiline: true, ok: "Подключить" })
+    if (t) connect(t)
+  },
+  disconnect: async () => {
+    const b = await ui.confirm("Отключить?", `<div class="msg">Ключи удалятся с этого телефона. Записи останутся в таблице и в виджете.</div>`, ["Отмена", "Отключить"])
+    if (b === "Отключить") { D = {}; localStorage.removeItem(STORE); load(); render() }
+  },
+  memory: async () => {
+    while (true) {
+      const f = memFacts().slice().reverse()
+      if (!f.length) return ui.info("🧠 Память помощника", "Пока пусто. Помощник запоминает важное из разговоров сам; можно сказать «запомни, что…».")
+      const i = await ui.choose("🧠 Память помощника", `${f.length} ${plural(f.length, "факт", "факта", "фактов")} · ${memChats().length} ${plural(memChats().length, "разговор", "разговора", "разговоров")} в сводках. Нажмите факт, чтобы забыть его.`, f.map(m => m.text))
+      if (i < 0) return
+      if ((await ui.confirm("Забыть?", `<div class="msg">${esc(f[i].text)}</div>`, ["Отмена", "Забыть"])) === "Забыть") { remove("memory", f[i].id); save() }
+    }
+  },
+  "chat-clear": async () => {
+    const b = await ui.confirm("Очистить чат?", `<div class="msg">Экран чата очистится. Помощник сохранит краткую сводку разговора в память и сможет найти его потом.</div>`, ["Отмена", "Очистить"])
+    if (b === "Очистить") {
+      D.chatArchive = D.chatArchive.concat(D.chat.map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500)
+      D.chat = []; save(false); render(); memorize(true)
+    }
+  },
+}
+
+// ───────────── Подключение ─────────────
+function decodeSetup(code) {
+  const s = String(code || "").trim().replace(/^.*#setup=/, "")
+  const bin = atob(decodeURIComponent(s).replace(/\s+/g, ""))
+  const json = new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)))
+  const d = JSON.parse(json)
+  if (!d || !/^https:\/\/script\.google(usercontent)?\.com\//.test(d.hook || "") || !d.secret) throw new Error("в коде нет ссылки на таблицу")
+  return d
+}
+async function connect(code) {
+  let d
+  try { d = decodeSetup(code) } catch (e) { return ui.info("Не тот код", "Скопируйте код подключения в виджете ещё раз. " + (e.message || "")) }
+  const fresh = !D.conn || D.conn.hook !== d.hook
+  D.conn = { hook: d.hook, secret: d.secret, key: d.key || "", routes: d.routes || [], sheetUrl: d.sheetUrl || "", cfg: d.cfg || null, run: d.run || "" }
+  if (fresh) D.sync = { since: 0, pushedAt: 0, snapAt: 0, at: 0, error: "" }
+  applyCfg()
+  save(false)
+  render()
+  toast("Подключаюсь…")
+  const ok = await sync()
+  if (ok) toast(D.snap ? "✓ Подключено" : "✓ Подключено. Календарь придёт с обновлением виджета")
+  else ui.info("Таблица не ответила", D.sync.error + "\n\nПроверьте, что в таблицу вставлен новый Code.gs и веб-приложение развёрнуто заново (новая версия).")
+}
+
+// Подключение в одно касание: Scriptable копирует код в буфер, приложение забирает его по нажатию «Вставить»
+// (браузер читает буфер только по нажатию — iOS покажет кнопку «Вставить»)
+let connectAt = 0
+function autoConnect() {
+  connectAt = Date.now()
+  location.href = "scriptable:///run/MyDay?action=connect"
+}
+async function pasteConnect() {
+  connectAt = 0
+  const s = sheet(`<h3>🔗 Подключение</h3><div class="msg">Код скопирован в Scriptable. Нажмите «Вставить» — и всё.</div>
+    <div class="btns"><button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">📋 Вставить</button></div>`)
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  $('[data-a="ok"]', s.el).onclick = async () => {
+    let t = ""
+    try { t = await navigator.clipboard.readText() } catch (e) {}
+    s.close()
+    if (t && /setup=|^[A-Za-z0-9+/=%\s]{40,}$/.test(t.trim())) return connect(t)
+    DO.connect()
+  }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && !D.conn && connectAt && Date.now() - connectAt < 10 * 60e3) setTimeout(pasteConnect, 300)
+})
+
+// ───────────── Действия из виджета (ссылки вида …/#voice) ─────────────
+async function hashAction() {
+  const h = decodeURIComponent(location.hash.replace(/^#/, ""))
+  if (!h) return
+  history.replaceState(null, "", location.pathname + location.search)
+  while (stack.length) stack[stack.length - 1].close()
+  if (h.startsWith("setup=")) return connect(h.slice(6))
+  const eq = h.indexOf("="), a = eq < 0 ? h : h.slice(0, eq), arg = eq < 0 ? "" : h.slice(eq + 1)
+  if (a === "voice") { setTab("chat"); return micStart(true) }
+  if (a === "chat" || a === "note") return setTab("chat")
+  if (a === "brief") { setTab("chat"); return brief(arg) }
+  if (a === "money") return moneyForm("expense")
+  if (a === "water") return addWater(H().glass || 250, "widget")
+  if (a === "camera") return photoPrompt()
+  if (a === "food") return foodMenu()
+  if (a === "health") return setTab("health")
+  if (a === "today") return setTab("today")
+  if (a === "rem") return remFollow(arg)
+  if (a === "synced") { setTab("today"); return sync().then(() => { render(); toast("✓ Внесено в iPhone") }) }
+  if (a === "remdone") { remSet(arg, { completed: true }); setTab("today"); return toast("✓ Отмечено выполненным") }
+  if (a === "remlater") { remSet(arg, { due: iso(new Date(Date.now() + 3600e3)) }); setTab("today"); return toast("⏰ Перенёс на час") }
+  if (a === "place") { const p = D.places.find(z => z.id === arg); setTab("today"); if (p) ui.info(`📍 ${p.title}`, `Вы рядом: ${p.query}.`) }
+}
+// Запустить Scriptable сейчас: внесёт изменения в календарь и напоминания, пришлёт свежий снимок и вернёт в приложение
+function runWidgetNow() {
+  const run = (D.conn && D.conn.run) || "scriptable:///run/MyDay"
+  const name = decodeURIComponent((run.split("/run/")[1] || "MyDay").split("?")[0])
+  // Обычный запуск Scriptable (x-callback-url он не принимает — «The URL is not supported»).
+  // Назад — кнопкой «◀ IZIDAY» слева вверху; при возврате приложение само обновится и скажет, всё ли внесено.
+  runWidgetAt = Date.now()
+  location.href = `scriptable:///run/${encodeURIComponent(name)}?action=hub`
+}
+let runWidgetAt = 0
+// «Выполнил?» по напоминанию из уведомления: сделано / перенести / почему нет
+async function remFollow(id) {
+  setTab("today")
+  const r = (iphone().reminders || []).find(x => x.id === id)
+  if (!r) return ui.info("Напоминание", "Не нашёл его — возможно, уже выполнено или удалено.")
+  if (r.completed) return toast("✓ Уже выполнено")
+  const at = h => { const d = new Date(); d.setHours(h, 0, 0, 0); return d }
+  const opts = [["✅ Сделано", () => { remSet(id, { completed: true }); toast("✓ Отлично!") }],
+    ["⏰ Через час", () => remSet(id, { due: iso(new Date(Date.now() + 3600e3)) })],
+    ...(new Date().getHours() < 19 ? [["🌆 Вечером в 19:00", () => remSet(id, { due: iso(at(19)) })]] : []),
+    ["📅 Завтра в 10:00", () => remSet(id, { due: iso(addDays(at(10), 1)) })],
+    ["💬 Не сделал — почему…", async () => {
+      const why = await ui.ask("Что помешало?", `«${r.title}». Помощник учтёт и предложит, когда лучше сделать.`, "", { ok: "Отправить", multiline: true })
+      if (why) chatSend(`Не выполнил напоминание «${r.title}»${r.due ? ` (срок ${r.due.replace("T", " ")})` : ""}. Причина: ${why}. Перенеси на подходящее время (посмотри календарь), а если это повторяется — запомни и подскажи, как не откладывать.`)
+    }]]
+  const i = await ui.choose(`⏰ ${r.title}`, r.due ? `Срок: ${r.due.replace("T", " ")}. Выполнили?` : "Выполнили?", opts.map(o => o[0]))
+  if (i >= 0) { await opts[i][1](); render() }
+}
+// Safari включает микрофон и камеру только по нажатию — одна большая кнопка
+function micPrompt() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+  if (!SR) { const i = $("#chat-in"); if (i) i.focus(); return }
+  const s = sheet(`<h3>🎤 Скажите помощнику</h3><div class="btns"><button class="btn gold" style="padding:18px;font-size:18px">Нажмите и говорите</button></div>`)
+  $(".btn", s.el).onclick = () => { s.close(); micStart() }
+}
+function photoPrompt() {
+  const s = sheet(`<h3>📷 Фото или файл</h3><div class="msg">Еда — посчитаю калории. Счёт — от кого, сумма и срок, напомню оплатить. Чек — что куплено и почём, запишу расход.</div>
     <div class="btns"><button class="btn gold" data-a="cam" style="padding:18px;font-size:18px">Сфотографировать</button></div>
     <div class="btns"><button class="btn" data-a="lib">Из фото</button><button class="btn" data-a="doc">Файл / PDF</button></div>
     <div class="btns"><button class="btn" data-a="txt">Описать еду словами</button></div>`);$('[data-a="doc"]',e.el).onclick=()=>{e.close(),$("#doc").click()},$('[data-a="cam"]',e.el).onclick=()=>{e.close(),$("#photo").click()},$('[data-a="lib"]',e.el).onclick=()=>{e.close(),$("#photo-lib").click()},$('[data-a="txt"]',e.el).onclick=async()=>{e.close();const t=await ui.ask("Что съели?","Например: тарелка том яма и рис","",{ok:"Посчитать"});t&&foodFlow(null,t)}}document.querySelectorAll("[data-ico]").forEach(e=>e.innerHTML=ICO[e.dataset.ico]);function fitHeight(){let e=window.innerHeight;if(navigator.standalone||matchMedia("(display-mode: standalone)").matches){const t=matchMedia("(orientation: landscape)").matches;e=Math.max(e,t?Math.min(screen.width,screen.height):Math.max(screen.width,screen.height))}document.documentElement.style.setProperty("--app-h",e+"px")}if(fitHeight(),addEventListener("resize",fitHeight),window.visualViewport){const e=()=>{const t=parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-h"))||innerHeight,s=Math.max(0,t-visualViewport.height-visualViewport.offsetTop);document.documentElement.style.setProperty("--kb",s>80?s+"px":"0px"),document.body.classList.toggle("kb",s>80)};visualViewport.addEventListener("resize",e),visualViewport.addEventListener("scroll",e)}addEventListener("orientationchange",()=>setTimeout(fitHeight,300)),$("#fab").innerHTML=ICO.mic;{const e=$("#fab");let t=null,s=!1;e.addEventListener("pointerdown",()=>{s=!1,t=setTimeout(()=>{s=!0,addMenu()},550)});const n=()=>clearTimeout(t);e.addEventListener("pointerup",n),e.addEventListener("pointercancel",n),e.addEventListener("pointerleave",n),e.addEventListener("contextmenu",a=>a.preventDefault()),e.onclick=()=>{s||(tab!=="chat"&&setTab("chat"),micStart())}}if($("#sync").innerHTML=ICO.sync,$("#sync").onclick=()=>DO.sync(),$$("#tabs button").forEach(e=>e.onclick=()=>setTab(e.dataset.tab)),onPhoto($("#photo")),onPhoto($("#photo-lib")),onPhoto($("#doc")),load(),setTab("today"),hashAction(),setTimeout(memorize,8e3),setTimeout(autoPlan,15e3),window.addEventListener("hashchange",hashAction),sync(),setInterval(()=>{document.visibilityState==="visible"&&sync()},6e4),document.addEventListener("visibilitychange",()=>{if(document.visibilityState!=="visible")return;selDay<sod(new Date)&&(selDay=sod(new Date));const e=runWidgetAt&&Date.now()-runWidgetAt<10*6e4;runWidgetAt=0,sync().then(()=>{e&&(render(),toast(pendingOps().length?"Ещё не всё внесено — откройте виджет ещё раз":"✓ Внесено в iPhone"))})}),"serviceWorker"in navigator&&location.protocol==="https:"){navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(o=>o.update()).catch(()=>{});const e=!!navigator.serviceWorker.controller,t=Date.now();let s=!1,n=!1;const a=()=>{s||(s=!0,location.reload())};navigator.serviceWorker.addEventListener("controllerchange",()=>{e&&(Date.now()-t<4e3?a():n=!0)}),document.addEventListener("visibilitychange",()=>{n&&document.visibilityState==="hidden"&&a()}),document.addEventListener("visibilitychange",()=>{document.visibilityState==="visible"&&navigator.serviceWorker.getRegistration().then(o=>o&&o.update()).catch(()=>{})})}
