@@ -31,7 +31,7 @@ Object.assign(Font, { systemFont: F(400), mediumSystemFont: F(500), semiboldSyst
   regularRoundedSystemFont: F(400, 1), mediumRoundedSystemFont: F(500, 1), semiboldRoundedSystemFont: F(600, 1), boldRoundedSystemFont: F(700, 1),
   heavyRoundedSystemFont: F(800, 1), lightSystemFont: F(300), ultraLightSystemFont: F(200), title1: () => F(700)(28), headline: () => F(600)(17),
   body: () => F(400)(17), caption1: () => F(400)(12), caption2: () => F(400)(11), footnote: () => F(400)(13), subheadline: () => F(400)(15) })
-const SYM = { "mic.fill": "🎙", "camera.fill": "📷", "tablecells.fill": "▦", checklist: "☑", "bubble.left.and.bubble.right.fill": "💬", "square.and.pencil": "✎",
+const SYM = { "mic.fill": "🎙", "camera.fill": "📷", "tablecells.fill": "▦", checklist: "☑", "bubble.left.and.bubble.right.fill": "💬", "square.and.pencil": "✎", keyboard: "⌨︎",
   calendar: "📅", "checkmark.circle": "✓", "drop.fill": "💧", "flame.fill": "🔥", "figure.walk": "🚶", "fork.knife": "🍴", "banknote": "฿", "bahtsign.circle.fill": "฿" }
 const SFSymbol = { named: n => ({ image: { sym: n } }) }
 class Node {

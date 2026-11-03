@@ -1052,13 +1052,11 @@ function baseWidget() {
   return w
 }
 
+// Кнопки шапки — только три: голос, текст, фото (остальное есть в приложении)
 const BUTTONS = [
   ["mic.fill", "🎤", "voice"],
+  CONFIG.assistantChat ? ["keyboard", "⌨︎", "chat"] : ["square.and.pencil", "✎", "note"],
   ["camera.fill", "📷", "camera"],
-  [CONFIG.currencyIcon, CONFIG.currency, "money"],
-  ["tablecells.fill", "▦", "sheet"],   // открыть Google Таблицу
-  ["checklist", "✓", "tracker"],       // личный трекер на сегодняшней строке [личное]
-  CONFIG.assistantChat ? ["bubble.left.and.bubble.right.fill", "💬", "chat"] : ["square.and.pencil", "✎", "note"],
 ]
 // Кнопки шапки: ▦ — только когда таблица подключена
 const headerButtons = () => BUTTONS.filter(b => b[2] !== "sheet" || SHEET_URL)
@@ -1095,9 +1093,9 @@ function dateHeader(parent, size, withButtons) {
   h.addSpacer()
   if (!withButtons) return
   const buttons = headerButtons()
-  const bs = size === "large" ? (buttons.length > 5 ? 26 : 28) : buttons.length > 5 ? 22 : 24   // «Воскресенье» и кнопки должны уместиться в ширину
+  const bs = buttons.length <= 3 ? (size === "large" ? 36 : 32) : size === "large" ? (buttons.length > 5 ? 26 : 28) : buttons.length > 5 ? 22 : 24   // «Воскресенье» и кнопки должны уместиться в ширину
   buttons.forEach(([icon, fallback, action], i) => {
-    if (i) h.addSpacer(buttons.length > 5 ? 5 : 6)
+    if (i) h.addSpacer(buttons.length > 5 ? 5 : buttons.length <= 3 ? 9 : 6)
     const color = C.btnFg
     const b = h.addStack()
     b.size = new Size(bs, bs)
