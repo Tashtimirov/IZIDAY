@@ -16,6 +16,7 @@ const CONFIG = {
   aiProxyToken: "",
   assistantChat: false,
   webApp: "",                    // веб-приложение — только в личной версии          // чат с помощником и маршруты в Claude Code — пока только в личной версии
+  selfUpdate: "",                // самообновление — только в личной версии
   briefs: { morning: "", evening: "" },
   eventAlertMinutes: 10,         // уведомления о встречах от виджета — только вместе с веб-приложением
   routes: [],

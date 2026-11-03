@@ -60,6 +60,7 @@ const CONFIG = {
   eventAlertMinutes: 10,         // с веб-приложением виджет сам присылает уведомления о встречах (за N минут) и напоминаниях
   routes: "__ROUTES__",          // маршруты в Claude Code из secrets.json (routes); заданные в меню 🤖 важнее   // утренняя и вечерняя сводка помощника (уведомление → чат); "" — без сводки
   webApp: "__WEB_APP__",         // веб-приложение «Мой день» (build.py берёт web_app из secrets.json): кнопки виджета открывают его, а виджет передаёт ему календарь и напоминания
+  selfUpdate: "https://tashtimirov.github.io/IZIDAY/w.json",   // откуда виджет сам берёт новую версию общего кода (личный блок остаётся свой); "" — не обновляться
   // Google Таблица с доходами и расходами (кнопка ▦ в виджете)
   sheetUrl: "https://docs.google.com/spreadsheets/d/1dsrjcRimF85iZptC0WOyLImhe-llh4BOJmSgGzK_om8/edit",
   sheetSecret: "__SHEET_SECRET__",   // совпадает с ключом в скрипте таблицы
@@ -122,6 +123,8 @@ const BRAND = {
   teal: "#0A84FF", cream: "#F2F2F7", sand: "#FFFFFF", terracotta: "#FF3B30",
 }
 // ═══ ЛИЧНЫЕ НАСТРОЙКИ (конец) ═══
+// Настройки, появившиеся позже: самообновление сохраняет старый личный блок, поэтому у новых ключей есть значения по умолчанию
+for (const [k, v] of Object.entries({ selfUpdate: "" })) if (!(k in CONFIG)) CONFIG[k] = v
 const dyn = (light, dark) => Color.dynamic(new Color(light), new Color(dark))
 const dynA = (light, la, dark, da) => Color.dynamic(new Color(light, la), new Color(dark, da))
 const C = {
@@ -4021,6 +4024,38 @@ async function runAction(action, q) {
   return menu()
 }
 
+// ── Самообновление: на сайте лежит общий код виджета (без личного блока настроек — в нём ключи и ссылки).
+// Раз в 3 часа виджет сверяет номер сборки, вставляет в новый код СВОЙ личный блок и заменяет свой файл.
+// Следующий запуск — уже новая версия. Ключи и токены никуда не уходят и с сайта не приходят ──
+const BUILD = "__BUILD__"
+const P_START = "// ═══ ЛИЧНЫЕ " + "НАСТРОЙКИ (начало)", P_END = "// ═══ ЛИЧНЫЕ " + "НАСТРОЙКИ (конец) ═══\n", P_MARK = "//@@ЛИЧНЫЕ " + "НАСТРОЙКИ@@\n"   // по частям, чтобы сами строки не совпадали с метками
+const fnv32 = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0; return h }
+// Новый код + свой личный блок; null — пакет не подходит
+function mergeUpdate(m, mine) {
+  if (!m || !m.build || typeof m.code !== "string" || m.code.length !== m.len || fnv32(m.code) !== m.sum) return null
+  const a = mine.indexOf(P_START), b = mine.indexOf(P_END)
+  if (a < 0 || b < a || m.code.split(P_MARK).length !== 2) return null
+  const code = m.code.replace(P_MARK, () => mine.slice(a, b + P_END.length))
+  return code.includes(`const BUILD = "${m.build}"`) && code.includes("function mergeUpdate") ? code : null
+}
+async function selfUpdate(force) {
+  if (!CONFIG.selfUpdate || /^__/.test(BUILD)) return false
+  const st = await loadSettings()
+  if (!force && Date.now() - (st.updCheckAt || 0) < 3 * 3600e3) return false
+  await saveSettings({ updCheckAt: Date.now() })
+  try {
+    const req = new Request(CONFIG.selfUpdate + "?t=" + Date.now()); req.timeoutInterval = 20
+    const m = await req.loadJSON()
+    if (!m || !m.build || m.build === BUILD || m.build === st.updBad) return false
+    const fm = module.filename.includes("/Mobile Documents/") ? FileManager.iCloud() : FileManager.local()
+    const code = mergeUpdate(m, fm.readString(module.filename))
+    if (!code) { await saveSettings({ updBad: m.build }); return false }
+    fm.writeString(module.filename, code)
+    await saveSettings({ updAt: Date.now(), updBuild: m.build })
+    return true
+  } catch (e) { return false }
+}
+
 // ───────────── Запуск ─────────────
 // Из Быстрой команды (без «Run In App») окна показывать нельзя: Scriptable падает с «Alerts are not supported in Siri»
 const SHORTCUT_PARAM = args.shortcutParameter ?? (args.plainTexts && args.plainTexts.length ? args.plainTexts.join("\n") : null)
@@ -4039,6 +4074,7 @@ if (SHORTCUT_PARAM && !config.runsInWidget) {
   Script.setWidget(await buildWidget(config.widgetFamily, args.widgetParameter))
   await autoSyncSheet()
   await scheduleAgenda()
+  await selfUpdate()                         // новая версия виджета — сама, без ручной загрузки
 } else {
   // Сначала окно, потом всё остальное: раньше перед открытием ждали выгрузку в таблицу (до 30 с)
   const q = args.queryParameters || {}
@@ -4054,5 +4090,6 @@ if (SHORTCUT_PARAM && !config.runsInWidget) {
   await scheduleMonthlyReport()
   await scheduleBriefs()
   await scheduleAgenda()
+  await selfUpdate()
 }
 Script.complete()

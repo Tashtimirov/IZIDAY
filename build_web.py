@@ -72,6 +72,30 @@ smoke = ("global.window = {}; require('vm').runInThisContext(require('fs').readF
          "if (a.length !== 2 || a.some(x => !x.kind)) { console.log(JSON.stringify(a)); process.exit(1) }")
 run("node", "-e", smoke, OUT / "core.js")
 
+# Самообновление виджета: общий код личной сборки БЕЗ личного блока настроек → dist/web/w.json.
+# Виджет вставит в него свой личный блок сам (см. mergeUpdate в MyDay.js)
+my = ROOT / "dist/MyDay.js"
+if my.exists():
+    import json
+    code = my.read_text()
+    build = re.search(r'const BUILD = "([0-9a-f]{12})"', code)
+    if build and 'selfUpdate: "https' in code:
+        a, b = code.index(START), code.index(END) + len(END)
+        shared = code[:a] + "//@@ЛИЧНЫЕ НАСТРОЙКИ@@\n" + code[b:]
+        sec = json.loads((ROOT / "secrets.json").read_text()) if (ROOT / "secrets.json").exists() else {}
+        vals = [v for v in [sec.get("sheet_secret"), sec.get("sheet_hook")] + [r.get("token") for r in sec.get("routes", [])] if v and len(v) > 8]
+        for pat in [r"sk-ant-\w+-[\w-]{20,}", r"macros/s/AKfy", r"trig_0[1-9][A-Za-z0-9]{10,}", r"spreadsheets/d/1[\w-]{20,}", r"Prime Thai", r"\bPTP\b"]:
+            if re.search(pat, shared):
+                sys.exit(f"В общем коде виджета осталось личное: {pat}")
+        if any(v in shared for v in vals):
+            sys.exit("В общем коде виджета остался ключ из secrets.json")
+        s = 0x811c9dc5
+        for ch in shared.encode("utf-16-le").decode("utf-16-le"):
+            for u in ([ord(ch)] if ord(ch) < 0x10000 else [0xD800 + ((ord(ch) - 0x10000) >> 10), 0xDC00 + ((ord(ch) - 0x10000) & 0x3FF)]):
+                s = ((s ^ u) * 0x01000193) & 0xffffffff
+        n16 = len(shared.encode("utf-16-le")) // 2
+        (OUT / "w.json").write_text(json.dumps({"build": build.group(1), "len": n16, "sum": s, "code": shared}, ensure_ascii=False))
+
 # Версия кэша: меняется вместе с файлами, иначе телефон держит старое приложение
 h = hashlib.sha256()
 for p in sorted(OUT.rglob("*")):

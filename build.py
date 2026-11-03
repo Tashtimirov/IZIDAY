@@ -8,7 +8,7 @@ secrets.json (не хранится в git, пример — secrets.example.jso
   {"sheet_secret": "...", "sheet_hook": "https://script.google.com/macros/s/…/exec",
    "card_skip": "IVANOV"}   ← слова из имён своих счетов: переводы туда не считаются расходом
 """
-import json, os, re, shutil, subprocess, sys, zipfile, pathlib
+import hashlib, json, os, re, shutil, subprocess, sys, zipfile, pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent
 DIST = ROOT / "dist"
@@ -22,7 +22,10 @@ def fill(text):
 
 shutil.rmtree(DIST, ignore_errors=True)
 DIST.mkdir()
-(DIST / "MyDay.js").write_text(fill((ROOT / "src/iphone/MyDay.js").read_text()))
+_my = fill((ROOT / "src/iphone/MyDay.js").read_text())
+# номер сборки — по содержимому: виджет сам скачивает новую, когда номер на сайте другой (build_web.py → dist/web/w.json)
+_my = _my.replace('const BUILD = "__BUILD__"', 'const BUILD = "%s"' % hashlib.sha256(_my.encode()).hexdigest()[:12])
+(DIST / "MyDay.js").write_text(_my)
 # Версии для других iPhone: личный блок настроек заменяется на src/iphone/profile-<страна>.js
 START, END = "// ═══ ЛИЧНЫЕ НАСТРОЙКИ (начало)", "// ═══ ЛИЧНЫЕ НАСТРОЙКИ (конец) ═══\n"
 src = (ROOT / "src/iphone/MyDay.js").read_text()
