@@ -71,7 +71,7 @@ const ICO = {
 // ───────────── Данные на телефоне ─────────────
 // Записи — как в виджете: { id, date, u (время изменения), ... }; удалённые остаются «надгробиями» { id, deleted, u },
 // чтобы удаление дошло до виджета и таблицы
-const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0 }   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
+const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60 }   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
 let D = {}
 function load() {
   try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
@@ -571,6 +571,10 @@ const AGENT_TOOLS = [
       completed: { type: "boolean" } }, required: ["id"] } },
   { name: "delete_reminder", description: "Удалить напоминание. Пользователь увидит запрос подтверждения.",
     input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "skip_card_payment", description: "Будущий платёж по карте не вносить в личные расходы (рабочий, чужой, возмещаемый). Виджет, получив из банка платёж " +
+      "на эту сумму в ближайшие days дней, не запишет его в расходы и сообщит. Если платёж уже пришёл — найди его в get_money и удали вместо этого.",
+    input_schema: { type: "object", properties: { amount: { type: "number" }, note: { type: "string", description: "Почему: «по работе» и т. п." },
+      days: { type: "number", description: "Сколько дней ждать платёж, по умолчанию 14" } }, required: ["amount"] } },
   { name: "add_money", description: () => `Записать расход или доход ${core.CONFIG.currencyIn}.`,
     input_schema: { type: "object", properties: {
       type: { type: "string", enum: ["expense", "income"] }, amount: { type: "number" },
@@ -715,6 +719,12 @@ async function runTool(name, x) {
       if (!(await chatConfirm(`Удалить напоминание «${r.title}»?`))) return { cancelled: "пользователь отказался удалять" }
       remove("rems", r.id)
       return { ok: true }
+    }
+    case "skip_card_payment": {
+      if (!(x.amount > 0)) return { error: "нужна сумма" }
+      const now = Date.now()
+      upsert("skips", { id: uid("k"), date: now, amount: x.amount, note: String(x.note || "").slice(0, 120), until: now + (x.days || 14) * 864e5 })
+      return { ok: true, note: `Платёж ${x.amount} по карте в ближайшие ${x.days || 14} дн. не попадёт в расходы` }
     }
     case "add_money": {
       const names = core.CONFIG.categories[x.type] ? core.CONFIG.categories[x.type].map(c => c[0]) : []
@@ -941,6 +951,7 @@ ${cals.length ? `- Календари по словам пользователя
   • Чек из магазина, кафе или ресторана: где и когда, позиции списком «название — цена» (переведи на русский, оригинал в скобках, если неясно), скидки и сервисный сбор, итог. Затем ask_user «Записать расход <итог>?» [Наличные, Карта / перевод, Не записывать] и add_money с подходящей категорией и коротким комментарием (магазин, 2–3 главных позиции). Дата — из чека, если не сегодня.
   • Другое (документ, скриншот, визитка…): кратко перескажи главное и предложи, что можно сделать (событие, напоминание, расход).
   Отвечай коротко, без лишних вступлений.
+- «Этот платёж не вноси / он по работе» про платёж, которого ещё нет в расходах (придёт по карте позже) — сразу skip_card_payment, не проси пользователя напомнить потом.
 - Любой вопрос о платеже или переводе (особенно «что это за платёж?» или когда ты сам спрашиваешь о непонятной трате): всегда называй дату и точное время платежа и место, где был пользователь в тот момент, — where_was_i по времени платежа: адрес и ссылка на Google Карты (ссылкой целиком). Если точка далека по времени — так и скажи. Платежи по карте — лист «Карта» (read_sheet), остальные — get_money.
 - Почта Gmail пользователя: mail_search → mail_read, ответы mail_reply, новые письма mail_send, черновики mail_draft, разбор mail_modify. Про письма отвечай по сути: от кого, что хотят, срок, что сделать; длинные — пересказывай. Найдёшь в письме встречу, срок оплаты или задачу — предложи событие или напоминание. Пиши письма сам, от первого лица пользователя, коротко и по-деловому; отправка — только когда пользователь попросил отправить или ответить (подтверждение приложение покажет само).
 - «Съел», «выпил стакан воды» — add_food и add_water. «Удали лишнюю воду/еду/тренировку» — найди id через get_health (или get_history с details) и delete_record. На вопросы о калориях, шагах и воде смотри get_health.

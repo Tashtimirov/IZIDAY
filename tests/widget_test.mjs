@@ -62,15 +62,14 @@ store.push({ title: "Турнир по паделу", startDate: at(25, 18), end
   { title: "Кино", startDate: at(26, 19), endDate: at(26, 21), calendar: { title: "Личное" } })
 texts.length = 0
 await app.buildWidget("large")
-check(!texts.some(t => /\d+\s*соб|событи[еяй]\b/.test(String(t))) && texts.includes("Йога"), "большой виджет: у дня названия событий, не число: " + texts.filter(t => /соб|Йога/.test(String(t))).join(", "))
-check(texts.includes("Турнир по паделу") && texts.includes("Ужин"), "два события в дне — оба названия")
-check(texts.includes("Врач") && texts.includes("+2") && !texts.includes("Кино"), "три события — первое название и «+2»")
+check(!["Йога", "Турнир по паделу", "Ужин", "Врач", "Кино"].some(t => texts.includes(t)), "большой виджет: в строке дней нет названий событий (там погода)", texts.join("|"))
+check(texts.includes("Сегодня") && texts.includes("Напоминания"), "большой виджет: карточки «Сегодня» и «Напоминания», как в приложении")
 store.splice(-5)
 // сегодня всё прошло — под строкой дней полными названиями события ближайшего дня
 const today0 = store.splice(0, 1)
 texts.length = 0
 await app.buildWidget("large")
-check(texts.some(t => /СЕГОДНЯ БОЛЬШЕ НЕТ · СУББОТА, 24/.test(String(t))) && texts.filter(t => t === "Йога").length === 2,
+check(texts.some(t => /СЕГОДНЯ БОЛЬШЕ НЕТ · СУББОТА, 24/.test(String(t))) && texts.filter(t => t === "Йога").length === 1,
   "сегодня пусто — показан ближайший день с событиями: " + texts.filter(t => /СЕГОДНЯ|Йога/.test(String(t))).join(", "))
 store.unshift(...today0)
 const ev = app.upcoming(await app.getCalendar(app.weekDays())).map(e => e.title)

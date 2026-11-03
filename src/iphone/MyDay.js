@@ -125,8 +125,10 @@ const BRAND = {
 const dyn = (light, dark) => Color.dynamic(new Color(light), new Color(dark))
 const dynA = (light, la, dark, da) => Color.dynamic(new Color(light, la), new Color(dark, da))
 const C = {
-  bgTop:    dyn("#FFFFFF", "#1C1C1E"),
-  bgBottom: dyn("#FFFFFF", "#1C1C1E"),
+  bgTop:    dyn("#F2F2F7", "#000000"),          // фон как в приложении
+  bgBottom: dyn("#F2F2F7", "#000000"),
+  card:     dyn("#FFFFFF", "#1C1C1E"),          // белые карточки
+  weekend:  dyn("#FF3B30", "#FF453A"),
   text:     dyn("#1C1C1E", "#FFFFFF"),
   sub:      dyn("#8E8E93", "#98989F"),
   gold:     dyn("#0A9F6E", "#30D158"),          // акцент
@@ -143,7 +145,7 @@ const C = {
   todayBg:  dyn("#0A9F6E", "#30D158"),
   todayFg:  new Color("#FFFFFF"),
   chipText: new Color("#FFFFFF"),
-  cell:     dynA("#767680", 0.10, "#767680", 0.22),   // ячейки дней недели — как в виджете Календаря
+  cell:     dyn("#FFFFFF", "#1C1C1E"),          // ячейки дней недели — белые, как в приложении
   soft:     dynA("#0A9F6E", 0.14, "#30D158", 0.20),
   hint:     dyn("#C7C7CC", "#48484A"),
 }
@@ -314,7 +316,7 @@ async function autoSyncSheet() {
 // Виджет отдаёт таблице новые записи (деньги, еда, вода, тренировки) и снимок того, что видит только iPhone:
 // события, напоминания, данные часов. Обратно получает записи приложения и команды для календаря и напоминаний.
 const HUB_FILES = { money: ["finance.json", "f", 0], food: ["food.json", "m", 120], water: ["water.json", "w", 60], workouts: ["workouts.json", "t", 400],
-  places: ["places.json", "p", 0], locs: ["locs.json", "l", 60], nudges: ["nudges.json", "n", 3], rems: ["rems.json", "r", 0] }   // rems — напоминания IZIDAY (в приложении, не в iPhone)   // nudges — подсказки помощника на день   // locs — где был iPhone (помощник показывает место платежа)   // места «напомни, когда буду рядом» — создаёт помощник в приложении
+  places: ["places.json", "p", 0], locs: ["locs.json", "l", 60], nudges: ["nudges.json", "n", 3], rems: ["rems.json", "r", 0], skips: ["skips.json", "k", 60] }   // skips — платежи по карте, которые не вносить (помощник)   // rems — напоминания IZIDAY (в приложении, не в iPhone)   // nudges — подсказки помощника на день   // locs — где был iPhone (помощник показывает место платежа)   // места «напомни, когда буду рядом» — создаёт помощник в приложении
 const HUB_TOOLS = ["create_event", "update_event", "delete_event", "create_reminder", "update_reminder", "delete_reminder"]
 let HUB_RUN = false   // команды из приложения пользователь уже подтвердил там — окон не показываем
 
@@ -835,8 +837,8 @@ function stripLines(items) {
   return [{ text: names[0], lines: 3 }, { text: `+${names.length - 1}`, lines: 1, more: true }]
 }
 
-function weekStrip(parent, days, events) {
-  const GAP = 4, H = 90, today = new Date()
+function weekStrip(parent, days, events, weather, H = 64) {
+  const GAP = 5, today = new Date()
   const W = Math.floor((contentWidth() - GAP * 6) / 7)
   const LETTERS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
   const row = parent.addStack()
@@ -847,30 +849,68 @@ function weekStrip(parent, days, events) {
     const cell = row.addStack()
     cell.layoutVertically()
     cell.size = new Size(W, H)
-    cell.cornerRadius = 10
+    cell.cornerRadius = 13
     cell.setPadding(5, 2, 5, 2)
     cell.backgroundColor = isToday ? C.todayBg : C.cell
     cell.url = calshowURL(day)
-    // каждая надпись — в своей строке между двумя пружинами, так она стоит ровно по центру ячейки
-    const txt = (s, font, color, lines = 1, scale = 0.7) => {
+    const txt = (s, font, color) => {
       const line = cell.addStack()
       line.addSpacer()
-      const t = line.addText(s); t.font = font; t.textColor = color; t.lineLimit = lines; t.minimumScaleFactor = scale
+      const t = line.addText(s); t.font = font; t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.6
       t.centerAlignText()
       line.addSpacer()
     }
-    const items = itemsForDay(day, events)   // ещё не закончившиеся события дня
-    txt(LETTERS[day.getDay()].toUpperCase(), Font.boldSystemFont(9.5), isToday ? C.todayFg : weekend ? C.gold : C.sub)
-    txt(String(day.getDate()), Font.heavyRoundedSystemFont(16), isToday ? C.todayFg : C.text)
-    cell.addSpacer(2)
-    if (!items.length) txt("—", Font.semiboldRoundedSystemFont(9), isToday ? C.todayFg : C.hint)
-    stripLines(items).forEach((l, k) => {
-      if (k) cell.addSpacer(1)
-      txt(l.text, l.more ? Font.boldRoundedSystemFont(10) : Font.semiboldSystemFont(9.5),
-        isToday ? C.todayFg : l.more ? C.gold : C.text, l.lines, 0.85)
-    })
+    // как в приложении: день недели, число, а под ним — погода (вместо названий событий)
+    txt(LETTERS[day.getDay()].toUpperCase(), Font.semiboldSystemFont(10), isToday ? C.todayFg : weekend ? C.weekend : C.sub)
+    cell.addSpacer(1)
+    txt(String(day.getDate()), Font.boldRoundedSystemFont(H > 56 ? 19 : 16), isToday ? C.todayFg : C.text)
     cell.addSpacer()
+    const wx = weather && weather[dayKey(day)]
+    txt(wx ? `${wxIcon(wx.code)} ${Math.round(wx.t)}°` : itemsForDay(day, events).length ? "•" : "", Font.semiboldRoundedSystemFont(10), isToday ? C.todayFg : C.sub)
   })
+}
+
+// ── Погода на неделю: Open-Meteo (без ключа), по месту iPhone; кэш на 2 часа ──
+function wxIcon(c) {
+  return c === 0 ? "☀️" : c <= 2 ? "🌤" : c === 3 ? "☁️" : c <= 48 ? "🌫" : c <= 67 ? "🌧" : c <= 77 ? "❄️" : c <= 82 ? "🌦" : "⛈"
+}
+async function weatherWeek() {
+  let cache = null
+  try { cache = JSON.parse(await readText("weather.json")) } catch (e) {}
+  if (cache && Date.now() - cache.at < 2 * 3600e3) return cache.days
+  try {
+    let here = (await hereNow()) || (cache && cache.here) || ((await loadJSON("locs.json")).slice(-1)[0]) || null
+    if (!here) try { Location.setAccuracyToThreeKilometers(); const l = await Location.current(); here = { lat: l.latitude, lng: l.longitude } } catch (e) {}
+    if (!here || here.lat == null) return cache ? cache.days : null
+    const r = new Request(`https://api.open-meteo.com/v1/forecast?latitude=${here.lat.toFixed(3)}&longitude=${here.lng.toFixed(3)}&daily=weather_code,temperature_2m_max&timezone=auto&forecast_days=10`)
+    r.timeoutInterval = 6
+    const j = await r.loadJSON()
+    const days = {}
+    ;(j.daily.time || []).forEach((d, i) => { days[d] = { code: j.daily.weather_code[i], t: j.daily.temperature_2m_max[i] } })
+    saveJSON("weather.json", { at: Date.now(), here: { lat: here.lat, lng: here.lng }, days })
+    return days
+  } catch (e) { return cache ? cache.days : null }
+}
+
+// Белая карточка с заголовком, как в приложении
+function cardBox(parent, title, count, url) {
+  const box = parent.addStack()
+  box.layoutVertically()
+  box.backgroundColor = C.card
+  box.cornerRadius = 16
+  box.setPadding(9, 12, 10, 12)
+  if (url) box.url = url
+  const h = box.addStack()
+  h.centerAlignContent()
+  const t = h.addText(title)
+  t.font = Font.boldSystemFont(14); t.textColor = C.text
+  h.addSpacer()
+  if (count) { const c = h.addText(String(count)); c.font = Font.semiboldRoundedSystemFont(12); c.textColor = C.sub }
+  box.addSpacer(6)
+  const inner = box.addStack()
+  inner.layoutVertically()
+  const fill = box.addStack(); fill.addSpacer()   // растянуть карточку на всю ширину
+  return inner
 }
 
 // Под строкой дней — события только сегодняшнего дня, каждое в одну строку: название и время справа
@@ -912,11 +952,11 @@ function todayList(parent, events, n) {
     const pill = s.addStack()
     pill.setPadding(2, 7, 2, 7)
     pill.cornerRadius = 8
-    pill.backgroundColor = new Color(color, 0.16)
+    pill.backgroundColor = dynA("#767680", 0.12, "#767680", 0.24)   // серая «таблетка» времени, как в приложении
     const when = e.isAllDay || !sameDay(e.startDate, now) && e.startDate < now ? "весь день"
       : e.startDate <= now ? `идёт · до ${TIME.string(e.endDate)}` : `${TIME.string(e.startDate)}–${TIME.string(e.endDate)}`
     const wt = pill.addText(when)
-    wt.font = Font.boldRoundedSystemFont(11); wt.textColor = C.events; wt.lineLimit = 1
+    wt.font = Font.semiboldRoundedSystemFont(11); wt.textColor = C.text; wt.lineLimit = 1
   })
   if (evs.length > shown) {
     parent.addSpacer(6)
@@ -1041,15 +1081,15 @@ function dateHeader(parent, size, withButtons) {
   const now = new Date(), big = size === "large" ? 19 : 16
   const d = h.addStack()
   d.layoutVertically()
-  // как виджет Календаря iOS: день недели — маленькими цветными буквами, дата — крупно
-  const t = d.addText(WEEKDAY.string(now).toUpperCase())
-  t.font = Font.semiboldSystemFont(big - 6)
-  t.textColor = C.gold
+  // как в приложении: день недели крупно и жирно, дата — зелёным
+  const t = d.addText(cap(WEEKDAY.string(now)))
+  t.font = Font.heavySystemFont(big + 3)
+  t.textColor = C.text
   t.lineLimit = 1
-  t.minimumScaleFactor = 0.8
+  t.minimumScaleFactor = 0.7
   const dt = d.addText(DATE_LONG.string(now))
-  dt.font = Font.boldSystemFont(big + 1)
-  dt.textColor = C.text
+  dt.font = Font.semiboldSystemFont(big - 3)
+  dt.textColor = C.gold
   dt.lineLimit = 1
   dt.minimumScaleFactor = 0.8
   h.addSpacer()
@@ -1101,19 +1141,20 @@ function addReminders(parent, rems, n, size) {
 }
 
 // Крупный список напоминаний: кружок, название, время справа; просроченные — терракотовые
-function reminderPanel(parent, rems, n) {
+function reminderPanel(parent, rems, n, bare) {
   const box = parent.addStack()
   box.layoutVertically()
-  box.url = REMINDERS_APP
-  const h = box.addStack()
-  h.centerAlignContent()
-  symbol(h, "checklist", C.gold, 13)
-  h.addSpacer(6)
-  const t = h.addText("НАПОМИНАНИЯ")
-  t.font = Font.boldSystemFont(11); t.textColor = C.gold
-  h.addSpacer()
-  if (rems.length) { const c = h.addText(String(rems.length)); c.font = Font.heavyRoundedSystemFont(12); c.textColor = C.gold }
-  box.addSpacer(6)
+  if (!bare) {
+    const h = box.addStack()
+    h.centerAlignContent()
+    symbol(h, "checklist", C.gold, 13)
+    h.addSpacer(6)
+    const t = h.addText("НАПОМИНАНИЯ")
+    t.font = Font.boldSystemFont(11); t.textColor = C.gold
+    h.addSpacer()
+    if (rems.length) { const c = h.addText(String(rems.length)); c.font = Font.heavyRoundedSystemFont(12); c.textColor = C.gold }
+    box.addSpacer(6)
+  }
   if (!rems.length) { empty(box, "Всё сделано 🎉"); return }
   rems.slice(0, n).forEach((r, i) => {
     if (i) box.addSpacer(5)
@@ -1603,6 +1644,21 @@ async function buildWidget(family, param) {
     return w
   }
 
+  if (family === "medium" && !/дела|списки|list/i.test(param || "")) {
+    // как в приложении: шапка и неделя с погодой; под ней — ближайшее дело
+    const weather = await weatherWeek()
+    dateHeader(w, "medium", true)
+    w.addSpacer(7)
+    weekStrip(w, days, weekEvents, weather, 54)
+    w.addSpacer(7)
+    const e = events[0], r = rems[0]
+    const line = w.addStack(); line.centerAlignContent()
+    const t = line.addText(e ? `${eventTime(e)} · ${stripEmoji(e.title || "")}` : r ? `☐ ${r.title}` : "Сегодня свободно")
+    t.font = Font.semiboldSystemFont(12.5); t.textColor = e ? C.text : C.sub; t.lineLimit = 1
+    w.addSpacer()
+    return w
+  }
+
   if (family === "medium") {
     dateHeader(w, "medium", true)
     w.addSpacer(8)
@@ -1622,24 +1678,17 @@ async function buildWidget(family, param) {
     return w
   }
 
-  // large и extraLarge
+  // large и extraLarge — как экран «Сегодня» в приложении: шапка, неделя с погодой, дела на сегодня, напоминания
+  const weather = await weatherWeek()
   dateHeader(w, "large", true)
-  w.addSpacer(6)
-  goldDivider(w)
-  w.addSpacer(7)
-  // 7 дней в строку, в каждом — названия событий (не число)
-  weekStrip(w, days, weekEvents)
-  w.addSpacer(9)
-  // сегодняшние события и напоминания делят одно место: чем меньше событий, тем больше напоминаний
-  const used = todayList(w, weekEvents, CONFIG.large.today)
-  const remRows = Math.max(2, CONFIG.large.rows - used)
-  w.addSpacer(9)
-  goldDivider(w)
   w.addSpacer(8)
-  reminderPanel(w, rems, remRows)
+  weekStrip(w, days, weekEvents, weather)
+  w.addSpacer(8)
+  // сегодняшние события и напоминания делят одно место: чем меньше событий, тем больше напоминаний
+  const used = todayList(cardBox(w, "Сегодня", 0, HOME_URL), weekEvents, CONFIG.large.today)
+  w.addSpacer(8)
+  reminderPanel(cardBox(w, "Напоминания", rems.length, HOME_URL), rems, Math.max(2, CONFIG.large.rows - used), true)
   w.addSpacer()
-  goldDivider(w)
-  w.addSpacer(6)
   healthStrip(w, health, entries)
   return w
 }
@@ -1957,11 +2006,20 @@ async function takeCard(card) {
   const st = await loadSettings()
   const ask = (st.cardAsk || []).filter(x => !known.has(x.id))
   const add = [], fresh = []
+  const skips = withIds(await loadJSON("skips.json"), "k"), skipped = []
   for (const c of card) {
     if (!c || !c.id || !(c.amount > 0) || known.has(c.id) || ask.some(x => x.id === c.id)) continue
+    // помощнику сказали «этот платёж не вноси» — запомнить как удалённый, чтобы не пришёл снова
+    const sk = skips.find(k => !k.deleted && !k.used && Math.abs(k.amount - c.amount) < 0.01 && c.date >= k.date - 3 * 864e5 && c.date <= (k.until || 0))
+    if (sk) { Object.assign(sk, { used: true, usedId: c.id, u: Date.now() }); skipped.push([c, sk]); continue }
     if (cardTwin(c, all)) { ask.push(c); fresh.push(c) } else add.push(cardEntry(c))
   }
-  if (add.length) saveJSON("finance.json", mergeSynced(all, add))
+  if (add.length || skipped.length) saveJSON("finance.json", mergeSynced(all, add, skipped.map(([c]) => c.id)))
+  if (skipped.length) {
+    saveJSON("skips.json", skips)
+    try { const n = new Notification(); n.identifier = "myday-card-skip"; n.title = "💳 Не внесено в расходы"
+      n.body = skipped.map(([c, k]) => `${money(c.amount)} · ${c.to || "карта"}${k.note ? " — " + k.note : ""}`).join("\n"); await n.schedule() } catch (e) {}
+  }
   await saveSettings({ cardAsk: ask })
   try {
     if (add.length) {
@@ -3696,20 +3754,20 @@ function chatHTML(items) {
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
 <style>
-  :root { --bg: ${BRAND.cream}; --me: ${BRAND.emerald}; --meFg: #fff; --ai: #fff; --aiFg: #1d2a24; --sub: #7d8a83; --gold: ${BRAND.gold}; --bar: rgba(251,248,240,.94) }
-  @media (prefers-color-scheme: dark) { :root { --bg: #0f1613; --me: ${BRAND.emeraldMid}; --ai: #1d2622; --aiFg: #eef2ef; --sub: #8fa098; --bar: rgba(15,22,19,.94) } }
+  :root { --bg: #F2F2F7; --me: #0A9F6E; --meFg: #fff; --ai: #fff; --aiFg: #1C1C1E; --sub: #8E8E93; --gold: #0A9F6E; --bar: rgba(242,242,247,.92) }
+  @media (prefers-color-scheme: dark) { :root { --bg: #000; --me: #30D158; --meFg: #000; --ai: #1C1C1E; --aiFg: #fff; --sub: #98989F; --gold: #30D158; --bar: rgba(0,0,0,.88) } }
   * { box-sizing: border-box }
   body { margin: 0; background: var(--bg); color: var(--aiFg); font: 17px -apple-system, sans-serif; -webkit-text-size-adjust: none }
-  header { position: sticky; top: 0; z-index: 2; padding: 12px 16px 10px; background: var(--bar); -webkit-backdrop-filter: blur(12px);
+  header { position: sticky; top: 0; z-index: 2; padding: 12px 16px 10px 84px;   /* слева — кнопка Close от Scriptable */ background: var(--bar); -webkit-backdrop-filter: blur(12px);
     display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(0,0,0,.06) }
-  header b { font: 700 19px Georgia, serif } header span { color: var(--sub); font-size: 13px; flex: 1 }
-  header button { border: 0; background: none; color: var(--sub); font-size: 13px }
+  header b { font: 700 19px -apple-system, sans-serif } header span { color: var(--sub); font-size: 13px; flex: 1 }
+  header button { border: 0; background: none; color: var(--gold); font-size: 15px; margin-right: 36px }   /* справа — кнопка «Поделиться» от Scriptable */
   #list { padding: 12px 12px 120px; display: flex; flex-direction: column; gap: 8px }
   .m { max-width: 84%; padding: 9px 13px; border-radius: 18px; white-space: pre-wrap; word-wrap: break-word; line-height: 1.32 }
   .u { align-self: flex-end; background: var(--me); color: var(--meFg); border-bottom-right-radius: 6px }
   .a { align-self: flex-start; background: var(--ai); border-bottom-left-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.06) }
   .t { display: block; font-size: 11px; opacity: .55; margin-top: 3px; text-align: right }
-  .m a { color: inherit; font-weight: 600 } .a a { color: ${BRAND.teal} }
+  .m a { color: inherit; font-weight: 600 } .a a { color: #0A84FF }
   .link { display: block; margin-top: 6px; padding: 7px 10px; border-radius: 10px; background: rgba(15,168,156,.12); text-decoration: none }
   #typing { display: none; align-self: flex-start; color: var(--sub); padding: 4px 8px }
   #typing i { display: inline-block; width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: var(--gold); animation: b 1s infinite }
@@ -3718,10 +3776,10 @@ function chatHTML(items) {
   .empty { color: var(--sub); text-align: center; margin: 30vh 24px 0; line-height: 1.4 }
   form { position: fixed; left: 0; right: 0; bottom: 0; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: var(--bar);
     -webkit-backdrop-filter: blur(12px); display: flex; gap: 8px; align-items: flex-end; border-top: 1px solid rgba(0,0,0,.06) }
-  textarea { flex: 1; resize: none; max-height: 30vh; padding: 9px 13px; border-radius: 20px; border: 1.5px solid var(--gold);
+  textarea { flex: 1; resize: none; max-height: 30vh; padding: 9px 13px; border-radius: 20px; border: 1px solid rgba(120,120,128,.3);
     background: transparent; color: inherit; font: 17px -apple-system, sans-serif; outline: none }
   .btn { width: 40px; height: 40px; border-radius: 50%; border: 0; font-size: 19px; flex: none }
-  #mic { background: var(--gold); color: #fff } #mic.on { background: ${BRAND.terracotta}; animation: p 1s infinite alternate }
+  #mic { background: rgba(120,120,128,.16); color: var(--gold) } #mic.on { background: #FF3B30; color: #fff; animation: p 1s infinite alternate }
   @keyframes p { to { transform: scale(1.12) } }
   #send { background: var(--me); color: #fff }
 </style></head><body>

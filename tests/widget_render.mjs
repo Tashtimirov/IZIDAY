@@ -117,12 +117,15 @@ const g = { Color, Size, Point, Font, SFSymbol, ListWidget, LinearGradient, Draw
         .replace(/HH/g, z(d.getHours())).replace(/mm/g, z(d.getMinutes())).replace(/dd/g, z(d.getDate())).replace(/\bd\b/g, d.getDate()).replace(/yyyy/g, d.getFullYear()) } },
   URLScheme: { forRunningScript: () => "scriptable:///run/MyDay" }, FileManager: { iCloud: () => fmo, local: () => fmo },
   Calendar: { forEvents: async () => [], forReminders: async () => [] }, Notification: class { static async allPending() { return [] } async schedule() {} setTriggerDate() {} addAction() {} },
-  Safari: { open() {} }, Request: class { async loadJSON() { return {} } async loadString() { return "" } }, Device: { locale: () => "ru_RU", isUsingDarkAppearance: () => MODE === "dark" },
-  Location: { current: async () => ({ latitude: 13.73, longitude: 100.56 }), setAccuracyToHundredMeters() {} }, Script: { name: () => "MyDay", setWidget() {}, complete() {} },
-  config: { runsInWidget: true, widgetFamily: "medium" }, args: { queryParameters: {}, widgetParameter: null }, Data: {}, Image: {}, Timer: class {}, WebView: class {}, UITable: class {}, Alert: class {}, QuickLook: {}, Pasteboard: {} }
+  Safari: { open() {} }, Request: class { constructor(u) { this.u = u } async loadJSON() {
+    if (/open-meteo/.test(this.u)) { const t = [], c = [0, 2, 3, 61, 80, 1, 95, 2, 0, 3], tt = [33, 32, 31, 29, 30, 32, 28, 31, 33, 32]
+      for (let i = 0; i < 10; i++) t.push(dk(new Date(now.getTime() + i * 864e5))); return { daily: { time: t, weather_code: c, temperature_2m_max: tt } } }
+    return {} } async loadString() { return "" } }, Device: { locale: () => "ru_RU", isUsingDarkAppearance: () => MODE === "dark" },
+  Location: { current: async () => ({ latitude: 13.73, longitude: 100.56 }), setAccuracyToHundredMeters() {}, setAccuracyToThreeKilometers() {} }, Script: { name: () => "MyDay", setWidget() {}, complete() {} },
+  config: { runsInWidget: true, widgetFamily: "medium" }, args: { queryParameters: {}, widgetParameter: null }, Data: {}, Image: {}, Timer: { schedule: (ms, rep, f) => setTimeout(f, ms) }, WebView: class {}, UITable: class {}, Alert: class {}, QuickLook: {}, Pasteboard: {} }
 const app = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { buildWidget } })()")(...Object.values(g))
 const SIZES = { small: [170, 170], medium: [364, 170], large: [364, 382] }
-const list = [["small"], ["medium"], ["large"], ["medium", "здоровье"], ["small", "здоровье"]]
+const list = [["large"], ["medium"], ["small"], ["medium", "здоровье"]]
 const browser = await chromium.launch()
 const page = await browser.newPage({ deviceScaleFactor: 2, viewport: { width: 820, height: 400 } })
 const shots = []
