@@ -91,7 +91,7 @@ await page.screenshot({ path: SHOTS + "1-today.png", fullPage: true })
 // ── Макет: тот же экран в текущем стиле и в стиле Apple (светлая и тёмная тема) ──
 const OUT = "/mnt/project-files/mockups/apple/"
 fs.mkdirSync(OUT, { recursive: true })
-const CSS = fs.readFileSync(new URL("../src/web/theme-apple.css", import.meta.url), "utf8")
+const CSS = ""
 await page.evaluate(() => { D.chat = [{ role: "user", text: "что у меня сегодня?", at: Date.now() - 60e3 }, { role: "assistant", text: "Сегодня в 23:00 созвон с командой, а до вечера — купить цветы.\nВоды пока 0,25 л из 2 — налить стакан?", at: Date.now() - 50e3 }]; save(false) })
 for (const [scheme, sfx] of [["light", "light"], ["dark", "dark"]]) {
   await page.emulateMedia({ colorScheme: scheme })
