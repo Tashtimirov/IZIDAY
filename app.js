@@ -1,7 +1,7 @@
 // «Мой день» — веб-приложение для iPhone. Открывается с экрана «Домой» мгновенно и работает без Scriptable.
 // Деньги, еда, вода и тренировки хранятся на телефоне и через Google Таблицу совпадают с виджетом.
-// Календарь, напоминания и данные часов видит только iPhone: их присылает виджет (снимок), а новые события
-// и напоминания приложение ставит в очередь — виджет вносит их в iPhone при обновлении.
+// Календарь — Google Календарь через таблицу; напоминания живут в приложении (уведомления по ним ставит виджет).
+// Данные часов и место видит только iPhone: их присылает виджет (снимок).
 // Разбор фраз, деньги и отчёты — общее ядро с виджетом (core.js, собирается build_web.py).
 "use strict"
 
@@ -71,7 +71,7 @@ const ICO = {
 // ───────────── Данные на телефоне ─────────────
 // Записи — как в виджете: { id, date, u (время изменения), ... }; удалённые остаются «надгробиями» { id, deleted, u },
 // чтобы удаление дошло до виджета и таблицы
-const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3 }   // places — «напомни, когда буду рядом» (проверяет виджет)
+const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0 }   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
 let D = {}
 function load() {
   try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
@@ -154,9 +154,13 @@ function sync() {
         const started = Date.now(), lists = {}
         for (const k of Object.keys(LISTS)) lists[k] = D[k].filter(x => (x.u || 0) > D.sync.pushedAt - 60000)
         const ops = D.ops.filter(o => o.state === "local").map(o => ({ id: o.id, tool: o.tool, input: o.input }))
-        const res = await hubPost({ since: D.sync.since, snapAt: D.sync.snapAt, lists, ops })
+        const wantCal = calForce || !D.gcal || Date.now() - (D.gcal.at || 0) > 120e3
+        calForce = false
+        const res = await hubPost(Object.assign({ since: D.sync.since, snapAt: D.sync.snapAt, lists, ops }, wantCal ? { cal: { action: "list" } } : {}))
         for (const k of Object.keys(LISTS)) mergeIn(k, res.lists && res.lists[k])
         if (res.snap) { D.snap = res.snap; D.sync.snapAt = res.snap.at }
+        if (res.cal) D.gcal = res.cal.events ? { ok: true, at: Date.now(), events: res.cal.events, calendars: res.cal.calendars || [] } : { ok: false, at: Date.now(), error: res.cal.error || "" }
+        migrateRems()
         for (const o of D.ops) if (o.state === "local" && ops.some(x => x.id === o.id)) o.state = "sent"
         for (const so of res.ops || []) {
           const o = D.ops.find(x => x.id === so.id)
@@ -179,6 +183,58 @@ function sync() {
   })()
   syncing = state
   return state.p
+}
+let calForce = false
+// Google Календарь — через таблицу (Apps Script). Пока доступ не выдан — по-старому, через календарь iPhone
+const gcalOn = () => !!(D.gcal && D.gcal.ok)
+async function calDo(action, input) {
+  const res = await hubPost({ cal: Object.assign({ action }, input) })
+  const r = res.cal || { error: "таблица не знает календарь — нужно обновить скрипт" }
+  if (!r.error) { calForce = true; sync() }
+  return r
+}
+// Напоминания приложения: { id, date, title, due, notes, repeat, done, doneAt }
+function remAdd(x) {
+  const now = Date.now()
+  return upsert("rems", { id: `r${now}-${Math.random().toString(36).slice(2, 6)}`, date: now, title: String(x.title || "").trim(), due: x.due || null,
+    notes: x.notes || "", repeat: x.repeat || null, done: false })
+}
+function nextDue(r) {
+  const d = parseIso(r.due), rp = r.repeat
+  if (!d || !rp || !rp.freq) return null
+  const step = { daily: 1, weekly: 7, monthly: 0, yearly: 0 }[rp.freq]
+  const n = new Date(d), now = new Date()
+  for (let i = 0; i < 800 && (n <= d || n < now); i++) {
+    if (rp.freq === "monthly") n.setMonth(n.getMonth() + 1)
+    else if (rp.freq === "yearly") n.setFullYear(n.getFullYear() + 1)
+    else if (rp.freq === "weekly" && (rp.days || []).length) { n.setDate(n.getDate() + 1); if (!rp.days.includes(RDAY[n.getDay()])) continue }
+    else n.setDate(n.getDate() + step)
+  }
+  return /T/.test(r.due) ? iso(n) : dayKey(n)
+}
+function remSet(id, patch) {
+  const r = D.rems.find(x => x.id === id && !x.deleted)
+  if (!r) return null
+  const y = Object.assign({}, r)
+  if (patch.title) y.title = patch.title
+  if (patch.notes !== undefined) y.notes = patch.notes
+  if (patch.due !== undefined) y.due = patch.due || null
+  if (patch.completed === true) {
+    const nx = nextDue(r)
+    if (nx) y.due = nx; else Object.assign(y, { done: true, doneAt: Date.now() })   // повторяющееся — на следующий раз
+  }
+  if (patch.completed === false) Object.assign(y, { done: false, doneAt: null })
+  return upsert("rems", y)
+}
+// Один раз: невыполненные напоминания iPhone и ещё не внесённые команды — в напоминания приложения
+function migrateRems() {
+  if (D.remsMigrated || !D.snap) return
+  for (const r of D.snap.reminders || []) if (!r.completed && !D.rems.some(x => x.from === r.id))
+    upsert("rems", { id: String(r.id), date: Date.now(), from: r.id, title: r.title, due: r.due || null, done: false })
+  for (const o of D.ops) if (o.state === "local" && o.tool === "create_reminder") remAdd(o.input || {})
+  D.ops = D.ops.filter(o => !(o.state === "local" && /_reminder$/.test(o.tool)))
+  D.remsMigrated = true
+  save()
 }
 // Команда выполнена на iPhone: сообщить, если не вышло
 function opDone(o) {
@@ -215,8 +271,8 @@ const pendingOps = () => D.ops.filter(o => o.state !== "done")
 // То, что видит приложение: снимок iPhone + ещё не внесённые команды
 function iphone() {
   const snap = D.snap || {}
-  let events = (snap.events || []).map(e => Object.assign({}, e))
-  let reminders = (snap.reminders || []).map(r => Object.assign({}, r))
+  let events = (gcalOn() ? D.gcal.events.map(e => Object.assign({}, e, { repeats: !!e.recurring })) : (snap.events || []).map(e => Object.assign({}, e)))
+  const reminders = live(D.rems).map(r => ({ id: r.id, title: r.title, due: r.due || null, completed: !!r.done, doneAt: r.doneAt || 0, notes: r.notes || "", repeat: r.repeat || null, list: "" }))
   for (const o of pendingOps()) {
     const x = o.input || {}
     if (o.tool === "create_event") events.push({ id: "op:" + o.id, title: x.title, start: x.start, end: x.end || x.start, all_day: !!x.all_day,
@@ -231,12 +287,6 @@ function iphone() {
       }
     }
     if (o.tool === "delete_event") events = events.filter(v => !(v.id === x.id && (x.all_future || !x.occurrence_start || v.start === x.occurrence_start)))
-    if (o.tool === "create_reminder") reminders.push({ id: "op:" + o.id, title: x.title, due: x.due || null, list: x.list || "", completed: false, pending: true })
-    if (o.tool === "update_reminder") {
-      const r = reminders.find(v => v.id === x.id)
-      if (r) { if (typeof x.completed === "boolean") r.completed = x.completed; if (x.title) r.title = x.title; if (x.due !== undefined) r.due = x.due || null; r.pending = true }
-    }
-    if (o.tool === "delete_reminder") reminders = reminders.filter(v => v.id !== x.id)
   }
   events = events.map(e => Object.assign(e, { s: parseIso(e.start), e: parseIso(e.end) || parseIso(e.start) })).filter(e => e.s)
     .sort((a, b) => a.s - b.s)
@@ -484,12 +534,12 @@ const AGENT_TOOLS = [
     input_schema: { type: "object", properties: { title: { type: "string", description: "Коротко: «Плавание 180 м»" }, minutes: { type: "number" }, kcal: { type: "number" },
       date: { type: "string", description: "YYYY-MM-DDTHH:MM, если тренировка была не сейчас" } }, required: ["title", "minutes", "kcal"] } },
   { name: "get_health", description: "Еда, вода и активность с Apple Watch за сегодня (вместе с тренировками без часов).", input_schema: { type: "object", properties: {} } },
-  { name: "get_events", description: "Найти события календаря iPhone в диапазоне дат (видно 30 дней вперёд и вчера). Для поиска по названию передайте query.",
+  { name: "get_events", description: "Найти события календаря (Google Календарь) в диапазоне дат (видно 45 дней вперёд и 2 дня назад). Для поиска по названию передайте query.",
     input_schema: { type: "object", properties: {
       start: { type: "string", description: "Начало диапазона, YYYY-MM-DDTHH:MM (местное время)" },
       end: { type: "string", description: "Конец диапазона, YYYY-MM-DDTHH:MM" },
       query: { type: "string" } }, required: ["start", "end"] } },
-  { name: "create_event", description: "Создать событие в календаре iPhone.",
+  { name: "create_event", description: "Создать событие в Google Календаре пользователя.",
     input_schema: { type: "object", properties: {
       title: { type: "string" }, start: { type: "string" }, end: { type: "string" },
       all_day: { type: "boolean" }, location: { type: "string" }, notes: { type: "string" },
@@ -508,7 +558,7 @@ const AGENT_TOOLS = [
       all_future: { type: "boolean", description: "true — удалить это и все следующие повторения" } }, required: ["id", "occurrence_start"] } },
   { name: "get_reminders", description: "Список невыполненных напоминаний (и выполненных сегодня, если include_completed).",
     input_schema: { type: "object", properties: { include_completed: { type: "boolean" }, query: { type: "string" } } } },
-  { name: "create_reminder", description: "Создать напоминание.",
+  { name: "create_reminder", description: "Создать напоминание в IZIDAY (напоминания живут в приложении; уведомление и контроль «Выполнил?» — от IZIDAY).",
     input_schema: { type: "object", properties: {
       title: { type: "string" }, due: { type: "string", description: "YYYY-MM-DDTHH:MM или YYYY-MM-DD; не указывайте, если срока нет" },
       list: { type: "string", description: "Название списка напоминаний, если пользователь назвал" },
@@ -614,10 +664,11 @@ async function runTool(name, x) {
       if (!from || !to) return { error: "нужны start и end в формате YYYY-MM-DDTHH:MM" }
       let list = v.events.filter(e => e.s < to && e.e > from)
       if (x.query) { const q = x.query.toLowerCase(); list = list.filter(e => (e.title || "").toLowerCase().includes(q) || core.titleMatches(e.title || "", x.query)) }
-      return { events: list.slice(0, 60).map(evOut), ...(D.snap ? { snapshot_at: iso(new Date(D.snap.at)) } : { warning: "виджет ещё не прислал календарь" }) }
+      return { events: list.slice(0, 60).map(evOut), ...(gcalOn() ? { source: "Google Календарь", at: iso(new Date(D.gcal.at)) } : D.snap ? { snapshot_at: iso(new Date(D.snap.at)) } : { warning: "календарь ещё не загружен" }) }
     }
     case "create_event": {
       if (!parseIso(x.start)) return { error: "неверное начало" }
+      if (gcalOn()) { const r = await calDo("create", x); return r.error ? { error: r.error } : { ok: true, id: r.event.id, event: r.event } }
       const op = queueOp("create_event", x)
       return { ok: true, id: "op:" + op.id, note: QUEUED }
     }
@@ -629,6 +680,7 @@ async function runTool(name, x) {
         const ok = await chatConfirm(`Перенести «${e.title}»?\n${core.cap(fullDate(e.s))}, ${hm(e.s)} → ${core.cap(fullDate(parseIso(x.start)))}, ${hm(parseIso(x.start))}`)
         if (!ok) return { cancelled: "пользователь отказался переносить" }
       }
+      if (gcalOn()) { const r = await calDo("update", Object.assign({}, x, { occurrence_start: x.occurrence_start || e.start })); return r.error ? { error: r.error } : { ok: true, event: r.event } }
       queueOp("update_event", Object.assign({}, x, { occurrence_start: x.occurrence_start || e.start }))
       return { ok: true, note: QUEUED }
     }
@@ -638,38 +690,31 @@ async function runTool(name, x) {
       if (!e) return { error: "событие не найдено" }
       if (!(await chatConfirm(`Удалить «${e.title}»?\n${core.cap(fullDate(e.s))}, ${hm(e.s)}${x.all_future ? "\nи все следующие повторения" : ""}`)))
         return { cancelled: "пользователь отказался удалять" }
+      if (gcalOn()) { const r = await calDo("delete", Object.assign({}, x, { occurrence_start: x.occurrence_start || e.start })); return r.error ? { error: r.error } : { ok: true } }
       queueOp("delete_event", Object.assign({}, x, { occurrence_start: x.occurrence_start || e.start }))
       return { ok: true, note: QUEUED }
     }
     case "get_reminders": {
       let list = x.include_completed ? v.reminders : openRems(v)
       if (x.query) list = list.filter(r => (r.title || "").toLowerCase().includes(x.query.toLowerCase()) || core.titleMatches(r.title || "", x.query))
-      return { reminders: list.slice(0, 80).map(r => ({ id: r.id, title: r.title, due: r.due, completed: !!r.completed, list: r.list || "",
-        ...(r.pending ? { pending: "ещё не внесено в iPhone" } : {}) })) }
+      return { reminders: list.slice(0, 80).map(r => ({ id: r.id, title: r.title, due: r.due, completed: !!r.completed, ...(r.repeat ? { repeat: r.repeat } : {}), ...(r.notes ? { notes: r.notes } : {}) })) }
     }
     case "create_reminder": {
-      const op = queueOp("create_reminder", x)
-      return { ok: true, id: "op:" + op.id, note: QUEUED }
+      if (!String(x.title || "").trim()) return { error: "нужен текст" }
+      if (x.due && !parseIso(x.due)) return { error: "срок — YYYY-MM-DDTHH:MM или YYYY-MM-DD" }
+      const r = remAdd(x)
+      return { ok: true, id: r.id, note: "Сохранено в IZIDAY; уведомление придёт от виджета IZIDAY в срок" }
     }
     case "update_reminder": {
-      if (String(x.id).startsWith("op:")) {
-        const o = D.ops.find(p => p.id === x.id.slice(3) && p.state === "local")
-        if (!o) return { error: "напоминание ещё не внесено в iPhone — изменить его можно после обновления виджета" }
-        if (x.completed) { cancelOp(o.id); return { ok: true, note: "напоминание ещё не было внесено — отменено" } }
-        Object.assign(o.input, x.title ? { title: x.title } : {}, x.due !== undefined ? { due: x.due } : {}); save()
-        return { ok: true }
-      }
-      if (!v.reminders.some(r => r.id === x.id)) return { error: "напоминание не найдено" }
-      queueOp("update_reminder", x)
-      return { ok: true, note: QUEUED }
+      const r = remSet(x.id, x)
+      return r ? { ok: true, reminder: { id: r.id, title: r.title, due: r.due, completed: !!r.done } } : { error: "напоминание не найдено" }
     }
     case "delete_reminder": {
-      if (String(x.id).startsWith("op:")) { cancelOp(x.id.slice(3)); return { ok: true } }
       const r = v.reminders.find(z => z.id === x.id)
       if (!r) return { error: "напоминание не найдено" }
       if (!(await chatConfirm(`Удалить напоминание «${r.title}»?`))) return { cancelled: "пользователь отказался удалять" }
-      queueOp("delete_reminder", x)
-      return { ok: true, note: QUEUED }
+      remove("rems", r.id)
+      return { ok: true }
     }
     case "add_money": {
       const names = core.CONFIG.categories[x.type] ? core.CONFIG.categories[x.type].map(c => c[0]) : []
@@ -886,7 +931,8 @@ function agentSystem() {
 - Повторяющиеся события меняй только в нужное повторение, если пользователь не сказал «все» или «каждую неделю».
 - Время без «утра/вечера»: встречи, спорт, свидания, ужины после 6 обычно вечером; созвоны и работа — днём. Если перепутать дорого и неясно — спроси.
 - Уточняй через ask_user, только если без ответа нельзя сделать правильно: не названо новое время переноса, несколько подходящих событий, не указан способ оплаты (наличные или перевод). Давай короткие варианты ответа.
-- Календарь и напоминания iPhone приложение меняет через виджет: изменения ставятся в очередь и вносятся при обновлении виджета. Так и скажи коротко («внесу в календарь при обновлении виджета»), не извиняйся.
+- Календарь — Google Календарь пользователя: события создаёшь, переносишь и удаляешь сразу (create_event/update_event/delete_event). Если инструмент ответил, что изменение ушло в очередь виджета, — скажи коротко «внесу при обновлении виджета».
+- Напоминания живут в IZIDAY, а не в Напоминаниях iPhone: create_reminder сохраняет их в приложении, уведомление в срок и контроль «Выполнил?» — от IZIDAY. Повторяющиеся (каждый день, по будням) — через repeat. В Напоминания iPhone ничего не вноси.
 ${cals.length ? `- Календари по словам пользователя: ${cals.map(x => `«${x.calendar}» (список напоминаний «${x.list}»)`).join(", ")}.${cals.filter(x => x.hint).map(x => ` ${x.hint} — «${x.calendar}».`).join("")} Если календарь не назван, не указывай его.
 ` : ""}- Деньги — ${c.currencyIn}. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.
 - Фото или файл от пользователя — сначала пойми, что это, и действуй:
@@ -900,7 +946,7 @@ ${cals.length ? `- Календари по словам пользователя
 - «Съел», «выпил стакан воды» — add_food и add_water. «Удали лишнюю воду/еду/тренировку» — найди id через get_health (или get_history с details) и delete_record. На вопросы о калориях, шагах и воде смотри get_health.
 - Тренировка без часов («проплыл бассейн 10 раз», «час падела, часы забыл») — add_workout. Вес пользователя ${H().weight || 80} кг. Скажи, сколько ккал и минут записал.
 - Если пользователь спрашивает (что у меня завтра, сколько потратил), посмотри данные и ответь.
-- У тебя есть доступ ко всем данным пользователя: календарь и напоминания iPhone, деньги (и платежи по карте), еда, вода, тренировки, шаги и активность с часов — за сегодня и за прошлые дни.
+- У тебя есть доступ ко всем данным пользователя: Google Календарь, напоминания IZIDAY, деньги (и платежи по карте), еда, вода, тренировки, шаги и активность с часов — за сегодня и за прошлые дни.
   История по дням — get_history; любой лист таблицы виджета целиком — read_sheet.
 - «Сколько ехать до …», «далеко ли …» — route_to: ответь минутами и километрами (если есть minutes_in_traffic — с учётом пробок).
 - «Напомни, когда буду рядом с …», «напомни заехать в …» — remind_near. Скажи, какие точки нашлись, и что напомнит виджет при проезде рядом. Не говори, что данных нет, пока не посмотрел. Замечай закономерности (недобор воды, перерасход, мало шагов) и говори о них, когда к месту.
@@ -1014,7 +1060,7 @@ function chatSystem() {
 - Голосовые сообщения распознаются с ошибками: восстанавливай смысл по контексту и памяти; уточняй, только если цена ошибки высока.
 - Перед ответом подумай, что человек на самом деле хочет и что ему пригодится дальше; можно одним предложением предложить следующий шаг.
 - Ты ведёшь день пользователя: по календарю, здоровью, еде, воде и целям. Подсказки-уведомления на iPhone ставишь через plan_day (утром план составляется сам). Попросят «напоминай/подсказывай/веди меня» — обнови план.
-- Напоминания контролируешь ты: невыполненное в срок — спрашиваешь, сделал ли, напоминаешь снова, предлагаешь перенести и выясняешь причину (уведомления «Выполнил?» ставит виджет). Если пользователь пишет, почему не сделал — посочувствуй коротко, перенеси через update_reminder на реальное время по календарю и запомни повторяющуюся причину.
+- Напоминания контролируешь ты: невыполненное в срок — спрашиваешь, сделал ли, напоминаешь снова, предлагаешь перенести и выясняешь причину (уведомления «Выполнил?» приходят от IZIDAY). Если пользователь пишет, почему не сделал — посочувствуй коротко, перенеси через update_reminder на реальное время по календарю и запомни повторяющуюся причину.
 - Учись: если пользователь поправил тебя, сказал «не так», «не надо», «лучше…», или видно его привычку — запомни это как предпочтение через remember («Предпочитает…», «Не любит…») и дальше делай так.
 ${r.length ? `- Сложную задачу, которую не решить здесь за пару сообщений (код, разбор документов, исследование, подготовка текста или плана, многошаговая работа), передай через claude_code. Рабочую — в маршрут нужного рабочего проекта по его описанию; личную, не связанную с работой, — в маршрут для личных задач. Если неясно, что именно нужно, сначала коротко уточни. После передачи скажи одной строкой, куда передал; ссылка на сессию покажется сама.`
   : "- Передавать задачи в Claude Code пока нельзя: маршруты не подключены (в виджете: меню → 🤖 Задачи в Claude Code, потом подключить приложение заново). Сложную задачу честно назови сложной и предложи подключить."}`
@@ -1376,8 +1422,8 @@ async function reminderForm() {
       x.due = iso(w.date)
       if (w.recur) x.repeat = repeatOf(w.recur)
     }
-    queueOp("create_reminder", x)
-    s.close(); render(); toast("⏰ Внесётся в Напоминания iPhone при обновлении виджета")
+    remAdd(x)
+    s.close(); render(); toast("⏰ Напоминание сохранено")
   }
 }
 async function eventForm() {
@@ -1396,7 +1442,13 @@ async function eventForm() {
   const title = core.cap(a.title || t)
   const b = await ui.confirm("Добавить в календарь?", `<div class="cmd-list">📅 ${esc(title)}\n${esc(core.cap(fullDate(date)))}, ${hm(date)}–${hm(end)}${a.recur ? "\n🔁 " + esc(core.recurLabel(a.recur)) : ""}${a.calendar ? "\n" + esc(a.calendar) : ""}</div>`, ["Отмена", "Добавить"])
   if (b !== "Добавить") return
-  queueOp("create_event", { title, start: iso(date), end: iso(end), repeat: repeatOf(a.recur), calendar: a.calendar || undefined })
+  const ev = { title, start: iso(date), end: iso(end), repeat: repeatOf(a.recur), calendar: a.calendar || undefined }
+  if (gcalOn()) {
+    const r = await calDo("create", ev)
+    if (r.error) return ui.info("Не получилось", r.error)
+    return toast("📅 Добавлено в Google Календарь")
+  }
+  queueOp("create_event", ev)
   render(); toast("📅 Внесётся в календарь iPhone при обновлении виджета")
 }
 async function eventSheet(e) {
@@ -1672,7 +1724,7 @@ function bind() {
     const id = b.dataset.check
     b.classList.add("on")
     b.closest(".row").classList.add("done-anim")
-    if (id.startsWith("op:")) cancelOp(id.slice(3)); else queueOp("update_reminder", { id, completed: true })
+    remSet(id, { completed: true })
     toast("✓ Выполнено")
     setTimeout(render, 380)
   })
@@ -1789,8 +1841,8 @@ async function hashAction() {
   if (a === "today") return setTab("today")
   if (a === "rem") return remFollow(arg)
   if (a === "synced") { setTab("today"); return sync().then(() => { render(); toast("✓ Внесено в iPhone") }) }
-  if (a === "remdone") { queueOp("update_reminder", { id: arg, completed: true }); setTab("today"); return toast("✓ Отмечено выполненным") }
-  if (a === "remlater") { queueOp("update_reminder", { id: arg, due: iso(new Date(Date.now() + 3600e3)) }); setTab("today"); return toast("⏰ Перенёс на час") }
+  if (a === "remdone") { remSet(arg, { completed: true }); setTab("today"); return toast("✓ Отмечено выполненным") }
+  if (a === "remlater") { remSet(arg, { due: iso(new Date(Date.now() + 3600e3)) }); setTab("today"); return toast("⏰ Перенёс на час") }
   if (a === "place") { const p = D.places.find(z => z.id === arg); setTab("today"); if (p) ui.info(`📍 ${p.title}`, `Вы рядом: ${p.query}.`) }
 }
 // Запустить Scriptable сейчас: внесёт изменения в календарь и напоминания, пришлёт свежий снимок и вернёт в приложение
@@ -1810,10 +1862,10 @@ async function remFollow(id) {
   if (!r) return ui.info("Напоминание", "Не нашёл его — возможно, уже выполнено или удалено.")
   if (r.completed) return toast("✓ Уже выполнено")
   const at = h => { const d = new Date(); d.setHours(h, 0, 0, 0); return d }
-  const opts = [["✅ Сделано", () => { queueOp("update_reminder", { id, completed: true }); toast("✓ Отлично!") }],
-    ["⏰ Через час", () => queueOp("update_reminder", { id, due: iso(new Date(Date.now() + 3600e3)) })],
-    ...(new Date().getHours() < 19 ? [["🌆 Вечером в 19:00", () => queueOp("update_reminder", { id, due: iso(at(19)) })]] : []),
-    ["📅 Завтра в 10:00", () => queueOp("update_reminder", { id, due: iso(addDays(at(10), 1)) })],
+  const opts = [["✅ Сделано", () => { remSet(id, { completed: true }); toast("✓ Отлично!") }],
+    ["⏰ Через час", () => remSet(id, { due: iso(new Date(Date.now() + 3600e3)) })],
+    ...(new Date().getHours() < 19 ? [["🌆 Вечером в 19:00", () => remSet(id, { due: iso(at(19)) })]] : []),
+    ["📅 Завтра в 10:00", () => remSet(id, { due: iso(addDays(at(10), 1)) })],
     ["💬 Не сделал — почему…", async () => {
       const why = await ui.ask("Что помешало?", `«${r.title}». Помощник учтёт и предложит, когда лучше сделать.`, "", { ok: "Отправить", multiline: true })
       if (why) chatSend(`Не выполнил напоминание «${r.title}»${r.due ? ` (срок ${r.due.replace("T", " ")})` : ""}. Причина: ${why}. Перенеси на подходящее время (посмотри календарь), а если это повторяется — запомни и подскажи, как не откладывать.`)
