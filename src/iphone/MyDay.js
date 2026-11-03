@@ -334,7 +334,7 @@ async function hubSnapshot() {
     recur: !!(r.hasRecurrenceRules), notes: r.notes || "" })
   const names = async forRem => { try { return (forRem ? await Calendar.forReminders() : await Calendar.forEvents()).map(c => c.title) } catch (e) { return [] } }
   return { events, reminders: open.slice(0, 200).map(rem).concat(done.slice(-30).map(rem)),
-    calendars: await names(false), lists: await names(true), watch: await loadHealth(), health: (await healthDays()).slice(-14), loc: await hereNow(), notif: await notifInfo() }
+    calendars: await names(false), lists: await names(true), watch: await loadHealth(), health: (await healthDays()).slice(-60), loc: await hereNow(), notif: await notifInfo() }
 }
 // Для приложения: сколько уведомлений виджет поставил (видно в «Ещё» — проверить, что они вообще есть)
 async function notifInfo() {

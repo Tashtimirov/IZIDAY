@@ -188,7 +188,7 @@ async function calRefresh() {
   if (calBusy || !D.conn || !(calForce || !D.gcal || Date.now() - (D.gcal.at || 0) > 120e3)) return
   calBusy = true; calForce = false
   try {
-    const r = (await hubPost({ cal: { action: "list" } }, 60000)).cal
+    const r = (await hubPost({ cal: { action: "list", from: dayKey(addDays(sod(new Date()), -21)) } }, 60000)).cal
     if (r) D.gcal = r.events ? { ok: true, at: Date.now(), events: r.events, calendars: r.calendars || [] } : { ok: !!(D.gcal && D.gcal.ok), at: Date.now(), events: (D.gcal && D.gcal.events) || [], error: r.error || "" }
     save(false)
     if (!stack.length && tab !== "chat") render()
@@ -937,13 +937,23 @@ function waterGap(h, now = new Date()) {
   const gap = (now - last) / 3600e3
   return gap >= 3 ? Math.floor(gap) : 0
 }
-function dayHealth() {
-  const food = today(D.food), workouts = today(D.workouts), v = iphone()
+// Активность с часов за прошлый день — из истории, которую присылает виджет (там тренировки уже учтены)
+const histHealth = d => ((D.snap && D.snap.health) || []).find(h => h && h.day === dayKey(d)) || null
+const onDay = (list, d) => live(list).filter(x => sameDay(x.date, d)).sort((a, b) => a.date - b.date)
+function dayHealth(day = new Date()) {
+  const d0 = sod(day), isToday = sameDay(d0, new Date())
+  const food = onDay(D.food, d0), workouts = onDay(D.workouts, d0), waterList = onDay(D.water, d0)
   const sum = k => food.reduce((s, m) => s + (+m[k] || 0), 0)
-  const watch = v.watch ? Object.assign({}, v.watch) : null
   const wk = { kcal: workouts.reduce((s, w) => s + (w.kcal || 0), 0), min: workouts.reduce((s, w) => s + (w.minutes || 0), 0) }
-  return { food, kcal: sum("kcal"), protein: sum("protein"), fat: sum("fat"), carbs: sum("carbs"), water: waterToday(), workouts, watch,
-    active: (watch && watch.active || 0) + wk.kcal, exercise: (watch && watch.exercise || 0) + wk.min, steps: watch && watch.steps }
+  const base = { day: d0, isToday, food, kcal: sum("kcal"), protein: sum("protein"), fat: sum("fat"), carbs: sum("carbs"),
+    water: waterList.reduce((s, w) => s + (w.ml || 0), 0), waterList, workouts }
+  if (isToday) {
+    const v = iphone(), watch = v.watch ? Object.assign({}, v.watch) : null
+    return Object.assign(base, { watch, active: (watch && watch.active || 0) + wk.kcal, exercise: (watch && watch.exercise || 0) + wk.min, steps: watch && watch.steps })
+  }
+  const h = histHealth(d0)
+  return Object.assign(base, { watch: h, hist: true, active: h && h.active != null ? h.active : wk.kcal, exercise: h && h.exercise != null ? h.exercise : wk.min,
+    steps: h && h.steps != null ? h.steps : null })
 }
 
 function agentSystem() {
@@ -1518,7 +1528,7 @@ async function addMenu() {
 }
 
 // ───────────── Экраны ─────────────
-let tab = "today", selDay = sod(new Date()), monthKey = null
+let tab = "today", selDay = sod(new Date()), monthKey = null, hiddenAt = 0
 function setTab(t) {
   tab = t
   $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t))
@@ -1555,13 +1565,15 @@ function renderToday() {
   const now = new Date(), t0 = sod(now), v = iphone()
   const isToday = sameDay(selDay, t0)
   const counts = {}
-  for (const e of v.events) for (let d = sod(e.s); d < e.e && d < addDays(t0, 7); d = addDays(d, 1)) counts[dayKey(d)] = (counts[dayKey(d)] || 0) + 1
   let html = ""
   if (!D.conn) html += `<div class="banner"><b>Подключите приложение к виджету</b>Нажмите «Подключить»: откроется Scriptable, сам скопирует код, а вы вернётесь сюда кнопкой «◀ IZIDAY» слева вверху и нажмёте «Вставить».<div class="btns" style="margin-top:8px"><button class="btn" data-do="connect">Ввести код</button><button class="btn primary" data-do="autoconnect">🔗 Подключить</button></div></div>`
   else if (D.snap && pendingOps().length) html += `<div class="banner"><b>📲 ${pendingOps().length} ${plural(pendingOps().length, "изменение ждёт", "изменения ждут", "изменений ждут")} внесения в iPhone</b>Календарь и напоминания iPhone меняет только Scriptable. Нажмите — он внесёт сейчас и вернёт вас сюда.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="run-widget">Внести сейчас</button></div></div>`
   else if (!D.snap) html += `<div class="banner"><b>Ждём календарь от виджета</b>Он придёт при ближайшем обновлении виджета на экране «Домой» (обычно в течение 15 минут).</div>`
+  const wOff = Math.floor(Math.round((sod(selDay) - t0) / 864e5) / 7), w0 = addDays(t0, wOff * 7), w6 = addDays(w0, 6)
+  for (const e of v.events) for (let d = sod(e.s); d < e.e && d <= w6; d = addDays(d, 1)) counts[dayKey(d)] = (counts[dayKey(d)] || 0) + 1
+  html += `<div class="month wnav"><button data-shift="-7" aria-label="Неделя назад">‹</button><b>${wOff === 0 ? "Эта неделя" : `${w0.getDate()} ${MONTHS_GEN[w0.getMonth()]} – ${w6.getDate()} ${MONTHS_GEN[w6.getMonth()]}`}</b><button data-shift="7" aria-label="Неделя вперёд">›</button></div>`
   html += `<div class="week">${[...Array(7)].map((_, i) => {
-    const d = addDays(t0, i), n = counts[dayKey(d)] || 0
+    const d = addDays(w0, i), n = counts[dayKey(d)] || 0
     return `<button class="day ${sameDay(d, selDay) ? "on" : ""} ${d.getDay() % 6 === 0 ? "we" : ""}" data-day="${+d}">
       <div class="wd">${WD[d.getDay()]}</div><div class="dn">${d.getDate()}</div><div class="n">${n ? n + " соб." : "—"}</div></button>`
   }).join("")}</div>`
@@ -1581,6 +1593,8 @@ function renderToday() {
   dayEvsCache = dayEvs
 
 
+  const isPast = selDay < t0
+  if (isPast) return html + dayRecap(selDay)
   let rems = openRems(v)
   if (isToday) rems = rems.filter(r => !remDue(r) || remDue(r) < addDays(t0, 1))
   else rems = rems.filter(r => remDue(r) && sameDay(remDue(r), selDay))
@@ -1668,7 +1682,7 @@ function renderMoney() {
       <div class="s">${e.method === "cash" ? "💵 нал" : "💳 перевод"}${e.comment ? " · " + esc(e.comment) : ""}</div></div>
       <div class="amt ${e.type === "expense" ? "exp" : "inc"}">${e.type === "expense" ? "−" : "+"}${esc(core.money(e.amount))}</div></div>`
   }
-  html += `</div><div class="btns"><button class="btn" data-do="report">📊 Отчёт за месяц</button>${D.conn && D.conn.sheetUrl ? '<button class="btn" data-do="sheet">▦ Таблица</button>' : ""}</div>`
+  html += `</div><div class="btns"><button class="btn" data-report="month">📊 Отчёт</button>${D.conn && D.conn.sheetUrl ? '<button class="btn" data-do="sheet">▦ Таблица</button>' : ""}</div>`
   return html
 }
 
@@ -1678,22 +1692,46 @@ function ring(p, color, label, sub) {
     <circle cx="46" cy="46" r="${r}" fill="none" stroke="${color}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - Math.min(1, p || 0))}"/></svg>
     <div class="c"><b>${label}</b><span>${sub}</span></div></div>`
 }
+function healthDay() { const t0 = sod(new Date()); return selDay > t0 ? t0 : sod(selDay) }
+function dayNav(d, attr) {
+  const isT = sameDay(d, new Date())
+  return `<div class="month"><button data-${attr}="-1" aria-label="День назад">‹</button><b>${isT ? "Сегодня" : esc(core.cap(dayName(d)))}</b><button data-${attr}="1" ${isT ? "disabled style=opacity:.3" : ""} aria-label="День вперёд">›</button></div>`
+}
+// Итоги прошедшего дня: вода, еда, тренировки, шаги, расходы — для «Сегодня» на прошлой дате
+function dayRecap(d) {
+  const h = dayHealth(d), g = H()
+  const money = onDay(D.money, d), spent = money.filter(e => e.type === "expense").reduce((s, e) => s + e.amount, 0)
+  const inc = money.filter(e => e.type === "income").reduce((s, e) => s + e.amount, 0)
+  let html = `<div class="card"><h2>Итоги дня</h2><div class="stats">
+    <button class="stat" data-do="tab-health"><div class="v">${liters(h.water)} л</div><div class="l">вода из ${liters(g.waterGoal)}</div></button>
+    <button class="stat" data-do="tab-health"><div class="v">${num(h.kcal)}</div><div class="l">ккал съедено</div></button>
+    <button class="stat" data-do="tab-money"><div class="v">−${num(spent)}</div><div class="l">расходы${inc ? ` · +${num(inc)}` : ""}</div></button></div>
+    <div class="watch" style="margin-top:12px"><div><b>${h.steps != null ? num(h.steps) : "—"}</b><span>шагов</span></div><div><b>${num(h.active)}</b><span>актив. ккал</span></div><div><b>${num(h.exercise)}</b><span>мин упражнений</span></div></div>
+    ${h.watch || h.workouts.length ? "" : `<div class="muted small" style="margin-top:8px">Данных с часов за этот день нет: виджет хранит их ${D.snap && (D.snap.health || []).length ? "за последние " + D.snap.health.length + " дн." : "только с момента подключения"}.</div>`}</div>`
+  if (h.workouts.length) html += `<div class="card"><h2>Тренировки и прогулки</h2>${h.workouts.map(w => `<div class="row" data-wk="${esc(w.id)}"><div class="time">${hm(new Date(w.date))}</div><div class="grow"><div class="t">${esc(w.title)}</div><div class="s">${w.minutes} мин</div></div><div class="amt">−${num(w.kcal)}</div></div>`).join("")}</div>`
+  if (h.food.length) html += `<div class="card"><h2>Еда<span class="muted small" style="text-transform:none;letter-spacing:0">Б ${num(h.protein)} · Ж ${num(h.fat)} · У ${num(h.carbs)}</span></h2>${h.food.map(f => `<div class="row" data-food="${esc(f.id)}"><div class="time">${hm(new Date(f.date))}</div><div class="grow"><div class="t">${esc(f.title || "Еда")}</div></div><div class="amt">${num(f.kcal)}</div></div>`).join("")}</div>`
+  if (money.length) html += `<div class="card"><h2>Расходы и доходы</h2>${money.map(e => `<div class="row" data-money="${esc(e.id)}"><div class="time">${hm(new Date(e.date))}</div><div class="grow"><div class="t">${esc(e.category)}</div><div class="s">${e.method === "cash" ? "💵 нал" : "💳 перевод"}${e.comment ? " · " + esc(e.comment) : ""}</div></div><div class="amt ${e.type === "expense" ? "exp" : "inc"}">${e.type === "expense" ? "−" : "+"}${esc(core.money(e.amount))}</div></div>`).join("")}</div>`
+  if (!h.workouts.length && !h.food.length && !money.length && !h.water) html += `<div class="card"><div class="empty">За этот день ничего не записано</div></div>`
+  return html + `<div class="btns"><button class="btn" data-report="week">📊 Отчёт за неделю</button><button class="btn" data-report="month">За месяц</button><button class="btn" data-report="year">За год</button></div>`
+}
+
 function renderHealth() {
-  const g = H(), h = dayHealth(), t0 = sod(new Date())
-  let html = `<div class="card"><h2>Активность${h.watch ? `<span class="muted small" style="text-transform:none;letter-spacing:0">часы: ${ago(h.watch.updated)}</span>` : ""}</h2>
+  const day = healthDay(), g = H(), h = dayHealth(day), t0 = day, isT = h.isToday
+  let html = dayNav(day, "hday") + `<div class="card"><h2>${isT ? "Активность" : "Активность за день"}${h.watch ? `<span class="muted small" style="text-transform:none;letter-spacing:0">часы: ${ago(h.watch.updated)}</span>` : ""}</h2>
     <div class="watch"><div><b>${h.steps != null ? num(h.steps) : "—"}</b><span>шагов</span></div><div><b>${num(h.active)}</b><span>актив. ккал из ${num(g.moveGoal)}</span></div>
     <div><b>${num(h.exercise)}</b><span>мин упражнений</span></div></div>
-    ${!h.watch ? `<div class="muted small" style="margin-top:8px">Данные часов приходят через виджет после Быстрой команды «Мой день - здоровье».</div>` : ""}
-    <div class="btns" style="margin-top:10px"><button class="btn small" data-do="workout">+ Тренировка без часов</button></div>
+    ${!h.watch ? `<div class="muted small" style="margin-top:8px">${isT ? "Данные часов приходят через виджет после Быстрой команды «Мой день - здоровье»." : "Данных с часов за этот день нет."}</div>` : ""}
+    ${isT ? `<div class="btns" style="margin-top:10px"><button class="btn small" data-do="workout">+ Тренировка без часов</button></div>` : ""}
     ${h.workouts.map(w => `<div class="row" data-wk="${esc(w.id)}"><div class="time">${hm(new Date(w.date))}</div><div class="grow"><div class="t">${esc(w.title)}</div><div class="s">${w.minutes} мин</div></div><div class="amt">−${num(w.kcal)}</div></div>`).join("")}</div>`
   html += `<div class="card"><h2>Вода</h2><div class="ring-row">${ring(h.water / g.waterGoal, "var(--teal)", liters(h.water) + " л", "из " + liters(g.waterGoal))}
-    <div style="flex:1"><div class="btns"><button class="btn teal" data-water="${g.glass}">+ Стакан ${g.glass} мл</button></div>
-    <div class="btns" style="margin-top:8px"><button class="btn small" data-water="500">+500</button><button class="btn small" data-water="other">Другое</button><button class="btn small" data-water="undo">Отменить</button></div></div></div></div>`
+    ${isT ? `<div style="flex:1"><div class="btns"><button class="btn teal" data-water="${g.glass}">+ Стакан ${g.glass} мл</button></div>
+    <div class="btns" style="margin-top:8px"><button class="btn small" data-water="500">+500</button><button class="btn small" data-water="other">Другое</button><button class="btn small" data-water="undo">Отменить</button></div></div>`
+    : `<div style="flex:1" class="small muted">${h.waterList.length ? h.waterList.map(w => `${hm(new Date(w.date))} · ${w.ml} мл`).join("<br>") : "Воду не записывали"}</div>`}</div></div>`
   const kGoal = g.kcalGoal || 2000
-  html += `<div class="card"><h2>Еда<button class="act" data-do="food">+ Добавить</button></h2><div class="ring-row">
+  html += `<div class="card"><h2>Еда${isT ? `<button class="act" data-do="food">+ Добавить</button>` : ""}</h2><div class="ring-row">
     ${ring(h.kcal / kGoal, h.kcal > kGoal ? "var(--red)" : "var(--gold)", num(h.kcal), "ккал")}
     <div style="flex:1" class="small muted">Белки <b style="color:var(--text)">${num(h.protein)} г</b> · жиры <b style="color:var(--text)">${num(h.fat)} г</b> · углеводы <b style="color:var(--text)">${num(h.carbs)} г</b>
-    <div class="btns" style="margin-top:10px"><button class="btn gold small" data-do="photo">📷 По фото</button></div></div></div>`
+    ${isT ? `<div class="btns" style="margin-top:10px"><button class="btn gold small" data-do="photo">📷 По фото</button></div>` : ""}</div></div>`
   html += h.food.map(f => `<div class="row" data-food="${esc(f.id)}"><div class="time">${hm(new Date(f.date))}</div><div class="grow"><div class="t">${esc(f.title || "Еда")}</div>${f.protein || f.fat || f.carbs ? `<div class="s">Б ${num(f.protein)} · Ж ${num(f.fat)} · У ${num(f.carbs)}</div>` : ""}</div><div class="amt">${num(f.kcal)}</div></div>`).join("")
   html += `</div>`
   const days = [...Array(7)].map((_, i) => addDays(t0, i - 6))
@@ -1702,6 +1740,9 @@ function renderHealth() {
   const mk = Math.max(1, ...kc), mw = Math.max(1, ...wa)
   html += `<div class="card"><h2>Неделя: калории</h2><div class="chart">${days.map((d, i) => `<div class="col"><div class="lbl">${kc[i] ? num(kc[i]) : ""}</div><div class="b" style="height:${kc[i] / mk * 100}%"></div><div class="lbl">${WD[d.getDay()]}</div></div>`).join("")}</div></div>`
   html += `<div class="card"><h2>Неделя: вода</h2><div class="chart">${days.map((d, i) => `<div class="col"><div class="lbl">${wa[i] ? liters(wa[i]) : ""}</div><div class="b w" style="height:${wa[i] / mw * 100}%"></div><div class="lbl">${WD[d.getDay()]}</div></div>`).join("")}</div></div>`
+  const money = onDay(D.money, day), spent = money.filter(e => e.type === "expense").reduce((s, e) => s + e.amount, 0)
+  if (!isT) html += `<div class="card"><h2>Расходы за день<span class="muted small" style="text-transform:none;letter-spacing:0">−${esc(core.money(spent))}</span></h2>${money.length ? money.map(e => `<div class="row" data-money="${esc(e.id)}"><div class="time">${hm(new Date(e.date))}</div><div class="grow"><div class="t">${esc(e.category)}</div>${e.comment ? `<div class="s">${esc(e.comment)}</div>` : ""}</div><div class="amt ${e.type === "expense" ? "exp" : "inc"}">${e.type === "expense" ? "−" : "+"}${esc(core.money(e.amount))}</div></div>`).join("") : `<div class="empty">Расходов не было</div>`}</div>`
+  html += `<div class="btns"><button class="btn" data-report="week">📊 Отчёт за неделю</button><button class="btn" data-report="month">За месяц</button><button class="btn" data-report="year">За год</button></div>`
   return html
 }
 
@@ -1733,21 +1774,108 @@ function renderMore() {
   return html
 }
 
-function showReport() {
-  const key = monthKey || core.monthKey(new Date())
-  const s = sheet(`<h3>Отчёт · ${esc(core.monthTitle(key))}</h3><iframe class="report"></iframe>
+// ── Отчёты за неделю, месяц и год: деньги, еда, вода, активность, тренировки ──
+const monthStart = key => { const [y, m] = (key || core.monthKey(new Date())).split("-").map(Number); return new Date(y, m - 1, 1) }
+const MON_SHORT = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
+function periodOf(kind, at) {
+  const d = sod(at)
+  if (kind === "week") { const from = addDays(d, -((d.getDay() + 6) % 7)), to = addDays(from, 7), l = addDays(to, -1)
+    return { from, to, title: `${from.getDate()} ${MON_GEN[from.getMonth()]} – ${l.getDate()} ${MON_GEN[l.getMonth()]} ${l.getFullYear()}` } }
+  if (kind === "year") return { from: new Date(d.getFullYear(), 0, 1), to: new Date(d.getFullYear() + 1, 0, 1), title: `${d.getFullYear()} год` }
+  return { from: new Date(d.getFullYear(), d.getMonth(), 1), to: new Date(d.getFullYear(), d.getMonth() + 1, 1), title: core.monthTitle(core.monthKey(d)) }
+}
+function periodStats(kind, at) {
+  const p = periodOf(kind, at), now = new Date(), end = p.to < now ? p.to : addDays(sod(now), 1)
+  const inP = list => live(list).filter(e => e.date >= +p.from && e.date < +p.to).sort((a, b) => a.date - b.date)
+  const money = inP(D.money), food = inP(D.food), water = inP(D.water), workouts = inP(D.workouts)
+  const sum = (a, k) => a.reduce((s, x) => s + (+x[k] || 0), 0)
+  const exp = money.filter(e => e.type === "expense"), inc = money.filter(e => e.type === "income")
+  const cats = {}; for (const e of exp) cats[e.category] = (cats[e.category] || 0) + e.amount
+  const days = []
+  for (let d = new Date(p.from); d < end; d = addDays(d, 1)) {
+    const k = dayKey(d), h = histHealth(d) || (sameDay(d, now) && iphone().watch) || null
+    const f = food.filter(x => sameDay(x.date, d)), w = water.filter(x => sameDay(x.date, d)), wk = workouts.filter(x => sameDay(x.date, d))
+    days.push({ d, k, kcal: sum(f, "kcal"), water: sum(w, "ml"), steps: h && h.steps != null ? h.steps : null, active: h && h.active || 0, workouts: wk,
+      spent: sum(exp.filter(x => sameDay(x.date, d)), "amount"), income: sum(inc.filter(x => sameDay(x.date, d)), "amount") })
+  }
+  const avg = (k, cond) => { const a = days.filter(cond); return a.length ? a.reduce((s, x) => s + x[k], 0) / a.length : 0 }
+  return { p, kind, money, exp: sum(exp, "amount"), inc: sum(inc, "amount"), cash: sum(exp.filter(e => e.method === "cash"), "amount"),
+    cats: Object.entries(cats).sort((a, b) => b[1] - a[1]), days, workouts,
+    kcalAvg: avg("kcal", x => x.kcal > 0), waterAvg: avg("water", x => x.water > 0), stepsAvg: avg("steps", x => x.steps != null),
+    stepsDays: days.filter(x => x.steps != null).length, wkMin: sum(workouts, "minutes"), wkKcal: sum(workouts, "kcal") }
+}
+function periodReportHTML(st) {
+  const m = n => esc(core.money(n)), g = H()
+  const rows = st.kind === "year"
+    ? [...Array(12)].map((_, i) => { const a = st.days.filter(x => x.d.getMonth() === i); if (!a.length) return ""
+        const s = k => a.reduce((t, x) => t + x[k], 0), fd = a.filter(x => x.kcal), sd = a.filter(x => x.steps != null)
+        return `<tr><td>${MON_SHORT[i]}</td><td>${fd.length ? num(s("kcal") / fd.length) : "—"}</td><td>${sd.length ? num(sd.reduce((t, x) => t + x.steps, 0) / sd.length) : "—"}</td><td>${a.reduce((t, x) => t + x.workouts.length, 0) || "—"}</td><td class="expense">${s("spent") ? "−" + num(s("spent")) : "—"}</td></tr>` }).join("")
+    : st.days.map(x => `<tr><td>${WD[x.d.getDay()]} ${x.d.getDate()}</td><td>${x.kcal ? num(x.kcal) : "—"}</td><td>${x.water ? liters(x.water) : "—"}</td><td>${x.steps != null ? num(x.steps) : "—"}</td><td>${x.workouts.length ? x.workouts.map(w => `${esc(w.title)} ${w.minutes}′`).join(", ") : "—"}</td><td class="expense">${x.spent ? "−" + num(x.spent) : "—"}</td></tr>`).join("")
+  const head = st.kind === "year" ? "<th>Месяц</th><th>ккал/день</th><th>шагов/день</th><th>трен.</th><th>расходы</th>" : "<th>День</th><th>ккал</th><th>вода, л</th><th>шаги</th><th>тренировки</th><th>расходы</th>"
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+:root{--bg:#F2F2F7;--card:#fff;--text:#1C1C1E;--sub:#6B7280;--line:#E5E5EA;--exp:#FF453A;--inc:#0A9F6E;--track:#EEF0F5}
+@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1C1C1E;--text:#F2F2F7;--sub:#9AA1AD;--line:#2C2C2E;--track:#2C2C2E;--inc:#30D158}}
+body{margin:0;padding:16px 12px 40px;background:var(--bg);color:var(--text);font:15px -apple-system,system-ui;-webkit-text-size-adjust:100%}
+h1{font-size:24px;margin:0}h2{font-size:13px;margin:22px 4px 8px;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.muted{color:var(--sub)}.small{font-size:12px}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.card{background:var(--card);border-radius:14px;padding:10px 12px}.card b{display:block;font-size:16px;margin-top:3px;font-variant-numeric:tabular-nums}
+.list{background:var(--card);border-radius:14px;padding:2px 14px}.row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}.row:last-child{border-bottom:0}
+.track{height:6px;border-radius:3px;background:var(--track);overflow:hidden;margin-top:5px}.bar{height:100%;background:var(--exp);border-radius:3px}
+table{width:100%;border-collapse:collapse;background:var(--card);border-radius:14px;overflow:hidden;font-size:12.5px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 6px;text-align:right;border-bottom:1px solid var(--line)}th:first-child,td:first-child{text-align:left;white-space:nowrap}th{color:var(--sub);font-weight:600;font-size:11px}
+td:nth-child(5){text-align:${st.kind === "year" ? "right" : "left"}}.expense{color:var(--exp)}.income{color:var(--inc)}b{white-space:nowrap}
+</style></head><body><h1>${esc(st.p.title)}</h1><div class="muted small">Отчёт за ${st.kind === "week" ? "неделю" : st.kind === "year" ? "год" : "месяц"}</div>
+<div class="cards"><div class="card"><span class="muted small">Расходы</span><b class="expense">${m(st.exp)}</b></div><div class="card"><span class="muted small">Доходы</span><b class="income">${m(st.inc)}</b></div>
+<div class="card"><span class="muted small">Баланс</span><b class="${st.inc - st.exp < 0 ? "expense" : "income"}">${st.inc - st.exp < 0 ? "−" : "+"}${m(Math.abs(st.inc - st.exp))}</b></div>
+<div class="card"><span class="muted small">Еда в день</span><b>${st.kcalAvg ? num(st.kcalAvg) + " ккал" : "—"}</b></div><div class="card"><span class="muted small">Вода в день</span><b>${st.waterAvg ? liters(st.waterAvg) + " л" : "—"}</b></div>
+<div class="card"><span class="muted small">Шагов в день</span><b>${st.stepsDays ? num(st.stepsAvg) : "—"}</b></div></div>
+<h2>Тренировки и прогулки</h2><div class="list">${st.workouts.length ? `<div class="row"><span>Всего ${st.workouts.length}</span><b>${num(st.wkMin)} мин · −${num(st.wkKcal)} ккал</b></div>` + (st.kind === "year" ? "" : st.workouts.map(w => `<div class="row"><span>${WD[new Date(w.date).getDay()]} ${new Date(w.date).getDate()} · ${esc(w.title)}</span><b>${w.minutes} мин</b></div>`).join("")) : `<div class="row"><span class="muted">Тренировок не записано</span></div>`}</div>
+<h2>Расходы по категориям</h2><div class="list">${st.cats.length ? st.cats.map(([n, v]) => `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between"><span>${esc(n)}</span><b>${m(v)} <span class="muted small">${Math.round(v / st.exp * 100)}%</span></b></div><div class="track"><div class="bar" style="width:${v / st.cats[0][1] * 100}%"></div></div></div>`).join("") : `<div class="row"><span class="muted">Расходов нет</span></div>`}
+${st.cash ? `<div class="row"><span class="muted small">💵 наличными ${m(st.cash)} · 💳 переводом ${m(st.exp - st.cash)}</span></div>` : ""}</div>
+<h2>${st.kind === "year" ? "По месяцам" : "По дням"}</h2><table><tr>${head}</tr>${rows}</table>
+${st.stepsDays < st.days.length ? `<div class="muted small" style="margin:8px 4px">Шаги есть за ${st.stepsDays} из ${st.days.length} дн.: виджет присылает историю часов за последние дни. Цель воды — ${liters(g.waterGoal)} л.</div>` : ""}
+</body></html>`
+}
+function periodReportText(st) {
+  const lines = [`Отчёт: ${st.p.title}`, `Расходы ${core.money(st.exp)} · доходы ${core.money(st.inc)}`,
+    `Еда в среднем ${st.kcalAvg ? num(st.kcalAvg) + " ккал" : "—"} · вода ${st.waterAvg ? liters(st.waterAvg) + " л" : "—"} · шагов ${st.stepsDays ? num(st.stepsAvg) : "—"} в день`,
+    `Тренировок ${st.workouts.length}${st.workouts.length ? `, ${num(st.wkMin)} мин` : ""}`, "", "Расходы по категориям:", ...st.cats.map(([n, v]) => `— ${n}: ${core.money(v)}`)]
+  return lines.join("\n")
+}
+function showReport(kind = "month", at = new Date()) {
+  let cur = sod(at)
+  const s = sheet(`<div class="seg" style="margin-bottom:10px"><button data-k="week">Неделя</button><button data-k="month">Месяц</button><button data-k="year">Год</button></div>
+    <div class="month"><button data-p="-1">‹</button><b class="rt"></b><button data-p="1">›</button></div><iframe class="report"></iframe>
     <div class="btns"><button class="btn" data-a="share">Отправить текстом</button><button class="btn primary" data-a="close">Закрыть</button></div>`)
-  $("iframe", s.el).srcdoc = core.reportHTML(key, live(D.money))
+  const draw = () => {
+    const st = periodStats(kind, cur), nextOff = periodOf(kind, cur).to > new Date()
+    $$("[data-k]", s.el).forEach(b => b.classList.toggle("on", b.dataset.k === kind))
+    $(".rt", s.el).textContent = st.p.title
+    const nb = $('[data-p="1"]', s.el); nb.disabled = nextOff; nb.style.opacity = nextOff ? .3 : 1
+    $("iframe", s.el).srcdoc = periodReportHTML(st)
+    s.st = st
+  }
+  $$("[data-k]", s.el).forEach(b => b.onclick = () => { kind = b.dataset.k; draw() })
+  $$("[data-p]", s.el).forEach(b => b.onclick = () => {
+    const p = periodOf(kind, cur), n = +b.dataset.p
+    cur = n < 0 ? addDays(p.from, -1) : p.to
+    if (cur > new Date()) cur = sod(new Date())
+    draw()
+  })
   $('[data-a="close"]', s.el).onclick = () => s.close()
   $('[data-a="share"]', s.el).onclick = () => {
-    const text = core.reportText(key, live(D.money))
+    const text = periodReportText(s.st)
     if (navigator.share) navigator.share({ text }).catch(() => {}); else navigator.clipboard.writeText(text).then(() => toast("Скопировано"))
   }
+  draw()
 }
 
 function bind() {
   const v = $("#view")
   $$("[data-day]", v).forEach(b => b.onclick = () => { selDay = new Date(+b.dataset.day); render() })
+  $$("[data-shift]", v).forEach(b => b.onclick = () => { selDay = addDays(selDay, +b.dataset.shift); render() })
+  $$("[data-hday]", v).forEach(b => b.onclick = () => { const d = addDays(healthDay(), +b.dataset.hday); if (d <= sod(new Date())) { selDay = d; render() } })
+  $$("[data-report]", v).forEach(b => b.onclick = () => showReport(b.dataset.report, tab === "money" ? monthStart(monthKey) : healthDay()))
   $$("[data-ev]", v).forEach(el => el.onclick = () => eventSheet(dayEvsCache[+el.dataset.ev]))
   $$("[data-check]", v).forEach(b => b.onclick = ev => {
     ev.stopPropagation()
@@ -1798,7 +1926,7 @@ function bind() {
 const DO = {
   event: () => eventForm(), reminder: () => reminderForm(), food: () => foodMenu(), workout: () => workoutForm(), photo: () => photoPrompt(),
   expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
-  "tab-money": () => setTab("money"), "tab-health": () => setTab("health"), report: () => showReport(),
+  "tab-money": () => setTab("money"), "tab-health": () => setTab("health"), report: () => showReport("month"),
   sheet: () => window.open(D.conn.sheetUrl, "_blank"),
   sync: () => (!D.conn || !D.conn.hook) ? DO.connect() : sync().then(ok => toast(ok ? "Обновлено" : `Не получилось: ${D.sync.error || "нет связи"}`)),
   "run-widget": () => sync().then(runWidgetNow),
@@ -1994,8 +2122,8 @@ window.addEventListener("hashchange", hashAction)
 sync()
 setInterval(() => { if (document.visibilityState === "visible") sync() }, 60000)
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState !== "visible") return
-  if (selDay < sod(new Date())) selDay = sod(new Date())
+  if (document.visibilityState !== "visible") { hiddenAt = Date.now(); return }
+  if (hiddenAt && Date.now() - hiddenAt > 30 * 60e3 && !sameDay(selDay, new Date())) selDay = sod(new Date())
   const back = runWidgetAt && Date.now() - runWidgetAt < 10 * 60e3
   runWidgetAt = 0
   sync().then(() => { if (back) { render(); toast(pendingOps().length ? "Ещё не всё внесено — откройте виджет ещё раз" : "✓ Внесено в iPhone") } })
