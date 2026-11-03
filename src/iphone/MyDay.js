@@ -114,36 +114,41 @@ const CONFIG = {
   },
 }
 
-// Фирменные цвета (логотип Prime Thai Property): изумруд, золото, бирюза, кремовый фон
+// Цвета в стиле Apple (как приложение IZIDAY): белые/графитовые карточки, изумрудный акцент, системные цвета iOS.
+// Имена ключей остались прежними (gold — акцент, goldLight — текст на цветном), чтобы не переписывать отрисовку
 const BRAND = {
-  emerald: "#0B4A33", emeraldDeep: "#063322", emeraldMid: "#2E6B57",
-  gold: "#D4A23C", goldLight: "#F0CC60", goldDark: "#A9791A",
-  teal: "#0FA89C", cream: "#FBF8F0", sand: "#F1EAD8", terracotta: "#B5532F",
+  emerald: "#0A9F6E", emeraldDeep: "#1C1C1E", emeraldMid: "#30D158",
+  gold: "#0A9F6E", goldLight: "#FFFFFF", goldDark: "#0A9F6E",
+  teal: "#0A84FF", cream: "#F2F2F7", sand: "#FFFFFF", terracotta: "#FF3B30",
 }
 // ═══ ЛИЧНЫЕ НАСТРОЙКИ (конец) ═══
 const dyn = (light, dark) => Color.dynamic(new Color(light), new Color(dark))
+const dynA = (light, la, dark, da) => Color.dynamic(new Color(light, la), new Color(dark, da))
 const C = {
-  bgTop:    dyn(BRAND.cream, "#0D3B2A"),
-  bgBottom: dyn(BRAND.sand, "#05231A"),
-  text:     dyn(BRAND.emeraldDeep, "#F6F1E4"),
-  sub:      dyn("#6E7D72", "#A9BBAE"),
-  gold:     dyn(BRAND.goldDark, BRAND.goldLight),
-  line:     dyn(BRAND.gold, BRAND.gold),
-  events:   dyn(BRAND.emerald, BRAND.goldLight),
-  rem:      dyn(BRAND.goldDark, BRAND.goldLight),
-  notes:    new Color(BRAND.teal),
-  overdue:  new Color(BRAND.terracotta),
-  income:   new Color(BRAND.teal),
-  expense:  dyn(BRAND.terracotta, "#E07A55"),
-  mic:      new Color(BRAND.goldLight),
-  btnBg:    dyn(BRAND.emerald, "#1D5A43"),
-  btnFg:    new Color(BRAND.goldLight),
-  todayBg:  new Color(BRAND.gold),
-  todayFg:  new Color(BRAND.emeraldDeep),
+  bgTop:    dyn("#FFFFFF", "#1C1C1E"),
+  bgBottom: dyn("#FFFFFF", "#1C1C1E"),
+  text:     dyn("#1C1C1E", "#FFFFFF"),
+  sub:      dyn("#8E8E93", "#98989F"),
+  gold:     dyn("#0A9F6E", "#30D158"),          // акцент
+  line:     dyn("#E5E5EA", "#38383A"),
+  events:   dyn("#0A84FF", "#0A84FF"),
+  rem:      dyn("#FF9500", "#FF9F0A"),
+  notes:    dyn("#5856D6", "#5E5CE6"),
+  overdue:  dyn("#FF3B30", "#FF453A"),
+  income:   dyn("#0A9F6E", "#30D158"),
+  expense:  dyn("#FF3B30", "#FF453A"),
+  mic:      new Color("#FFFFFF"),
+  btnBg:    dynA("#0A9F6E", 0.12, "#30D158", 0.18),
+  btnFg:    dyn("#0A9F6E", "#30D158"),
+  todayBg:  dyn("#0A9F6E", "#30D158"),
+  todayFg:  new Color("#FFFFFF"),
   chipText: new Color("#FFFFFF"),
+  cell:     dynA("#767680", 0.10, "#767680", 0.22),   // ячейки дней недели — как в виджете Календаря
+  soft:     dynA("#0A9F6E", 0.14, "#30D158", 0.20),
+  hint:     dyn("#C7C7CC", "#48484A"),
 }
 // Цвета плашек событий: по календарю, из фирменной палитры
-const CHIP_COLORS = [BRAND.emerald, BRAND.teal, BRAND.goldDark, BRAND.emeraldMid]
+const CHIP_COLORS = ["#0A84FF", "#30D158", "#FF9F0A", "#BF5AF2", "#FF375F", "#5AC8FA"]   // системные цвета iOS
 function chipColor(calTitle) {
   let h = 0
   for (const ch of calTitle || "") h = (h * 31 + ch.charCodeAt(0)) >>> 0
@@ -739,7 +744,7 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
       b.size = new Size(16, 16)
       b.cornerRadius = 8
       b.centerAlignContent()
-      b.backgroundColor = isToday ? C.todayFg : (items.length > maxChips ? C.todayBg : new Color(BRAND.gold, 0.25))
+      b.backgroundColor = isToday ? C.todayFg : (items.length > maxChips ? C.todayBg : C.soft)
       const bt = b.addText(String(items.length))
       bt.font = Font.heavyRoundedSystemFont(10)
       bt.lineLimit = 1
@@ -756,7 +761,7 @@ function dayColumn(row, day, today, events, rems, maxChips, titleLines, W, LETTE
 
   if (!items.length) {
     const e = col.addStack(); e.size = new Size(W, 0); e.addSpacer()
-    const d = e.addText("·"); d.font = Font.boldSystemFont(12); d.textColor = new Color(BRAND.gold, 0.5)
+    const d = e.addText("·"); d.font = Font.boldSystemFont(12); d.textColor = C.hint
     e.addSpacer()
   }
   const shown = items.length > maxChips && !compact ? maxChips - 1 : maxChips   // место под «+N» не отнимает плашку зря
@@ -844,7 +849,7 @@ function weekStrip(parent, days, events) {
     cell.size = new Size(W, H)
     cell.cornerRadius = 10
     cell.setPadding(5, 2, 5, 2)
-    cell.backgroundColor = isToday ? C.todayBg : new Color(BRAND.gold, 0.1)
+    cell.backgroundColor = isToday ? C.todayBg : C.cell
     cell.url = calshowURL(day)
     // каждая надпись — в своей строке между двумя пружинами, так она стоит ровно по центру ячейки
     const txt = (s, font, color, lines = 1, scale = 0.7) => {
@@ -858,7 +863,7 @@ function weekStrip(parent, days, events) {
     txt(LETTERS[day.getDay()].toUpperCase(), Font.boldSystemFont(9.5), isToday ? C.todayFg : weekend ? C.gold : C.sub)
     txt(String(day.getDate()), Font.heavyRoundedSystemFont(16), isToday ? C.todayFg : C.text)
     cell.addSpacer(2)
-    if (!items.length) txt("—", Font.semiboldRoundedSystemFont(9), isToday ? C.todayFg : new Color(BRAND.gold, 0.35))
+    if (!items.length) txt("—", Font.semiboldRoundedSystemFont(9), isToday ? C.todayFg : C.hint)
     stripLines(items).forEach((l, k) => {
       if (k) cell.addSpacer(1)
       txt(l.text, l.more ? Font.boldRoundedSystemFont(10) : Font.semiboldSystemFont(9.5),
@@ -937,14 +942,7 @@ function moneyShort(n) {
 function goldDivider(parent) {
   const r = parent.addStack()
   r.centerAlignContent()
-  const line = () => { const l = r.addStack(); l.size = new Size(0, 1); l.backgroundColor = new Color(BRAND.gold, 0.7); l.addSpacer() }
-  line()
-  r.addSpacer(5)
-  const d = r.addText("◆")
-  d.font = Font.systemFont(6)
-  d.textColor = new Color(BRAND.gold)
-  r.addSpacer(5)
-  line()
+  const l = r.addStack(); l.size = new Size(0, 0.5); l.backgroundColor = C.line; l.addSpacer()   // тонкая линия, как в iOS
 }
 
 // ───────────── Элементы виджета ─────────────
@@ -1043,14 +1041,15 @@ function dateHeader(parent, size, withButtons) {
   const now = new Date(), big = size === "large" ? 19 : 16
   const d = h.addStack()
   d.layoutVertically()
-  const t = d.addText(cap(WEEKDAY.string(now)))
-  t.font = new Font("Georgia-Bold", big)   // засечки, как в логотипе
-  t.textColor = C.text
+  // как виджет Календаря iOS: день недели — маленькими цветными буквами, дата — крупно
+  const t = d.addText(WEEKDAY.string(now).toUpperCase())
+  t.font = Font.semiboldSystemFont(big - 6)
+  t.textColor = C.gold
   t.lineLimit = 1
   t.minimumScaleFactor = 0.8
   const dt = d.addText(DATE_LONG.string(now))
-  dt.font = Font.semiboldSystemFont(big - 4)
-  dt.textColor = C.gold
+  dt.font = Font.boldSystemFont(big + 1)
+  dt.textColor = C.text
   dt.lineLimit = 1
   dt.minimumScaleFactor = 0.8
   h.addSpacer()
@@ -1134,7 +1133,7 @@ function reminderPanel(parent, rems, n) {
       const pill = s.addStack()
       pill.setPadding(2, 7, 2, 7)
       pill.cornerRadius = 8
-      pill.backgroundColor = new Color(late ? BRAND.terracotta : BRAND.gold, 0.16)
+      pill.backgroundColor = late ? dynA("#FF3B30", 0.12, "#FF453A", 0.2) : C.soft
       const wt = pill.addText(when)
       wt.font = Font.boldRoundedSystemFont(11); wt.textColor = col; wt.lineLimit = 1
     }
@@ -1432,7 +1431,7 @@ function progressBar(parent, frac, width, color) {
   const bg = parent.addStack()
   bg.size = new Size(width, 4)
   bg.cornerRadius = 2
-  bg.backgroundColor = new Color(BRAND.gold, 0.2)
+  bg.backgroundColor = C.cell
   const f = Math.max(0, Math.min(1, frac || 0))
   if (f > 0) {
     const fill = bg.addStack()
@@ -3964,6 +3963,11 @@ async function runAction(action, q) {
   if (action === "health") return healthMenu()
   if (action === "note") return addNote()
   if (action === "report") return report(q.month)
+  if (action === "connect") {                   // «Подключить» в приложении: код — в буфер, пользователь возвращается и вставляет
+    if (!WEB_APP) return info("Приложение не настроено", "В настройках виджета нет адреса приложения.")
+    Pasteboard.copy(await webAppSetupCode())
+    return info("✓ Код скопирован", "Вернитесь в IZIDAY кнопкой «◀ IZIDAY» слева вверху и нажмите «Вставить».")
+  }
   if (action === "hub") {                       // «Внести в iPhone сейчас» из приложения
     await hubSync(25)
     return info("✓ Внесено в iPhone", "Вернитесь в IZIDAY кнопкой «◀ IZIDAY» слева вверху.")

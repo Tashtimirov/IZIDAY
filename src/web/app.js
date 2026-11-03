@@ -1527,7 +1527,7 @@ function renderToday() {
   const counts = {}
   for (const e of v.events) for (let d = sod(e.s); d < e.e && d < addDays(t0, 7); d = addDays(d, 1)) counts[dayKey(d)] = (counts[dayKey(d)] || 0) + 1
   let html = ""
-  if (!D.conn) html += `<div class="banner"><b>Подключите приложение к виджету</b>В Scriptable: меню виджета → 📱 → «📋 Скопировать код подключения», затем нажмите кнопку ниже и вставьте код. Значок на экране «Домой» подключается отдельно от Safari.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="connect">🔗 Вставить код</button></div></div>`
+  if (!D.conn) html += `<div class="banner"><b>Подключите приложение к виджету</b>Нажмите «Подключить»: откроется Scriptable, сам скопирует код, а вы вернётесь сюда кнопкой «◀ IZIDAY» слева вверху и нажмёте «Вставить».<div class="btns" style="margin-top:8px"><button class="btn" data-do="connect">Ввести код</button><button class="btn primary" data-do="autoconnect">🔗 Подключить</button></div></div>`
   else if (D.snap && pendingOps().length) html += `<div class="banner"><b>📲 ${pendingOps().length} ${plural(pendingOps().length, "изменение ждёт", "изменения ждут", "изменений ждут")} внесения в iPhone</b>Календарь и напоминания iPhone меняет только Scriptable. Нажмите — он внесёт сейчас и вернёт вас сюда.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="run-widget">Внести сейчас</button></div></div>`
   else if (!D.snap) html += `<div class="banner"><b>Ждём календарь от виджета</b>Он придёт при ближайшем обновлении виджета на экране «Домой» (обычно в течение 15 минут).</div>`
   html += `<div class="week">${[...Array(7)].map((_, i) => {
@@ -1772,6 +1772,7 @@ const DO = {
   sheet: () => window.open(D.conn.sheetUrl, "_blank"),
   sync: () => (!D.conn || !D.conn.hook) ? DO.connect() : sync().then(ok => toast(ok ? "Обновлено" : `Не получилось: ${D.sync.error || "нет связи"}`)),
   "run-widget": () => sync().then(runWidgetNow),
+  autoconnect: () => autoConnect(),
   connect: async () => {
     const t = await ui.ask("Подключить к виджету", "Вставьте код из виджета: Scriptable → меню → 📱 Приложение «Мой день» → «Скопировать код подключения».", "", { multiline: true, ok: "Подключить" })
     if (t) connect(t)
@@ -1821,6 +1822,30 @@ async function connect(code) {
   if (ok) toast(D.snap ? "✓ Подключено" : "✓ Подключено. Календарь придёт с обновлением виджета")
   else ui.info("Таблица не ответила", D.sync.error + "\n\nПроверьте, что в таблицу вставлен новый Code.gs и веб-приложение развёрнуто заново (новая версия).")
 }
+
+// Подключение в одно касание: Scriptable копирует код в буфер, приложение забирает его по нажатию «Вставить»
+// (браузер читает буфер только по нажатию — iOS покажет кнопку «Вставить»)
+let connectAt = 0
+function autoConnect() {
+  connectAt = Date.now()
+  location.href = "scriptable:///run/MyDay?action=connect"
+}
+async function pasteConnect() {
+  connectAt = 0
+  const s = sheet(`<h3>🔗 Подключение</h3><div class="msg">Код скопирован в Scriptable. Нажмите «Вставить» — и всё.</div>
+    <div class="btns"><button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">📋 Вставить</button></div>`)
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  $('[data-a="ok"]', s.el).onclick = async () => {
+    let t = ""
+    try { t = await navigator.clipboard.readText() } catch (e) {}
+    s.close()
+    if (t && /setup=|^[A-Za-z0-9+/=%\s]{40,}$/.test(t.trim())) return connect(t)
+    DO.connect()
+  }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && !D.conn && connectAt && Date.now() - connectAt < 10 * 60e3) setTimeout(pasteConnect, 300)
+})
 
 // ───────────── Действия из виджета (ссылки вида …/#voice) ─────────────
 async function hashAction() {
