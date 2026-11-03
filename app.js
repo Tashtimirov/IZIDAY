@@ -63,6 +63,7 @@ const ICO = {
   health: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"/><path d="M7 12h3l1.3-2.5L13 14l1.2-2H17"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>',
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><rect x="8.5" y="2.5" width="7" height="12" rx="3.5"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5"/></svg>',
+  stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="#fff"/></svg>',
   send: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></svg>',
   sync: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9"/><path d="M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2"/></svg>',
 }
@@ -70,7 +71,7 @@ const ICO = {
 // ───────────── Данные на телефоне ─────────────
 // Записи — как в виджете: { id, date, u (время изменения), ... }; удалённые остаются «надгробиями» { id, deleted, u },
 // чтобы удаление дошло до виджета и таблицы
-const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60 }   // places — «напомни, когда буду рядом» (проверяет виджет)
+const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3 }   // places — «напомни, когда буду рядом» (проверяет виджет)
 let D = {}
 function load() {
   try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
@@ -322,6 +323,7 @@ async function claude(body, timeout = 90000, opts = {}) {
   if (!aiKey()) throw new Error("нет ключа Claude — подключите приложение кодом из виджета («Ещё»)")
   const ctl = new AbortController()
   const t = setTimeout(() => ctl.abort(), timeout)
+  if (opts.signal) { if (opts.signal.aborted) ctl.abort(); else opts.signal.addEventListener("abort", () => ctl.abort()) }
   const send = async (b, beta) => {
     const headers = { "x-api-key": aiKey(), "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-dangerous-direct-browser-access": "true" }
     if (beta) headers["anthropic-beta"] = beta
@@ -338,6 +340,7 @@ async function claude(body, timeout = 90000, opts = {}) {
       res = await send(Object.assign({}, body, { model: core.CONFIG.agentModel || "claude-sonnet-5-5", output_config: undefined }))
     return res
   } catch (e) {
+    if (opts.signal && opts.signal.aborted) throw new Error("STOPPED")
     throw new Error(e.name === "AbortError" ? "Claude долго не отвечает" : "нет связи с Claude")
   } finally { clearTimeout(t) }
 }
@@ -548,6 +551,10 @@ const AGENT_TOOLS = [
       query: { type: "string", description: "Место для поиска на карте: название, сеть или адрес" },
       radius_m: { type: "number", description: "Насколько близко, м. По умолчанию 1500 (за 15 минут машина проезжает много)" } }, required: ["title", "query"] } },
   { name: "list_places", description: "Активные и сработавшие напоминания по месту.", input_schema: { type: "object", properties: {} } },
+  { name: "plan_day", description: "Составить или обновить план подсказок на сегодня: уведомления на iPhone в нужное время (их ставит виджет). " +
+      "Заменяет ещё не наступившие подсказки сегодняшнего дня. Используй, когда пользователь просит вести его день, напоминать, подсказывать, или в утренней сводке.",
+    input_schema: { type: "object", properties: { items: { type: "array", items: { type: "object", properties: {
+      time: { type: "string", description: "YYYY-MM-DDTHH:MM сегодня" }, text: { type: "string", description: "Короткая подсказка, 1–2 предложения, живо и по делу" } }, required: ["time", "text"] } } }, required: ["items"] } },
   { name: "where_was_i", description: "Где был пользователь в указанный момент (история мест с iPhone, 60 дней, точка примерно раз в час или при переезде): адрес, ссылка на Google Карты, " +
       "насколько точка близка по времени. Используй для любого вопроса о платеже или переводе (особенно непонятном) и вообще «где я был тогда-то».",
     input_schema: { type: "object", properties: { time: { type: "string", description: "YYYY-MM-DDTHH:MM, местное время" } }, required: ["time"] } },
@@ -746,6 +753,8 @@ async function runTool(name, x) {
         return res.mail || { error: "скрипт таблицы старый: разверните новую версию Code.gs, где есть почта" }
       } catch (e) { return { error: String(e.message || e) } }
     }
+    case "plan_day":
+      return planDay(x.items || [])
     case "where_was_i": {
       const t = parseIso(x.time)
       if (!t) return { error: "время в формате YYYY-MM-DDTHH:MM" }
@@ -897,6 +906,37 @@ ${cals.length ? `- Календари по словам пользователя
 - «Напомни, когда буду рядом с …», «напомни заехать в …» — remind_near. Скажи, какие точки нашлись, и что напомнит виджет при проезде рядом. Не говори, что данных нет, пока не посмотрел. Замечай закономерности (недобор воды, перерасход, мало шагов) и говори о них, когда к месту.
 - Удаление и перенос пользователь подтверждает сам — не спрашивай отдельно «точно удалить?» или «точно перенести?».`
 }
+// ── Помощник ведёт день: план подсказок → уведомления от виджета ──
+function planDay(items) {
+  const now = Date.now(), end = +addDays(sod(new Date()), 1)
+  live(D.nudges).filter(n => n.date > now && n.date < end).forEach(n => remove("nudges", n.id))
+  const ok = []
+  for (const it of items.slice(0, 14)) {
+    const t = parseIso(it.time)
+    if (!t || +t <= now || +t >= end || !String(it.text || "").trim()) continue
+    ok.push(upsert("nudges", { id: uid("n"), date: +t, text: String(it.text).trim().slice(0, 240) }))
+  }
+  D.planDay = dayKey(new Date()); save()
+  return { ok: true, planned: ok.map(n => ({ time: hm(new Date(n.date)), text: n.text })), note: "уведомления поставит виджет при следующем обновлении (обычно до 15 минут)" }
+}
+// Раз в день (при первом открытии после 6:00) помощник сам составляет план подсказок на день
+let planBusy = false
+async function autoPlan() {
+  const now = new Date()
+  if (planBusy || !aiKey() || now.getHours() < 6 || now.getHours() >= 21 || D.planDay === dayKey(now)) return
+  planBusy = true
+  try {
+    const sys = chatSystem() + `
+
+Сейчас ты сам, без запроса, планируешь день пользователя. Посмотри календарь и напоминания на сегодня, еду и воду, активность и вчерашний день (get_history), память.
+Составь через plan_day 4–8 подсказок на оставшуюся часть дня: вода (с учётом выпитого и дел, не во время встреч), еда (если обычно пропускает — напомни), подготовка к важным встречам и дорога (за 30–60 мин), движение и шаги, одна идея или мысль дня по его целям из памяти, вечером — короткий итог. Не дублируй уведомления о встречах — они уже есть. Пиши тепло и коротко, на «ты»/«вы» — как пользователь привык. Ответь одной строкой, что запланировал.`
+    const msgs = [{ role: "user", content: `[${hm(now)}] Спланируй мне сегодняшний день подсказками.` }]
+    const tools = chatTools().filter(t => /^(get_|plan_day|list_places|read_sheet|mail_search|search_chats)/.test(t.name))
+    const r = await agentTurn(msgs, sys, tools)
+    if (D.planDay === dayKey(now) && r) { D.chat.push({ role: "assistant", text: `🗓 ${r}`, at: Date.now() }); save(false); if (tab === "chat") renderChat() }
+  } catch (e) {} finally { planBusy = false }
+}
+
 // ── Память помощника: факты о человеке и сводки прошлых разговоров (лист «Память помощника» в таблице) ──
 const memFacts = () => live(D.memory).filter(m => m.kind === "fact").sort((a, b) => a.date - b.date)
 const memChats = () => live(D.memory).filter(m => m.kind === "chat").sort((a, b) => a.date - b.date)
@@ -973,6 +1013,8 @@ function chatSystem() {
 - Узнал о пользователе что-то устойчивое (люди, предпочтения, цели, планы, договорённости) — запомни через remember, не спрашивая разрешения и не объявляя об этом. Попросят забыть — forget.
 - Голосовые сообщения распознаются с ошибками: восстанавливай смысл по контексту и памяти; уточняй, только если цена ошибки высока.
 - Перед ответом подумай, что человек на самом деле хочет и что ему пригодится дальше; можно одним предложением предложить следующий шаг.
+- Ты ведёшь день пользователя: по календарю, здоровью, еде, воде и целям. Подсказки-уведомления на iPhone ставишь через plan_day (утром план составляется сам). Попросят «напоминай/подсказывай/веди меня» — обнови план.
+- Учись: если пользователь поправил тебя, сказал «не так», «не надо», «лучше…», или видно его привычку — запомни это как предпочтение через remember («Предпочитает…», «Не любит…») и дальше делай так.
 ${r.length ? `- Сложную задачу, которую не решить здесь за пару сообщений (код, разбор документов, исследование, подготовка текста или плана, многошаговая работа), передай через claude_code. Рабочую — в маршрут нужного рабочего проекта по его описанию; личную, не связанную с работой, — в маршрут для личных задач. Если неясно, что именно нужно, сначала коротко уточни. После передачи скажи одной строкой, куда передал; ссылка на сессию покажется сама.`
   : "- Передавать задачи в Claude Code пока нельзя: маршруты не подключены (в виджете: меню → 🤖 Задачи в Claude Code, потом подключить приложение заново). Сложную задачу честно назови сложной и предложи подключить."}`
 }
@@ -1003,22 +1045,25 @@ const dropThinking = messages => messages.forEach(m => {
   if (m.role === "assistant" && Array.isArray(m.content)) m.content = m.content.filter(c => c.type !== "thinking" && c.type !== "redacted_thinking")
 })
 // Один ход помощника: Claude думает и вызывает инструменты, пока не даст ответ
+let chatStopCtl = null
 async function agentTurn(messages, system, tools) {
+  const stopSig = chatStopCtl && chatStopCtl.signal
   // Кэш: описание инструментов одинаковое всегда, а внутри хода каждый шаг повторяет предыдущие — повтор стоит в 10 раз дешевле
   const ctools = tools.map((t, i) => i === tools.length - 1 ? Object.assign({}, t, { cache_control: { type: "ephemeral" } }) : t)
-  const ask = () => claude({ max_tokens: 16000, system, tools: ctools, messages, output_config: { effort: "high" }, cache_control: { type: "ephemeral" } }, 150000, { smart: true, model: CHAT_MODEL })
+  const ask = () => claude({ max_tokens: 16000, system, tools: ctools, messages, output_config: { effort: "high" }, cache_control: { type: "ephemeral" } }, 150000, { smart: true, model: CHAT_MODEL, signal: stopSig })
   for (let step = 0; step < 14; step++) {
     let res
     try {
       res = await ask()
       if (res && res.error && /thinking/i.test(res.error.message || "")) { dropThinking(messages); res = await ask() }
-    } catch (e) { return `Нет связи с Claude: ${e.message || e}` }
+    } catch (e) { if (stopSig && stopSig.aborted) return null; return `Нет связи с Claude: ${e.message || e}` }
     if (!res || res.error) return `Claude ответил ошибкой: ${res && res.error ? res.error.message || res.error.type : "пустой ответ"}`
     messages.push({ role: "assistant", content: res.content })
     const uses = (res.content || []).filter(c => c.type === "tool_use")
     if (res.stop_reason === "refusal") return "Не могу с этим помочь — попробуйте сформулировать иначе."
     if (!uses.length || res.stop_reason !== "tool_use") return (res.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim() || "Готово."
     const results = []
+    if (stopSig && stopSig.aborted) return null
     for (const u of uses) {
       let out
       try { out = await runTool(u.name, u.input || {}) } catch (e) { out = { error: String(e.message || e) } }
@@ -1050,8 +1095,21 @@ async function chatSend(text, opts = {}) {
     const a = opts.attach, last = ctx[ctx.length - 1]
     last.content = [{ type: a.type, source: { type: "base64", media_type: a.media_type, data: a.data } }, { type: "text", text: last.content }]
   }
+  chatStopCtl = new AbortController()
+  setBusyUI(true)
   try { reply = await agentTurn(ctx, chatSystem(), chatTools()) } catch (e) { reply = `Ошибка: ${e.message || e}` }
+  const stopped = chatStopCtl.signal.aborted
+  chatStopCtl = null
   chatBusy = false
+  setBusyUI(false)
+  if (stopped) {   // «Стоп»: вопрос возвращается в строку ввода — поправить и отправить заново
+    const i = D.chat.lastIndexOf(item)
+    if (i >= 0) D.chat.splice(i)
+    save(false); if (tab === "chat") renderChat()
+    const inp = $("#chat-in"); if (inp && !opts.attach && !opts.label) { inp.value = text; grow(inp); inp.focus() }
+    toast("⏹ Остановлено — поправьте и отправьте")
+    return
+  }
   D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice() })
   if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
   D.chat.filter(m => m.thumb).slice(0, -12).forEach(m => { delete m.thumb })   // миниатюры только у последних фото — память телефона
@@ -1059,6 +1117,27 @@ async function chatSend(text, opts = {}) {
   sync()
   if (tab === "chat") renderChat()
   else toast("💬 Помощник ответил")
+}
+function setBusyUI(on) {
+  const b = $(".chat-bar .send"); if (!b) return
+  b.classList.toggle("stop", on); b.innerHTML = on ? ICO.stop : ICO.send; b.setAttribute("aria-label", on ? "Остановить" : "Отправить")
+}
+function chatStop() {
+  if (!chatStopCtl) return
+  chatStopCtl.abort()
+  if (askWait) { const w = askWait; askWait = null; w("") }   // помощник ждал ответа на вопрос — отменяем
+}
+// ✎ у своего сообщения: текст обратно в строку ввода, это сообщение и всё после него убираются
+function chatEdit(idx) {
+  const m = D.chat[idx]
+  if (!m || m.role !== "user") return
+  if (chatBusy) chatStop()
+  const t = m.text
+  setTimeout(() => {
+    const j = D.chat.indexOf(m); if (j >= 0) D.chat.splice(j)
+    save(false); renderChat()
+    const inp = $("#chat-in"); if (inp) { inp.value = t; grow(inp); inp.focus() }
+  }, chatBusy ? 50 : 0)
 }
 // Вопрос помощника прямо в чате: варианты кнопками, можно ответить голосом или текстом
 function chatAsk(question, options) {
@@ -1461,7 +1540,9 @@ function chatItems() {
   const last = D.chat.length - 1
   return D.chat.slice(-60).map((m, i, arr) => {
     const isLast = i === arr.length - 1 && askWait
-    return `<div class="m ${m.role}">${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? "🎤 " : ""}${linkify(m.text)}${(m.links || []).length ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>` : ""}` +
+    const gi = D.chat.length - arr.length + i
+    const edit = m.role === "user" && !m.local && !m.thumb && !m.prompt && i >= arr.length - 6 ? `<button class="ed" data-edit="${gi}" aria-label="Изменить">✎</button>` : ""
+    return `<div class="m ${m.role}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? "🎤 " : ""}${linkify(m.text)}${(m.links || []).length ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>` : ""}` +
       `${m.opts && m.opts.length && isLast ? `<div class="opts">${m.opts.map(o => `<button data-opt="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}<span class="tm">${hm(new Date(m.at || Date.now()))}</span></div>`
   }).join("") + (chatBusy && !askWait ? `<div class="typing"><i></i><i></i><i></i></div>` : "") + (last < 0 ? "" : "")
 }
@@ -1474,6 +1555,7 @@ function renderChat() {
 }
 function bindChatList() {
   $$("[data-opt]").forEach(b => b.onclick = () => { b.classList.add("on"); chatSend(b.dataset.opt) })
+  $$("[data-edit]").forEach(b => b.onclick = e => { e.stopPropagation(); chatEdit(+b.dataset.edit) })
 }
 
 function renderMoney() {
@@ -1547,6 +1629,7 @@ function renderMore() {
   html += `<div class="card"><h2>Связь с виджетом</h2>`
   if (c) html += `<div class="set"><span>Таблица</span><span class="ok">✓ ${esc((c.hook.match(/\/s\/(.{8})/) || [, "подключена"])[1])}</span></div>
       <div class="set"><span>Последний обмен</span><span>${esc(ago(D.sync.at))}</span></div>
+      <div class="set"><span>Уведомления на iPhone</span><span>${D.snap && D.snap.notif ? `${D.snap.notif.mine} запланировано` : "виджет старой версии — обновите MyDay.js"}</span></div>
       <div class="set"><span>Календарь от виджета</span><span>${esc(D.snap ? ago(D.snap.at) : "ещё не было")}</span></div>
       <div class="set"><span>Ключ Claude</span>${c.key ? '<span class="ok">✓ Есть</span>' : '<span class="exp">нет</span>'}</div>
       <div class="set"><span>Маршруты в Claude Code</span><span>${routes().length ? esc(routes().map(r => r.name).join(", ")) : "нет"}</span></div>
@@ -1617,7 +1700,10 @@ function bind() {
   if (inp) {
     inp.oninput = () => grow(inp)
     inp.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (voice) return voiceSendNow(); const t = inp.value; inp.value = ""; grow(inp); chatSend(t) } }
-    $(".chat-bar .send", v).onclick = () => { if (voice) return voiceSendNow(); const t = inp.value; inp.value = ""; grow(inp); chatSend(t) }
+    $(".chat-bar .send", v).onclick = () => { if (voice) return voiceSendNow(); if (chatBusy && !askWait && !inp.value.trim()) return chatStop(); const t = inp.value; inp.value = ""; grow(inp); chatSend(t) }
+    if (chatBusy && !askWait) setBusyUI(true)
+    // тронули текст во время записи — не отправлять по паузе: можно поправить и нажать ➤
+    inp.addEventListener("focus", () => { if (voice) { const t = inp.value, r = rec; voiceReset(); try { r && r.stop() } catch (e) {} inp.value = t; grow(inp); toast("✎ Поправьте и нажмите ➤") } })
     if (voice) { $(".chat-bar .mic", v).classList.add("on"); inp.placeholder = "Слушаю… ➤ — отправить сразу"; if (voice.text) { inp.value = voice.text; grow(inp) } }
     $(".chat-bar .mic", v).onclick = () => micStart()
     $(".chat-bar .cam", v).onclick = () => photoPrompt()
@@ -1762,6 +1848,7 @@ load()
 setTab("today")
 hashAction()
 setTimeout(memorize, 8000)   // прошлый разговор закончился — сложить в память
+setTimeout(autoPlan, 15000)   // первый раз за день — план подсказок
 window.addEventListener("hashchange", hashAction)
 sync()
 setInterval(() => { if (document.visibilityState === "visible") sync() }, 60000)
