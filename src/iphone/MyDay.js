@@ -1053,10 +1053,17 @@ function baseWidget() {
 }
 
 // Кнопки шапки — только три: голос, текст, фото (остальное есть в приложении)
-const BUTTONS = [
+// (в версии с помощником; у версий для других людей — прежний набор)
+const BUTTONS = CONFIG.assistantChat ? [
   ["mic.fill", "🎤", "voice"],
-  CONFIG.assistantChat ? ["square.and.pencil", "✎", "chat"] : ["square.and.pencil", "✎", "note"],
+  ["square.and.pencil", "✎", "chat"],
   ["camera.fill", "📷", "camera"],
+] : [
+  ["mic.fill", "🎤", "voice"],
+  ["camera.fill", "📷", "camera"],
+  [CONFIG.currencyIcon, CONFIG.currency, "money"],
+  ["tablecells.fill", "▦", "sheet"],
+  ["square.and.pencil", "✎", "note"],
 ]
 // Кнопки шапки: ▦ — только когда таблица подключена
 const headerButtons = () => BUTTONS.filter(b => b[2] !== "sheet" || SHEET_URL)

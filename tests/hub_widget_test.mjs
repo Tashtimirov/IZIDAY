@@ -107,7 +107,7 @@ check(st.hubSince > 0 && st.hubAt > 0, "время обмена запомнен
 urls.length = 0
 await w.buildWidget("large")
 const web = urls.filter(x => typeof x === "string" && x.startsWith(APP))
-check(web.includes(APP + "#voice") && web.includes(APP + "#chat") && web.includes(APP + "#money") && web.includes(APP + "#camera"), "кнопки шапки → приложение", web)
+check(web.includes(APP + "#voice") && web.includes(APP + "#chat") && web.includes(APP + "#camera") && !web.includes(APP + "#money"), "кнопки шапки: только голос, текст, фото → приложение", web)
 check(urls.includes(APP), "нажатие на виджет — приложение")
 check(!urls.some(x => typeof x === "string" && /scriptable.*action=(voice|chat|money|camera|water)/.test(x)), "кнопки не открывают Scriptable")
 // 6. место: снимок несёт координаты, напоминание «когда буду рядом» срабатывает один раз и уходит в приложение
