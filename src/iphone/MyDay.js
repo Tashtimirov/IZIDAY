@@ -320,7 +320,7 @@ async function autoSyncSheet() {
 // события, напоминания, данные часов. Обратно получает записи приложения и команды для календаря и напоминаний.
 const HUB_FILES = { money: ["finance.json", "f", 0], food: ["food.json", "m", 120], water: ["water.json", "w", 60], workouts: ["workouts.json", "t", 400],
   places: ["places.json", "p", 0], locs: ["locs.json", "l", 60], nudges: ["nudges.json", "n", 3], rems: ["rems.json", "r", 0], skips: ["skips.json", "k", 60],
-  shop: ["shop.json", "b", 0], fast: ["fast.json", "g", 90] }   // shop — список покупок; fast — интервальное голодание   // skips — платежи по карте, которые не вносить (помощник)   // rems — напоминания IZIDAY (в приложении, не в iPhone)   // nudges — подсказки помощника на день   // locs — где был iPhone (помощник показывает место платежа)   // места «напомни, когда буду рядом» — создаёт помощник в приложении
+  shop: ["shop.json", "b", 0], fast: ["fast.json", "g", 90], goals: ["goals.json", "o", 0] }   // goals — цели на месяц, 100 желаний, 10 мечт; shop — список покупок; fast — интервальное голодание   // skips — платежи по карте, которые не вносить (помощник)   // rems — напоминания IZIDAY (в приложении, не в iPhone)   // nudges — подсказки помощника на день   // locs — где был iPhone (помощник показывает место платежа)   // места «напомни, когда буду рядом» — создаёт помощник в приложении
 const HUB_TOOLS = ["create_event", "update_event", "delete_event", "create_reminder", "update_reminder", "delete_reminder"]
 let HUB_RUN = false   // команды из приложения пользователь уже подтвердил там — окон не показываем
 
@@ -3293,6 +3293,9 @@ const AGENT_TOOLS = [
   { name: "shop_done", description: "Отметить купленным (или убрать из списка).", input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } } }, required: ["items"] } },
   { name: "start_fast", description: "Начать интервальное голодание (по умолчанию 16 ч). Когда окно откроется — придёт пуш.", input_schema: { type: "object", properties: { hours: { type: "number" } } } },
   { name: "stop_fast", description: "Закончить голодание сейчас (поел).", input_schema: { type: "object", properties: {} } },
+  { name: "add_goal", description: "Цели: kind=month — на этот месяц; wish — «100 желаний»; dream — «10 мечт», крупное на срок до года (due YYYY-MM-DD).",
+    input_schema: { type: "object", properties: { kind: { type: "string", enum: ["month", "wish", "dream"] }, items: { type: "array", items: { type: "string" } }, due: { type: "string" } }, required: ["kind", "items"] } },
+  { name: "get_goals", description: "Цели на месяц, желания и мечты.", input_schema: { type: "object", properties: {} } },
   { name: "add_water", description: "Записать выпитую воду. Стакан — 250 мл.",
     input_schema: { type: "object", properties: { ml: { type: "number" } }, required: ["ml"] } },
   { name: "add_workout", description: "Записать тренировку без часов (пользователь забыл часы и рассказывает сам). Оцени длительность и сожжённые калории сам по MET и весу пользователя из системной подсказки: например, бассейн 18 м × 10 раз = 180 м ≈ 6–8 минут спокойного плавания.",
@@ -3496,6 +3499,23 @@ async function runTool(name, x) {
       }
       if (name !== "get_shopping") saveJSON("shop.json", list)
       return { ok: true, to_buy: open().map(s => s.title) }
+    }
+    case "add_goal": case "get_goals": {
+      const list = withIds(await loadJSON("goals.json"), "o"), now = Date.now(), d = new Date(), mon = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+      const of = k => list.filter(g => !g.deleted && g.title && g.kind === k && (k !== "month" || g.month === mon))
+      if (name === "get_goals") return { month: of("month").map(g => ({ title: g.title, done: !!g.done })), wish: of("wish").map(g => ({ title: g.title, done: !!g.done })), dream: of("dream").map(g => ({ title: g.title, done: !!g.done, due: g.due })) }
+      const max = { month: 0, wish: 100, dream: 10 }[x.kind]
+      if (max == null) return { error: "kind: month, wish или dream" }
+      const y = new Date(now + 365 * 864e5), year = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, "0")}-${String(y.getDate()).padStart(2, "0")}`
+      const due = /^\d{4}-\d\d-\d\d$/.test(x.due || "") && x.due < year ? x.due : year
+      const same = (a, b) => String(a).toLowerCase().replace(/ё/g, "е").trim() === String(b).toLowerCase().replace(/ё/g, "е").trim()
+      let n = 0
+      for (const t of (x.items || []).map(s => String(s).trim()).filter(Boolean)) {
+        if ((max && of(x.kind).length >= max) || of(x.kind).some(g => same(g.title, t))) continue
+        list.push(Object.assign({ id: `o${now}-${n++}`, date: now + n, u: now, kind: x.kind, title: t.charAt(0).toUpperCase() + t.slice(1), done: false }, x.kind === "month" ? { month: mon } : {}, x.kind === "dream" ? { due } : {}))
+      }
+      saveJSON("goals.json", list)
+      return { ok: true, added: n, total: of(x.kind).length }
     }
     case "start_fast": case "stop_fast": {
       const list = withIds(await loadJSON("fast.json"), "g"), now = Date.now(), cur = list.find(f => !f.deleted && !f.end)

@@ -2532,7 +2532,7 @@ function goalsForm(kind = "month") {
   let hi = Math.floor(Math.random() * hints.length)
   const left = kind === "month" ? goalsLeft().filter(g => !l.some(x => normT(x.title) === normT(g.title))) : []
   const s = sheet(`<h3>${GOAL_KIND[kind][0]} ${kind === "month" ? "Цели на " + esc(core.monthTitle(curMonth()).toLowerCase()) : GOAL_KIND[kind][1]}</h3>
-    <div class="seg" id="g-k">${Object.keys(GOAL_KIND).map(k => `<button data-k="${k}" class="${k === kind ? "on" : ""}">${GOAL_KIND[k][1]}</button>`).join("")}</div>
+    <div class="seg" id="g-k">${Object.keys(GOAL_KIND).map(k => `<button data-k="${k}" class="${k === kind ? "on" : ""}">${{ month: "Месяц", wish: "Желания", dream: "Мечты" }[k]}</button>`).join("")}</div>
     <div style="margin-top:10px">${l.map(g => `<div class="row"><button class="check ${g.done ? "on" : ""}" data-g="${esc(g.id)}"></button><div class="grow"><div class="t">${esc(g.title)}</div>${g.due ? `<div class="s">${esc(dueTxt(g.due))}</div>` : ""}</div><button class="btn small red" data-del="${esc(g.id)}">✕</button></div>`).join("")
       || `<div class="empty">${kind === "wish" ? "Пишите всё, чего хочется, — большое и маленькое. Не получается? Нажмите «Подсказка» или «Помочь придумать»." : kind === "dream" ? "До 10 крупных мечт, которые реально сделать за год." : "3–5 целей на этот месяц."}</div>`}</div>
     ${left.length ? `<button class="btn small" data-a="carry" style="margin-top:8px">Перенести с прошлого месяца (${left.length})</button>` : ""}
