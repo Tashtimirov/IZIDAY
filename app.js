@@ -70,7 +70,7 @@ const ICO = {
 // ───────────── Данные на телефоне ─────────────
 // Записи — как в виджете: { id, date, u (время изменения), ... }; удалённые остаются «надгробиями» { id, deleted, u },
 // чтобы удаление дошло до виджета и таблицы
-const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0 }   // places — «напомни, когда буду рядом» (проверяет виджет)
+const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60 }   // places — «напомни, когда буду рядом» (проверяет виджет)
 let D = {}
 function load() {
   try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
@@ -548,6 +548,22 @@ const AGENT_TOOLS = [
       query: { type: "string", description: "Место для поиска на карте: название, сеть или адрес" },
       radius_m: { type: "number", description: "Насколько близко, м. По умолчанию 1500 (за 15 минут машина проезжает много)" } }, required: ["title", "query"] } },
   { name: "list_places", description: "Активные и сработавшие напоминания по месту.", input_schema: { type: "object", properties: {} } },
+  { name: "where_was_i", description: "Где был пользователь в указанный момент (история мест с iPhone, 60 дней, точка примерно раз в час или при переезде): адрес, ссылка на Google Карты, " +
+      "насколько точка близка по времени. Используй для любого вопроса о платеже или переводе (особенно непонятном) и вообще «где я был тогда-то».",
+    input_schema: { type: "object", properties: { time: { type: "string", description: "YYYY-MM-DDTHH:MM, местное время" } }, required: ["time"] } },
+  { name: "mail_search", description: "Почта Gmail пользователя: найти цепочки писем. query — синтаксис поиска Gmail: from:, to:, subject:, is:unread, is:important, newer_than:2d, " +
+      "older_than:, after:2026/10/01, has:attachment, in:inbox, in:sent, label:, category:primary, -category:promotions, слова. Возвращает id цепочек, тему, отправителя, дату и начало текста.",
+    input_schema: { type: "object", properties: { query: { type: "string" }, limit: { type: "number", description: "до 25, по умолчанию 10" } }, required: ["query"] } },
+  { name: "mail_read", description: "Прочитать цепочку писем целиком по id из mail_search (последние 8 писем, текст и названия вложений).",
+    input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "mail_send", description: "Отправить новое письмо от имени пользователя. Приложение само покажет письмо и спросит подтверждение. Пиши в стиле пользователя, на языке получателя.",
+    input_schema: { type: "object", properties: { to: { type: "string", description: "адреса через запятую" }, cc: { type: "string" }, subject: { type: "string" }, body: { type: "string" } }, required: ["to", "subject", "body"] } },
+  { name: "mail_reply", description: "Ответить в цепочке (id из mail_search). all=true — ответить всем. Приложение спросит подтверждение.",
+    input_schema: { type: "object", properties: { id: { type: "string" }, body: { type: "string" }, all: { type: "boolean" } }, required: ["id", "body"] } },
+  { name: "mail_draft", description: "Сохранить черновик (не отправляя): новое письмо (to, subject, body) или ответ в цепочке (id, body). Для случаев, когда пользователь хочет сам проверить и отправить.",
+    input_schema: { type: "object", properties: { id: { type: "string" }, to: { type: "string" }, cc: { type: "string" }, subject: { type: "string" }, body: { type: "string" } }, required: ["body"] } },
+  { name: "mail_modify", description: "Разобрать почту: op = archive | inbox | read | unread | star | unstar | label | unlabel | trash | spam для цепочек ids. Для label/unlabel — label (имя метки, создастся). Корзина и спам — с подтверждением.",
+    input_schema: { type: "object", properties: { ids: { type: "array", items: { type: "string" } }, op: { type: "string", enum: ["archive", "inbox", "read", "unread", "star", "unstar", "label", "unlabel", "trash", "spam"] }, label: { type: "string" } }, required: ["ids", "op"] } },
   { name: "remember", description: "Запомнить надолго факт о пользователе: люди и отношения, предпочтения, привычки, цели и планы, здоровье, работа и проекты, важные даты, договорённости. " +
       "Пиши коротко и самодостаточно, с датой, если важна («Жена — Алия, ДР 14 марта», «Цель на 2027: пробежать полумарафон»). Если факт изменился — сначала forget старый.",
     input_schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
@@ -717,6 +733,30 @@ async function runTool(name, x) {
     }
     case "list_places":
       return { places: live(D.places).map(p => ({ id: p.id, title: p.title, query: p.query, radius_m: p.radius, done: !!p.done, fired: p.firedAt ? iso(new Date(p.firedAt)) : null })) }
+    case "mail_search": case "mail_read": case "mail_send": case "mail_reply": case "mail_draft": case "mail_modify": {
+      const action = name.slice(5)
+      if (action === "send" && !(await chatConfirm(`Отправить письмо?\nКому: ${x.to}${x.cc ? `\nКопия: ${x.cc}` : ""}\nТема: ${x.subject}\n\n${x.body}`)))
+        return { cancelled: "пользователь не стал отправлять — спроси, что поправить" }
+      if (action === "reply" && !(await chatConfirm(`Ответить${x.all ? " всем" : ""}?\n\n${x.body}`)))
+        return { cancelled: "пользователь не стал отправлять — спроси, что поправить" }
+      if (action === "modify" && (x.op === "trash" || x.op === "spam") && !(await chatConfirm(`${x.op === "trash" ? "Удалить в корзину" : "Отправить в спам"} ${[].concat(x.ids || []).length} ${plural([].concat(x.ids || []).length, "цепочку", "цепочки", "цепочек")} писем?`)))
+        return { cancelled: "пользователь отказался" }
+      try {
+        const res = await hubPost({ mail: Object.assign({ action }, x) }, 45000)
+        return res.mail || { error: "скрипт таблицы старый: разверните новую версию Code.gs, где есть почта" }
+      } catch (e) { return { error: String(e.message || e) } }
+    }
+    case "where_was_i": {
+      const t = parseIso(x.time)
+      if (!t) return { error: "время в формате YYYY-MM-DDTHH:MM" }
+      const pts = live(D.locs).filter(p => p.lat != null).sort((a, b) => Math.abs(a.date - t) - Math.abs(b.date - t))
+      if (!pts.length) return { error: "истории мест пока нет: она собирается виджетом (нужен доступ Scriptable к геопозиции «При использовании приложения или виджетов»)" }
+      const p = pts[0], off = Math.round((p.date - t) / 60000)
+      const out = { point_time: iso(new Date(p.date)).replace("T", " "), minutes_from_payment: off, lat: p.lat, lng: p.lng, link: `https://maps.google.com/?q=${p.lat},${p.lng}` }
+      if (Math.abs(off) > 90) out.note = `ближайшая точка в ${Math.abs(Math.round(off / 60))} ч от платежа — место приблизительное`
+      try { const g = await hubPost({ geo: { lat: p.lat, lng: p.lng } }, 20000); if (g.geo && g.geo.address) out.address = g.geo.address } catch (e) {}
+      return out
+    }
     case "remember": {
       const t = String(x.text || "").trim()
       if (!t) return { error: "пустой факт" }
@@ -846,6 +886,8 @@ ${cals.length ? `- Календари по словам пользователя
   • Чек из магазина, кафе или ресторана: где и когда, позиции списком «название — цена» (переведи на русский, оригинал в скобках, если неясно), скидки и сервисный сбор, итог. Затем ask_user «Записать расход <итог>?» [Наличные, Карта / перевод, Не записывать] и add_money с подходящей категорией и коротким комментарием (магазин, 2–3 главных позиции). Дата — из чека, если не сегодня.
   • Другое (документ, скриншот, визитка…): кратко перескажи главное и предложи, что можно сделать (событие, напоминание, расход).
   Отвечай коротко, без лишних вступлений.
+- Любой вопрос о платеже или переводе (особенно «что это за платёж?» или когда ты сам спрашиваешь о непонятной трате): всегда называй дату и точное время платежа и место, где был пользователь в тот момент, — where_was_i по времени платежа: адрес и ссылка на Google Карты (ссылкой целиком). Если точка далека по времени — так и скажи. Платежи по карте — лист «Карта» (read_sheet), остальные — get_money.
+- Почта Gmail пользователя: mail_search → mail_read, ответы mail_reply, новые письма mail_send, черновики mail_draft, разбор mail_modify. Про письма отвечай по сути: от кого, что хотят, срок, что сделать; длинные — пересказывай. Найдёшь в письме встречу, срок оплаты или задачу — предложи событие или напоминание. Пиши письма сам, от первого лица пользователя, коротко и по-деловому; отправка — только когда пользователь попросил отправить или ответить (подтверждение приложение покажет само).
 - «Съел», «выпил стакан воды» — add_food и add_water. «Удали лишнюю воду/еду/тренировку» — найди id через get_health (или get_history с details) и delete_record. На вопросы о калориях, шагах и воде смотри get_health.
 - Тренировка без часов («проплыл бассейн 10 раз», «час падела, часы забыл») — add_workout. Вес пользователя ${H().weight || 80} кг. Скажи, сколько ккал и минут записал.
 - Если пользователь спрашивает (что у меня завтра, сколько потратил), посмотри данные и ответь.
@@ -936,7 +978,7 @@ ${r.length ? `- Сложную задачу, которую не решить з
 }
 const BRIEFS = {
   morning: { label: "☀️ Утренняя сводка", prompt: "Сделай утреннюю сводку на сегодня. Посмотри события и напоминания на сегодня (и просроченные), " +
-    "траты за месяц. Расскажи: что сегодня по порядку со временем, что важно не забыть, что просрочено; сколько потрачено в этом месяце. " +
+    "траты за месяц, важные непрочитанные письма за сутки (mail_search «is:unread newer_than:1d -category:promotions -category:social», если почта доступна). Расскажи: что сегодня по порядку со временем, что важно не забыть, что просрочено; сколько потрачено в этом месяце. " +
     "В конце одна короткая дружеская мысль или совет на день. Ничего не меняй." },
   evening: { label: "🌙 Вечерняя сводка", prompt: "Сделай вечернюю сводку за сегодня. Посмотри события и напоминания (вместе с выполненными), " +
     "деньги и еду с водой и активностью за сегодня, события на завтра. Расскажи: что сделано, что не сделано; сколько потрачено сегодня " +
