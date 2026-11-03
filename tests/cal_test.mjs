@@ -6,12 +6,14 @@ const src = fs.readFileSync(process.argv[2] || new URL("../src/iphone/MyDay.js",
 class Color { constructor(h) { this.hex = h } static dynamic(a) { return a } static white() { return new Color("#fff") } }
 const z = n => String(n).padStart(2, "0")
 class DateFormatter { set dateFormat(p) {} string(d) { return `${z(d.getDate())}.${z(d.getMonth() + 1)} ${z(d.getHours())}:${z(d.getMinutes())}` } }
-const fmo = { joinPath: (a, b) => a + "/" + b, documentsDirectory: () => "/d", fileExists: () => false, createDirectory() {}, isFileStoredIniCloud: () => false, readString: () => "[]", writeString() {} }
+const files = {}, seenRems = new Set()   // напоминания пишутся в rems.json (IZIDAY): новые записи — как «сохранено»
+const fmo = { joinPath: (a, b) => a + "/" + b, documentsDirectory: () => "/d", fileExists: p => p in files, createDirectory() {}, isFileStoredIniCloud: () => false,
+  readString: p => files[p] || "[]", writeString: (p, s) => { files[p] = s; if (p.endsWith("rems.json")) for (const r of JSON.parse(s)) if (!seenRems.has(r.id)) { seenRems.add(r.id); saved.push(`напоминание «${r.title}» → IZIDAY`) } } }
 let CALS = [{ title: "realtashtimirov@gmail.com" }, { title: "Семейная группа" }, { title: "PTP" }]
 const LISTS = [{ title: "Напоминания" }, { title: "Семья" }, { title: "Работа" }]
 const saved = []
 class CalendarEvent { constructor() { this.calendar = { title: "по умолчанию" } } addRecurrenceRule() {} save() { saved.push(`событие «${this.title}» → ${this.calendar.title}`) } }
-class Reminder { constructor() { this.calendar = { title: "по умолчанию" } } addRecurrenceRule() {} save() { saved.push(`напоминание «${this.title}» → ${this.calendar.title}`) } }
+class Reminder { constructor() { throw new Error("Напоминания iPhone больше не создаются") } }
 const answers = []
 class Alert { constructor() { this.actions = [] } addAction(a) { this.actions.push(a) } addCancelAction() {} addTextField() {}
   async presentAlert() { const w = answers.shift(); if (this.title !== "Сохранить?") console.log(`   [окно] ${this.title} | ${this.actions.join(" / ")} → ${w}`); return w === undefined ? 0 : this.actions.indexOf(w) } async presentSheet() { return this.presentAlert() } }
@@ -24,8 +26,8 @@ const cases = [
   ["питипи созвон с командой в понедельник в 10", "событие «Созвон с командой» → PTP"],
   ["показ квартиры в пятницу в 14 календарь PTP", "событие «Показ квартиры» → PTP"],
   ["встреча с Олей завтра в 10", "событие «Встреча с Олей» → по умолчанию"],
-  ["напомни в семейном календаре купить торт завтра", "напоминание «Купить торт» → Семья"],
-  ["напомни в рабочий календарь отправить договор в 17", "напоминание «Отправить договор» → Работа"],
+  ["напомни в семейном календаре купить торт завтра", "напоминание «Купить торт» → IZIDAY"],
+  ["напомни в рабочий календарь отправить договор в 17", "напоминание «Отправить договор» → IZIDAY"],
 ]
 let ok = true
 for (const [t, want] of cases) {

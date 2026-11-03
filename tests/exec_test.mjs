@@ -18,10 +18,12 @@ const ev = (id, title, s, e) => ({ identifier: id, title, startDate: s, endDate:
 for (const d of [16, 23, 30]) store.push(ev("DATE", "Свидание ❤️", at(d, 18), at(d, 20)))
 store.push(ev("CALL", "Созвон с Кириллом", at(23, 10), at(23, 12)))
 store.push(ev("YOGA", "Йога", at(26, 8), at(26, 9)))
-const rems = [{ identifier: "R1", title: "Купить хлеб", dueDate: at(23, 9), dueDateIncludesTime: true, isCompleted: false, save() {} },
-              { identifier: "R2", title: "Позвонить маме", dueDate: null, isCompleted: false, save() {} }]
+// напоминания живут в IZIDAY (rems.json), Напоминания iPhone не используются
+files["/d/my-day/rems.json"] = JSON.stringify([{ id: "R1", date: 1, u: 1, title: "Купить хлеб", due: "2026-10-23T09:00", done: false },
+  { id: "R2", date: 2, u: 2, title: "Позвонить маме", due: null, done: false }])
+const remDone = id => JSON.parse(files["/d/my-day/rems.json"]).find(x => x.id === id).done === true
 class CalendarEvent { static async between(a, b) { return store.filter(e => e.startDate < b && e.endDate > a) } }
-class Reminder { static async allIncomplete() { return rems.filter(r => !r.isCompleted) } }
+class Reminder { constructor() { throw new Error("Напоминания iPhone больше не создаются") } static async allIncomplete() { throw new Error("Напоминания iPhone не читаются") } }
 const answers = [], shown = []
 class Alert { constructor() { this.actions = [] } addAction(a) { this.actions.push(a) } addCancelAction() {} addDestructiveAction(a) { this.actions.push(a) } addTextField() { return { setDecimalPadKeyboard() {} } }
   async presentAlert() { const want = answers.shift(); shown.push(`${this.title} | ${String(this.message || "").replace(/\n/g, " ⏎ ")}`)
@@ -66,7 +68,7 @@ check(show("YOGA") === "26.10 07:30–08:30", "йога: " + show("YOGA"))
 console.log("🎤 хлеб купил")
 answers.push("Сохранить")
 await app.voiceCommand("хлеб купил")
-check(rems[0].isCompleted, "«Купить хлеб» выполнено")
+check(remDone("R1") && !remDone("R2"), "«Купить хлеб» выполнено в IZIDAY")
 
 console.log("🎤 что у меня завтра")
 await app.voiceCommand("что у меня завтра")

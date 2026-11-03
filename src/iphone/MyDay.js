@@ -541,7 +541,7 @@ async function webAppMenu() {
   const last = st.hubAt ? `Последний обмен с приложением: ${WHEN.string(new Date(st.hubAt))}.` : "Обмена с приложением ещё не было."
   const i = await choose("📱 Приложение «Мой день»", ["🔗 Подключить приложение на этом iPhone", "📋 Скопировать код подключения", "🔄 Обменяться сейчас", "🌐 Открыть приложение"],
     `${last}\n\nПриложение открывается мгновенно, а виджет передаёт ему календарь, напоминания и данные часов. ` +
-    "Новые события и напоминания из приложения виджет вносит в iPhone при обновлении.\n\nКод подключения содержит ключ Claude и ключ таблицы — не пересылайте его.")
+    "Новые события из приложения виджет вносит в календарь iPhone при обновлении.\n\nКод подключения содержит ключ Claude и ключ таблицы — не пересылайте его.")
   if (i === 0) { const c = await webAppSetupCode(); Pasteboard.copy(c); Safari.open(`${WEB_APP}#setup=${encodeURIComponent(c)}`) }
   if (i === 1) { Pasteboard.copy(await webAppSetupCode()); await info("Код скопирован", "В приложении: «Ещё» → «Подключить» → вставьте код.") }
   if (i === 2) { const n = await hubSync(25); await info("Готово", n ? `Выполнено команд из приложения: ${n}` : "Новых команд из приложения нет.") }
@@ -607,18 +607,28 @@ function upcoming(all) {
   return all.filter(e => e.startDate < end && e.endDate > now).sort((a, b) => a.startDate - b.startDate)
 }
 
-// Напоминания живут в приложении IZIDAY (rems.json приходит через таблицу) — вид как у Reminder, чтобы остальной код не менялся
-async function appRems() {
+// Напоминания живут в приложении IZIDAY (rems.json приходит через таблицу) — в виде, привычном остальному коду
+// Напоминания iPhone больше не используются: виджет, голос и помощник читают и пишут только rems.json
+async function remPut(id, patch) {
+  const list = withIds(await loadJSON("rems.json"), "r"), now = Date.now()
+  let r = id && list.find(y => y.id === id)
+  if (!r && id) return null
+  if (!r) list.push(r = { id: `r${now}-${Math.random().toString(36).slice(2, 6)}`, date: now, done: false })
+  Object.assign(r, patch, { u: now })
+  saveJSON("rems.json", list)
+  if (!HUB_RUN) await hubSync()   // во время обмена с приложением запись уйдёт при следующем обмене
+  return r
+}
+async function appRems(withDone) {
   const all = withIds(await loadJSON("rems.json"), "r")
-  return all.filter(x => !x.deleted && !x.done && x.title).map(x => {
+  return all.filter(x => !x.deleted && (withDone || !x.done) && x.title).map(x => {
     const m = String(x.due || "").match(/^(\d{4})-(\d\d)-(\d\d)(?:T(\d\d):(\d\d))?/)
-    return { identifier: x.id, title: x.title, notes: x.notes || "", app: true, isCompleted: false, calendar: null,
+    return { identifier: x.id, title: x.title, notes: x.notes || "", app: true, isCompleted: !!x.done, calendar: null, repeat: x.repeat || null,
       dueDate: m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)) : null, dueDateIncludesTime: !!(m && m[4]),
       async save() {   // отметка «выполнено» из меню виджета — уходит в приложение
-        if (!this.isCompleted) return
-        const list = withIds(await loadJSON("rems.json"), "r"), r = list.find(y => y.id === x.id)
-        if (r) { Object.assign(r, { done: true, doneAt: Date.now(), u: Date.now() }); await saveJSON("rems.json", list); await hubSync() }
-      } }
+        if (this.isCompleted && !x.done) await remPut(x.id, { done: true, doneAt: Date.now() })
+      },
+      async remove() { await remPut(x.id, { deleted: true }) } }
   })
 }
 async function getReminders() {
@@ -680,8 +690,8 @@ function itemsForDay(day, events) {
     .sort((a, b) => a.sort - b.sort)
 }
 
-const REMINDERS_APP = "x-apple-reminderkit://"
-const reminderURL = r => r && r.app && WEB_APP ? `${WEB_APP}#rem=${encodeURIComponent(r.identifier)}` : r && r.identifier ? `x-apple-reminderkit://REMCDReminder/${r.identifier}` : REMINDERS_APP
+const REMINDERS_APP = WEB_APP ? `${WEB_APP}#today` : WRUN
+const reminderURL = r => r && WEB_APP ? `${WEB_APP}#rem=${encodeURIComponent(r.identifier)}` : REMINDERS_APP
 
 const calshowURL = d => `calshow:${Math.floor(d.getTime() / 1000) - 978307200}`
 
@@ -1776,27 +1786,18 @@ async function findCalendar(name, forReminders) {
   } catch (e) { return null }
 }
 
-async function createReminder(title, date, recur, listName) {
-  const r = new Reminder()
-  r.title = title
-  const cal = await findCalendar(listName, true)
-  if (cal) r.calendar = cal
-  const rule = makeRule(recur)
-  if (rule) r.addRecurrenceRule(rule)
-  if (date) {
-    r.dueDate = date
-    r.dueDateIncludesTime = true
-    if (CONFIG.notifyReminders && !WEB_APP && date > new Date()) {
-      try {
-        const n = new Notification()
-        n.title = "⏰ Напоминание"
-        n.body = title
-        n.setTriggerDate(date)
-        await n.schedule()
-      } catch (e) {}
-    }
+async function createReminder(title, date, recur) {
+  const repeat = recur ? (recur.freq === "daily" ? { freq: "daily" } : { freq: "weekly", days: (recur.days || []).map(d => DAY_CODES[d]) }) : null
+  return remWrite({ title, due: date ? isoLocal(date) : null, repeat })
+}
+// Новое напоминание IZIDAY. Без приложения (WEB_APP) уведомление ставит сам виджет
+async function remWrite(x) {
+  const r = await remPut(null, { title: x.title, due: x.due || null, notes: x.notes || "", repeat: x.repeat || null })
+  const d = parseIsoLocal(x.due)
+  if (d && /T|\s\d/.test(x.due) && CONFIG.notifyReminders && !WEB_APP && d > new Date()) {
+    try { const n = new Notification(); n.title = "⏰ Напоминание"; n.body = x.title; n.setTriggerDate(d); await n.schedule() } catch (e) {}
   }
-  r.save()
+  return r
 }
 
 async function createEvent(title, start, minutes, location, recur, calName) {
@@ -2660,7 +2661,7 @@ async function completeMove(a) {
 
 async function completeDone(a) {
   let list = []
-  try { list = await Reminder.allIncomplete() } catch (e) {}
+  try { list = await appRems() } catch (e) {}
   const q = (a.query || "").toLowerCase()
   let hits = list.filter(r => q && ((r.title || "").toLowerCase().includes(q) || titleMatches(r.title, a.query)))
   if (!hits.length && q) hits = list.filter(r => words(a.query).some(w => words(r.title).some(t => t.startsWith(w.slice(0, 4)))))
@@ -2711,7 +2712,7 @@ async function answerQuery(a) {
   const next = new Date(day.getTime() + 864e5)
   let evs = [], rems = []
   try { evs = await CalendarEvent.between(day, next, []) } catch (e) {}
-  try { rems = (await Reminder.allIncomplete()).filter(r => r.dueDate && sameDay(r.dueDate, day)) } catch (e) {}
+  try { rems = (await appRems()).filter(r => r.dueDate && sameDay(r.dueDate, day)) } catch (e) {}
   evs.sort((x, y) => x.startDate - y.startDate)
   const lines = evs.map(e => `📅 ${e.isAllDay ? "весь день" : TIME.string(e.startDate) + "–" + TIME.string(e.endDate)} ${e.title}`)
     .concat(rems.map(r => `⏰ ${r.dueDateIncludesTime ? TIME.string(r.dueDate) : "—"} ${r.title}`))
@@ -2748,7 +2749,7 @@ async function findForDelete(a) {
     events = events.filter(e => okDay(e.startDate) && (!hasQuery || titleMatches(e.title, a.query)))
   }
   if (a.what !== "events") {
-    try { reminders = await Reminder.allIncomplete() } catch (e) {}
+    try { reminders = await appRems() } catch (e) {}
     reminders = reminders.filter(r =>
       (!hasQuery || titleMatches(r.title, a.query)) &&
       (!a.days || (r.dueDate && okDay(r.dueDate))) &&
@@ -2926,15 +2927,13 @@ async function completeAction(a) {
     a.title = await ask("Заметка", "Текст")
     if (!a.title) return null
   }
-  if ((a.kind === "event" && a.calendar) || (a.kind === "reminder" && a.list)) {
-    const isEv = a.kind === "event", name = isEv ? a.calendar : a.list
-    if (!(await findCalendar(name, !isEv))) {
-      let all = []
-      try { all = (isEv ? await Calendar.forEvents() : await Calendar.forReminders()).filter(c => !isEv || c.isWritable !== false) } catch (e) {}
-      const i = await choose(`Не нашёл ${isEv ? "календарь" : "список"} «${name}»`, all.map(c => c.title), "Куда сохранить?")
-      if (i === -1) return null
-      if (isEv) a.calendar = all[i].title; else a.list = all[i].title
-    }
+  if (a.kind === "reminder") a.list = ""
+  if (a.kind === "event" && a.calendar && !(await findCalendar(a.calendar, false))) {
+    let all = []
+    try { all = (await Calendar.forEvents()).filter(c => c.isWritable !== false) } catch (e) {}
+    const i = await choose(`Не нашёл календарь «${a.calendar}»`, all.map(c => c.title), "Куда сохранить?")
+    if (i === -1) return null
+    a.calendar = all[i].title
   }
   if (a.kind === "event" && (!a.date || !a.hasTime)) {
     await info(`📅 ${a.title}`, "Выберите дату и время встречи")
@@ -2973,10 +2972,10 @@ async function executeAll(list) {
   let entries = null, openReport = false
   for (const a of list) {
     if (a.kind === "event") await createEvent(a.title, a.date, a.minutes || CONFIG.defaultEventMinutes, a.location, a.recur, a.calendar)
-    else if (a.kind === "reminder") await createReminder(a.title, a.date, a.recur, a.list)
+    else if (a.kind === "reminder") await createReminder(a.title, a.date, a.recur)
     else if (a.kind === "delete") {
       for (const e of a.events) { try { e.remove() } catch (x) {} }
-      for (const r of a.reminders) { try { r.remove() } catch (x) {} }
+      for (const r of a.reminders) { try { await r.remove() } catch (x) {} }
     }
     else if (a.kind === "note") await saveNote(a.title)
     else if (a.kind === "report") openReport = true
@@ -3383,51 +3382,31 @@ async function runTool(name, x) {
     }
     case "get_reminders": {
       let list = []
-      try { list = await Reminder.allIncomplete() } catch (e) {}
-      if (x.include_completed) { try { list = list.concat((await Reminder.allCompleted()).slice(-30)) } catch (e) {} }
+      try { list = await appRems(x.include_completed) } catch (e) {}
       if (x.query) list = list.filter(r => (r.title || "").toLowerCase().includes(x.query.toLowerCase()) || titleMatches(r.title, x.query))
       return { reminders: list.slice(0, 80).map(r => ({ id: r.identifier, title: r.title,
         due: r.dueDate ? (r.dueDateIncludesTime ? isoLocal(r.dueDate) : isoLocal(r.dueDate).slice(0, 10)) : null,
-        completed: !!r.isCompleted, list: r.calendar ? r.calendar.title : "" })) }
+        completed: !!r.isCompleted, list: "", ...(r.repeat ? { repeat: r.repeat } : {}) })) }
     }
     case "create_reminder": {
-      const r = new Reminder()
-      r.title = x.title
-      if (x.notes) r.notes = x.notes
-      const cal = x.list ? await calendarByName(x.list, true) : null
-      if (cal) r.calendar = cal
-      const d = parseIsoLocal(x.due)
-      if (d) {
-        r.dueDate = d
-        r.dueDateIncludesTime = /T|\s\d/.test(x.due)
-        if (r.dueDateIncludesTime && CONFIG.notifyReminders && !WEB_APP && d > new Date()) {
-          try { const n = new Notification(); n.title = "⏰ Напоминание"; n.body = x.title; n.setTriggerDate(d); await n.schedule() } catch (e) {}
-        }
-      }
-      const rule = makeRuleFull(x.repeat)
-      if (rule) r.addRecurrenceRule(rule)
-      r.save()
-      return { ok: true, id: r.identifier }
+      const due = parseIsoLocal(x.due) ? x.due : null
+      const r = await remWrite({ title: x.title, notes: x.notes, due, repeat: x.repeat })
+      return { ok: true, id: r.id }
     }
     case "update_reminder": {
-      let all = []
-      try { all = (await Reminder.allIncomplete()).concat(await Reminder.allCompleted()) } catch (e) {}
-      const r = all.find(z => z.identifier === x.id)
-      if (!r) return { error: "напоминание не найдено" }
-      if (x.title) r.title = x.title
-      if (x.due === "") r.dueDate = null
-      else if (x.due) { const d = parseIsoLocal(x.due); if (d) { r.dueDate = d; r.dueDateIncludesTime = /T|\s\d/.test(x.due) } }
-      if (typeof x.completed === "boolean") r.isCompleted = x.completed
-      r.save()
-      return { ok: true }
+      const patch = {}
+      if (x.title) patch.title = x.title
+      if (x.due === "") patch.due = null
+      else if (x.due && parseIsoLocal(x.due)) patch.due = x.due
+      if (typeof x.completed === "boolean") Object.assign(patch, { done: x.completed, doneAt: x.completed ? Date.now() : null })
+      const r = await remPut(x.id, patch)
+      return r ? { ok: true } : { error: "напоминание не найдено" }
     }
     case "delete_reminder": {
-      let all = []
-      try { all = (await Reminder.allIncomplete()).concat(await Reminder.allCompleted()) } catch (e) {}
-      const r = all.find(z => z.identifier === x.id)
+      const r = (await appRems(true)).find(z => z.identifier === x.id)
       if (!r) return { error: "напоминание не найдено" }
       if (!(await confirmAction("Удалить напоминание?", r.title))) return { cancelled: "пользователь отказался удалять" }
-      r.remove()
+      await r.remove()
       return { ok: true }
     }
     case "get_notes":

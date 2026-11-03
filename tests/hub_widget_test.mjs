@@ -14,6 +14,7 @@ class Color { constructor(h) { this.hex = h } static dynamic(a) { return a } sta
 class DateFormatter { set dateFormat(p) { this.p = p } string(d) { return this.p === "yyyy-MM-dd'T'HH:mm" ? `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}` : `${z(d.getDate())}.${z(d.getMonth() + 1)} ${z(d.getHours())}:${z(d.getMinutes())}` } }
 const at = (d, h) => new RealDate(2026, 10, d, h)
 const files = {
+  "/d/my-day/rems.json": JSON.stringify([{ id: "R1", date: NOW.getTime() - 7200e3, u: NOW.getTime() - 7200e3, title: "Купить цветы", due: "2026-11-01T18:00", done: false }]),
   "/d/my-day/finance.json": JSON.stringify([{ id: "f1", date: NOW.getTime() - 3600e3, u: NOW.getTime() - 3600e3, type: "expense", amount: 150, method: "cash", category: "Транспорт" }]),
   "/d/my-day/water.json": JSON.stringify([{ id: "w1", date: NOW.getTime() - 60e3, u: NOW.getTime() - 60e3, ml: 250 }]),
   "/d/my-day/settings.json": JSON.stringify({ sheetHook: "https://script.google.com/x/exec", sheetSecret: "s".repeat(32) }),
@@ -30,7 +31,7 @@ class CalendarEvent {
   remove() { store.splice(store.indexOf(this), 1) }
 }
 const reminders = [{ identifier: "R1", title: "Купить цветы", dueDate: at(1, 18), dueDateIncludesTime: true, isCompleted: false, calendar: { title: "Напоминания" }, save() {} }]
-class Reminder { static async allIncomplete() { return reminders.filter(r => !r.isCompleted) } static async allCompleted() { return reminders.filter(r => r.isCompleted) } }
+class Reminder { constructor() { throw new Error("Напоминания iPhone больше не создаются") } static async allIncomplete() { return reminders.filter(r => !r.isCompleted) } static async allCompleted() { return reminders.filter(r => r.isCompleted) } }
 const alerts = []
 const pending = []   // запланированные уведомления
 class Notif {
@@ -57,7 +58,7 @@ const g = { Color, DateFormatter, CalendarEvent, Reminder, Alert, URLScheme: { f
   Request: class { async loadJSON() { const b = JSON.parse(this.body); requests.push(b); tick += 1000; return sheet.post(b) } } }
 let ok = true
 const check = (cond, msg, got) => { console.log(cond ? "   ✓" : "   ✗", msg, cond ? "" : JSON.stringify(got)); ok = ok && cond }
-const w = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { hubSync, buildWidget, loadSettings, placesCheck, hereNow, scheduleAgenda, waterGap, logLoc, waterNudgeLevel } })()")(...Object.values(g))
+const w = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { runTool, createReminder, appRems, hubSync, buildWidget, loadSettings, placesCheck, hereNow, scheduleAgenda, waterGap, logLoc, waterNudgeLevel } })()")(...Object.values(g))
 
 // 1. первый обмен: виджет отдаёт всё и снимок
 let n = await w.hubSync()
@@ -87,7 +88,8 @@ const money = JSON.parse(files["/d/my-day/finance.json"])
 check(money.some(x => x.id === "fA" && x.amount === 1200 && !("s" in x)), "расход из приложения записан у виджета (без служебного s)", money)
 check(JSON.parse(files["/d/my-day/water.json"]).find(x => x.id === "w1").deleted, "вода удалена и у виджета")
 check(store.some(e => e.title === "Стоматолог" && e.startDate.getHours() === 15), "событие создано в календаре iPhone", store.map(e => e.title))
-check(reminders[0].isCompleted === true, "напоминание отмечено выполненным")
+check(JSON.parse(files["/d/my-day/rems.json"]).find(x => x.id === "R1").done === true && reminders[0].isCompleted === false,
+  "напоминание отмечено выполненным в IZIDAY (Напоминания iPhone не трогаются)")
 check(!store.some(e => e.identifier === "E1"), "событие удалено")
 check(alerts.length === 0, "окна подтверждения не показывались", alerts)
 const done = requests[1].hub.done
@@ -95,6 +97,26 @@ check(done.find(d => d.id === "op4").result.error && done.filter(d => d.result.o
 check(requests[1].hub.snap.events.some(e => e.title === "Стоматолог"), "свежий снимок с новым событием")
 a = sheet.post({ secret: "s".repeat(32), hub: { from: "app", since: 0, snapAt: 0 } })
 check(a.ops.every(o => o.state === "done") && a.snap.events.some(e => e.title === "Стоматолог"), "приложение видит выполненные команды", a.ops)
+
+// 3б. напоминания из меню, голоса и помощника — только в IZIDAY (rems.json)
+await w.createReminder("Полить цветы", new Date(2026, 10, 2, 9, 30), { freq: "weekly", days: [1, 3] })
+let rj = JSON.parse(files["/d/my-day/rems.json"]), pv = rj.find(x => x.title === "Полить цветы")
+check(pv && pv.due === "2026-11-02T09:30" && pv.repeat.freq === "weekly" && pv.repeat.days.join() === "MO,WE" && pv.u > 0, "голос/меню: напоминание записано в IZIDAY с повтором", pv)
+const cr = await w.runTool("create_reminder", { title: "Оплатить интернет", due: "2026-11-05", notes: "до 15:00" })
+rj = JSON.parse(files["/d/my-day/rems.json"])
+check(cr.ok && rj.some(x => x.id === cr.id && x.due === "2026-11-05" && x.notes === "до 15:00"), "помощник: create_reminder → IZIDAY", cr)
+const gr = await w.runTool("get_reminders", {})
+check(gr.reminders.some(r => r.id === cr.id) && !gr.reminders.some(r => r.id === "R1"), "get_reminders: открытые из IZIDAY, выполненные скрыты", gr)
+check((await w.runTool("get_reminders", { include_completed: true })).reminders.some(r => r.id === "R1" && r.completed), "get_reminders с выполненными")
+check((await w.runTool("update_reminder", { id: cr.id, title: "Оплатить интернет и ТВ", due: "" })).ok &&
+  JSON.parse(files["/d/my-day/rems.json"]).some(x => x.id === cr.id && x.title === "Оплатить интернет и ТВ" && x.due === null), "update_reminder: название и срок")
+check((await w.runTool("update_reminder", { id: "НЕТ" })).error, "update_reminder: чужой id — ошибка")
+const dr = await w.runTool("delete_reminder", { id: cr.id })
+check(dr.cancelled && !JSON.parse(files["/d/my-day/rems.json"]).find(x => x.id === cr.id).deleted, "delete_reminder: без подтверждения не удаляет", dr)
+alerts.length = 0
+await (await w.appRems()).find(r => r.identifier === cr.id).remove()   // голосом «удали …» — после подтверждения в списке действий
+check(JSON.parse(files["/d/my-day/rems.json"]).find(x => x.id === cr.id).deleted, "удаление: метка для синхронизации")
+check(!(await w.appRems(true)).some(r => r.identifier === cr.id), "удалённое не видно")
 
 // 4. повторный обмен: только новое, без повторных команд
 requests.length = 0
