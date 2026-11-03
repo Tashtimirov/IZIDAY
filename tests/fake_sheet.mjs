@@ -95,6 +95,7 @@ export function sheetScript() {
       if (f === "yyyyMMdd'T'HHmmss'Z'") return d.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "")
       if (f === "HH:mm") return t
       if (f === "H") return String(d.getHours())
+      if (f === "u") return String(((d.getDay() + 6) % 7) + 1)
       return f === "yyyy-MM-dd" ? day : f === "yyyy-MM-dd'T'HH:mm" ? `${day}T${t}` : `${day} ${t}` },
     parseDate: (s, tz, f) => { const m = s.match(/(\d+)-(\d+)-(\d+) (\d+):(\d+)/); return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) } },
   CalendarApp: cal.api,

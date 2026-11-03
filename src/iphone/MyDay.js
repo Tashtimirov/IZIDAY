@@ -319,7 +319,8 @@ async function autoSyncSheet() {
 // Виджет отдаёт таблице новые записи (деньги, еда, вода, тренировки) и снимок того, что видит только iPhone:
 // события, напоминания, данные часов. Обратно получает записи приложения и команды для календаря и напоминаний.
 const HUB_FILES = { money: ["finance.json", "f", 0], food: ["food.json", "m", 120], water: ["water.json", "w", 60], workouts: ["workouts.json", "t", 400],
-  places: ["places.json", "p", 0], locs: ["locs.json", "l", 60], nudges: ["nudges.json", "n", 3], rems: ["rems.json", "r", 0], skips: ["skips.json", "k", 60] }   // skips — платежи по карте, которые не вносить (помощник)   // rems — напоминания IZIDAY (в приложении, не в iPhone)   // nudges — подсказки помощника на день   // locs — где был iPhone (помощник показывает место платежа)   // места «напомни, когда буду рядом» — создаёт помощник в приложении
+  places: ["places.json", "p", 0], locs: ["locs.json", "l", 60], nudges: ["nudges.json", "n", 3], rems: ["rems.json", "r", 0], skips: ["skips.json", "k", 60],
+  shop: ["shop.json", "b", 0], fast: ["fast.json", "g", 90] }   // shop — список покупок; fast — интервальное голодание   // skips — платежи по карте, которые не вносить (помощник)   // rems — напоминания IZIDAY (в приложении, не в iPhone)   // nudges — подсказки помощника на день   // locs — где был iPhone (помощник показывает место платежа)   // места «напомни, когда буду рядом» — создаёт помощник в приложении
 const HUB_TOOLS = ["create_event", "update_event", "delete_event", "create_reminder", "update_reminder", "delete_reminder"]
 let HUB_RUN = false   // команды из приложения пользователь уже подтвердил там — окон не показываем
 
@@ -404,10 +405,26 @@ async function placesCheck(here) {
   if (!here || !WEB_APP) return
   const list = withIds(await loadJSON("places.json"), "p")
   let changed = false
+  let buy = null
   for (const p of list) {
     if (p.deleted || p.done) continue
     const near = (p.points || []).map(q => ({ q, d: distM(here, q) })).sort((a, b) => a.d - b.d)[0]
     if (!near || near.d > (p.radius || 1500)) continue
+    if (p.shop) {   // магазин из списка покупок: напоминает, только если есть что купить, и не чаще раза в 3 часа; не гаснет
+      if (buy === null) buy = (await loadJSON("shop.json")).filter(x => x && !x.deleted && !x.done).map(x => x.title)
+      if (!buy.length || Date.now() - (p.firedAt || 0) < 3 * 3600e3) continue
+      try {
+        const n = new Notification()
+        n.identifier = `myday-shop-${p.id}`
+        n.title = `🛒 Рядом ${near.q.name || p.title}`
+        n.body = `Купить: ${buy.slice(0, 8).join(", ")}${buy.length > 8 ? ` и ещё ${buy.length - 8}` : ""}`
+        n.openURL = `${WEB_APP}#shop`
+        n.sound = "default"
+        await n.schedule()
+      } catch (e) {}
+      Object.assign(p, { firedAt: Date.now(), u: Date.now() }); changed = true
+      continue
+    }
     try {
       const n = new Notification()
       n.identifier = `myday-place-${p.id}`
@@ -3270,6 +3287,12 @@ const AGENT_TOOLS = [
   { name: "add_food", description: "Записать съеденное. Калории и БЖУ оцени сам по описанию (обычная порция, если не сказано).",
     input_schema: { type: "object", properties: { title: { type: "string" }, kcal: { type: "number" },
       protein: { type: "number" }, fat: { type: "number" }, carbs: { type: "number" } }, required: ["title", "kcal"] } },
+  { name: "add_shopping", description: "Добавить в список покупок («купить молоко и хлеб» — два пункта). У магазина напомню сам.",
+    input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } } }, required: ["items"] } },
+  { name: "get_shopping", description: "Что осталось купить.", input_schema: { type: "object", properties: {} } },
+  { name: "shop_done", description: "Отметить купленным (или убрать из списка).", input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } } }, required: ["items"] } },
+  { name: "start_fast", description: "Начать интервальное голодание (по умолчанию 16 ч). Когда окно откроется — придёт пуш.", input_schema: { type: "object", properties: { hours: { type: "number" } } } },
+  { name: "stop_fast", description: "Закончить голодание сейчас (поел).", input_schema: { type: "object", properties: {} } },
   { name: "add_water", description: "Записать выпитую воду. Стакан — 250 мл.",
     input_schema: { type: "object", properties: { ml: { type: "number" } }, required: ["ml"] } },
   { name: "add_workout", description: "Записать тренировку без часов (пользователь забыл часы и рассказывает сам). Оцени длительность и сожжённые калории сам по MET и весу пользователя из системной подсказки: например, бассейн 18 м × 10 раз = 180 м ≈ 6–8 минут спокойного плавания.",
@@ -3460,6 +3483,32 @@ async function runTool(name, x) {
       if (!(x.kcal > 0)) return { error: "калории должны быть больше нуля" }
       const m = await addFood({ title: x.title, kcal: x.kcal, protein: Math.round(x.protein || 0), fat: Math.round(x.fat || 0), carbs: Math.round(x.carbs || 0) })
       return { ok: true, id: m.id }
+    }
+    case "add_shopping": case "get_shopping": case "shop_done": {
+      const list = withIds(await loadJSON("shop.json"), "b"), now = Date.now(), open = () => list.filter(s => !s.deleted && !s.done)
+      const same = (a, b) => String(a).toLowerCase().replace(/ё/g, "е").trim() === String(b).toLowerCase().replace(/ё/g, "е").trim()
+      if (name === "add_shopping") for (const t of (x.items || []).map(s => String(s).trim()).filter(Boolean)) {
+        if (!open().some(s => same(s.title, t))) list.push({ id: `b${now}-${Math.random().toString(36).slice(2, 6)}`, date: now, u: now, title: t, done: false })
+      }
+      if (name === "shop_done") for (const t of x.items || []) {
+        const s = open().find(z => same(z.title, t)) || open().find(z => z.title.toLowerCase().includes(String(t).toLowerCase()))
+        if (s) Object.assign(s, { done: true, doneAt: now, u: now })
+      }
+      if (name !== "get_shopping") saveJSON("shop.json", list)
+      return { ok: true, to_buy: open().map(s => s.title) }
+    }
+    case "start_fast": case "stop_fast": {
+      const list = withIds(await loadJSON("fast.json"), "g"), now = Date.now(), cur = list.find(f => !f.deleted && !f.end)
+      if (name === "start_fast") {
+        if (cur) return { error: "голодание уже идёт", since: new Date(cur.start).toISOString(), hours: cur.hours }
+        const hours = Math.max(10, Math.min(48, Math.round(+x.hours || 16)))
+        list.push({ id: `g${now}`, date: now, u: now, start: now, hours })
+        saveJSON("fast.json", list)
+        return { ok: true, hours, window_opens: new Date(now + hours * 3600e3).toISOString() }
+      }
+      if (!cur) return { error: "голодание не идёт" }
+      Object.assign(cur, { end: now, u: now }); saveJSON("fast.json", list)
+      return { ok: true, fasted_hours: Math.round((now - cur.start) / 360e3) / 10 }
     }
     case "add_water":
       if (!(x.ml > 0)) return { error: "объём должен быть больше нуля" }

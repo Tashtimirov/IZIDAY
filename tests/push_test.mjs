@@ -67,6 +67,16 @@ hub({ from: "widget", since: 0, lists: { locs: [{ id: "l1", date: now - 20 * 360
 sh.pushTick()
 const out2 = hub({ from: "app", push: { action: "outbox" } }).push.items.map(x => x.title + " | " + x.body)
 check(out2.some(x => /Забрать детей завтра.*где вы были 20 ч назад/.test(x)), "место старое — «пора выезжать» всё равно, с пометкой", out2.slice(-2))
+// 4в. дела детей и голодание
+const wdNow = ((new Date().getDay() + 6) % 7) + 1, hhmm = d => `${z(d.getHours())}:${z(d.getMinutes())}`
+hub({ from: "app", since: 0, lists: { kids: [{ id: "k1", date: now, u: now + 9, title: "Плавание", kid: "Алия", take: "очки и полотенце", days: [wdNow], time: hhmm(new Date(now + 30 * 60e3)) },
+  { id: "k2", date: now, u: now + 9, title: "Не сегодня", days: [wdNow % 7 + 1], time: hhmm(new Date(now + 30 * 60e3)) }],
+  fast: [{ id: "g1", date: now, u: now + 9, start: now - 16 * 3600e3 - 60e3, hours: 16 }] } })
+sh.pushTick()
+const out3 = hub({ from: "app", push: { action: "outbox" } }).push.items.map(x => x.title + " | " + x.body)
+check(out3.some(x => /Через 30 мин: Плавание \| .*Плавание \(Алия\) — взять: очки и полотенце/.test(x)), "дети: за 30 минут — что взять", out3.slice(-3))
+check(!out3.some(x => /Не сегодня/.test(x)), "дети: дела другого дня не приходят")
+check(out3.some(x => /Окно открыто \| 16 ч голодания позади/.test(x)), "голодание: окно открылось — пуш", out3.slice(-3))
 // 5. исчезнувшая подписка удаляется
 hub({ from: "app", push: { action: "subscribe", sub: { endpoint: "https://push.example/gone", keys: { p256dh: "x", auth: "y" } } } })
 hub({ from: "app", push: { action: "test" } })

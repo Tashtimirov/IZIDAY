@@ -22,7 +22,7 @@ let output = null
 const g = { Color, DateFormatter, Request, Alert, Notification, URLScheme: { forRunningScript: () => "scriptable:///run/MyDay" }, FileManager: { iCloud: () => fmo, local: () => fmo },
   Keychain: { contains: k => k in keys, get: k => keys[k], set: (k, v) => { keys[k] = v } }, config: { runsWithSiri: true, runsInWidget: false },
   Script: { setShortcutOutput: s => { output = s } }, args: {} }
-const app = await new Function(...Object.keys(g), "return (async()=>{" + load("../src/iphone/MyDay.js") + "; return { quickText, quickAsk, ask, choose, loadJSON, CHAT_FILE }})()")(...Object.values(g))
+const app = await new Function(...Object.keys(g), "return (async()=>{" + load("../src/iphone/MyDay.js") + "; return { quickText, quickAsk, ask, choose, loadJSON, CHAT_FILE, runTool, placesCheck }})()")(...Object.values(g))
 let ok = true
 const check = (c, msg, got) => { console.log((c ? "✓ " : "✗ ") + msg + (c ? "" : "  → " + JSON.stringify(got))); ok = ok && !!c }
 
@@ -44,5 +44,12 @@ check(/не получилось|ошибк/.test(output), "ошибка — п�
 delete keys["myday.anthropic.key"]
 await app.quickAsk("ещё")
 check(/нужен ключ/.test(output), "без ключа помощника — подсказка, где его ввести", output)
+// покупки и голодание из Siri (виджет)
+let s = await app.runTool("add_shopping", { items: ["молоко", "хлеб", "Молоко"] })
+check(s.ok && s.to_buy.join() === "молоко,хлеб", "виджет: покупки без повторов", s)
+s = await app.runTool("shop_done", { items: ["молок"] })
+check(s.to_buy.join() === "хлеб", "виджет: куплено", s)
+const f = await app.runTool("start_fast", {})
+check(f.ok && f.hours === 16 && (await app.runTool("start_fast", {})).error && (await app.runTool("stop_fast", {})).ok, "виджет: голодание старт/стоп", f)
 console.log(ok ? "QUICK_OK" : "QUICK_FAIL")
 process.exit(ok ? 0 : 1)

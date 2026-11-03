@@ -165,7 +165,7 @@ function advice() { ensureSheets_(); writeAdvice_(); }
 // Виджет присылает снимок того, что видит только iPhone (календарь, напоминания, часы), и выполняет
 // очередь команд приложения (создать или перенести событие, отметить напоминание). Каждая запись хранит
 // s — время, когда таблица её приняла: клиент получает только записи новее своего прошлого запроса.
-const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0 },   // сколько дней хранить (0 — всё); rems — напоминания IZIDAY; budgets, recur, habits, hlog, weight — лимиты, регулярные платежи, привычки, вес
+const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90 },   // сколько дней хранить (0 — всё); rems — напоминания IZIDAY; budgets, recur, habits, hlog, weight — лимиты, регулярные платежи, привычки, вес; shop — покупки, kids — дела детей, fast — голодание
   tomb: 90, chunk: 45000, opsKeep: 3 };
 const ROUTE_URL = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/;
 
@@ -837,7 +837,7 @@ function out_(obj) {
 // воду и ближайшие события с адресом (сколько ехать — по Картам Google) и шлёт пуш в приложение на iPhone.
 // Пуш приходит пустым (без шифрования содержимого) — приложение само забирает текст из «исходящих» (push: outbox).
 // Ключи VAPID (P-256) создаются здесь при первом запросе и хранятся в свойствах скрипта.
-const PUSH = { tick: 5, sub: "https://tashtimirov.github.io/IZIDAY/", water: [2, 3.5, 5], waterFrom: 9, waterTo: 21, buffer: 10, look: 3 * 3600e3 };
+const PUSH = { tick: 5, sub: "https://tashtimirov.github.io/IZIDAY/", water: [2, 3.5, 5], waterFrom: 9, waterTo: 21, buffer: 10, look: 3 * 3600e3, kidsAt: 7, kidsLead: 30 };
 
 function push_(p, from) {
   const a = p.action;
@@ -913,6 +913,25 @@ function pushTick() {
           });
         }
       }
+    }
+    // 5. дела детей: утром в 7:00 — что сегодня (кружки, кто забирает, что взять); за 30 минут до дела со временем — ещё раз
+    const wd = Number(Utilities.formatDate(new Date(now), tz, "u"));   // 1 — понедельник … 7 — воскресенье
+    const kids = alive("kids").filter(k => (k.days || []).map(Number).includes(wd) && k.title);
+    if (kids.length) {
+      const line = k => `${k.time ? k.time + " " : ""}${k.title}${k.kid ? " (" + k.kid + ")" : ""}${k.who ? ", забирает " + k.who : ""}${k.take ? " — взять: " + k.take : ""}`;
+      const morning = pushParse_(dayOf(now) + "T" + String(PUSH.kidsAt).padStart(2, "0") + ":00", tz).getTime();
+      if (morning > from && morning <= now + 60e3)
+        once("k:" + dayOf(now), { title: "👧 Сегодня у детей", body: kids.slice().sort((x, y) => String(x.time || "").localeCompare(String(y.time || ""))).map(line).join("\n"), url: "./#kids" });
+      for (const k of kids) if (k.time) {
+        const t = pushParse_(dayOf(now) + "T" + k.time, tz); if (!t) continue;
+        const at = t.getTime() - PUSH.kidsLead * 60e3;
+        if (at > from && at <= now + 60e3) once("k:" + k.id + ":" + dayOf(now), { title: `👧 Через ${PUSH.kidsLead} мин: ${k.title}`, body: line(k), url: "./#kids" });
+      }
+    }
+    // 6. интервальное голодание: окно открылось — пуш
+    for (const f of alive("fast")) if (!f.end && f.start && f.hours) {
+      const at = Number(f.start) + Number(f.hours) * 3600e3;
+      if (at <= now + 60e3 && at > now - 6 * 3600e3) once("f:" + f.id, { title: "🍽 Окно открыто", body: `${f.hours} ч голодания позади — можно есть. Записать еду — по фото или словами.`, url: "./#health" });
     }
     // 4. «Пора выезжать»: события с адресом в ближайшие 3 часа, дорога от того места, где пользователь сейчас
     const here = pushHere_(), travel = hubGet_("push_travel") || {};

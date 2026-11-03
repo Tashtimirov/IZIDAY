@@ -73,7 +73,7 @@ const ICO = {
 // ───────────── Данные на телефоне ─────────────
 // Записи — как в виджете: { id, date, u (время изменения), ... }; удалённые остаются «надгробиями» { id, deleted, u },
 // чтобы удаление дошло до виджета и таблицы
-const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0 }   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
+const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90 }   // shop — покупки, kids — дела детей, fast — голодание   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
 let D = {}
 function load() {
   try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
@@ -96,7 +96,8 @@ function applyCfg() {
   if (cfg.health) c.health = Object.assign({}, c.health, cfg.health)
   if (Array.isArray(cfg.calendars)) c.calendars = cfg.calendars
 }
-const H = () => Object.assign({ waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30, weight: 80, kcalGoal: 2000 }, core.CONFIG.health || {})
+const H = () => Object.assign({ waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30, weight: 80, kcalGoal: 2000, proteinGoal: 0 }, core.CONFIG.health || {})
+const proteinGoal = () => H().proteinGoal || Math.round((H().weight || 80) * 1.6)   // по умолчанию 1,6 г на кг веса
 const live = list => list.filter(x => x && !x.deleted)
 function upsert(key, rec) {
   rec.u = Date.now()
@@ -609,6 +610,20 @@ const AGENT_TOOLS = [
       method: { type: "string", enum: ["cash", "transfer"] }, category: { type: "string" }, paid_now: { type: "boolean" } }, required: ["title", "amount", "day", "category"] } },
   { name: "pay_recurring", description: "Отметить регулярный платёж оплаченным в этом месяце (запишет расход). id из get_money.recurring.",
     input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "add_shopping", description: "Добавить в список покупок («купить молоко и хлеб» — два пункта). Рядом с магазином из списка (add_store) придёт напоминание.",
+    input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } } }, required: ["items"] } },
+  { name: "get_shopping", description: "Что осталось купить и у каких магазинов напоминать.", input_schema: { type: "object", properties: {} } },
+  { name: "shop_done", description: "Отметить купленным (done=false — вернуть в список).", input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } }, done: { type: "boolean" } }, required: ["items"] } },
+  { name: "add_store", description: "Магазин, у которого напоминать о покупках («напоминай о покупках у Big C / Makro»). Находит филиалы рядом; виджет пришлёт список, когда пользователь будет рядом и есть что купить.",
+    input_schema: { type: "object", properties: { query: { type: "string", description: "Сеть или адрес магазина" }, radius_m: { type: "number", description: "По умолчанию 400" } }, required: ["query"] } },
+  { name: "add_kids_item", description: "Дело детей по дням недели: кружок, секция, кто забирает, что взять («по вторникам и четвергам в 17:00 плавание у Алии, взять очки»). Утром в 7:00 и за 30 минут придёт пуш.",
+    input_schema: { type: "object", properties: { title: { type: "string" }, days: { type: "array", items: { type: "number" }, description: "1 — пн … 7 — вс" },
+      time: { type: "string", description: "HH:MM, если есть" }, kid: { type: "string", description: "Кто из детей" }, who: { type: "string", description: "Кто забирает / везёт" }, take: { type: "string", description: "Что взять" } }, required: ["title", "days"] } },
+  { name: "get_kids", description: "Дела детей по дням недели.", input_schema: { type: "object", properties: {} } },
+  { name: "delete_kids_item", description: "Убрать дело детей по id (из get_kids).", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "start_fast", description: "Начать интервальное голодание (по умолчанию 16 ч). Когда окно откроется — придёт пуш.", input_schema: { type: "object", properties: { hours: { type: "number" } } } },
+  { name: "stop_fast", description: "Закончить голодание сейчас (поел).", input_schema: { type: "object", properties: {} } },
+  { name: "set_protein_goal", description: "Цель по белку, г в день (по умолчанию 1,6 г на кг веса).", input_schema: { type: "object", properties: { grams: { type: "number" } }, required: ["grams"] } },
   { name: "log_weight", description: "Записать вес пользователя в кг.", input_schema: { type: "object", properties: { kg: { type: "number" }, date: { type: "string", description: "YYYY-MM-DD, если не сегодня" } }, required: ["kg"] } },
   { name: "mark_habit", description: "Отметить привычку за день (или снять отметку done=false). Для «хочу бросить» отметка значит, что было (выпил, курил). Если такой привычки нет и create=true — создать.",
     input_schema: { type: "object", properties: { habit: { type: "string", description: "Название привычки" }, day: { type: "string", description: "YYYY-MM-DD, по умолчанию сегодня" },
@@ -943,6 +958,42 @@ async function runTool(name, x) {
       const m = recurPay(r)
       return { ok: true, money_id: m.id }
     }
+    case "add_shopping": { const added = shopAdd(x.items || []); return { ok: true, added: added.map(s => s.title), to_buy: shopOpen().map(s => s.title) } }
+    case "get_shopping": return { to_buy: shopOpen().map(s => s.title), stores: shopStores().map(p => p.query) }
+    case "shop_done": {
+      const done = x.done !== false, hit = []
+      for (const t of x.items || []) { const s = done ? shopFind(t) : live(D.shop).filter(z => z.done).sort((a, b) => b.doneAt - a.doneAt).find(z => normT(z.title).includes(normT(t))); if (s) { shopToggle(s.id, done); hit.push(s.title) } }
+      return hit.length ? { ok: true, marked: hit, to_buy: shopOpen().map(s => s.title) } : { error: "в списке такого нет", to_buy: shopOpen().map(s => s.title) }
+    }
+    case "add_store": {
+      const here = await whereAmI()
+      try {
+        const g = await hubPost({ geo: { query: x.query, near: here || undefined, km: 60 } }, 30000)
+        if (!g.geo) return { error: "скрипт таблицы старый: разверните новую версию Code.gs" }
+        let pts = (g.geo.results || []).map(z => ({ name: z.name, lat: z.lat, lng: z.lng }))
+        if (here) pts = pts.filter(q => distM(here, q) < 80000)
+        if (!pts.length) return { error: `«${x.query}» не нашлось рядом — уточните район` }
+        const p = upsert("places", { id: uid("p"), date: Date.now(), title: `🛒 ${x.query}`, query: x.query, points: pts.slice(0, 12), radius: Math.round(+x.radius_m || 400), done: false, shop: true })
+        return { ok: true, id: p.id, points: p.points.map(q => q.name), note: "виджет пришлёт список покупок, когда будете рядом (не чаще раза в 3 часа)" }
+      } catch (e) { return { error: String(e.message || e) } }
+    }
+    case "add_kids_item": {
+      const days = (x.days || []).map(Number).filter(d => d >= 1 && d <= 7)
+      if (!days.length) return { error: "нужны дни недели: 1 — пн … 7 — вс" }
+      const k = upsert("kids", { id: uid("c"), date: Date.now(), title: String(x.title).trim(), days, time: /^\d{1,2}:\d\d$/.test(x.time || "") ? x.time.padStart(5, "0") : "", kid: x.kid || "", who: x.who || "", take: x.take || "" })
+      return { ok: true, id: k.id, days: days.map(d => WD7[d - 1]).join(", ") }
+    }
+    case "get_kids": return { items: kidsList().map(k => ({ id: k.id, title: k.title, days: (k.days || []).map(d => WD7[d - 1]).join(", "), time: k.time, kid: k.kid, who: k.who, take: k.take })) }
+    case "delete_kids_item": { if (!live(D.kids).some(k => k.id === x.id)) return { error: "нет такого" }; remove("kids", x.id); return { ok: true } }
+    case "start_fast": { if (fastNow()) return { error: "голодание уже идёт", since: iso(new Date(fastNow().start)) }; const f = fastStart(x.hours); return { ok: true, hours: f.hours, window_opens: iso(new Date(f.start + f.hours * 3600e3)) } }
+    case "stop_fast": { const f = fastStop(); return f ? { ok: true, fasted: durTxt(f.end - f.start) } : { error: "голодание не идёт" } }
+    case "set_protein_goal": {
+      const n = Math.round(+x.grams)
+      if (!(n >= 30 && n <= 400)) return { error: "цель белка — от 30 до 400 г" }
+      core.CONFIG.health = Object.assign({}, core.CONFIG.health, { proteinGoal: n })
+      if (D.conn) { D.conn.cfg = D.conn.cfg || {}; D.conn.cfg.health = core.CONFIG.health }
+      save(); return { ok: true, protein_goal_g: n }
+    }
     case "log_weight": {
       if (!(x.kg > 20 && x.kg < 400)) return { error: "вес в кг" }
       const d = parseIso(x.date); if (d) d.setHours(9, 0, 0, 0)
@@ -960,7 +1011,8 @@ async function runTool(name, x) {
     }
     case "get_health": {
       const d = dayHealth()
-      return { eaten_kcal: d.kcal, protein: d.protein, fat: d.fat, carbs: d.carbs, meals: d.food.map(m => ({ id: m.id, time: hm(new Date(m.date)), title: m.title, kcal: m.kcal })),
+      const fs = fastNow()
+      return { eaten_kcal: d.kcal, protein: d.protein, protein_goal_g: proteinGoal(), fasting: fs ? { since: iso(new Date(fs.start)), hours: fs.hours, window_opens: iso(new Date(fs.start + fs.hours * 3600e3)) } : null, fat: d.fat, carbs: d.carbs, meals: d.food.map(m => ({ id: m.id, time: hm(new Date(m.date)), title: m.title, kcal: m.kcal })),
         water_ml: d.water, water_goal_ml: H().waterGoal, water: today(D.water).map(w => ({ id: w.id, time: hm(new Date(w.date)), ml: w.ml })),
         workouts: d.workouts.map(w => ({ id: w.id, title: w.title, minutes: w.minutes, kcal: w.kcal })),
         watch: d.watch || "нет данных с часов за сегодня",
@@ -1613,7 +1665,7 @@ async function eventSheet(e) {
 async function addMenu() {
   const glass = H().glass || 250
   const opts = [["💬 Сказать помощнику", () => { setTab("chat"); setTimeout(micStart, 300) }], ["➖ Расход", () => moneyForm("expense")], ["➕ Доход", () => moneyForm("income")],
-    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()],
+    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()], ["🛒 Покупка", shopForm], ["👧 Дела детей", kidsForm],
     ["⏰ Напоминание", reminderForm], ["📅 Событие", eventForm]]
   const i = await ui.choose("Добавить", "", opts.map(o => o[0]))
   if (i >= 0) opts[i][1]()
@@ -1711,11 +1763,13 @@ function renderToday() {
   const bills = isToday ? recurSoon() : []
   if (bills.length) html += bills.map(r => `<div class="row" data-recur="${esc(r.id)}"><span class="pin">🔁</span><div class="grow"><div class="t">${esc(r.title)} · ${esc(core.money(r.amount))}</div>
     <div class="s ${recurDue(r) < sod(now) ? "exp" : ""}">оплатить ${esc(recurLabel(r))}</div></div><button class="btn small" data-recur-pay="${esc(r.id)}">Оплачено</button></div>`).join("")
-  const near = live(D.places).filter(p => !p.done)
+  const near = live(D.places).filter(p => !p.done && !p.shop)
   if (isToday && near.length) html += near.map(p => `<div class="row"><span class="pin">📍</span><div class="grow"><div class="t">${esc(p.title)}</div>
     <div class="s">напомню рядом: ${esc(p.query)} · ${(p.points || []).length} ${plural((p.points || []).length, "точка", "точки", "точек")}</div></div></div>`).join("")
   html += `</div>`
 
+  html += kidsCard(selDay)
+  if (isToday && shopOpen().length) html += shopCard()
   if (isToday) html += habitsCard(selDay)
   if (isToday) {
     const h = dayHealth(), g = H()
@@ -1884,7 +1938,7 @@ function renderHealth() {
   const kGoal = g.kcalGoal || 2000
   html += `<div class="card"><h2>Еда${isT ? `<button class="act" data-do="food">+ Добавить</button>` : ""}</h2><div class="ring-row">
     ${ring(h.kcal / kGoal, h.kcal > kGoal ? "var(--red)" : "var(--gold)", num(h.kcal), "ккал")}
-    <div style="flex:1" class="small muted">Белки <b style="color:var(--text)">${num(h.protein)} г</b> · жиры <b style="color:var(--text)">${num(h.fat)} г</b> · углеводы <b style="color:var(--text)">${num(h.carbs)} г</b>
+    <div style="flex:1" class="small muted">Белки <b style="color:var(--text)">${num(h.protein)} из ${proteinGoal()} г</b><div class="prog ${h.protein >= proteinGoal() ? "" : "gold"}" style="margin:4px 0 6px"><div style="width:${Math.min(1, (h.protein || 0) / proteinGoal()) * 100}%"></div></div>жиры <b style="color:var(--text)">${num(h.fat)} г</b> · углеводы <b style="color:var(--text)">${num(h.carbs)} г</b>
     ${isT ? `<div class="btns" style="margin-top:10px"><button class="btn gold small" data-do="photo">📷 По фото</button></div>` : ""}</div></div>`
   html += h.food.map(f => `<div class="row" data-food="${esc(f.id)}"><div class="time">${hm(new Date(f.date))}</div><div class="grow"><div class="t">${esc(f.title || "Еда")}</div>${f.protein || f.fat || f.carbs ? `<div class="s">Б ${num(f.protein)} · Ж ${num(f.fat)} · У ${num(f.carbs)}</div>` : ""}</div><div class="amt">${num(f.kcal)}</div></div>`).join("")
   html += `</div>`
@@ -1892,6 +1946,7 @@ function renderHealth() {
   const kc = days.map(d => live(D.food).filter(f => sameDay(f.date, d)).reduce((s, f) => s + (f.kcal || 0), 0))
   const wa = days.map(d => live(D.water).filter(w => sameDay(w.date, d)).reduce((s, w) => s + (w.ml || 0), 0))
   const mk = Math.max(1, ...kc), mw = Math.max(1, ...wa)
+  if (isT) html += fastCard()
   html += weightCard()
   html += `<div class="card"><h2>Неделя: калории</h2><div class="chart">${days.map((d, i) => `<div class="col"><div class="lbl">${kc[i] ? num(kc[i]) : ""}</div><div class="b" style="height:${kc[i] / mk * 100}%"></div><div class="lbl">${WD[d.getDay()]}</div></div>`).join("")}</div></div>`
   html += `<div class="card"><h2>Неделя: вода</h2><div class="chart">${days.map((d, i) => `<div class="col"><div class="lbl">${wa[i] ? liters(wa[i]) : ""}</div><div class="b w" style="height:${wa[i] / mw * 100}%"></div><div class="lbl">${WD[d.getDay()]}</div></div>`).join("")}</div></div>`
@@ -1924,6 +1979,7 @@ function renderMore() {
     <div class="btns" id="push-btns" style="margin-top:10px"></div></div>`
   html += `<div class="card"><h2>Цели</h2>
     <div class="set"><span>Вода в день, мл</span><input type="number" data-set="waterGoal" value="${g.waterGoal}"></div>
+    <div class="set"><span>Белок в день, г</span><input type="number" data-set="proteinGoal" value="${proteinGoal()}"></div>
     <div class="set"><span>Стакан, мл</span><input type="number" data-set="glass" value="${g.glass}"></div>
     <div class="set"><span>Калории в день, ккал</span><input type="number" data-set="kcalGoal" value="${g.kcalGoal || 2000}"></div>
     <div class="set"><span>Вес, кг (для тренировок)</span><input type="number" data-set="weight" value="${g.weight}"></div></div>`
@@ -2064,6 +2120,10 @@ function bind() {
     if (D.conn) { D.conn.cfg = D.conn.cfg || {}; D.conn.cfg.health = core.CONFIG.health }
     save(false); toast("Сохранено")
   })
+  $$("[data-shop]", v).forEach(b => b.onclick = () => { const s = D.shop.find(z => z.id === b.dataset.shop); shopToggle(b.dataset.shop); if (navigator.vibrate) navigator.vibrate(10); render(); toast(`✓ ${s ? s.title : "Куплено"}`) })
+  $$("[data-fast]", v).forEach(b => b.onclick = () => { const k = b.dataset.fast
+    if (k === "stop") { const f = fastStop(); render(); return toast(f ? `Голодание: ${durTxt(f.end - f.start)}` : "") }
+    const f = fastStart(+k); render(); toast(`⏱ Окно откроется в ${hm(new Date(f.start + f.hours * 3600e3))}`) })
   $$("[data-habit]", v).forEach(b => b.onclick = () => {
     const h = D.habits.find(z => z.id === b.dataset.habit)
     const on = habitToggle(h, selDay > sod(new Date()) ? new Date() : selDay)
@@ -2102,7 +2162,7 @@ const DO = {
   "go-today": () => { selDay = sod(new Date()); stripCenter = null; stripJump = true; render(); if (stripJump) stripInit(null) },
   "tab-money": () => setTab("money"), "tab-health": () => setTab("health"), report: () => showReport("month"),
   sheet: () => window.open(D.conn.sheetUrl, "_blank"),
-  budgets: () => budgetForm(), "recur-add": () => recurForm(), habits: () => habitsForm(), weight: () => weightForm(), search: () => searchSheet(),
+  budgets: () => budgetForm(), "recur-add": () => recurForm(), habits: () => habitsForm(), weight: () => weightForm(), shop: () => shopForm(), kids: () => kidsForm(), search: () => searchSheet(),
   sync: () => (!D.conn || !D.conn.hook) ? DO.connect() : sync().then(ok => toast(ok ? "Обновлено" : `Не получилось: ${D.sync.error || "нет связи"}`)),
   "run-widget": () => sync().then(runWidgetNow),
   autoconnect: () => autoConnect(),
@@ -2327,6 +2387,84 @@ async function weightForm() {
   logWeight(kg); render(); toast(`⚖️ ${kgs(kg)} кг`)
 }
 
+// ── Список покупок: голосом «купить молоко», у магазина из списка — напоминание (проверяет виджет) ──
+const normT = s => String(s || "").toLowerCase().replace(/ё/g, "е").trim()
+const shopOpen = () => live(D.shop).filter(s => !s.done).sort((a, b) => a.date - b.date)
+const shopStores = () => live(D.places).filter(p => p.shop && !p.done)
+function shopAdd(items) {
+  const out = []
+  for (const t of items.map(s => String(s).replace(/^(купить|ещё|еще)\s+/i, "").trim()).filter(Boolean))
+    if (!shopOpen().some(s => normT(s.title) === normT(t))) out.push(upsert("shop", { id: uid("b"), date: Date.now() + out.length, title: t.charAt(0).toUpperCase() + t.slice(1), done: false }))
+  return out
+}
+function shopFind(t) { const n = normT(t); return shopOpen().find(s => normT(s.title) === n) || shopOpen().find(s => normT(s.title).includes(n) || n.includes(normT(s.title))) }
+function shopToggle(id, done = true) { const s = D.shop.find(x => x.id === id); if (s) upsert("shop", Object.assign({}, s, { done, doneAt: done ? Date.now() : 0 })) }
+function shopCard() {
+  const list = shopOpen(), st = shopStores()
+  let html = `<div class="card" id="shop"><h2>Покупки<button class="act" data-do="shop">+ Добавить</button></h2>`
+  html += list.map(s => `<div class="row"><button class="check" data-shop="${esc(s.id)}"></button><div class="grow"><div class="t">${esc(s.title)}</div></div></div>`).join("")
+  html += `<div class="muted small" style="margin:8px 4px 0">${st.length ? "🛒 Напомню у: " + st.map(p => esc(p.query)).join(", ") : "Скажите помощнику «напоминай о покупках у Big C» — пришлю список, когда будете рядом."}</div>`
+  return html + `</div>`
+}
+async function shopForm() {
+  const t = await ui.ask("🛒 Купить", "Молоко, хлеб, яйца", "", { type: "text", ok: "Добавить" })
+  if (!t) return
+  const a = shopAdd(t.split(/[,;\n]|\s+и\s+/))
+  render(); toast(a.length ? `🛒 В списке: ${shopOpen().length}` : "Уже в списке")
+}
+
+// ── Дела детей по дням недели: кружки, кто забирает, что взять. Пуш утром в 7:00 и за 30 минут (таблица) ──
+const WD7 = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]   // 1 — пн … 7 — вс
+const kidsList = () => live(D.kids).filter(k => k.title)
+const wdOf = d => ((d.getDay() + 6) % 7) + 1
+const kidsOn = d => kidsList().filter(k => (k.days || []).map(Number).includes(wdOf(d))).sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")))
+function kidsCard(day) {
+  const l = kidsOn(day)
+  if (!l.length) return ""
+  return `<div class="card" id="kids"><h2>Дети<button class="act" data-do="kids">Изменить</button></h2>${l.map(k => `<div class="row"><div class="time">${esc(k.time || "")}</div><div class="grow"><div class="t">${esc(k.title)}${k.kid ? ` · ${esc(k.kid)}` : ""}</div>${k.take || k.who ? `<div class="s">${[k.who && "забирает " + k.who, k.take && "взять: " + k.take].filter(Boolean).map(esc).join(" · ")}</div>` : ""}</div></div>`).join("")}</div>`
+}
+function kidsForm() {
+  const s = sheet(`<h3>Дела детей</h3>
+    <div>${kidsList().map(k => `<div class="row"><div class="grow"><div class="t">${esc(k.title)}${k.kid ? ` · ${esc(k.kid)}` : ""}</div><div class="s">${(k.days || []).map(d => WD7[d - 1]).join(", ")}${k.time ? " · " + esc(k.time) : ""}${k.take ? " · взять: " + esc(k.take) : ""}</div></div><button class="btn small red" data-del="${esc(k.id)}">Убрать</button></div>`).join("") || '<div class="empty">Кружки, секции, кто забирает, что взять в школу — утром придёт пуш на день</div>'}</div>
+    <div class="field" style="margin-top:12px"><label>Что</label><input id="k-t" placeholder="Плавание, рисование, забрать из школы…"></div>
+    <div class="field"><div class="chips" id="k-d">${WD7.map((d, i) => `<button class="chip" data-d="${i + 1}">${d}</button>`).join("")}</div></div>
+    <div class="field"><label>Во сколько</label><input id="k-h" type="time"></div>
+    <div class="field"><label>Кто из детей</label><input id="k-k" placeholder="Необязательно"></div>
+    <div class="field"><label>Кто забирает</label><input id="k-w" placeholder="Необязательно"></div>
+    <div class="field"><label>Что взять</label><input id="k-x" placeholder="Форма, очки, сменка…"></div>
+    <div class="btns"><button class="btn" data-a="no">Готово</button><button class="btn primary" data-a="ok">Добавить</button></div>`, { onClose: () => render() })
+  const days = new Set()
+  $$("#k-d .chip", s.el).forEach(b => b.onclick = () => { const d = +b.dataset.d; days.has(d) ? days.delete(d) : days.add(d); b.classList.toggle("on", days.has(d)) })
+  $$("[data-del]", s.el).forEach(b => b.onclick = () => { remove("kids", b.dataset.del); s.close(); kidsForm() })
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const title = $("#k-t", s.el).value.trim()
+    if (!title) return toast("Напишите, что за дело")
+    if (!days.size) return toast("Выберите дни недели")
+    upsert("kids", { id: uid("c"), date: Date.now(), title, days: [...days].sort(), time: $("#k-h", s.el).value || "", kid: $("#k-k", s.el).value.trim(), who: $("#k-w", s.el).value.trim(), take: $("#k-x", s.el).value.trim() })
+    s.close(); kidsForm(); toast("Добавлено")
+  }
+}
+
+// ── Интервальное голодание: таймер; когда окно откроется — пуш (таблица) ──
+const durTxt = ms => { const m = Math.max(0, Math.round(ms / 60e3)); return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : `${m} мин` }
+const fastNow = () => live(D.fast).filter(f => !f.end && f.start).sort((a, b) => b.start - a.start)[0] || null
+function fastStart(hours) { return fastNow() || upsert("fast", { id: uid("g"), date: Date.now(), start: Date.now(), hours: Math.max(10, Math.min(48, Math.round(+hours || 16))) }) }
+function fastStop() { const f = fastNow(); return f ? upsert("fast", Object.assign({}, f, { end: Date.now() })) : null }
+function fastCard() {
+  const f = fastNow()
+  let html = `<div class="card" id="fast"><h2>Голодание</h2>`
+  if (!f) {
+    const last = live(D.fast).filter(x => x.end).sort((a, b) => b.end - a.end)[0]
+    return html + `<div class="btns"><button class="btn" data-fast="14">14:10</button><button class="btn primary" data-fast="16">16:8</button><button class="btn" data-fast="18">18:6</button></div>
+      <div class="muted small" style="margin-top:8px">${last ? `Прошлое: ${durTxt(last.end - last.start)}` : "Нажмите после последней еды — когда окно откроется, придёт пуш."}</div></div>`
+  }
+  const el = Date.now() - f.start, goal = f.hours * 3600e3, left = goal - el
+  return html + `<div class="wt"><b>${durTxt(el)}</b><span class="muted small">${left > 0 ? `из ${f.hours} ч · окно в ${hm(new Date(f.start + goal))}` : "окно открыто — можно есть"}</span></div>
+    <div class="prog ${left > 0 ? "gold" : ""}"><div style="width:${Math.min(1, el / goal) * 100}%"></div></div>
+    <div class="btns" style="margin-top:10px"><button class="btn small" data-fast="stop">${left > 0 ? "Прервать" : "Поел — закончить"}</button></div></div>`
+}
+
 // Поиск по всему: операции, еда, напоминания, события, регулярные платежи, привычки, чат
 function searchAll(q) {
   const s = q.toLowerCase().trim(), n = parseFloat(s.replace(",", "."))
@@ -2492,6 +2630,8 @@ async function hashAction() {
   if (a === "camera") return photoPrompt()
   if (a === "food") return foodMenu()
   if (a === "health") return setTab("health")
+  if (a === "shop") { setTab("today"); return setTimeout(() => { const el = $("#shop"); if (el) el.scrollIntoView({ block: "start" }) }, 50) }
+  if (a === "kids") return setTab("today")
   if (a === "today") return setTab("today")
   if (a === "rem") return remFollow(arg)
   if (a === "synced") { setTab("today"); return sync().then(() => { render(); toast("✓ Внесено в iPhone") }) }
