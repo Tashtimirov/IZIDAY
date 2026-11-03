@@ -65,6 +65,7 @@ const ICO = {
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><rect x="8.5" y="2.5" width="7" height="12" rx="3.5"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5"/></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="#fff"/></svg>',
   send: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></svg>',
+  add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   find: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>',
   sync: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9"/><path d="M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2"/></svg>',
 }
@@ -1332,10 +1333,10 @@ function micStart(auto) {
   const inp = $("#chat-in")
   if (!SR) { if (inp) inp.focus(); toast("Нажмите 🎤 на клавиатуре и говорите"); return }
   if (voice) return voiceFinish()
-  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false }
+  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: !!PTT.holding }
   const v = voice
-  const show = (extra = "") => { v.text = [v.base, v.done, extra].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); const i = $("#chat-in"); if (i) { i.value = v.text; grow(i) } }
-  const arm = ms => { clearTimeout(v.timer); v.timer = setTimeout(voiceFinish, ms) }
+  const show = (extra = "") => { v.text = [v.base, v.done, extra].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); const i = $("#chat-in"); if (i) { i.value = v.text; grow(i) }; pttShow(v.text) }
+  const arm = ms => { clearTimeout(v.timer); if (!v.ptt) v.timer = setTimeout(voiceFinish, ms) }   // пока кнопку держат — пауза не обрывает запись
   $(".chat-bar .mic") && $(".chat-bar .mic").classList.add("on")
   if (inp) inp.placeholder = "Слушаю… ➤ — отправить сразу"
   const run = first => {
@@ -1389,7 +1390,9 @@ function voiceSend(v) {
   const inp = $("#chat-in")
   const t = [v.base, v.done].filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
   voiceReset()
-  if (v.done.trim() && inp) { inp.value = ""; grow(inp); chatSend(t, { voice: true }) }
+  if (!v.done.trim()) return
+  if (!inp) { setTab("chat"); return setTimeout(() => chatSend(t, { voice: true }), 30) }   // команда, сказанная с кнопки на любом экране
+  inp.value = ""; grow(inp); chatSend(t, { voice: true })
 }
 // Зелёная ➤ во время записи: отправить то, что уже услышано, не дожидаясь паузы
 function voiceSendNow() {
@@ -1405,6 +1408,7 @@ function voiceReset() {
   if (voice) clearTimeout(voice.timer)
   voice = null; rec = null
   const b = $(".chat-bar .mic"); if (b) b.classList.remove("on")
+  pttShow(null)
   const inp = $("#chat-in"); if (inp) inp.placeholder = "Напишите или скажите…"
 }
 // Прокручивается только середина (main), шапка и нижнее меню стоят на месте
@@ -2566,16 +2570,45 @@ if (window.visualViewport) {
 }
 addEventListener("orientationchange", () => setTimeout(fitHeight, 300))
 $("#fab").innerHTML = ICO.mic
-// Микрофон: нажатие — сразу слушает команду для помощника; долгое нажатие — меню «Добавить»
+// Зелёная кнопка с микрофоном: нажатие — чат с помощником; держите — сразу запись голосовой команды,
+// отпустили — команда уходит помощнику (как рация). Меню «Добавить» — кнопка «+» вверху
+const PTT = { holding: false }
+function pttShow(text) {
+  const el = $("#ptt"), fab = $("#fab")
+  if (!el) return
+  const on = text !== null && (PTT.holding || (voice && voice.ptt))
+  el.hidden = !on; if (fab) fab.classList.toggle("rec", !!on)
+  if (on) el.textContent = text || "Слушаю… отпустите, чтобы отправить"
+}
 {
   const fab = $("#fab")
-  let lp = null, long = false
-  fab.addEventListener("pointerdown", () => { long = false; lp = setTimeout(() => { long = true; addMenu() }, 550) })
-  const stop = () => clearTimeout(lp)
-  fab.addEventListener("pointerup", stop); fab.addEventListener("pointercancel", stop); fab.addEventListener("pointerleave", stop)
+  let lp = null, long = false, id = null
+  const HOLD_MS = 280
+  fab.addEventListener("pointerdown", e => {
+    long = false; id = e.pointerId
+    try { fab.setPointerCapture(e.pointerId) } catch (err) {}
+    clearTimeout(lp)
+    lp = setTimeout(() => {
+      long = true; PTT.holding = true
+      if (navigator.vibrate) navigator.vibrate(15)
+      if (voice) voiceReset()
+      pttShow("")
+      micStart(true)
+    }, HOLD_MS)
+  })
+  const up = e => {
+    if (e && id !== null && e.pointerId !== id) return
+    clearTimeout(lp); id = null
+    if (!long) return
+    PTT.holding = false
+    if (voice) { voice.ptt = false; pttShow(voice.text || ""); voiceFinish() } else pttShow(null)
+  }
+  fab.addEventListener("pointerup", up); fab.addEventListener("pointercancel", up)
   fab.addEventListener("contextmenu", e => e.preventDefault())
-  fab.onclick = () => { if (long) return; if (tab !== "chat") setTab("chat"); micStart() }
+  fab.onclick = () => { if (long) { long = false; return } setTab("chat") }
 }
+$("#add").innerHTML = ICO.add
+$("#add").onclick = () => addMenu()
 $("#sync").innerHTML = ICO.sync
 $("#sync").onclick = () => DO.sync()
 $("#find").innerHTML = ICO.find

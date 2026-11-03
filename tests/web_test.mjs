@@ -339,12 +339,28 @@ claudeQueue.push({ content: [{ type: "text", text: "Сегодня 0,5 л." }], 
 const sentBefore = claudeSeen.length
 await page.click('[data-tab="today"]'); await page.click("#fab")
 await page.waitForTimeout(300)
-check(await page.evaluate(() => !!voice && $(".chat-bar .mic").classList.contains("on")), "золотая кнопка — сразу слушает")
+check(await page.evaluate(() => tab === "chat" && !voice), "зелёная кнопка: нажатие — чат, без записи")
+await page.click(".chat-bar .mic"); await page.waitForTimeout(300)
+check(await page.evaluate(() => !!voice && $(".chat-bar .mic").classList.contains("on")), "🎤 в чате — сразу слушает")
 await page.click(".chat-bar .send")
 await page.waitForSelector("text=Сегодня 0,5 л", { timeout: 5000 }).catch(() => {})
 check(claudeSeen.length === sentBefore + 1 && JSON.stringify(claudeSeen.at(-1).body.messages).includes("сколько я выпил воды"), "➤ отправил услышанное сразу", claudeSeen.length - sentBefore)
 await page.waitForTimeout(3000)
 check(claudeSeen.length === sentBefore + 1 && await page.evaluate(() => !voice), "после ➤ запись остановлена, второй отправки нет", claudeSeen.length - sentBefore)
+// держать зелёную кнопку — запись команды с любого экрана, пауза не обрывает; отпустил — ушло помощнику
+await page.click('[data-tab="today"]')
+const fb = await page.locator("#fab").boundingBox()
+await page.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2); await page.mouse.down()
+await page.waitForTimeout(600)
+check(await page.evaluate(() => !!voice && voice.ptt && tab === "today" && !$("#ptt").hidden && $("#fab").classList.contains("rec")), "держу кнопку — идёт запись, видно, что слышно", await page.evaluate(() => [!!voice, tab, $("#ptt").textContent]))
+await page.waitForTimeout(3000)
+check(await page.evaluate(() => !!voice), "пока держу, пауза запись не обрывает")
+claudeQueue.push({ content: [{ type: "text", text: "Сегодня 0,5 л." }], stop_reason: "end_turn" })
+const sentPtt = claudeSeen.length
+await page.mouse.up()
+await page.waitForTimeout(1500)
+check(claudeSeen.length === sentPtt + 1 && await page.evaluate(() => tab === "chat" && !voice && $("#ptt").hidden && !$("#fab").classList.contains("rec")), "отпустил — команда ушла помощнику, открыт чат", [claudeSeen.length - sentPtt, await page.evaluate(() => tab)])
+check(await page.evaluate(() => !!$("#add svg")), "меню «Добавить» — кнопка «+» вверху")
 // как Safari: пока прошлая запись не закончилась, новая не стартует; после ➤ микрофон снова работает
 await page.evaluate(() => {
   window.__busy = false; window.__starts = 0
