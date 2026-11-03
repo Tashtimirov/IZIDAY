@@ -64,11 +64,15 @@ await page.route("https://api.anthropic.com/**", async route => {
     return route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" },
       body: JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ summary: "Обсуждали такси и падел; падел на завтра удалён.", facts: ["Играет в падел по вторникам"], outdated: [] }) }], stop_reason: "end_turn" }) })
   }
+  if (/Сейчас ты сам, без запроса/.test(body.system || "")) {   // утренний план дня в фоне
+    planSeen.push(body)
+    return route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify({ content: [{ type: "text", text: "План на день готов." }], stop_reason: "end_turn" }) })
+  }
   claudeSeen.push({ body, headers: req.headers() })
   const next = claudeQueue.shift() || { content: [{ type: "text", text: "Готово." }], stop_reason: "end_turn" }
   await route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(next) })
 })
-const memSeen = []
+const memSeen = [], planSeen = []
 const hubState = () => sheet.post({ secret: SECRET, hub: { from: "app", since: 0 } })
 const settle = () => page.waitForTimeout(1600)
 
@@ -255,6 +259,37 @@ check(ry.ok && sheet.mail.log.some(l => l[0] === "reply" && l[1] === "M1"), "«�
 const ar = await page.evaluate(() => runTool("mail_modify", { ids: ["T2"], op: "archive" }))
 check(ar.ok && sheet.mail.log.some(l => l[0] === "archive" && l[1] === "T2"), "архив без лишних вопросов", ar)
 check(claudeSeen.at(-1).body.tools.some(t => t.name === "mail_send") && /Почта Gmail/.test(claudeSeen.at(-1).body.system), "почтовые инструменты у помощника")
+
+// помощник ведёт день: план подсказок уходит в таблицу для уведомлений виджета
+const z2 = n => String(n).padStart(2, "0"), inH = h => { const d = new Date(Date.now() + h * 3600e3); return `${d.getFullYear()}-${z2(d.getMonth() + 1)}-${z2(d.getDate())}T${z2(d.getHours())}:${z2(d.getMinutes())}` }
+const sameDayAhead = new Date(Date.now() + 3600e3).getDate() === new Date().getDate()
+const pd = await page.evaluate(() => { const at = h => iso(new Date(Date.now() + h * 3600e3)); return runTool("plan_day", { items: [{ time: at(0.5), text: "💧 Стакан воды перед созвоном" }, { time: at(-1), text: "прошлое" }] }) })
+const pageAhead = await page.evaluate(() => new Date(Date.now() + 0.5 * 3600e3).getDate() === new Date().getDate())
+check(pd.ok && pd.planned.length === (pageAhead ? 1 : 0), "plan_day: только будущие подсказки сегодня", pd)
+await settle()
+if (pageAhead) check((hubState().lists.nudges || []).some(n => /Стакан воды/.test(n.text)), "подсказки ушли в таблицу для виджета")
+check(claudeSeen.at(-1).body.tools.some(t => t.name === "plan_day") && /Ты ведёшь день пользователя/.test(claudeSeen.at(-1).body.system), "помощник умеет вести день и учиться на поправках")
+
+// «Стоп»: ответ прерывается, вопрос возвращается в строку ввода
+await page.click('[data-tab="chat"]')
+await page.route("https://api.anthropic.com/v1/messages", async route => { await new Promise(r => setTimeout(r, 3000)); route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify({ content: [{ type: "text", text: "Поздний ответ" }], stop_reason: "end_turn" }) }).catch(() => {}) })
+await page.fill("#chat-in", "сколько я потратил на кафе в октябре")
+await page.click(".chat-bar .send")
+await page.waitForTimeout(400)
+check(await page.isVisible(".chat-bar .send.stop"), "пока помощник думает — кнопка ⏹")
+await page.click(".chat-bar .send")
+await page.waitForTimeout(500)
+check(await page.inputValue("#chat-in") === "сколько я потратил на кафе в октябре" && !(await page.textContent("#chat-list")).includes("сколько я потратил на кафе"), "⏹: остановлено, текст снова в строке ввода", await page.inputValue("#chat-in"))
+await page.waitForTimeout(3000)
+check(!(await page.textContent("#chat-list")).includes("Поздний ответ"), "поздний ответ после стопа не появляется")
+await page.unroute("https://api.anthropic.com/v1/messages")
+// ✎ у своего сообщения
+await page.fill("#chat-in", "")
+await page.evaluate(() => { D.chat.push({ role: "user", text: "напомни купить хлеп", at: Date.now() }, { role: "assistant", text: "Ок", at: Date.now() }); renderChat() })
+await page.click("#chat-list [data-edit]:last-of-type >> nth=-1")
+await page.waitForTimeout(200)
+check(await page.inputValue("#chat-in") === "напомни купить хлеп" && !(await page.textContent("#chat-list")).includes("купить хлеп"), "✎: сообщение вернулось в строку для правки", await page.inputValue("#chat-in"))
+await page.fill("#chat-in", "")
 
 // голос: зелёная ➤ во время записи отправляет сразу, без паузы
 await page.evaluate(() => {

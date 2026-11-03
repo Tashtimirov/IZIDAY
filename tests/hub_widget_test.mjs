@@ -56,7 +56,7 @@ const g = { Color, DateFormatter, CalendarEvent, Reminder, Alert, URLScheme: { f
   Request: class { async loadJSON() { const b = JSON.parse(this.body); requests.push(b); tick += 1000; return sheet.post(b) } } }
 let ok = true
 const check = (cond, msg, got) => { console.log(cond ? "   ✓" : "   ✗", msg, cond ? "" : JSON.stringify(got)); ok = ok && cond }
-const w = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { hubSync, buildWidget, loadSettings, placesCheck, hereNow, scheduleAgenda, waterGap, logLoc } })()")(...Object.values(g))
+const w = await new Function(...Object.keys(g), "return (async()=>{" + src + "; return { hubSync, buildWidget, loadSettings, placesCheck, hereNow, scheduleAgenda, waterGap, logLoc, waterNudgeLevel } })()")(...Object.values(g))
 
 // 1. первый обмен: виджет отдаёт всё и снимок
 let n = await w.hubSync()
@@ -136,7 +136,11 @@ check(requests[0].hub.lists.locs && requests[0].hub.lists.locs.length === 1, "и
 store.push({ identifier: "E9", title: "Встреча с застройщиком", startDate: at(1, 14), endDate: at(1, 15), calendar: cal, location: "Офис\nэтаж 3" })
 reminders.push({ identifier: "R9", title: "Позвонить маме", dueDate: at(1, 16), dueDateIncludesTime: true, isCompleted: false, calendar: { title: "Текущие" }, save() {} })
 pending.push(Object.assign(new Notif(), { identifier: "myday-ag-e-OLD-1-x", title: "старое" }))
+sheet.post({ secret: "s".repeat(32), hub: { from: "app", lists: { nudges: [{ id: "n1", date: at(1, 15).getTime(), u: Date.now(), text: "Перед встречей выпей воды" }, { id: "n2", date: at(1, 15).getTime(), u: Date.now(), text: "удалена", deleted: true }] } } })
+await w.hubSync()
 await w.scheduleAgenda()
+const nd = pending.filter(x => (x.identifier || "").startsWith("myday-ag-n-"))
+check(nd.length === 1 && nd[0].body === "Перед встречей выпей воды" && nd[0].at.getHours() === 15 && nd[0].openURL === APP + "#chat", "подсказка помощника — уведомление в своё время, открывает чат", nd.map(x => x.body))
 const ag = pending.filter(x => (x.identifier || "").startsWith("myday-ag-"))
 const ev = ag.find(x => x.title === "📅 Встреча с застройщиком"), rm = ag.find(x => x.title === "⏰ Позвонить маме")
 check(ev && ev.at.getHours() === 13 && ev.at.getMinutes() === 50 && ev.openURL === APP && /Офис/.test(ev.body) && !/этаж/.test(ev.body), "встреча: уведомление за 10 минут", ev && { at: String(ev.at), body: ev.body })
@@ -145,6 +149,17 @@ check(!ag.some(x => x.title === "старое"), "устаревшее увед�
 const cnt = ag.length
 await w.scheduleAgenda()
 check(pending.filter(x => (x.identifier || "").startsWith("myday-ag-")).length === cnt, "повторный запуск не дублирует")
+// вода: уведомления нарастают — ласково, настойчивее, вопрос; попил — снова с первого
+{
+  const today = new Date(), dk = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`
+  const now = Date.now()
+  check(w.waterNudgeLevel(3, {}, 0) === 0, "3 ч без воды — первое, ласковое")
+  check(w.waterNudgeLevel(4, { waterNudgeDay: dk, waterNudgeAt: now - 3600e3, waterNudgeLevel: 1 }, 0) === -1, "через час после первого — ещё не повторяет")
+  check(w.waterNudgeLevel(4, { waterNudgeDay: dk, waterNudgeAt: now - 1.6 * 3600e3, waterNudgeLevel: 1 }, 0) === 1, "через 1,5 ч — настойчивее")
+  check(w.waterNudgeLevel(6, { waterNudgeDay: dk, waterNudgeAt: now - 1.6 * 3600e3, waterNudgeLevel: 2 }, 0) === 2, "потом — вопрос «почему не пьёшь?»")
+  check(w.waterNudgeLevel(8, { waterNudgeDay: dk, waterNudgeAt: now - 1.6 * 3600e3, waterNudgeLevel: 3 }, 0) === -1, "больше трёх за раз не шлёт")
+  check(w.waterNudgeLevel(3, { waterNudgeDay: dk, waterNudgeAt: now - 4 * 3600e3, waterNudgeLevel: 3 }, now - 3.5 * 3600e3) === 0, "попил после уведомлений — отсчёт заново, снова ласково")
+}
 // 8. вода: подсказка вместо уведомлений — с 9 до 21, больше 3 часов без записи
 const wd = (ml, ...times) => ({ water: ml, waterList: times.map(t => ({ date: t.getTime(), ml: 250 })) })
 check(w.waterGap(wd(250, at(1, 10)), new RealDate(2026, 10, 1, 12, 30)) === 0, "2,5 ч без воды — без подсказки")

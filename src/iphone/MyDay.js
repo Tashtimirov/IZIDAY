@@ -309,7 +309,7 @@ async function autoSyncSheet() {
 // Виджет отдаёт таблице новые записи (деньги, еда, вода, тренировки) и снимок того, что видит только iPhone:
 // события, напоминания, данные часов. Обратно получает записи приложения и команды для календаря и напоминаний.
 const HUB_FILES = { money: ["finance.json", "f", 0], food: ["food.json", "m", 120], water: ["water.json", "w", 60], workouts: ["workouts.json", "t", 400],
-  places: ["places.json", "p", 0], locs: ["locs.json", "l", 60] }   // locs — где был iPhone (помощник показывает место платежа)   // места «напомни, когда буду рядом» — создаёт помощник в приложении
+  places: ["places.json", "p", 0], locs: ["locs.json", "l", 60], nudges: ["nudges.json", "n", 3] }   // nudges — подсказки помощника на день   // locs — где был iPhone (помощник показывает место платежа)   // места «напомни, когда буду рядом» — создаёт помощник в приложении
 const HUB_TOOLS = ["create_event", "update_event", "delete_event", "create_reminder", "update_reminder", "delete_reminder"]
 let HUB_RUN = false   // команды из приложения пользователь уже подтвердил там — окон не показываем
 
@@ -327,7 +327,11 @@ async function hubSnapshot() {
     recur: !!(r.hasRecurrenceRules), notes: r.notes || "" })
   const names = async forRem => { try { return (forRem ? await Calendar.forReminders() : await Calendar.forEvents()).map(c => c.title) } catch (e) { return [] } }
   return { events, reminders: open.slice(0, 200).map(rem).concat(done.slice(-30).map(rem)),
-    calendars: await names(false), lists: await names(true), watch: await loadHealth(), health: (await healthDays()).slice(-14), loc: await hereNow() }
+    calendars: await names(false), lists: await names(true), watch: await loadHealth(), health: (await healthDays()).slice(-14), loc: await hereNow(), notif: await notifInfo() }
+}
+// Для приложения: сколько уведомлений виджет поставил (видно в «Ещё» — проверить, что они вообще есть)
+async function notifInfo() {
+  try { const p = await Notification.allPending(); return { pending: p.length, mine: p.filter(n => /^myday-/.test(n.identifier || "")).length, at: Date.now() } } catch (e) { return null }
 }
 
 // ── Где я: виджет раз за обновление (~15 мин) берёт место с точностью ~100 м — для «сколько ехать» и напоминаний по месту
@@ -356,6 +360,34 @@ async function logLoc(here) {
   if (last && distM(last, here) < 200 && Date.now() - last.date < 3600e3) return
   list.push({ id: `l${Date.now()}`, date: here.at || Date.now(), u: Date.now(), lat: Math.round(here.lat * 1e5) / 1e5, lng: Math.round(here.lng * 1e5) / 1e5 })
   saveJSON("locs.json", keepDays(list, 60))
+}
+// Вода: долго нет записи (9–21) — уведомление, и чем дольше, тем настойчивее:
+// 3 ч — ласково, ещё через 1,5 ч — настойчивее, ещё через 1,5 ч — прямой вопрос «почему не пьёшь?»
+const WATER_NUDGES = [
+  ["💧 Глоток воды?", g => `Уже ${g} ч без воды. Налей стаканчик — нажми, и я запишу ${CONFIG.health.glass} мл 🙂`],
+  ["💧 Вода ждёт", g => `${g} ч без воды — это много. Давай прямо сейчас стакан, организм скажет спасибо. Нажми — запишу.`],
+  ["💧 Почему не пьёшь?", g => `${g} ч ни глотка. Что мешает — забываешь или некогда? Выпей стакан сейчас, а в чате скажи, как помочь не забывать.`],
+]
+function waterNudgeLevel(gap, st, lastWater) {
+  const lvl = st.waterNudgeDay === dayKey(new Date()) && (st.waterNudgeAt || 0) > lastWater ? (st.waterNudgeLevel || 0) : 0   // попил после уведомления — сначала
+  const due = lvl === 0 ? gap >= 3 : Date.now() - (st.waterNudgeAt || 0) >= 1.5 * 3600e3
+  return due && lvl < WATER_NUDGES.length ? lvl : -1
+}
+async function waterNudge() {
+  if (!WEB_APP) return
+  try {
+    const d = await dayHealth(), gap = waterGap(d)
+    if (!gap) return
+    const st = await loadSettings(), lastWater = Math.max(0, ...((d.waterList || []).map(w => w.date || 0)))
+    const lvl = waterNudgeLevel(gap, st, lastWater)
+    if (lvl < 0) return
+    const [title, body] = WATER_NUDGES[lvl]
+    const n = new Notification()
+    n.identifier = "myday-water"; n.title = title; n.body = body(gap)
+    n.openURL = lvl === 2 ? `${WEB_APP}#chat` : `${WEB_APP}#water`; n.sound = "default"
+    await n.schedule()
+    await saveSettings({ waterNudgeAt: Date.now(), waterNudgeLevel: lvl + 1, waterNudgeDay: dayKey(new Date()) })
+  } catch (e) {}
 }
 async function placesCheck(here) {
   if (!here || !WEB_APP) return
@@ -397,6 +429,11 @@ async function scheduleAgenda() {
     try { rems = await Reminder.allIncomplete() } catch (e) {}
     for (const r of rems) if (r.dueDate && r.dueDateIncludesTime && r.dueDate > now && r.dueDate < to)
       want.set(`myday-ag-r-${r.identifier}-${r.dueDate.getTime()}-${hash(r.title)}`, { at: r.dueDate, title: `⏰ ${r.title}`, body: r.calendar ? r.calendar.title : "" })
+    // подсказки помощника на день (план составляет IZIDAY): вода, еда, подготовка к делам, идеи
+    for (const x of withIds(await loadJSON("nudges.json"), "n")) {
+      if (x.deleted || !x.date || x.date <= now.getTime() || x.date > to.getTime()) continue
+      want.set(`myday-ag-n-${x.id}-${x.date}-${hash(x.text)}`, { at: new Date(x.date), title: x.title || "💡 IZIDAY", body: x.text || "", url: `${WEB_APP}#chat` })
+    }
     const have = new Set(), stale = []
     for (const n of await Notification.allPending()) {
       const id = n.identifier || ""
@@ -407,7 +444,7 @@ async function scheduleAgenda() {
     for (const [id, x] of want) {
       if (have.has(id)) continue
       const n = new Notification()
-      n.identifier = id; n.title = x.title; n.body = x.body; n.openURL = WEB_APP; n.sound = "default"
+      n.identifier = id; n.title = x.title; n.body = x.body; n.openURL = x.url || WEB_APP; n.sound = "default"
       n.setTriggerDate(x.at)
       await n.schedule()
     }
@@ -3909,6 +3946,7 @@ if (SHORTCUT_PARAM && !config.runsInWidget) {
   STATS_URL = sheetTabUrl(st, "Еда и активность") || SHEET_URL   // пока таблица не прислала номер листа — просто таблица
   await placesCheck(await hereNow())         // рядом с местом из «напомни, когда буду рядом» — уведомление
   await logLoc(await hereNow())              // история мест: где я был в момент платежа
+  await waterNudge()                         // давно не пили — уведомление
   await hubSync()                            // сначала обмен с приложением: виджет сразу покажет воду, еду и деньги оттуда
   Script.setWidget(await buildWidget(config.widgetFamily, args.widgetParameter))
   await autoSyncSheet()
