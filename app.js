@@ -1476,6 +1476,7 @@ function renderToday() {
   for (const e of v.events) for (let d = sod(e.s); d < e.e && d < addDays(t0, 7); d = addDays(d, 1)) counts[dayKey(d)] = (counts[dayKey(d)] || 0) + 1
   let html = ""
   if (!D.conn) html += `<div class="banner"><b>Подключите приложение к виджету</b>В Scriptable: меню виджета → 📱 → «📋 Скопировать код подключения», затем нажмите кнопку ниже и вставьте код. Значок на экране «Домой» подключается отдельно от Safari.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="connect">🔗 Вставить код</button></div></div>`
+  else if (D.snap && pendingOps().length) html += `<div class="banner"><b>📲 ${pendingOps().length} ${plural(pendingOps().length, "изменение ждёт", "изменения ждут", "изменений ждут")} внесения в iPhone</b>Календарь и напоминания iPhone меняет только Scriptable. Нажмите — он внесёт сейчас и вернёт вас сюда.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="run-widget">Внести сейчас</button></div></div>`
   else if (!D.snap) html += `<div class="banner"><b>Ждём календарь от виджета</b>Он придёт при ближайшем обновлении виджета на экране «Домой» (обычно в течение 15 минут).</div>`
   html += `<div class="week">${[...Array(7)].map((_, i) => {
     const d = addDays(t0, i), n = counts[dayKey(d)] || 0
@@ -1718,7 +1719,7 @@ const DO = {
   "tab-money": () => setTab("money"), "tab-health": () => setTab("health"), report: () => showReport(),
   sheet: () => window.open(D.conn.sheetUrl, "_blank"),
   sync: () => (!D.conn || !D.conn.hook) ? DO.connect() : sync().then(ok => toast(ok ? "Обновлено" : `Не получилось: ${D.sync.error || "нет связи"}`)),
-  "run-widget": () => { sync().then(() => { location.href = `${(D.conn && D.conn.run) || "scriptable:///run/MyDay"}?action=hub` }) },
+  "run-widget": () => sync().then(runWidgetNow),
   connect: async () => {
     const t = await ui.ask("Подключить к виджету", "Вставьте код из виджета: Scriptable → меню → 📱 Приложение «Мой день» → «Скопировать код подключения».", "", { multiline: true, ok: "Подключить" })
     if (t) connect(t)
@@ -1787,9 +1788,17 @@ async function hashAction() {
   if (a === "health") return setTab("health")
   if (a === "today") return setTab("today")
   if (a === "rem") return remFollow(arg)
+  if (a === "synced") { setTab("today"); return sync().then(() => { render(); toast("✓ Внесено в iPhone") }) }
   if (a === "remdone") { queueOp("update_reminder", { id: arg, completed: true }); setTab("today"); return toast("✓ Отмечено выполненным") }
   if (a === "remlater") { queueOp("update_reminder", { id: arg, due: iso(new Date(Date.now() + 3600e3)) }); setTab("today"); return toast("⏰ Перенёс на час") }
   if (a === "place") { const p = D.places.find(z => z.id === arg); setTab("today"); if (p) ui.info(`📍 ${p.title}`, `Вы рядом: ${p.query}.`) }
+}
+// Запустить Scriptable сейчас: внесёт изменения в календарь и напоминания, пришлёт свежий снимок и вернёт в приложение
+function runWidgetNow() {
+  const run = (D.conn && D.conn.run) || "scriptable:///run/MyDay"
+  const name = decodeURIComponent((run.split("/run/")[1] || "MyDay").split("?")[0])
+  const back = location.origin + location.pathname + "#synced"
+  location.href = `scriptable:///x-callback-url/run?scriptName=${encodeURIComponent(name)}&action=hub&x-success=${encodeURIComponent(back)}`
 }
 // «Выполнил?» по напоминанию из уведомления: сделано / перенести / почему нет
 async function remFollow(id) {
