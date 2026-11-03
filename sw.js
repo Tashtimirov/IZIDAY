@@ -4,7 +4,7 @@ const CACHE = "myday-1b90fc9898"
 const SHELL = ["./", "index.html", "style.css", "core.js", "app.js", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"]
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())) })
 self.addEventListener("activate", e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()))
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== "myday-conn").map(k => caches.delete(k)))).then(() => self.clients.claim()))
 })
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url)
@@ -35,8 +35,10 @@ self.addEventListener("push", e => e.waitUntil((async () => {
     }
   } catch (err) {}
   const shown = (await connRead("shown").catch(() => null)) || []
-  let fresh = items.filter(x => x && x.id && !shown.includes(x.id))
-  if (!fresh.length && !items.length) fresh = [{ id: "x" + Date.now(), title: "IZIDAY", body: "Есть подсказка — откройте приложение", url: "./" }]   // iPhone требует показать уведомление
+  // старше 40 минут — уже не новость (например, после обновления приложения): не показываем повторно пачкой
+  let fresh = items.filter(x => x && x.id && !shown.includes(x.id) && !(x.at && Date.now() - x.at > 40 * 60e3))
+  // iPhone требует показать уведомление на каждый пуш: нечего нового — повторяем последнее с тем же tag (оно просто заменит прежнее)
+  if (!fresh.length) fresh = items.length ? [items[items.length - 1]] : [{ id: "x" + Date.now(), title: "IZIDAY", body: "Есть подсказка — откройте приложение", url: "./" }]
   for (const x of fresh.slice(-4)) await self.registration.showNotification(x.title || "IZIDAY", { body: x.body || "", tag: x.id, icon: "icon-192.png", badge: "icon-192.png", data: { url: x.url || "./" } })
   await connWrite("shown", shown.concat(fresh.map(x => x.id)).slice(-200))
 })()))
