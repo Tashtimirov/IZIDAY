@@ -166,7 +166,20 @@ await page.screenshot({ path: SHOTS + "f-search.png" })
 await page.click('#q-res [data-q="0"]'); await page.waitForTimeout(400)
 check(await page.$(".sheet"), "результат открывается")
 
-// 8. тёмная тема
+// 8. помощник показывает, что делает
+await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await page.waitForTimeout(300)
+await page.route("https://api.anthropic.com/**", async route => { await new Promise(r => setTimeout(r, 1500)); await route.fallback() })
+claudeQueue.push({ content: [{ type: "tool_use", id: "s1", name: "get_money", input: {} }], stop_reason: "tool_use" }, { content: [{ type: "text", text: "Потрачено немного." }], stop_reason: "end_turn" })
+await page.click('[data-tab="chat"]'); await page.fill("#chat-in", "сколько потратил?"); await page.click(".chat-bar .send")
+await page.waitForTimeout(700)
+const st1 = await page.textContent(".typing .st").catch(() => "")
+await page.waitForTimeout(1600)
+const st2 = await page.textContent(".typing .st").catch(() => "")
+check(/думаю/.test(st1) && /готовлю ответ/.test(st2), "у «…» подпись: думаю → готовлю ответ", [st1, st2])
+await page.waitForTimeout(2000)
+check((await page.textContent("#chat-list")).includes("Потрачено немного."), "ответ пришёл, подпись ушла")
+
+// 9. тёмная тема
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await page.waitForTimeout(300)
 await page.emulateMedia({ colorScheme: "dark" })
 await page.click('[data-tab="today"]'); await page.waitForTimeout(500)

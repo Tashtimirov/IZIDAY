@@ -83,13 +83,24 @@ export function sheetScript() {
         { formatted_address: "Decathlon Chiang Mai", geometry: { location: { lat: 18.79, lng: 98.98 } } }] }) }; return gc } },
   SpreadsheetApp: { getActiveSpreadsheet: () => ss },
   Utilities: { formatDate: (d, tz, f) => { const z = n => String(n).padStart(2, "0"), day = `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`, t = `${z(d.getHours())}:${z(d.getMinutes())}`
+      if (f === "yyyyMMdd") return day.replace(/-/g, "")
+      if (f === "yyyyMMdd'T'HHmmss'Z'") return d.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "")
       return f === "yyyy-MM-dd" ? day : f === "yyyy-MM-dd'T'HH:mm" ? `${day}T${t}` : `${day} ${t}` },
     parseDate: (s, tz, f) => { const m = s.match(/(\d+)-(\d+)-(\d+) (\d+):(\d+)/); return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) } },
   CalendarApp: cal.api,
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = v } }) },
     ContentService: { createTextOutput: s => ({ setMimeType: () => JSON.parse(s) }), MimeType: { JSON: 1 } },
-    UrlFetchApp: { fetch: () => ({ getContentText: () => JSON.stringify({ claude_code_session_url: "https://claude.ai/code/session_test" }) }) },
+    ScriptApp: { getOAuthToken: () => "tok" },
+    // API Календаря (обрезка серии): GET по iCalUID — главное событие с правилом, PATCH — новое правило
+    UrlFetchApp: { fetch: (url, o = {}) => {
+      if (/googleapis\.com\/calendar/.test(url)) {
+        const m = url.match(/iCalUID=([^&]+)/), ev = m && cal.events.find(x => x.getId() === decodeURIComponent(m[1]))
+        if (m) return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ items: ev ? [{ id: "M" + ev.getId(), start: ev.isAllDayEvent() ? { date: "x" } : { dateTime: ev.getStartTime().toISOString() }, recurrence: ["RRULE:FREQ=WEEKLY;COUNT=20"] }] : [] }) }
+        cal.log.push(["cut", url.split("/").pop(), JSON.parse(o.payload).recurrence[0]])
+        return { getResponseCode: () => 200, getContentText: () => "{}" }
+      }
+      return { getContentText: () => JSON.stringify({ claude_code_session_url: "https://claude.ai/code/session_test" }) } } },
     GmailApp: mail.api,
   }
   const gs = new Function(...Object.keys(g), code + "; return { doPost }")(...Object.values(g))

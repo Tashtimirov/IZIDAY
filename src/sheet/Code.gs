@@ -360,10 +360,30 @@ function cal_(c) {
   }
   if (a === "delete") {
     const e = find(c.id, c.occurrence_start);
-    if (c.all_future && e.isRecurringEvent()) e.getEventSeries().deleteEventSeries(); else e.deleteEvent();
+    if (c.all_future && e.isRecurringEvent()) return calCutSeries_(e, c.occurrence_start ? parse(c.occurrence_start) : e.getStartTime(), tz);
+    e.deleteEvent();
     return { ok: true };
   }
   throw new Error("неизвестное действие календаря: " + a);
+}
+
+// «Это и все следующие повторения»: правило повтора обрезается датой повторения (UNTIL), прошлые встречи остаются.
+// CalendarApp так не умеет — нужен API Календаря; токен скрипта уже даёт доступ к Календарю. Если повторение первое — удаляется вся серия.
+function calCutSeries_(e, occ, tz) {
+  const api = "https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(e.getOriginalCalendarId()) + "/events";
+  const headers = { Authorization: "Bearer " + ScriptApp.getOAuthToken() };
+  const got = UrlFetchApp.fetch(api + "?iCalUID=" + encodeURIComponent(e.getId()) + "&showDeleted=false&maxResults=10", { headers, muteHttpExceptions: true });
+  if (got.getResponseCode() !== 200) throw new Error("Календарь не отдал правило повтора (" + got.getResponseCode() + ") — ничего не удалено");
+  const master = (JSON.parse(got.getContentText()).items || []).find(x => x.recurrence && x.recurrence.length);
+  if (!master) throw new Error("не нашёл правило повтора — ничего не удалено");
+  const all = !!master.start.date;
+  const first = all ? Utilities.parseDate(master.start.date + " 00:00", tz, "yyyy-MM-dd HH:mm") : new Date(master.start.dateTime);
+  if (occ.getTime() <= first.getTime() + 6e4) { e.getEventSeries().deleteEventSeries(); return { ok: true, deleted: "series" }; }
+  const until = all ? Utilities.formatDate(new Date(occ.getTime() - 864e5), tz, "yyyyMMdd") : Utilities.formatDate(new Date(occ.getTime() - 6e4), "UTC", "yyyyMMdd'T'HHmmss'Z'");
+  const recurrence = master.recurrence.map(r => /^RRULE:/.test(r) ? r.replace(/;(UNTIL|COUNT)=[^;]*/g, "") + ";UNTIL=" + until : r);
+  const put = UrlFetchApp.fetch(api + "/" + encodeURIComponent(master.id), { method: "patch", contentType: "application/json", headers, muteHttpExceptions: true, payload: JSON.stringify({ recurrence }) });
+  if (put.getResponseCode() !== 200) throw new Error("Календарь не принял изменение повтора (" + put.getResponseCode() + ") — ничего не удалено");
+  return { ok: true, deleted: "from", until };
 }
 
 function mail_(m) {

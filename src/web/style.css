@@ -460,3 +460,5 @@ button:active, .stat:active, .day:active, .sheet .opt:active { transform: scale(
 .spark circle { fill: var(--accent); }
 .q-res { max-height: 60vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .q-res .day-h { margin-top: 10px; }
+.typing { display: flex; align-items: center; gap: 0; }
+.typing .st { margin-left: 8px; font-size: 13px; color: var(--sub); }

@@ -1189,6 +1189,25 @@ const dropThinking = messages => messages.forEach(m => {
 })
 // Один ход помощника: Claude думает и вызывает инструменты, пока не даст ответ
 let chatStopCtl = null
+// Что помощник делает прямо сейчас — подпись у «…» в чате
+const TOOL_STATUS = { get_events: "смотрю календарь", create_event: "создаю событие", update_event: "переношу событие", delete_event: "удаляю событие",
+  get_reminders: "смотрю напоминания", create_reminder: "ставлю напоминание", update_reminder: "меняю напоминание", delete_reminder: "удаляю напоминание",
+  add_money: "записываю расход", get_money: "смотрю деньги", delete_money: "удаляю операцию", set_budget: "ставлю лимит", add_recurring: "добавляю платёж", pay_recurring: "отмечаю оплату",
+  add_food: "записываю еду", add_water: "записываю воду", add_workout: "записываю тренировку", get_health: "смотрю здоровье", get_history: "смотрю историю",
+  log_weight: "записываю вес", mark_habit: "отмечаю привычку", read_sheet: "читаю таблицу", route_to: "считаю дорогу", remind_near: "ищу места", where_was_i: "смотрю, где вы были",
+  mail_search: "ищу в почте", mail_read: "читаю письмо", mail_send: "отправляю письмо", mail_reply: "отвечаю на письмо", mail_draft: "сохраняю черновик", mail_modify: "разбираю почту",
+  remember: "запоминаю", search_chats: "вспоминаю прошлые разговоры", plan_day: "составляю план дня", claude_code: "передаю задачу в Claude Code", delete_record: "удаляю запись" }
+let chatStatus = "", chatStatusAt = 0
+function setStatus(s) {
+  chatStatus = s; chatStatusAt = Date.now()
+  const el = $(".typing .st")
+  if (el) el.textContent = s
+  else if (tab === "chat" && chatBusy && !askWait) renderChat()
+}
+setInterval(() => {   // долгое ожидание — показать, сколько уже идёт
+  const el = $(".typing .st")
+  if (el && chatStatus) { const sec = Math.round((Date.now() - chatStatusAt) / 1000); el.textContent = chatStatus + (sec >= 8 ? ` · ${sec} с` : "") }
+}, 1000)
 async function agentTurn(messages, system, tools) {
   const stopSig = chatStopCtl && chatStopCtl.signal
   // Кэш: описание инструментов одинаковое всегда, а внутри хода каждый шаг повторяет предыдущие — повтор стоит в 10 раз дешевле
@@ -1196,6 +1215,7 @@ async function agentTurn(messages, system, tools) {
   const ask = () => claude({ max_tokens: 16000, system, tools: ctools, messages, output_config: { effort: "high" }, cache_control: { type: "ephemeral" } }, 150000, { smart: true, model: CHAT_MODEL, signal: stopSig })
   for (let step = 0; step < 14; step++) {
     let res
+    setStatus(step ? "готовлю ответ…" : "думаю…")
     try {
       res = await ask()
       if (res && res.error && /thinking/i.test(res.error.message || "")) { dropThinking(messages); res = await ask() }
@@ -1209,6 +1229,7 @@ async function agentTurn(messages, system, tools) {
     if (stopSig && stopSig.aborted) return null
     for (const u of uses) {
       let out
+      setStatus((TOOL_STATUS[u.name] || "работаю") + "…")
       try { out = await runTool(u.name, u.input || {}) } catch (e) { out = { error: String(e.message || e) } }
       results.push({ type: "tool_result", tool_use_id: u.id, content: JSON.stringify(out) })
     }
@@ -1565,12 +1586,21 @@ async function eventSheet(e) {
       ns.setHours(hh, mm, 0, 0)
     }
     if (!ns) return ui.info("Не понял, куда перенести", t)
+    if (gcalOn()) {
+      const r = await calDo("update", { id: e.id, occurrence_start: e.start, start: iso(ns), end: iso(new Date(+ns + (e.e - e.s))) })
+      toast(r.error ? `Не получилось: ${r.error}` : `↔️ ${shortDate(ns)}, ${hm(ns)}`); return
+    }
     queueOp("update_event", { id: e.id, occurrence_start: e.start, start: iso(ns), end: iso(new Date(+ns + (e.e - e.s))) })
     render(); toast(`↔️ ${shortDate(ns)}, ${hm(ns)} — внесётся при обновлении виджета`)
   }
   if (b === "Удалить") {
     let all = false
     if (e.repeats) { const i = await ui.choose("Повторяющееся событие", "", ["Только это", "Это и все следующие"]); if (i < 0) return; all = i === 1 }
+    if (gcalOn()) {
+      toast("🗑 Удаляю…")
+      const r = await calDo("delete", { id: e.id, occurrence_start: e.start, all_future: all })
+      toast(r.error ? `Не получилось: ${r.error}` : all ? "🗑 Удалено это и все следующие" : "🗑 Удалено"); return
+    }
     queueOp("delete_event", { id: e.id, occurrence_start: e.start, all_future: all })
     render(); toast("🗑 Удалится при обновлении виджета")
   }
@@ -1703,7 +1733,7 @@ function chatItems() {
     const edit = m.role === "user" && !m.local && !m.thumb && !m.prompt && i >= arr.length - 6 ? `<button class="ed" data-edit="${gi}" aria-label="Изменить">✎</button>` : ""
     return `<div class="m ${m.role}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? "🎤 " : ""}${linkify(m.text)}${(m.links || []).length ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>` : ""}` +
       `${m.opts && m.opts.length && isLast ? `<div class="opts">${m.opts.map(o => `<button data-opt="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}<span class="tm">${hm(new Date(m.at || Date.now()))}</span></div>`
-  }).join("") + (chatBusy && !askWait ? `<div class="typing"><i></i><i></i><i></i></div>` : "") + (last < 0 ? "" : "")
+  }).join("") + (chatBusy && !askWait ? `<div class="typing"><i></i><i></i><i></i>${chatStatus ? `<span class="st">${esc(chatStatus)}</span>` : ""}</div>` : "") + (last < 0 ? "" : "")
 }
 function renderChat() {
   const list = $("#chat-list")
