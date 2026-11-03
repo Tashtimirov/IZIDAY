@@ -24,6 +24,8 @@ const LISTS = {
            row: x => [new Date(x.date), txt_(x.title), num_(x.minutes), num_(x.kcal)] },
   memory: { name: "Память помощника", head: ["Дата", "Что", "Текст", "ID"], formats: [DT, ""],
            row: x => [new Date(x.date), x.kind === "chat" ? "разговор" : "факт", txt_(x.text)] },
+  rems:  { name: "Напоминания", update: true, head: ["Создано", "Напоминание", "Срок", "Выполнено", "ID"], formats: [DT, "", "", DT],
+           row: x => [new Date(x.date), txt_(x.title), txt_(String(x.due || "").replace("T", " ")), x.done ? (x.doneAt ? new Date(x.doneAt) : "✓") : ""] },
 };
 // Активность с часов: одна строка на день, обновляется в течение дня
 const ACTIVITY = { name: "Активность", head: ["День", "Шаги", "Сожжено ккал", "Упражнения, мин", "Дистанция, км", "Сон, ч", "Обновлено"],
@@ -163,7 +165,7 @@ function advice() { ensureSheets_(); writeAdvice_(); }
 // Виджет присылает снимок того, что видит только iPhone (календарь, напоминания, часы), и выполняет
 // очередь команд приложения (создать или перенести событие, отметить напоминание). Каждая запись хранит
 // s — время, когда таблица её приняла: клиент получает только записи новее своего прошлого запроса.
-const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3 },   // сколько дней хранить (0 — всё)
+const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0 },   // сколько дней хранить (0 — всё); rems — напоминания IZIDAY
   tomb: 90, chunk: 45000, opsKeep: 3 };
 const ROUTE_URL = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/;
 
@@ -225,6 +227,7 @@ function hub_(h) {
   if (h.geo) out.geo = geo_(h.geo);
   // 5. Чтение любого листа для помощника (только чтение; скрытый «_hub» не отдаётся)
   if (h.read) out.read = readSheet_(ss, h.read);
+  if (h.cal) { try { out.cal = cal_(h.cal); } catch (e) { out.cal = { error: String(e.message || e) }; } }
   if (h.mail) { try { out.mail = mail_(h.mail); } catch (e) { out.mail = { error: String(e.message || e) }; } }
   out.url = ss.getUrl();
   return out;
@@ -303,6 +306,66 @@ function geo_(g) {
 
 // Почта Gmail для помощника: поиск, чтение, ответ, отправка, черновики, архив/метки/корзина.
 // Отправку и корзину приложение показывает человеку на подтверждение до запроса сюда.
+// ── Google Календарь: события для приложения и виджета, создание/изменение/удаление ──
+// Время — строки "yyyy-MM-ddTHH:mm" в часовом поясе таблицы; день без времени — "yyyy-MM-dd"
+function cal_(c) {
+  const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+  const fmt = (d, day) => Utilities.formatDate(d, tz, day ? "yyyy-MM-dd" : "yyyy-MM-dd'T'HH:mm");
+  const parse = v => { const m = String(v || "").match(/^(\d{4})-(\d\d)-(\d\d)(?:[T ](\d\d):(\d\d))?/); if (!m) throw new Error("нет даты: " + v);
+    return Utilities.parseDate(`${m[1]}-${m[2]}-${m[3]} ${m[4] || "00"}:${m[5] || "00"}`, tz, "yyyy-MM-dd HH:mm"); };
+  const ev = e => { const all = e.isAllDayEvent(), cal = CalendarApp.getCalendarById(e.getOriginalCalendarId());
+    return { id: e.getId(), title: e.getTitle(), start: fmt(e.getStartTime(), all), end: fmt(all ? new Date(e.getEndTime().getTime() - 864e5) : e.getEndTime(), all), all_day: all,
+      location: e.getLocation() || "", notes: String(e.getDescription() || "").slice(0, 300), calendar: cal ? cal.getName() : "", recurring: e.isRecurringEvent() }; };
+  const cals = () => CalendarApp.getAllCalendars().filter(k => !k.isHidden());
+  const find = (id, start) => { for (const k of cals()) { let e = null; try { e = k.getEventById(id); } catch (x) {}
+      if (e) { if (start && e.isRecurringEvent()) { const d = parse(start), hit = k.getEvents(new Date(d.getTime() - 6e4), new Date(d.getTime() + 864e5)).find(x => x.getId() === id); if (hit) return hit; } return e; } }
+    throw new Error("нет события " + id); };
+  const a = c.action || "list";
+  if (a === "list") {
+    const from = c.from ? parse(c.from) : new Date(Date.now() - 2 * 864e5), to = c.to ? parse(c.to) : new Date(Date.now() + 45 * 864e5);
+    const out = [];
+    for (const k of cals()) for (const e of k.getEvents(from, to)) out.push(ev(e));
+    out.sort((x, y) => x.start < y.start ? -1 : 1);
+    return { events: out.slice(0, 600), calendars: cals().map(k => ({ name: k.getName(), primary: k.isOwnedByMe() && k.getId() === CalendarApp.getDefaultCalendar().getId() })) };
+  }
+  if (a === "create") {
+    const k = (c.calendar && cals().find(x => x.getName() === c.calendar)) || CalendarApp.getDefaultCalendar();
+    const opt = { location: c.location || "", description: c.notes || "" };
+    let e, rec = null;
+    if (c.repeat && c.repeat.freq) {   // повтор: daily | weekly (+ days: MO..SU) | monthly | yearly
+      const W = { MO: CalendarApp.Weekday.MONDAY, TU: CalendarApp.Weekday.TUESDAY, WE: CalendarApp.Weekday.WEDNESDAY, TH: CalendarApp.Weekday.THURSDAY,
+        FR: CalendarApp.Weekday.FRIDAY, SA: CalendarApp.Weekday.SATURDAY, SU: CalendarApp.Weekday.SUNDAY };
+      rec = CalendarApp.newRecurrence();
+      const f = c.repeat.freq;
+      if (f === "daily") rec.addDailyRule();
+      else if (f === "monthly") rec.addMonthlyRule();
+      else if (f === "yearly") rec.addYearlyRule();
+      else { const r = rec.addWeeklyRule(), days = (c.repeat.days || []).map(d => W[d]).filter(Boolean); if (days.length) r.onlyOnWeekdays(days); }
+    }
+    const s0 = parse(c.start);
+    if (c.all_day) e = rec ? k.createAllDayEventSeries(String(c.title), s0, rec, opt) : k.createAllDayEvent(String(c.title), s0, new Date(parse(c.end || c.start).getTime() + 864e5), opt);
+    else { const e0 = c.end ? parse(c.end) : new Date(s0.getTime() + 60 * 6e4);
+      e = rec ? k.createEventSeries(String(c.title), s0, e0, rec, opt) : k.createEvent(String(c.title), s0, e0, opt); }
+    if (rec) return { ok: true, event: { id: e.getId(), title: String(c.title), start: c.start, end: c.end || c.start, all_day: !!c.all_day, recurring: true } };
+    return { ok: true, event: ev(e) };
+  }
+  if (a === "update") {
+    const e = find(c.id, c.occurrence_start);
+    if (c.title) e.setTitle(String(c.title));
+    if (c.location != null) e.setLocation(String(c.location));
+    if (c.notes != null) e.setDescription(String(c.notes));
+    if (c.start) { const dur = e.getEndTime() - e.getStartTime(), s = parse(c.start);
+      if (e.isAllDayEvent() && !/T/.test(c.start)) e.setAllDayDate(s); else e.setTime(s, c.end ? parse(c.end) : new Date(s.getTime() + dur)); }
+    return { ok: true, event: ev(e) };
+  }
+  if (a === "delete") {
+    const e = find(c.id, c.occurrence_start);
+    if (c.all_future && e.isRecurringEvent()) e.getEventSeries().deleteEventSeries(); else e.deleteEvent();
+    return { ok: true };
+  }
+  throw new Error("неизвестное действие календаря: " + a);
+}
+
 function mail_(m) {
   const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), when = d => Utilities.formatDate(d, tz, "yyyy-MM-dd HH:mm");
   const plain = (msg, n) => String(msg.getPlainBody() || "").replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim().slice(0, n);
@@ -608,8 +671,9 @@ function syncList_(sh, def, entries, deleted) {
   for (let i = ids.length - 1; i >= 0; i--) {
     if (ids[i] && deleted.has(ids[i])) { sh.deleteRow(i + 2); removed++; }
   }
-  // 2. Добавить записи, которых ещё нет
+  // 2. Добавить записи, которых ещё нет (листы с update: изменённые — переписать на месте)
   ids = readIds_(sh, idCol);
+  if (def.update) entries.forEach(x => { const i = x && !x.deleted ? ids.indexOf(x.id) : -1; if (i >= 0) sh.getRange(i + 2, 1, 1, idCol - 1).setValues([def.row(x)]); });
   const have = new Set(ids.filter(String));
   const rows = [], idList = [];
   for (const x of entries) {

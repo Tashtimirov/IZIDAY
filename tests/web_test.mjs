@@ -19,6 +19,7 @@ const server = http.createServer((req, res) => {
 const BASE = `http://localhost:${server.address().port}/`
 
 const sheet = sheetScript()
+sheet.cal.off = true   // сначала Календарь Google не разрешён — события из iPhone (как у старого скрипта)
 const SECRET = "s".repeat(32), HOOK = "https://script.google.com/macros/s/TEST/exec"
 const z = n => String(n).padStart(2, "0")
 const now = new Date(), day = (d, h, m = 0) => { const x = new Date(now); x.setDate(x.getDate() + d); x.setHours(h, m, 0, 0); return x }
@@ -93,7 +94,8 @@ await page.click('[data-check="R1"]')
 await settle()
 let st = hubState()
 check(st.lists.water.filter(w => !w.deleted).length === 2, "стакан воды дошёл до таблицы", st.lists.water)
-check(st.ops.some(o => o.tool === "update_reminder" && o.input.id === "R1" && o.input.completed && o.state === "new"), "отметка напоминания — в очереди для виджета", st.ops)
+check(st.lists.rems.some(r => r.id === "R1" && r.done) && st.lists.rems.some(r => r.id === "R2" && !r.done), "напоминания iPhone перенесены в приложение; отметка — в таблице", st.lists.rems)
+check(!st.ops.some(o => /reminder/.test(o.tool)), "в iPhone напоминания больше не вносятся")
 check(!(await page.textContent("#view")).includes("Купить цветы"), "отмеченное напоминание скрыто сразу")
 
 // 3. расход вручную
@@ -297,9 +299,30 @@ await page.waitForSelector(".sheet .opt", { timeout: 3000 }).catch(() => {})
 check((await page.textContent(".sheet")).includes("Оплатить интернет"), "#rem открывает вопрос по напоминанию")
 await page.click('.sheet .opt:has-text("Через час")')
 await settle()
-check(hubState().ops.some(o => o.tool === "update_reminder" && o.input.id === "R2" && o.input.due), "перенос на час — в очереди для виджета")
+const r2 = () => hubState().lists.rems.find(r => r.id === "R2")
+check(r2() && /T/.test(r2().due || "") && !r2().done, "перенос на час — срок в приложении", r2())
 await page.evaluate(() => { location.hash = "remdone=R2" }); await settle()
-check(hubState().ops.some(o => o.tool === "update_reminder" && o.input.id === "R2" && o.input.completed), "«Сделано» из уведомления отмечает напоминание")
+check(r2().done, "«Сделано» из уведомления отмечает напоминание")
+
+// напоминания помощника — в приложении, с повтором
+const cr = await page.evaluate(() => runTool("create_reminder", { title: "Выпить витамины", due: iso(new Date(Date.now() - 3600e3)), repeat: { freq: "daily" } }))
+check(cr.ok && /^r/.test(cr.id), "create_reminder сохраняет в приложении", cr)
+const ur = await page.evaluate(id => runTool("update_reminder", { id, completed: true }), cr.id)
+check(ur.ok && !ur.reminder.completed && new Date(ur.reminder.due) > new Date(), "повторяющееся: «сделано» переносит на следующий раз", ur)
+await settle()
+check(hubState().lists.rems.some(r => r.id === cr.id), "напоминание дошло до таблицы")
+
+// Google Календарь: доступ выдан — события оттуда, создание сразу
+sheet.cal.off = false
+sheet.cal.mk("Встреча в Google", new Date(Date.now() + 2 * 3600e3), new Date(Date.now() + 3 * 3600e3))
+await page.evaluate(() => { D.gcal = null; return sync() })
+const ge = await page.evaluate(() => runTool("get_events", { start: iso(new Date(Date.now() - 864e5)), end: iso(new Date(Date.now() + 864e5)) }))
+check(ge.source === "Google Календарь" && ge.events.some(e => e.title === "Встреча в Google"), "события — из Google Календаря", ge)
+const ce = await page.evaluate(() => runTool("create_event", { title: "Стоматолог", start: iso(new Date(Date.now() + 26 * 3600e3)), end: iso(new Date(Date.now() + 27 * 3600e3)) }))
+check(ce.ok && sheet.cal.log.some(l => l[0] === "create" && l[2] === "Стоматолог"), "create_event — сразу в Google", ce)
+await settle()
+const ge2 = await page.evaluate(() => runTool("get_events", { start: iso(new Date()), end: iso(new Date(Date.now() + 2 * 864e5)) }))
+check(ge2.events.some(e => e.title === "Стоматолог"), "новое событие видно после обновления", ge2.events.map(e => e.title))
 
 // голос: зелёная ➤ во время записи отправляет сразу, без паузы
 await page.evaluate(() => {

@@ -309,7 +309,7 @@ async function autoSyncSheet() {
 // Виджет отдаёт таблице новые записи (деньги, еда, вода, тренировки) и снимок того, что видит только iPhone:
 // события, напоминания, данные часов. Обратно получает записи приложения и команды для календаря и напоминаний.
 const HUB_FILES = { money: ["finance.json", "f", 0], food: ["food.json", "m", 120], water: ["water.json", "w", 60], workouts: ["workouts.json", "t", 400],
-  places: ["places.json", "p", 0], locs: ["locs.json", "l", 60], nudges: ["nudges.json", "n", 3] }   // nudges — подсказки помощника на день   // locs — где был iPhone (помощник показывает место платежа)   // места «напомни, когда буду рядом» — создаёт помощник в приложении
+  places: ["places.json", "p", 0], locs: ["locs.json", "l", 60], nudges: ["nudges.json", "n", 3], rems: ["rems.json", "r", 0] }   // rems — напоминания IZIDAY (в приложении, не в iPhone)   // nudges — подсказки помощника на день   // locs — где был iPhone (помощник показывает место платежа)   // места «напомни, когда буду рядом» — создаёт помощник в приложении
 const HUB_TOOLS = ["create_event", "update_event", "delete_event", "create_reminder", "update_reminder", "delete_reminder"]
 let HUB_RUN = false   // команды из приложения пользователь уже подтвердил там — окон не показываем
 
@@ -426,9 +426,10 @@ async function scheduleAgenda() {
         { at, title: `📅 ${e.title}`, body: `${eventTime(e)}${e.location ? " · " + e.location.split("\n")[0] : ""}` })
     }
     let rems = []
-    try { rems = await Reminder.allIncomplete() } catch (e) {}
+    try { rems = await appRems() } catch (e) {}   // напоминания IZIDAY (Напоминания iPhone больше не используются)
     for (const r of rems) if (r.dueDate && r.dueDateIncludesTime && r.dueDate > now && r.dueDate < to)
-      want.set(`myday-ag-r-${r.identifier}-${r.dueDate.getTime()}-${hash(r.title)}`, { at: r.dueDate, title: `⏰ ${r.title}`, body: r.calendar ? r.calendar.title : "", rem: r.identifier })
+      want.set(`myday-ag-r-${r.identifier}-${r.dueDate.getTime()}-${hash(r.title)}`, { at: r.dueDate, title: `⏰ ${r.title}`, body: r.notes || "IZIDAY", rem: r.identifier,
+        url: `${WEB_APP}#rem=${encodeURIComponent(r.identifier)}` })
     // Контроль: напоминание не отмечено — «Выполнил?» через час и через 3 часа после срока, дальше раз в день в 10:00 (до 3 дней);
     // напоминание на день без времени — в 13:00 и 18:00, просроченное — в 10:00. Отметили — вопросы исчезают сами.
     for (const r of rems) {
@@ -599,9 +600,23 @@ function upcoming(all) {
   return all.filter(e => e.startDate < end && e.endDate > now).sort((a, b) => a.startDate - b.startDate)
 }
 
+// Напоминания живут в приложении IZIDAY (rems.json приходит через таблицу) — вид как у Reminder, чтобы остальной код не менялся
+async function appRems() {
+  const all = withIds(await loadJSON("rems.json"), "r")
+  return all.filter(x => !x.deleted && !x.done && x.title).map(x => {
+    const m = String(x.due || "").match(/^(\d{4})-(\d\d)-(\d\d)(?:T(\d\d):(\d\d))?/)
+    return { identifier: x.id, title: x.title, notes: x.notes || "", app: true, isCompleted: false, calendar: null,
+      dueDate: m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)) : null, dueDateIncludesTime: !!(m && m[4]),
+      async save() {   // отметка «выполнено» из меню виджета — уходит в приложение
+        if (!this.isCompleted) return
+        const list = withIds(await loadJSON("rems.json"), "r"), r = list.find(y => y.id === x.id)
+        if (r) { Object.assign(r, { done: true, doneAt: Date.now(), u: Date.now() }); await saveJSON("rems.json", list); await hubSync() }
+      } }
+  })
+}
 async function getReminders() {
   let list = []
-  try { list = await Reminder.allIncomplete() } catch (e) {}
+  try { list = await appRems() } catch (e) {}
   return list.sort((a, b) => {
     if (!a.dueDate && !b.dueDate) return 0
     if (!a.dueDate) return 1
@@ -659,7 +674,7 @@ function itemsForDay(day, events) {
 }
 
 const REMINDERS_APP = "x-apple-reminderkit://"
-const reminderURL = r => r && r.identifier ? `x-apple-reminderkit://REMCDReminder/${r.identifier}` : REMINDERS_APP
+const reminderURL = r => r && r.app && WEB_APP ? `${WEB_APP}#rem=${encodeURIComponent(r.identifier)}` : r && r.identifier ? `x-apple-reminderkit://REMCDReminder/${r.identifier}` : REMINDERS_APP
 
 const calshowURL = d => `calshow:${Math.floor(d.getTime() / 1000) - 978307200}`
 
@@ -3949,7 +3964,10 @@ async function runAction(action, q) {
   if (action === "health") return healthMenu()
   if (action === "note") return addNote()
   if (action === "report") return report(q.month)
-  if (action === "hub") return hubSync(25)      // «Внести в iPhone сейчас» из приложения
+  if (action === "hub") {                       // «Внести в iPhone сейчас» из приложения
+    await hubSync(25)
+    return info("✓ Внесено в iPhone", "Вернитесь в IZIDAY кнопкой «◀ IZIDAY» слева вверху.")
+  }
   return menu()
 }
 

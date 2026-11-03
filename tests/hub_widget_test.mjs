@@ -135,9 +135,11 @@ check(requests[0].hub.lists.locs && requests[0].hub.lists.locs.length === 1, "и
 
 // 7. уведомления о делах: встреча за 10 минут, напоминание вовремя — открывают приложение; лишние убираются
 store.push({ identifier: "E9", title: "Встреча с застройщиком", startDate: at(1, 14), endDate: at(1, 15), calendar: cal, location: "Офис\nэтаж 3" })
-reminders.push({ identifier: "R9", title: "Позвонить маме", dueDate: at(1, 16), dueDateIncludesTime: true, isCompleted: false, calendar: { title: "Текущие" }, save() {} })
+reminders.push({ identifier: "RI", title: "Из Напоминаний iPhone", dueDate: at(1, 16), dueDateIncludesTime: true, isCompleted: false, calendar: { title: "Текущие" }, save() {} })
+const z2 = n => String(n).padStart(2, "0"), loc = d => `${d.getFullYear()}-${z2(d.getMonth() + 1)}-${z2(d.getDate())}T${z2(d.getHours())}:${z2(d.getMinutes())}`
 pending.push(Object.assign(new Notif(), { identifier: "myday-ag-e-OLD-1-x", title: "старое" }))
-sheet.post({ secret: "s".repeat(32), hub: { from: "app", lists: { nudges: [{ id: "n1", date: at(1, 15).getTime(), u: Date.now(), text: "Перед встречей выпей воды" }, { id: "n2", date: at(1, 15).getTime(), u: Date.now(), text: "удалена", deleted: true }] } } })
+sheet.post({ secret: "s".repeat(32), hub: { from: "app", lists: { nudges: [{ id: "n1", date: at(1, 15).getTime(), u: Date.now(), text: "Перед встречей выпей воды" }, { id: "n2", date: at(1, 15).getTime(), u: Date.now(), text: "удалена", deleted: true }],
+  rems: [{ id: "R9", date: Date.now(), u: Date.now(), title: "Позвонить маме", due: loc(at(1, 16)), done: false }, { id: "R8", date: Date.now(), u: Date.now(), title: "Готово уже", due: loc(at(1, 16)), done: true }] } } })
 await w.hubSync()
 await w.scheduleAgenda()
 const nd = pending.filter(x => (x.identifier || "").startsWith("myday-ag-n-"))
@@ -146,6 +148,7 @@ const ag = pending.filter(x => (x.identifier || "").startsWith("myday-ag-"))
 const ev = ag.find(x => x.title === "📅 Встреча с застройщиком"), rm = ag.find(x => x.title === "⏰ Позвонить маме")
 check(ev && ev.at.getHours() === 13 && ev.at.getMinutes() === 50 && ev.openURL === APP && /Офис/.test(ev.body) && !/этаж/.test(ev.body), "встреча: уведомление за 10 минут", ev && { at: String(ev.at), body: ev.body })
 check(rm && rm.at.getHours() === 16, "напоминание со временем: уведомление вовремя", rm && String(rm.at))
+check(rm && rm.openURL === APP + "#rem=R9" && !ag.some(x => /Из Напоминаний iPhone|Готово уже/.test(x.title + x.body)), "напоминания — из приложения; iPhone и выполненные не напоминают", rm && rm.openURL)
 check(!ag.some(x => x.title === "старое"), "устаревшее уведомление убрано")
 const fu = ag.filter(x => (x.identifier || "").startsWith("myday-ag-f-R9-")).sort((a, b) => a.at - b.at)
 check(fu.length === 3 && fu[0].at.getHours() === 17 && fu[1].at.getHours() === 19 && fu[2].at.getHours() === 10 && fu[0].title === "⏰ Выполнил?" && fu[0].openURL === APP + "#rem=R9",

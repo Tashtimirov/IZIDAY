@@ -17,8 +17,31 @@ function fakeMail() {
     getUserLabels: () => [], getInboxUnreadCount: () => 2 }
   return { api, log }
 }
+// Google Календарь: один календарь, события в памяти
+function fakeCal() {
+  const events = [], log = []
+  const mk = (title, s, e, opt = {}, all = false, rec = null) => {
+    const ev = { id: "G" + (events.length + 1), title, s, e, all, loc: opt.location || "", desc: opt.description || "", rec }
+    const o = { getId: () => ev.id, getTitle: () => ev.title, getStartTime: () => ev.s, getEndTime: () => ev.e, isAllDayEvent: () => ev.all, getLocation: () => ev.loc,
+      getDescription: () => ev.desc, getOriginalCalendarId: () => "primary", isRecurringEvent: () => !!ev.rec,
+      setTitle: t => { ev.title = t; log.push(["title", ev.id, t]) }, setLocation: l => { ev.loc = l }, setDescription: d => { ev.desc = d },
+      setTime: (s2, e2) => { ev.s = s2; ev.e = e2; log.push(["move", ev.id, s2]) }, setAllDayDate: d => { ev.s = d },
+      deleteEvent: () => { events.splice(events.indexOf(o), 1); log.push(["delete", ev.id]) }, getEventSeries: () => ({ deleteEventSeries: () => o.deleteEvent() }) }
+    events.push(o); log.push(["create", ev.id, title]); return o
+  }
+  const k = { getId: () => "primary", getName: () => "Ильдар", isHidden: () => false, isOwnedByMe: () => true,
+    getEvents: (f, t) => events.filter(e => e.getStartTime() < t && e.getEndTime() > f), getEventById: id => events.find(e => e.getId() === id) || null,
+    createEvent: (t, s, e, o) => mk(t, s, e, o), createAllDayEvent: (t, s, e, o) => mk(t, s, e, o, true),
+    createEventSeries: (t, s, e, r, o) => mk(t, s, e, o, false, r), createAllDayEventSeries: (t, s, r, o) => mk(t, s, new Date(+s + 864e5), o, true, r) }
+  const rule = { onlyOnWeekdays: () => rule }
+  const self = { off: false }
+  const api = { getAllCalendars: () => { if (self.off) throw new Error("нет разрешения на Календарь"); return [k] }, getDefaultCalendar: () => k, getCalendarById: () => k,
+    newRecurrence: () => ({ addDailyRule: () => rule, addWeeklyRule: () => rule, addMonthlyRule: () => rule, addYearlyRule: () => rule }),
+    Weekday: { MONDAY: 1, TUESDAY: 2, WEDNESDAY: 3, THURSDAY: 4, FRIDAY: 5, SATURDAY: 6, SUNDAY: 0 } }
+  return Object.assign(self, { api, events, log, mk })
+}
 export function sheetScript() {
-  const mail = fakeMail()
+  const mail = fakeMail(), cal = fakeCal()
   const code = fs.readFileSync(new URL("../src/sheet/Code.gs", import.meta.url), "utf8").replace("__SHEET_SECRET__", "").replace("__CARD_SKIP__", "")
   const sheets = []
   class Sheet {
@@ -59,7 +82,10 @@ export function sheetScript() {
       geocode: q => ({ status: "OK", results: /нигде/.test(q) ? [] : [{ formatted_address: "Decathlon Rama 4", geometry: { location: { lat: 13.72, lng: 100.55 } } },
         { formatted_address: "Decathlon Chiang Mai", geometry: { location: { lat: 18.79, lng: 98.98 } } }] }) }; return gc } },
   SpreadsheetApp: { getActiveSpreadsheet: () => ss },
-  Utilities: { formatDate: (d, tz, f) => { const z = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}` } },
+  Utilities: { formatDate: (d, tz, f) => { const z = n => String(n).padStart(2, "0"), day = `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`, t = `${z(d.getHours())}:${z(d.getMinutes())}`
+      return f === "yyyy-MM-dd" ? day : f === "yyyy-MM-dd'T'HH:mm" ? `${day}T${t}` : `${day} ${t}` },
+    parseDate: (s, tz, f) => { const m = s.match(/(\d+)-(\d+)-(\d+) (\d+):(\d+)/); return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) } },
+  CalendarApp: cal.api,
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = v } }) },
     ContentService: { createTextOutput: s => ({ setMimeType: () => JSON.parse(s) }), MimeType: { JSON: 1 } },
@@ -67,5 +93,5 @@ export function sheetScript() {
     GmailApp: mail.api,
   }
   const gs = new Function(...Object.keys(g), code + "; return { doPost }")(...Object.values(g))
-  return { ss, mail, post: body => gs.doPost({ postData: { contents: typeof body === "string" ? body : JSON.stringify(body) } }) }
+  return { ss, mail, cal, post: body => gs.doPost({ postData: { contents: typeof body === "string" ? body : JSON.stringify(body) } }) }
 }
