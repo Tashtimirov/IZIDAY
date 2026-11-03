@@ -237,6 +237,12 @@ await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close()
 await page.click('[data-tab="more"]'); await page.waitForTimeout(300)
 check((await today()).includes("Цели и мечты") && (await today()).includes("100 желаний"), "«Ещё»: цели и мечты")
 
+// 13. нажатие на подсказку в уведомлении: чат с ней и микрофон
+await page.evaluate(() => { location.hash = "reply=" + encodeURIComponent("🍽 Ужин\nОсталось около 1400 ккал") }); await page.waitForTimeout(600)
+check(await page.evaluate(() => tab === "chat" && D.chat.some(m => m.role === "assistant" && m.text.includes("Осталось около 1400")) && $("#view").textContent.includes("Осталось около 1400")), "подсказка из уведомления — в чате")
+await page.evaluate(() => { location.hash = "reply=" + encodeURIComponent("🍽 Ужин\nОсталось около 1400 ккал") }); await page.waitForTimeout(400)
+check(await page.evaluate(() => D.chat.filter(m => m.text.includes("Осталось около 1400")).length === 1), "второе нажатие не дублирует")
+
 // 10. тёмная тема
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await page.waitForTimeout(300)
 await page.emulateMedia({ colorScheme: "dark" })

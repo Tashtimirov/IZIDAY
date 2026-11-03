@@ -2720,6 +2720,11 @@ async function hashAction() {
   const eq = h.indexOf("="), a = eq < 0 ? h : h.slice(0, eq), arg = eq < 0 ? "" : h.slice(eq + 1)
   if (a === "voice") { setTab("chat"); return micStart(true) }
   if (a === "chat" || a === "note") return setTab("chat")
+  if (a === "reply") {   // нажали на подсказку в уведомлении: она — в чате, микрофон сразу слушает ответ
+    const t = String(arg || "").trim(), last = D.chat[D.chat.length - 1]
+    if (t && !(last && last.role === "assistant" && last.text === t)) { D.chat.push({ role: "assistant", text: t, at: Date.now(), push: true }); save(false) }
+    setTab("chat"); return setTimeout(() => micStart(true), 250)
+  }
   if (a === "brief") { setTab("chat"); return brief(arg) }
   if (a === "money") return moneyForm("expense")
   if (a === "water") return addWater(H().glass || 250, "widget")
