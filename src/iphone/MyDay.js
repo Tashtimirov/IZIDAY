@@ -1716,7 +1716,10 @@ async function buildWidget(family, param) {
 }
 
 // ───────────── Диалоги ─────────────
+// Из Siri / Быстрой команды окна показывать нельзя (Scriptable падает) — вопросы молча отменяются, помощник спросит словами
+const NO_UI = () => typeof config !== "undefined" && config.runsWithSiri
 async function ask(title, placeholder, okLabel = "Сохранить", text = "", message) {
+  if (NO_UI()) return null
   const a = new Alert()
   a.title = title
   if (message) a.message = message
@@ -1729,6 +1732,7 @@ async function ask(title, placeholder, okLabel = "Сохранить", text = ""
 }
 
 async function choose(title, options, message) {
+  if (NO_UI()) return -1
   const a = new Alert()
   a.title = title
   if (message) a.message = message
@@ -1752,6 +1756,7 @@ async function info(title, message) {
 
 // Подтверждение голосовой команды: "save" | "edit" | "cancel"
 async function confirmVoice(title, summary, heard) {
+  if (NO_UI()) return "cancel"
   const a = new Alert()
   a.title = title
   a.message = `${summary}\n\n🎤 «${heard}»`
@@ -3666,6 +3671,26 @@ function chatContext(hist) {
   return out
 }
 
+// Быстрый ввод: «Привет, Siri, IZIDAY» / кнопка «Действие» → диктовка → фраза сразу помощнику, без открытия приложения.
+// Ответ уходит обратно в Быструю команду (она его показывает или произносит). Переписка — в том же чате, что и в приложении
+function quickText(p) {
+  if (p == null) return null
+  if (typeof p === "object") { const t = p.q ?? p.text ?? p["текст"]; return typeof t === "string" && t.trim() ? t.trim() : null }
+  const s = String(p).trim()
+  return s && !/^[{[]/.test(s) ? s : null   // словарь или JSON — это данные Здоровья
+}
+async function quickAsk(text) {
+  if (!aiReady()) { Script.setShortcutOutput(`IZIDAY: помощнику нужен ключ ${AI_NAME} — откройте «Мой день» → меню → 🧠 Ассистент.`); return }
+  let out
+  try {
+    const hist = await loadJSON(CHAT_FILE)
+    const reply = await chatReply(hist, { role: "user", text, at: Date.now(), voice: true, quick: true })
+    out = String(reply.text || "Готово.").replace(/\*\*|__|`/g, "").trim()
+  } catch (e) { out = `IZIDAY: не получилось — ${e.message || e}. Фраза не потерялась: откройте чат и повторите.` }
+  Script.setShortcutOutput(out)
+  try { await autoSyncSheet(); await hubSync(10) } catch (e) {}   // расход, вода, напоминание — сразу в таблицу и приложение
+}
+
 async function chatReply(hist, item) {
   hist.push(item)
   CHAT_SESSIONS.length = 0
@@ -4059,10 +4084,12 @@ async function selfUpdate(force) {
 // ───────────── Запуск ─────────────
 // Из Быстрой команды (без «Run In App») окна показывать нельзя: Scriptable падает с «Alerts are not supported in Siri»
 const SHORTCUT_PARAM = args.shortcutParameter ?? (args.plainTexts && args.plainTexts.length ? args.plainTexts.join("\n") : null)
-if (SHORTCUT_PARAM && !config.runsInWidget) {
+if (SHORTCUT_PARAM && !config.runsInWidget && quickText(SHORTCUT_PARAM)) {
+  await quickAsk(quickText(SHORTCUT_PARAM))  // Быстрая команда «IZIDAY»: сказанная фраза — помощнику
+} else if (SHORTCUT_PARAM && !config.runsInWidget) {
   await receiveHealth(SHORTCUT_PARAM)        // запуск из Быстрой команды «Мой день - здоровье»
 } else if (config.runsWithSiri) {
-  Script.setShortcutOutput("Мой день: команда не передала данные о здоровье. В действии «Выполнить скрипт» в поле Parameter должен стоять «Словарь».")
+  Script.setShortcutOutput("Мой день: команда ничего не передала. В действии «Выполнить скрипт» в поле Parameter поставьте «Продиктованный текст» (или «Словарь» для Здоровья).")
 } else if (config.runsInWidget) {
   const st = await loadSettings()
   SHEET_URL = sheetUrlOf(st)

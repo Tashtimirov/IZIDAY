@@ -85,7 +85,7 @@ const launch = async (args) => {
   await new Function(...Object.keys(g2), "return (async()=>{" + full + "})()")(...Object.values(g2))
   return output
 }
-check("команда без параметра — объяснение, а не ошибка", /не передала данные/.test(await launch({})), output)
+check("команда без параметра — объяснение, а не ошибка", /ничего не передала/.test(await launch({})), output)
 check("параметр текстом из команды — сохранено", /сохранено/.test(await launch({ plainTexts: ['{"steps": 6000, "active": 300}'] })), output)
 console.log(fail ? `\nОШИБОК: ${fail}` : "\nHEALTH_OK")
 process.exit(fail ? 1 : 0)
