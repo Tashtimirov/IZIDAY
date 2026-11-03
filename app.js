@@ -1797,9 +1797,12 @@ async function hashAction() {
 function runWidgetNow() {
   const run = (D.conn && D.conn.run) || "scriptable:///run/MyDay"
   const name = decodeURIComponent((run.split("/run/")[1] || "MyDay").split("?")[0])
-  const back = location.origin + location.pathname + "#synced"
-  location.href = `scriptable:///x-callback-url/run?scriptName=${encodeURIComponent(name)}&action=hub&x-success=${encodeURIComponent(back)}`
+  // Обычный запуск Scriptable (x-callback-url он не принимает — «The URL is not supported»).
+  // Назад — кнопкой «◀ IZIDAY» слева вверху; при возврате приложение само обновится и скажет, всё ли внесено.
+  runWidgetAt = Date.now()
+  location.href = `scriptable:///run/${encodeURIComponent(name)}?action=hub`
 }
+let runWidgetAt = 0
 // «Выполнил?» по напоминанию из уведомления: сделано / перенести / почему нет
 async function remFollow(id) {
   setTab("today")
@@ -1886,7 +1889,9 @@ setInterval(() => { if (document.visibilityState === "visible") sync() }, 60000)
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return
   if (selDay < sod(new Date())) selDay = sod(new Date())
-  sync()
+  const back = runWidgetAt && Date.now() - runWidgetAt < 10 * 60e3
+  runWidgetAt = 0
+  sync().then(() => { if (back) { render(); toast(pendingOps().length ? "Ещё не всё внесено — откройте виджет ещё раз" : "✓ Внесено в iPhone") } })
 })
 if ("serviceWorker" in navigator && location.protocol === "https:") {
   navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => r.update()).catch(() => {})
