@@ -5,7 +5,8 @@
 в сайте нет ни личных ссылок, ни ключей. Личное (ключ Claude, таблица, категории, календари, маршруты)
 приложение получает от виджета кодом подключения и хранит только на телефоне.
 
-  python3 build_web.py            → dist/web/
+  python3 build_web.py            → dist/web/ (сжатый код)
+  python3 build_web.py --no-minify → dist/web/ как есть, для отладки
 """
 import hashlib, re, shutil, subprocess, sys, pathlib, tempfile
 
@@ -43,6 +44,19 @@ for extra in ["CUR_RE"]:
 wrapped = ("// АВТОМАТИЧЕСКИ СОБРАНО build_web.py из src/iphone/MyDay.js + profile-th.js — не редактируйте вручную.\n"
            f"window.CORE = (function () {{\n{body}\nreturn {{ {', '.join(names)} }}\n}})()\n")
 (OUT / "core.js").write_text(wrapped)
+
+# Сжатие: код и стили без пробелов и комментариев — телефон грузит меньше. Нужен esbuild (через npx);
+# без него сайт собирается как есть. Исходники в src/web остаются читаемыми.
+def minify(p):
+    r = subprocess.run(["npx", "-y", "esbuild@0.24.0", str(p), "--minify", "--charset=utf8", f"--outfile={p}", "--allow-overwrite", "--log-level=error"],
+                       capture_output=True, text=True)
+    if r.returncode:
+        print(f"Внимание: {p.name} не сжат (esbuild недоступен): {r.stderr.strip()[:200]}")
+    return not r.returncode
+if "--no-minify" not in sys.argv:
+    for name in ["core.js", "app.js", "style.css"]:
+        if not minify(OUT / name):
+            break
 
 # В сайте не должно быть ничего личного: он лежит в открытом репозитории
 for p in OUT.rglob("*"):
