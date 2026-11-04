@@ -2767,7 +2767,7 @@ function goalsCard(always) {
   let html = `<div class="card" id="goals"><h2>Цели на месяц<button class="act" data-do="goals">${l.length ? `${done} из ${l.length}` : "+ Поставить"}</button></h2>`
   if (!l.length) return html + `<div class="empty">Новый месяц — 3–5 целей на него. Можно сказать помощнику: «цели на месяц: …»${goalsLeft().length ? `. С прошлого осталось ${goalsLeft().length}.` : ""}</div></div>`
   html += l.map(g => { const nx = stepsOf(g).find(x => !x.done)
-    return `<div class="row"><button class="check ${g.done ? "on" : ""}" data-goal="${esc(g.id)}"></button><button class="grow goal-open" data-gsteps="${esc(g.id)}"><div class="t ${g.done ? "struck" : ""}">${esc(g.title)}</div><div class="s">${stepsOf(g).length ? esc(stepsTxt(g) + (nx ? " · дальше: " + nx.t + (nx.date ? ", " + stepWhen(nx) : "") : "")) : "разбить на шаги ›"}</div></button></div>` }).join("")
+    return `<div class="row"><button class="check ${g.done ? "on" : ""}" data-goal="${esc(g.id)}"></button><button class="grow goal-open" data-gsteps="${esc(g.id)}"><div class="t ${g.done ? "struck" : ""}">${esc(g.title)}</div><div class="s">${stepsOf(g).length ? esc(stepsTxt(g) + (nx ? " · дальше: " + nx.t + (nx.date ? ", " + stepWhen(nx) : "") : "")) : g.done ? "" : "разбить на шаги ›"}</div></button></div>` }).join("")
   return html + `<div class="prog"><div style="width:${done / l.length * 100}%"></div></div></div>`
 }
 function goalsMore() {

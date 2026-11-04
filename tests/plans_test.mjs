@@ -178,6 +178,7 @@ check(await page.evaluate(id => stepsOf(D.goals.find(g => g.id === id)).filter(x
 check(opsBefore === -1 || await page.evaluate(n => pendingOps().filter(o => o.tool === "create_event").length === n + 2, opsBefore), "события ушли в календарь", opsBefore)
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close(); goalsForm("wish") }); await page.waitForTimeout(300)
 check(await page.evaluate(() => /в целях/.test($(".sheet").textContent)), "в желаниях — пометка «в целях»")
+await page.screenshot({ path: SHOTS + "p-wish.png" })
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close(); plansF = "goals"; setTab("plans") }); await page.waitForTimeout(300)
 check(/дальше: Выбрать страну/.test(await page.textContent("#goals")), "на карточке целей — следующий шаг", await page.textContent("#goals"))
 await page.screenshot({ path: SHOTS + "p-goals.png" })
