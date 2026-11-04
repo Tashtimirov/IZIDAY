@@ -1406,7 +1406,8 @@ function brief(kind) {
 // Слушает, пока человек говорит: отправляет только после паузы тишины (SILENCE_MS).
 // Повторное нажатие на 🎤 — отправить сразу. Если Safari сам обрывает распознавание раньше паузы — слушаем дальше.
 const SILENCE_MS = 2500, FIRST_WORD_MS = 8000
-let rec = null, voice = null
+let rec = null, voice = null, lastVoice = null   // lastVoice — последняя запись: её итоги, пришедшие после отправки, не нужны
+const voiceSent = () => { if (lastVoice) lastVoice.sent = true }
 function micStart(auto) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
   const inp = $("#chat-in")
@@ -1414,6 +1415,7 @@ function micStart(auto) {
   if (voice) return voiceFinish()
   voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: !!PTT.holding }
   const v = voice
+  lastVoice = v
   const show = (extra = "") => { v.text = [v.base, v.done, extra].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); const i = $("#chat-in"); if (i) { i.value = v.text; grow(i) }; pttShow(v.text) }
   const arm = ms => { clearTimeout(v.timer); if (!v.ptt) v.timer = setTimeout(voiceFinish, ms) }   // пока кнопку держат — пауза не обрывает запись
   $(".chat-bar .mic") && $(".chat-bar .mic").classList.add("on")
@@ -1423,7 +1425,7 @@ function micStart(auto) {
     r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
     let fin = "", all = ""
     r.onresult = e => {
-      if (voice !== v) return   // уже отправлено: поздний результат после stop() не должен снова заполнить поле
+      if (v.sent) return   // уже отправлено: поздний итог после stop() не должен снова заполнить поле (а после касания поля — пусть дописывает)
       let interim = ""
       fin = ""
       for (let i = 0; i < e.results.length; i++) {
@@ -1471,6 +1473,7 @@ function voiceSend(v) {
   const t = [v.base, v.done].filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
   voiceReset()
   if (!v.done.trim()) return
+  v.sent = true
   if (!inp) { setTab("chat"); return setTimeout(() => chatSend(t, { voice: true }), 30) }   // команда, сказанная с кнопки на любом экране
   inp.value = ""; grow(inp); chatSend(t, { voice: true })
 }
@@ -1479,6 +1482,7 @@ function voiceSendNow() {
   const v = voice, i = $("#chat-in")
   const t = ((i && i.value) || v.text || "").trim()
   const r = rec
+  voiceSent()
   voiceReset()
   try { r && r.stop() } catch (e) {}   // stop, не abort: Safari после abort иногда не отдаёт микрофон следующей записи
   if (i) { i.value = ""; grow(i) }
@@ -2175,8 +2179,8 @@ function bind() {
   const inp = $("#chat-in", v)
   if (inp) {
     inp.oninput = () => grow(inp)
-    inp.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (voice) return voiceSendNow(); const t = inp.value; inp.value = ""; grow(inp); chatSend(t) } }
-    $(".chat-bar .send", v).onclick = () => { if (voice) return voiceSendNow(); if (chatBusy && !askWait && !inp.value.trim()) return chatStop(); const t = inp.value; inp.value = ""; grow(inp); chatSend(t) }
+    inp.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (voice) return voiceSendNow(); const t = inp.value; inp.value = ""; grow(inp); voiceSent(); chatSend(t) } }
+    $(".chat-bar .send", v).onclick = () => { if (voice) return voiceSendNow(); if (chatBusy && !askWait && !inp.value.trim()) return chatStop(); const t = inp.value; inp.value = ""; grow(inp); voiceSent(); chatSend(t) }
     if (chatBusy && !askWait) setBusyUI(true)
     // тронули текст во время записи — не отправлять по паузе: можно поправить и нажать ➤
     inp.addEventListener("focus", () => { if (voice) { const t = inp.value, r = rec; voiceReset(); try { r && r.stop() } catch (e) {} inp.value = t; grow(inp); toast("✎ Поправьте и нажмите ➤") } })
