@@ -145,7 +145,7 @@ await page.evaluate(() => $("#view").scrollTop = 0); await page.click('[data-pf=
 check(await page.evaluate(() => !!$("#habits-week") && !$("#lists")), "фильтр «Привычки»")
 await page.click('[data-pf="again"]'); await page.waitForTimeout(200)
 await page.click(`[data-chore-done]`); await page.waitForTimeout(500)
-check(await page.evaluate(() => chores().find(c => c.title === "Помыть машину").last > Date.now() - 60e3 && /через 14 дней/.test($("#chores").textContent)), "машину помыл — снова через 14 дней")
+check(await page.evaluate(() => chores().find(c => c.title === "Помыть машину").last > Date.now() - 60e3 && /через 14 дней/i.test($("#chores").textContent)), "машину помыл — снова через 14 дней")
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close(); listSheet(listFind("На выходные").id) }); await page.waitForTimeout(300)
 await page.screenshot({ path: SHOTS + "p-list.png" })
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close(); choreForm() }); await page.waitForTimeout(300)

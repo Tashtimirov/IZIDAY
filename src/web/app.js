@@ -2779,8 +2779,7 @@ const choreGuess = t => /цвет|полив|растен|сад/i.test(t) ? "le
 const choreFind = q => { const n = normT(q); return chores().find(c => c.id === q || normT(c.title) === n) || chores().find(c => normT(c.title).includes(n) || n.includes(normT(c.title))) }
 function choreDone(id, at = Date.now()) { const c = D.goals.find(x => x.id === id); return c ? upsert("goals", Object.assign({}, c, { last: at })) : null }
 const choreRow = c => { const n = choreLeft(c)
-  return `<div class="row chore" data-chore="${esc(c.id)}">${icoBox(c.ico || "repeat")}<div class="grow"><div class="t">${esc(c.title)}</div><div class="s">${esc(everyTxt(c.every))} · ${esc(agoTxt(c.last))}</div></div>
-    <span class="due ${n < 0 ? "late" : n === 0 ? "now" : ""}">${esc(choreWhen(c))}</span><button class="check" data-chore-done="${esc(c.id)}" aria-label="Сделано"></button></div>` }
+  return `<div class="row chore" data-chore="${esc(c.id)}">${icoBox(c.ico || "repeat")}<div class="grow"><div class="t">${esc(c.title)}</div><div class="s"><span class="due ${n < 0 ? "late" : n === 0 ? "now" : ""}">${esc(core.cap(choreWhen(c)))}</span> · ${esc(everyTxt(c.every))}</div></div><button class="check" data-chore-done="${esc(c.id)}" aria-label="Сделано"></button></div>` }
 function choresCard(max = 0) {
   const l = chores(), show = max ? l.slice(0, max) : l
   let html = `<div class="card" id="chores"><h2>Снова пора<button class="act" data-do="chore-add">+ Дело</button></h2>`
@@ -2795,7 +2794,7 @@ function choresToday() {
 }
 function choreForm(c) {
   let every = c ? c.every : 7, ico = c ? c.ico : ""
-  const s = sheet(`<h3>${c ? esc(c.title) : "Снова пора"}</h3>
+  const s = sheet(`<h3>${c ? esc(c.title) : "Снова пора"}</h3>${c ? `<div class="muted small" style="margin:-4px 0 10px">${esc(core.cap(agoTxt(c.last)))} · снова ${esc(choreWhen(c))}</div>` : ""}
     <div class="field"><label>Что делать</label><input id="c-t" value="${c ? esc(c.title) : ""}" placeholder="Полить цветы, помыть машину…"></div>
     <div class="field"><label>Как часто</label><div class="chips" id="c-n">${[[1, "каждый день"], [3, "3 дня"], [7, "неделя"], [14, "2 недели"], [30, "месяц"]].map(([n, t]) => `<button class="chip ${n === every ? "on" : ""}" data-n="${n}">${t}</button>`).join("")}</div>
       <div class="set" style="margin-top:8px"><span>Каждые, дней</span><input id="c-e" type="number" min="1" max="365" value="${every}"></div></div>
