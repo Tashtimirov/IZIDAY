@@ -73,7 +73,7 @@ const ICO = {
 // ───────────── Данные на телефоне ─────────────
 // Записи — как в виджете: { id, date, u (время изменения), ... }; удалённые остаются «надгробиями» { id, deleted, u },
 // чтобы удаление дошло до виджета и таблицы
-const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90, goals: 0 }   // goals — цели, желания, мечты; shop — покупки, kids — дела детей, fast — голодание   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
+const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90, goals: 0, pomo: 30 }   // pomo — помидоры (фокус 25 мин), живут в приложении; goals — цели, желания, мечты; shop — покупки, kids — дела детей, fast — голодание   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
 let D = {}
 function load() {
   try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
@@ -623,9 +623,15 @@ const AGENT_TOOLS = [
   { name: "delete_kids_item", description: "Убрать дело детей по id (из get_kids).", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "start_fast", description: "Начать интервальное голодание (по умолчанию 16 ч). Когда окно откроется — придёт пуш.", input_schema: { type: "object", properties: { hours: { type: "number" } } } },
   { name: "stop_fast", description: "Закончить голодание сейчас (поел).", input_schema: { type: "object", properties: {} } },
-  { name: "add_goal", description: "Цели: kind=month — цели на этот месяц; wish — «100 желаний» (любые желания, большие и маленькие); dream — «10 мечт», крупное на год, два, три и больше (due YYYY-MM-DD, по умолчанию через год, не дальше 10 лет). " +
+  { name: "add_goal", description: "Цели: kind=month — цели на этот месяц; wish — «100 желаний» (любые желания, большие и маленькие); dream — «10 мечт», крупное на срок до 2 лет (due YYYY-MM-DD, по умолчанию через год). Мечты разбивай на шаги через add_goal_steps. " +
       "Если пользователю трудно придумать — задавай по одному вопросу про разные стороны жизни (поездки, учёба, семья, тело, деньги, дом, люди, творчество) и записывай ответы.",
     input_schema: { type: "object", properties: { kind: { type: "string", enum: ["month", "wish", "dream"] }, items: { type: "array", items: { type: "string" } }, due: { type: "string", description: "Для dream: YYYY-MM-DD" } }, required: ["kind", "items"] } },
+  { name: "start_pomodoro", description: "Начать помидор: фокус на одном деле (по умолчанию 25 минут, потом 5 минут отдыха). Когда время выйдет — придёт уведомление.",
+    input_schema: { type: "object", properties: { title: { type: "string", description: "Над чем работаем" }, minutes: { type: "number" } } } },
+  { name: "stop_pomodoro", description: "Остановить текущий помидор.", input_schema: { type: "object", properties: {} } },
+  { name: "add_goal_steps", description: "Разбить мечту (или цель) на шаги: goal — название или id, steps — шаги по порядку («узнать цены», «накопить 30%»). Повторы не добавляются.",
+    input_schema: { type: "object", properties: { goal: { type: "string" }, steps: { type: "array", items: { type: "string" } } }, required: ["goal", "steps"] } },
+  { name: "goal_step_done", description: "Отметить шаг мечты сделанным (done=false — снять отметку).", input_schema: { type: "object", properties: { goal: { type: "string" }, step: { type: "string" }, done: { type: "boolean" } }, required: ["goal", "step"] } },
   { name: "get_goals", description: "Цели на месяц, 100 желаний, 10 мечт: что есть и что сбылось.", input_schema: { type: "object", properties: { kind: { type: "string", enum: ["month", "wish", "dream"] } } } },
   { name: "goal_done", description: "Отметить цель, желание или мечту выполненной (done=false — снять отметку).", input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } }, kind: { type: "string", enum: ["month", "wish", "dream"] }, done: { type: "boolean" } }, required: ["items"] } },
   { name: "delete_goal", description: "Убрать цель, желание или мечту по id (из get_goals).", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
@@ -1006,9 +1012,17 @@ async function runTool(name, x) {
     case "add_goal": { const r = goalAdd(x.kind, x.items || [], x.due); if (r.error) return r
       return { ok: true, added: r.added.map(g => g.title), total: r.total, max: GOAL_MAX[x.kind] || undefined, note: r.added.length < (x.items || []).length ? "часть уже есть или места кончились" : undefined } }
     case "get_goals": { const kinds = x.kind ? [x.kind] : Object.keys(GOAL_KIND), out = {}
-      for (const k of kinds) out[k] = goalsOf(k).map(g => ({ id: g.id, title: g.title, done: !!g.done, due: g.due }))
+      for (const k of kinds) out[k] = goalsOf(k).map(g => Object.assign({ id: g.id, title: g.title, done: !!g.done, due: g.due }, stepsOf(g).length ? { steps: stepsOf(g).map(x => ({ step: x.t, done: !!x.done })) } : {}))
       if (!x.kind || x.kind === "month") out.month_left_from_last = goalsLeft().map(g => g.title)
       return out }
+    case "start_pomodoro": { const p = pomoStart(x.title, "", x.minutes); return { ok: true, title: p.title, minutes: p.min, ends: iso(new Date(p.start + p.min * 60e3)), today_done: pomoToday().length } }
+    case "stop_pomodoro": { const p = pomoStop(); return p ? { ok: true, title: p.title, completed: !!p.full, today_done: pomoToday().length } : { error: "помидор не идёт" } }
+    case "add_goal_steps": { const g = goalFind(x.goal, "dream") || goalFind(x.goal); if (!g) return { error: "не нашёл такую мечту или цель" }
+      const a = goalSteps(g.id, x.steps || []); return { ok: true, goal: g.title, added: a.map(z => z.t), steps: stepsOf(D.goals.find(z => z.id === g.id)).map(z => z.t) } }
+    case "goal_step_done": { const g = goalFind(x.goal, "dream") || goalFind(x.goal); if (!g) return { error: "не нашёл такую мечту или цель" }
+      const st = stepFind(g, x.step); if (!st) return { error: "нет такого шага", steps: stepsOf(g).map(z => z.t) }
+      const g2 = stepSet(g.id, st.id, { done: x.done !== false, doneAt: x.done !== false ? Date.now() : 0 })
+      return { ok: true, step: st.t, progress: stepsTxt(g2), all_done: stepsOf(g2).every(z => z.done) } }
     case "goal_done": { const got = []; for (const t of x.items || []) { const g = goalFind(t, x.kind); if (g) { goalToggle(g.id, x.done !== false); got.push(g.title) } }
       return got.length ? { ok: true, marked: got } : { error: "не нашёл такую цель", have: live(D.goals).filter(g => !x.kind || g.kind === x.kind).map(g => g.title).slice(0, 30) } }
     case "delete_goal": { if (!live(D.goals).some(g => g.id === x.id)) return { error: "нет такой" }; remove("goals", x.id); return { ok: true } }
@@ -1130,7 +1144,7 @@ ${cals.length ? `- Календари по словам пользователя
 // ── Помощник ведёт день: план подсказок → уведомления от виджета ──
 function planDay(items) {
   const now = Date.now(), end = +addDays(sod(new Date()), 1)
-  live(D.nudges).filter(n => n.date > now && n.date < end).forEach(n => remove("nudges", n.id))
+  live(D.nudges).filter(n => n.date > now && n.date < end && !String(n.id).startsWith("pq")).forEach(n => remove("nudges", n.id))   // pq… — конец помидора, не трогаем
   const ok = []
   for (const it of items.slice(0, 14)) {
     const t = parseIso(it.time)
@@ -1697,7 +1711,7 @@ async function eventSheet(e) {
 async function addMenu() {
   const glass = H().glass || 250
   const opts = [["💬 Сказать помощнику", () => { setTab("chat"); setTimeout(micStart, 300) }], ["➖ Расход", () => moneyForm("expense")], ["➕ Доход", () => moneyForm("income")],
-    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()], ["🛒 Покупка", shopForm], ["👧 Дела детей", kidsForm], ["🎯 Цель или желание", () => goalsForm("month")],
+    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()], ["🛒 Покупка", shopForm], ["👧 Дела детей", kidsForm], ["🎯 Цель или желание", () => goalsForm("month")], ["🍅 Помидоро — фокус 25 мин", pomoAsk],
     ["⏰ Напоминание", reminderForm], ["📅 Событие", eventForm]]
   const i = await ui.choose("Добавить", "", opts.map(o => o[0]))
   if (i >= 0) opts[i][1]()
@@ -1803,6 +1817,7 @@ function renderToday() {
   html += kidsCard(selDay)
   if (isToday && shopOpen().length) html += shopCard()
   if (isToday) html += habitsCard(selDay)
+  if (isToday) html += pomoCard()
   if (isToday) html += goalsCard()
   if (isToday) {
     const h = dayHealth(), g = H()
@@ -2160,6 +2175,7 @@ function bind() {
     const f = fastStart(+k); render(); toast(`⏱ Окно откроется в ${hm(new Date(f.start + f.hours * 3600e3))}`) })
   $$("[data-goal]", v).forEach(b => b.onclick = () => { const g = goalToggle(b.dataset.goal); if (navigator.vibrate) navigator.vibrate(10); render(); if (g && g.done) toast("🎯 Готово!") })
   $$("[data-goals]", v).forEach(b => b.onclick = () => goalsForm(b.dataset.goals))
+  $$("[data-pomo]", v).forEach(b => b.onclick = () => { if (b.dataset.pomo === "stop") { const p = pomoStop(); render(); return toast(p && p.full ? "🍅 Готово" : "Помидор остановлен") } pomoAsk() })
   $$("[data-habit]", v).forEach(b => b.onclick = () => {
     const h = D.habits.find(z => z.id === b.dataset.habit)
     const on = habitToggle(h, selDay > sod(new Date()) ? new Date() : selDay)
@@ -2501,7 +2517,7 @@ function fastCard() {
     <div class="btns" style="margin-top:10px"><button class="btn small" data-fast="stop">${left > 0 ? "Прервать" : "Поел — закончить"}</button></div></div>`
 }
 
-// ── Цели: на месяц, «100 желаний» (с подсказками), «10 мечт» — крупное, на год и больше (до 10 лет) ──
+// ── Цели: на месяц, «100 желаний» (с подсказками), «10 мечт» — крупное, на срок до 2 лет, с разбивкой на шаги ──
 const GOAL_KIND = { month: ["🎯", "На месяц"], wish: ["✨", "100 желаний"], dream: ["🌠", "10 мечт"] }
 const GOAL_MAX = { month: 0, wish: 100, dream: 10 }
 const WISH_HINTS = ["Куда хочу поехать?", "Чему хочу научиться?", "Что хочу попробовать впервые?", "Что хочу сделать вместе с детьми?", "Что хочу для семьи и дома?",
@@ -2513,11 +2529,12 @@ const DREAM_HINTS = ["Большая поездка", "Дом, квартира,
 const curMonth = () => core.monthKey(new Date())
 const goalsOf = (kind, month = curMonth()) => live(D.goals).filter(g => g.title && g.kind === kind && (kind !== "month" || g.month === month))
   .sort((a, b) => (!!a.done - !!b.done) || a.date - b.date)
-const yearAhead = (n = 1) => { const d = new Date(); d.setFullYear(d.getFullYear() + n); return dayKey(d) }   // мечта: по умолчанию год, можно 2, 3, 5 лет — не дальше 10
+const yearAhead = (n = 1) => { const d = new Date(); d.setMonth(d.getMonth() + Math.round(n * 12)); return dayKey(d) }
+const DREAM_MAX_Y = 2   // мечта: по умолчанию год, не дальше 2 лет
 function goalAdd(kind, items, due) {
   if (!GOAL_KIND[kind]) return { error: "kind: month, wish или dream" }
   const have = goalsOf(kind), out = []
-  if (kind === "dream" && due) { if (!/^\d{4}-\d\d-\d\d$/.test(due)) due = ""; else if (due > yearAhead(10)) due = yearAhead(10) }
+  if (kind === "dream" && due) { if (!/^\d{4}-\d\d-\d\d$/.test(due)) due = ""; else if (due > yearAhead(DREAM_MAX_Y)) due = yearAhead(DREAM_MAX_Y) }
   for (const t of items.map(s => String(s).trim()).filter(Boolean)) {
     if (GOAL_MAX[kind] && have.length + out.length >= GOAL_MAX[kind]) break
     if ([...have, ...out].some(g => normT(g.title) === normT(t))) continue
@@ -2531,6 +2548,81 @@ function goalFind(t, kind) { const n = normT(t), l = live(D.goals).filter(g => g
 function goalToggle(id, done) { const g = D.goals.find(x => x.id === id); if (g) return upsert("goals", Object.assign({}, g, { done: done == null ? !g.done : !!done, doneAt: (done == null ? !g.done : done) ? Date.now() : 0 })) }
 const goalsLeft = () => { const p = new Date(); p.setDate(0); return goalsOf("month", core.monthKey(p)).filter(g => !g.done) }   // незавершённые прошлого месяца
 const dueTxt = d => { if (!d) return ""; const [y, m] = d.split("-").map(Number); return `до ${MON_GEN[m - 1]} ${y}` }
+// Шаги мечты: из чего она складывается. Отметили все шаги — мечта сбылась (спросим)
+const stepsOf = g => (g && Array.isArray(g.steps) ? g.steps : []).filter(x => x && x.t)
+const stepsTxt = g => { const l = stepsOf(g); return l.length ? `шаги ${l.filter(x => x.done).length} из ${l.length}` : "" }
+function goalSteps(id, add) {
+  const g = D.goals.find(x => x.id === id); if (!g) return null
+  const l = stepsOf(g).slice(), out = []
+  for (const t of add.map(x => String(x).trim()).filter(Boolean)) if (!l.some(x => normT(x.t) === normT(t))) { const st = { id: uid("s"), t: t.charAt(0).toUpperCase() + t.slice(1), done: false }; l.push(st); out.push(st) }
+  upsert("goals", Object.assign({}, g, { steps: l }))
+  return out
+}
+function stepSet(id, sid, patch) {
+  const g = D.goals.find(x => x.id === id); if (!g) return null
+  const l = stepsOf(g).map(x => x.id === sid ? Object.assign({}, x, patch) : x).filter(x => !x.deleted)
+  return upsert("goals", Object.assign({}, g, { steps: l }))
+}
+function stepFind(g, q) { const n = normT(q), l = stepsOf(g); return l.find(x => x.id === q || normT(x.t) === n) || l.find(x => normT(x.t).includes(n) || n.includes(normT(x.t))) }
+function stepsForm(id) {
+  const g = D.goals.find(x => x.id === id); if (!g) return
+  const l = stepsOf(g), done = l.filter(x => x.done).length
+  const s = sheet(`<h3>🌠 ${esc(g.title)}</h3><div class="muted small">${esc(dueTxt(g.due))}${l.length ? ` · сделано ${done} из ${l.length}` : ""}</div>
+    ${l.length ? `<div class="prog" style="margin-top:8px"><div style="width:${done / l.length * 100}%"></div></div>` : ""}
+    <div style="margin-top:10px">${l.map((x, i) => `<div class="row"><button class="check ${x.done ? "on" : ""}" data-st="${esc(x.id)}"></button><div class="grow"><div class="t">${i + 1}. ${esc(x.t)}</div></div>${x.done ? "" : `<button class="btn small" data-spomo="${esc(x.id)}">🍅</button>`}<button class="btn small red" data-sdel="${esc(x.id)}">✕</button></div>`).join("")
+      || '<div class="empty">Разбейте мечту на шаги: что сделать первым, вторым… Маленькие шаги легче начать. Не знаете с чего начать — «Разбить с помощником».</div>'}</div>
+    <div class="field" style="margin-top:12px"><label>Шаг ${l.length + 1}</label><input id="st-t" placeholder="${l.length ? "Следующий шаг" : "Например: узнать цены, накопить первые 10%…"}"></div>
+    <div class="btns" style="margin-top:10px"><button class="btn" data-a="back">‹ Мечты</button><button class="btn" data-a="ai">Разбить с помощником</button><button class="btn primary" data-a="ok">Добавить</button></div>`, { onClose: () => render() })
+  const again = () => { s.close(); stepsForm(id) }
+  $$("[data-st]", s.el).forEach(b => b.onclick = async () => {
+    const st = l.find(x => x.id === b.dataset.st), g2 = stepSet(id, st.id, { done: !st.done, doneAt: st.done ? 0 : Date.now() })
+    if (!st.done && stepsOf(g2).every(x => x.done) && !g2.done) { s.close(); if ((await ui.confirm("🌠 Все шаги сделаны!", `<div class="msg">«${esc(g2.title)}» — отметить мечту сбывшейся?</div>`, ["Пока нет", "Сбылась!"])) === "Сбылась!") { goalToggle(id, true); toast("✨ Сбылось!") } return stepsForm(id) }
+    again()
+  })
+  $$("[data-sdel]", s.el).forEach(b => b.onclick = () => { stepSet(id, b.dataset.sdel, { deleted: true }); again() })
+  $$("[data-spomo]", s.el).forEach(b => b.onclick = () => { const st = l.find(x => x.id === b.dataset.spomo); pomoStart(st.t, id); s.close(); setTab("today"); toast(`🍅 ${POMO.work} минут: ${st.t}`) })
+  $('[data-a="back"]', s.el).onclick = () => { s.close(); goalsForm("dream") }
+  $('[data-a="ai"]', s.el).onclick = () => {
+    s.close(); setTab("chat")
+    setTimeout(() => chatSend(`Помоги разбить мою мечту «${g.title}» (${dueTxt(g.due)}) на конкретные шаги${l.length ? `; уже есть шаги: ${l.map(x => x.t).join("; ")}` : ""}. Задай 1–2 уточняющих вопроса, потом предложи 3–7 шагов по порядку со сроками и запиши их через add_goal_steps.`), 30)
+  }
+  const add = () => { const t = $("#st-t", s.el).value.trim(); if (!t) return toast("Напишите шаг"); goalSteps(id, [t]); again() }
+  $('[data-a="ok"]', s.el).onclick = add; $("#st-t", s.el).onkeydown = e => { if (e.key === "Enter") add() }
+}
+// ── Помидоро: 25 минут фокуса на одном деле (шаг мечты, цель, что угодно), потом 5 минут отдыха.
+// Конец помидора приходит пушем: это подсказка (nudges) со временем окончания — её шлёт таблица
+const POMO = { work: 25, rest: 5 }
+const pomoNow = () => { const p = live(D.pomo).filter(x => !x.end && x.start).sort((a, b) => b.start - a.start)[0]; return p && Date.now() < p.start + p.min * 60e3 ? p : null }
+const pomoToday = () => live(D.pomo).filter(x => x.full && sameDay(x.start, new Date()))
+function pomoStart(title, link = "", min = POMO.work) {
+  pomoStop()
+  min = Math.max(5, Math.min(90, Math.round(+min || POMO.work)))
+  const p = upsert("pomo", { id: uid("q"), date: Date.now(), start: Date.now(), min, title: String(title || "Фокус").trim(), link })
+  upsert("nudges", { id: "pq" + p.id, date: p.start + min * 60e3, title: "🍅 Помидор готов", text: `${min} минут на «${p.title}». Теперь ${POMO.rest} минут отдыха — встаньте, попейте воды.` })
+  save(); return p
+}
+function pomoStop() {
+  const p = live(D.pomo).filter(x => !x.end && x.start).sort((a, b) => b.start - a.start)[0]; if (!p) return null
+  const end = Math.min(Date.now(), p.start + p.min * 60e3), full = end >= p.start + p.min * 60e3 - 30e3
+  if (!full) remove("nudges", "pq" + p.id)
+  return upsert("pomo", Object.assign({}, p, { end, full }))
+}
+const pomoLeft = p => { const ms = Math.max(0, p.start + p.min * 60e3 - Date.now()), m = Math.floor(ms / 60e3), sec = Math.floor(ms / 1000) % 60; return `${m}:${String(sec).padStart(2, "0")}` }
+function pomoCard() {
+  const p = pomoNow(), n = pomoToday().length
+  let html = `<div class="card" id="pomo"><h2>🍅 Помидоро${n ? `<span class="muted small" style="margin-left:auto">сегодня ${n}</span>` : ""}</h2>`
+  if (p) return html + `<div class="wt"><b id="pomo-left">${pomoLeft(p)}</b><span class="muted small">${esc(p.title)}</span></div>
+    <div class="prog"><div id="pomo-bar" style="width:${Math.min(1, (Date.now() - p.start) / (p.min * 60e3)) * 100}%"></div></div>
+    <div class="btns" style="margin-top:10px"><button class="btn small" data-pomo="stop">Остановить</button></div></div>`
+  return html + `<div class="btns"><button class="btn primary" data-pomo="start">Фокус ${POMO.work} минут</button></div>
+    <div class="muted small" style="margin-top:8px">${n ? `${n * POMO.work} минут фокуса сегодня. ` : ""}Начните помидор с шага мечты (кнопка 🍅) или скажите помощнику «помидор на отчёт».</div></div>`
+}
+async function pomoAsk() {
+  const t = await ui.ask("🍅 Фокус 25 минут", "Над чем работаете?", "", { type: "text", ok: "Начать" })
+  if (t == null) return
+  pomoStart(t || "Фокус"); render(); toast(`🍅 ${POMO.work} минут. Когда закончится — придёт уведомление`)
+}
+setInterval(() => { const p = pomoNow(), el = $("#pomo-left"); if (el && p) { el.textContent = pomoLeft(p); const b = $("#pomo-bar"); if (b) b.style.width = Math.min(1, (Date.now() - p.start) / (p.min * 60e3)) * 100 + "%" } else if (el && !p && !stack.length) render() }, 1000)
 function goalsCard() {
   const l = goalsOf("month"), done = l.filter(g => g.done).length, day = new Date().getDate()
   if (!l.length && day > 7) return ""
@@ -2550,12 +2642,12 @@ function goalsForm(kind = "month") {
   const left = kind === "month" ? goalsLeft().filter(g => !l.some(x => normT(x.title) === normT(g.title))) : []
   const s = sheet(`<h3>${GOAL_KIND[kind][0]} ${kind === "month" ? "Цели на " + esc(core.monthTitle(curMonth()).toLowerCase()) : GOAL_KIND[kind][1]}</h3>
     <div class="seg" id="g-k">${Object.keys(GOAL_KIND).map(k => `<button data-k="${k}" class="${k === kind ? "on" : ""}">${{ month: "Месяц", wish: "Желания", dream: "Мечты" }[k]}</button>`).join("")}</div>
-    <div style="margin-top:10px">${l.map(g => `<div class="row"><button class="check ${g.done ? "on" : ""}" data-g="${esc(g.id)}"></button><div class="grow"><div class="t">${esc(g.title)}</div>${g.due ? `<div class="s">${esc(dueTxt(g.due))}</div>` : ""}</div><button class="btn small red" data-del="${esc(g.id)}">✕</button></div>`).join("")
-      || `<div class="empty">${kind === "wish" ? "Пишите всё, чего хочется, — большое и маленькое. Не получается? Нажмите «Подсказка» или «Помочь придумать»." : kind === "dream" ? "До 10 крупных мечт: на год, два, три и больше." : "3–5 целей на этот месяц."}</div>`}</div>
+    <div style="margin-top:10px">${l.map(g => `<div class="row"><button class="check ${g.done ? "on" : ""}" data-g="${esc(g.id)}"></button><div class="grow"><div class="t">${esc(g.title)}</div>${g.due || stepsOf(g).length ? `<div class="s">${esc([dueTxt(g.due), stepsTxt(g)].filter(Boolean).join(" · "))}</div>` : ""}</div>${kind === "dream" ? `<button class="btn small" data-steps="${esc(g.id)}">Шаги</button>` : ""}<button class="btn small red" data-del="${esc(g.id)}">✕</button></div>`).join("")
+      || `<div class="empty">${kind === "wish" ? "Пишите всё, чего хочется, — большое и маленькое. Не получается? Нажмите «Подсказка» или «Помочь придумать»." : kind === "dream" ? "До 10 крупных мечт на срок до 2 лет. Каждую можно разбить на шаги." : "3–5 целей на этот месяц."}</div>`}</div>
     ${left.length ? `<button class="btn small" data-a="carry" style="margin-top:8px">Перенести с прошлого месяца (${left.length})</button>` : ""}
     ${full ? `<div class="muted small" style="margin-top:12px">Все ${GOAL_MAX[kind]} мест заняты — отметьте сбывшееся или уберите лишнее.</div>` : `
     <div class="field" style="margin-top:12px"><label>${kind === "month" ? "Новая цель" : kind === "wish" ? `Желание №${l.length + 1}` : `Мечта №${l.length + 1}`}</label><input id="g-t" placeholder="${esc(kind === "month" ? "Пробежать 50 км, прочитать книгу…" : hints[hi])}"></div>
-    ${kind === "dream" ? `<div class="field"><label>Срок</label><div class="chips" id="g-y">${[1, 2, 3, 5].map(n => `<button class="chip ${n === 1 ? "on" : ""}" data-y="${n}">${n} ${plural(n, "год", "года", "лет")}</button>`).join("")}</div><input id="g-d" type="date" style="margin-top:8px" value="${yearAhead()}" max="${yearAhead(10)}" min="${dayKey(new Date())}"></div>` : ""}
+    ${kind === "dream" ? `<div class="field"><label>Срок</label><div class="chips" id="g-y">${[[0.5, "полгода"], [1, "1 год"], [1.5, "1,5 года"], [2, "2 года"]].map(([n, t]) => `<button class="chip ${n === 1 ? "on" : ""}" data-y="${n}">${t}</button>`).join("")}</div><input id="g-d" type="date" style="margin-top:8px" value="${yearAhead()}" max="${yearAhead(DREAM_MAX_Y)}" min="${dayKey(new Date())}"></div>` : ""}
     ${kind !== "month" ? `<div class="muted small" id="g-h">💡 ${esc(hints[hi])}</div>` : ""}`}
     <div class="btns" style="margin-top:10px">${kind !== "month" && !full ? '<button class="btn" data-a="hint">Подсказка</button>' : ""}<button class="btn" data-a="ai">Помочь придумать</button>${full ? "" : '<button class="btn primary" data-a="ok">Добавить</button>'}</div>`, { onClose: () => render() })
   const again = k => { s.close(); goalsForm(k) }
@@ -2563,13 +2655,14 @@ function goalsForm(kind = "month") {
   $$("#g-k button", s.el).forEach(b => b.onclick = () => again(b.dataset.k))
   $$("[data-g]", s.el).forEach(b => b.onclick = () => { const g = goalToggle(b.dataset.g); b.classList.toggle("on", !!(g && g.done)); if (g && g.done) toast(kind === "month" ? "🎯 Готово!" : "✨ Сбылось!") })
   $$("[data-del]", s.el).forEach(b => b.onclick = () => { remove("goals", b.dataset.del); again(kind) })
+  $$("[data-steps]", s.el).forEach(b => b.onclick = () => { s.close(); stepsForm(b.dataset.steps) })
   const carry = $('[data-a="carry"]', s.el); if (carry) carry.onclick = () => { goalAdd("month", left.map(g => g.title)); again(kind) }
   const hint = $('[data-a="hint"]', s.el); if (hint) hint.onclick = () => { hi = (hi + 1) % hints.length; $("#g-h", s.el).textContent = "💡 " + hints[hi]; $("#g-t", s.el).placeholder = hints[hi]; $("#g-t", s.el).focus() }
   $('[data-a="ai"]', s.el).onclick = () => {
     s.close(); setTab("chat")
     const have = l.map(g => g.title).join("; ")
     const q = kind === "wish" ? `Помоги дополнить мои «100 желаний» (сейчас ${l.length}${have ? ": " + have : ""}). Задавай по одному вопросу про разные стороны жизни и записывай мои ответы.`
-      : kind === "dream" ? `Помоги сформулировать крупные мечты — на год, два, три и дальше (сейчас ${l.length} из 10${have ? ": " + have : ""}). Спроси, что для меня важно, и запиши мечты со сроком.`
+      : kind === "dream" ? `Помоги сформулировать крупные мечты на срок до 2 лет (сейчас ${l.length} из 10${have ? ": " + have : ""}). Спроси, что для меня важно, запиши мечты со сроком и для каждой предложи 3–7 шагов (add_goal_steps).`
       : `Помоги поставить 3–5 целей на этот месяц${have ? ` (уже есть: ${have})` : ""}. Учти мои мечты и то, что не успел в прошлом месяце.`
     setTimeout(() => chatSend(q), 30)
   }
