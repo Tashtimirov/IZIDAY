@@ -67,6 +67,38 @@ const ICO = {
   send: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></svg>',
   add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   find: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>',
+  plans: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6.5h10M10 12h10M10 17.5h10"/><path d="M3.5 6.5l1.5 1.5 2.5-3M3.5 12l1.5 1.5 2.5-3"/><circle cx="5.3" cy="17.5" r="1.3"/></svg>',
+  cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9.5" cy="19.5" r="1.4"/><circle cx="17" cy="19.5" r="1.4"/><path d="M3 4h2.3l2.2 11h10.3l2-7.5H6.2"/></svg>',
+  star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>',
+  summit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 20l7-11.5 4 6.5 2.5-3.8L21.5 20z"/><path d="M9.5 8.5V3.5l3.5 1.6-3.5 1.6"/></svg>',
+  target: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".8"/></svg>',
+  list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/></svg>',
+  timer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 10v3.5l2.5 2M9.5 2.5h5M19 6.5l-1.5 1.5"/></svg>',
+  repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.5l3 3-3 3"/><path d="M4 11.5V10a4.5 4.5 0 0 1 4.5-4.5H20"/><path d="M7 21.5l-3-3 3-3"/><path d="M20 12.5V14a4.5 4.5 0 0 1-4.5 4.5H4"/></svg>',
+  leaf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19.5C5 11 10 5.5 19.5 4.5 18.8 13.5 13.5 19 5 19.5z"/><path d="M5 19.5l7.5-7.5"/></svg>',
+  car: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l1.6-4.3A2.2 2.2 0 0 1 8.7 6.2h6.6a2.2 2.2 0 0 1 2.1 1.5L19 12"/><rect x="3.5" y="12" width="17" height="5.5" rx="2"/><path d="M6.5 17.5v2M17.5 17.5v2M7 14.8h1M16 14.8h1"/></svg>',
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5L12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z"/><path d="M9.5 20.5v-6h5v6"/></svg>',
+  sparkle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z"/><path d="M18.5 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>',
+  shirt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 3.5L3.5 6.5l2 4 2-1v11h9v-11l2 1 2-4-5-3c-.6 1.5-1.9 2.5-3.5 2.5S9.1 5 8.5 3.5z"/></svg>',
+  drop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5s6 6.3 6 10.5a6 6 0 0 1-12 0c0-4.2 6-10.5 6-10.5z"/></svg>',
+  pill: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 20.5a5 5 0 0 1-7-7l6-6a5 5 0 0 1 7 7z"/><path d="M7 10l7 7"/></svg>',
+  heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"/></svg>',
+  gift: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="8" width="17" height="4" rx="1"/><path d="M5 12v8.5h14V12M12 8v12.5"/><path d="M12 8C10.5 4 7 3.5 7 6s5 2 5 2zM12 8c1.5-4 5-4.5 5-2s-5 2-5 2z"/></svg>',
+  plane: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4L3 11l7 2.5L12.5 21z"/><path d="M10 13.5L21 4"/></svg>',
+  book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V5.5A2 2 0 0 1 6 3.5h14v13H6a2 2 0 0 0-2 2 2 2 0 0 0 2 2h14"/></svg>',
+  activity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6.5 5 13 2.5-6.5h4"/></svg>',
+  dumbbell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 7v10M17.5 7v10M3.5 9.5v5M20.5 9.5v5M6.5 12h11"/></svg>',
+  apple: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7.5C10.8 5.6 8.3 5 6.4 6.2 3.9 7.8 4.2 12.3 5.7 15.6 7.2 19 9.2 20.8 12 19.5c2.8 1.3 4.8-.5 6.3-3.9 1.5-3.3 1.8-7.8-.7-9.4C15.7 5 13.2 5.6 12 7.5z"/><path d="M12 7.5c0-2 .9-3.4 2.8-4"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6L6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/></svg>',
+  pen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4.2-1L19 8.2a2.1 2.1 0 0 0-3-3L5.2 16z"/><path d="M14.5 6.5l3 3"/></svg>',
+  phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>',
+  ban: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  paw: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="10" r="1.8"/><circle cx="9.5" cy="5.8" r="1.8"/><circle cx="14.5" cy="5.8" r="1.8"/><circle cx="18" cy="10" r="1.8"/><path d="M12 12c-2.8 0-5 3.2-5 5.5 0 1.7 1.3 2.5 2.7 2.5 1 0 1.5-.5 2.3-.5s1.3.5 2.3.5c1.4 0 2.7-.8 2.7-2.5 0-2.3-2.2-5.5-5-5.5z"/></svg>',
+  tool: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6.5a4 4 0 0 0 5.2 5.2L13 18.5a2.1 2.1 0 0 1-3-3L16.8 8.7"/><path d="M14.5 6.5L17 4a4 4 0 0 1 3 3l-2.5 2.5"/><path d="M10 15.5L4.5 21"/></svg>',
+  chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5l6.5 6.5-6.5 6.5"/></svg>',
+  x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10M17 7L7 17"/></svg>',
   sync: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9"/><path d="M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2"/></svg>',
 }
 
@@ -629,6 +661,16 @@ const AGENT_TOOLS = [
   { name: "start_pomodoro", description: "Начать помидор: фокус на одном деле (по умолчанию 25 минут, потом 5 минут отдыха). Когда время выйдет — придёт уведомление.",
     input_schema: { type: "object", properties: { title: { type: "string", description: "Над чем работаем" }, minutes: { type: "number" } } } },
   { name: "stop_pomodoro", description: "Остановить текущий помидор.", input_schema: { type: "object", properties: {} } },
+  { name: "add_chore", description: "«Снова пора»: дело, которое повторяется раз в N дней (полить цветы — 3, помыть машину — 14, сменить постель — 7). last_done — YYYY-MM-DD, когда делали в последний раз (если сказали). То же название — обновит.",
+    input_schema: { type: "object", properties: { title: { type: "string" }, every_days: { type: "number" }, last_done: { type: "string" } }, required: ["title", "every_days"] } },
+  { name: "chore_done", description: "Отметить «снова пора» сделанным (сегодня или date YYYY-MM-DD) — следующий раз посчитается сам.", input_schema: { type: "object", properties: { title: { type: "string" }, date: { type: "string" } }, required: ["title"] } },
+  { name: "get_chores", description: "Дела «снова пора»: как часто, когда делали, когда снова пора (самое срочное — первым).", input_schema: { type: "object", properties: {} } },
+  { name: "delete_chore", description: "Удалить дело «снова пора» по id (из get_chores).", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "add_list_items", description: "Свои списки пользователя (на выходные, в отпуск, подарки, фильмы…): добавить пункты в список list (название). Нет такого и create=true — создать. Для покупок — add_shopping, для желаний и мечт — add_goal.",
+    input_schema: { type: "object", properties: { list: { type: "string" }, items: { type: "array", items: { type: "string" } }, create: { type: "boolean" } }, required: ["list", "items"] } },
+  { name: "list_item_done", description: "Отметить пункты своего списка (done=false — снять отметку).", input_schema: { type: "object", properties: { list: { type: "string" }, items: { type: "array", items: { type: "string" } }, done: { type: "boolean" } }, required: ["list", "items"] } },
+  { name: "get_lists", description: "Свои списки пользователя и пункты в них.", input_schema: { type: "object", properties: {} } },
+  { name: "delete_list", description: "Удалить свой список целиком по id (из get_lists) — только если пользователь прямо попросил.", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "add_goal_steps", description: "Разбить мечту (или цель) на шаги: goal — название или id, steps — шаги по порядку («узнать цены», «накопить 30%»). Повторы не добавляются.",
     input_schema: { type: "object", properties: { goal: { type: "string" }, steps: { type: "array", items: { type: "string" } } }, required: ["goal", "steps"] } },
   { name: "goal_step_done", description: "Отметить шаг мечты сделанным (done=false — снять отметку).", input_schema: { type: "object", properties: { goal: { type: "string" }, step: { type: "string" }, done: { type: "boolean" } }, required: ["goal", "step"] } },
@@ -1017,6 +1059,21 @@ async function runTool(name, x) {
       return out }
     case "start_pomodoro": { const p = pomoStart(x.title, "", x.minutes); return { ok: true, title: p.title, minutes: p.min, ends: iso(new Date(p.start + p.min * 60e3)), today_done: pomoToday().length } }
     case "stop_pomodoro": { const p = pomoStop(); return p ? { ok: true, title: p.title, completed: !!p.full, today_done: pomoToday().length } : { error: "помидор не идёт" } }
+    case "add_chore": { const last = /^\d{4}-\d\d-\d\d$/.test(x.last_done || "") ? +new Date(x.last_done + "T12:00") : undefined
+      const c = choreAdd(x.title, x.every_days, last); if (!c) return { error: "нужно название" }
+      return { ok: true, id: c.id, title: c.title, every: everyTxt(c.every), next: choreWhen(c) } }
+    case "chore_done": { const c = choreFind(x.title); if (!c) return { error: "нет такого дела", have: chores().map(z => z.title) }
+      const at = /^\d{4}-\d\d-\d\d$/.test(x.date || "") ? +new Date(x.date + "T12:00") : Date.now(), r = choreDone(c.id, at); return { ok: true, title: r.title, next: choreWhen(r) } }
+    case "get_chores": return { items: chores().map(c => ({ id: c.id, title: c.title, every_days: c.every, last_done: c.last ? dayKey(new Date(c.last)) : null, next: choreWhen(c) })) }
+    case "delete_chore": { const c = chores().find(z => z.id === x.id); if (!c) return { error: "нет такого" }; remove("goals", c.id); return { ok: true } }
+    case "add_list_items": { let l = listFind(x.list); if (!l && x.create !== false) l = listNew(x.list); if (!l) return { error: "нет такого списка", have: myLists().map(z => z.title) }
+      const a = listItems(l.id, x.items || []); return { ok: true, list: l.title, added: a.map(z => z.t), total: itemsOf(D.goals.find(z => z.id === l.id)).length } }
+    case "list_item_done": { const l = listFind(x.list); if (!l) return { error: "нет такого списка", have: myLists().map(z => z.title) }
+      const got = []; for (const t of x.items || []) { const n = normT(t), it = itemsOf(D.goals.find(z => z.id === l.id)), i = it.find(z => normT(z.t) === n) || it.find(z => normT(z.t).includes(n) || n.includes(normT(z.t)))
+        if (i) { listItemSet(l.id, i.id, { done: x.done !== false }); got.push(i.t) } }
+      return got.length ? { ok: true, marked: got } : { error: "нет таких пунктов", items: itemsOf(l).map(z => z.t) } }
+    case "get_lists": return { lists: myLists().map(l => ({ id: l.id, title: l.title, items: itemsOf(l).map(i => ({ item: i.t, done: !!i.done })) })) }
+    case "delete_list": { const l = myLists().find(z => z.id === x.id); if (!l) return { error: "нет такого" }; remove("goals", l.id); return { ok: true } }
     case "add_goal_steps": { const g = goalFind(x.goal, "dream") || goalFind(x.goal); if (!g) return { error: "не нашёл такую мечту или цель" }
       const a = goalSteps(g.id, x.steps || []); return { ok: true, goal: g.title, added: a.map(z => z.t), steps: stepsOf(D.goals.find(z => z.id === g.id)).map(z => z.t) } }
     case "goal_step_done": { const g = goalFind(x.goal, "dream") || goalFind(x.goal); if (!g) return { error: "не нашёл такую мечту или цель" }
@@ -1024,8 +1081,8 @@ async function runTool(name, x) {
       const g2 = stepSet(g.id, st.id, { done: x.done !== false, doneAt: x.done !== false ? Date.now() : 0 })
       return { ok: true, step: st.t, progress: stepsTxt(g2), all_done: stepsOf(g2).every(z => z.done) } }
     case "goal_done": { const got = []; for (const t of x.items || []) { const g = goalFind(t, x.kind); if (g) { goalToggle(g.id, x.done !== false); got.push(g.title) } }
-      return got.length ? { ok: true, marked: got } : { error: "не нашёл такую цель", have: live(D.goals).filter(g => !x.kind || g.kind === x.kind).map(g => g.title).slice(0, 30) } }
-    case "delete_goal": { if (!live(D.goals).some(g => g.id === x.id)) return { error: "нет такой" }; remove("goals", x.id); return { ok: true } }
+      return got.length ? { ok: true, marked: got } : { error: "не нашёл такую цель", have: live(D.goals).filter(g => x.kind ? g.kind === x.kind : GOAL_KIND[g.kind]).map(g => g.title).slice(0, 30) } }
+    case "delete_goal": { if (!live(D.goals).some(g => g.id === x.id && GOAL_KIND[g.kind])) return { error: "нет такой" }; remove("goals", x.id); return { ok: true } }
     case "set_protein_goal": {
       const n = Math.round(+x.grams)
       if (!(n >= 30 && n <= 400)) return { error: "цель белка — от 30 до 400 г" }
@@ -1711,7 +1768,7 @@ async function eventSheet(e) {
 async function addMenu() {
   const glass = H().glass || 250
   const opts = [["💬 Сказать помощнику", () => { setTab("chat"); setTimeout(micStart, 300) }], ["➖ Расход", () => moneyForm("expense")], ["➕ Доход", () => moneyForm("income")],
-    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()], ["🛒 Покупка", shopForm], ["👧 Дела детей", kidsForm], ["🎯 Цель или желание", () => goalsForm("month")], ["🍅 Помидоро — фокус 25 мин", pomoAsk],
+    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()], ["🛒 Покупка", shopForm], ["👧 Дела детей", kidsForm], ["🎯 Цель или желание", () => goalsForm("month")], ["🔁 Снова пора: повторяющееся дело", () => choreForm()], ["📋 Новый список", listForm], ["⏱ Помидоро — фокус 25 мин", pomoAsk],
     ["⏰ Напоминание", reminderForm], ["📅 Событие", eventForm]]
   const i = await ui.choose("Добавить", "", opts.map(o => o[0]))
   if (i >= 0) opts[i][1]()
@@ -1722,6 +1779,7 @@ let tab = "today", selDay = sod(new Date()), monthKey = null, hiddenAt = 0
 function setTab(t) {
   tab = t
   $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t))
+  $("#gear").classList.toggle("on", t === "more")
   document.body.classList.toggle("chat", t === "chat")
   render()
   if (t === "chat") setTimeout(() => scrollView(true), 30)
@@ -1731,7 +1789,7 @@ function setTab(t) {
 // плавное появление карточек — только при смене вкладки
 let lastHTML = "", lastTab = ""
 function render() {
-  const fn = { today: renderToday, chat: renderChatHTML, money: renderMoney, health: renderHealth, more: renderMore }[tab]
+  const fn = { today: renderToday, plans: renderPlans, chat: renderChatHTML, money: renderMoney, health: renderHealth, more: renderMore }[tab]
   const html = fn(), v = $("#view")
   if (html === lastHTML && tab === lastTab && v.firstChild) { renderTop(); return }
   const strip = $("#strip", v), keep = strip && tab === lastTab ? strip.scrollLeft : null
@@ -1743,7 +1801,7 @@ function render() {
   if (tab === "more") pushCard()
   renderTop()
 }
-const TITLES = { chat: "Помощник", money: "Деньги", health: "Здоровье", more: "Ещё" }
+const TITLES = { plans: "Планы", chat: "Помощник", money: "Деньги", health: "Здоровье", more: "Настройки" }
 function renderTop() {
   const v = iphone()
   if (tab === "today") { const d = new Date(); $("#top-title").innerHTML = `${esc(core.cap(WDF[d.getDay()]))}<span class="dt">${d.getDate()} ${MONTHS_GEN[d.getMonth()]}</span>` }
@@ -1817,7 +1875,8 @@ function renderToday() {
   html += kidsCard(selDay)
   if (isToday && shopOpen().length) html += shopCard()
   if (isToday) html += habitsCard(selDay)
-  if (isToday) html += pomoCard()
+  if (isToday) html += choresToday()
+  if (isToday && pomoNow()) html += pomoCard()
   if (isToday) html += goalsCard()
   if (isToday) {
     const h = dayHealth(), g = H()
@@ -2031,7 +2090,6 @@ function renderMore() {
     <div class="set"><span>Стакан, мл</span><input type="number" data-set="glass" value="${g.glass}"></div>
     <div class="set"><span>Калории в день, ккал</span><input type="number" data-set="kcalGoal" value="${g.kcalGoal || 2000}"></div>
     <div class="set"><span>Вес, кг (для тренировок)</span><input type="number" data-set="weight" value="${g.weight}"></div></div>`
-  html += goalsMore()
   html += `<div class="card"><h2>Кнопки виджета</h2><div class="muted small">🎤 и 💬 открывают помощника, 📷 — еду по фото, ${esc(core.CONFIG.currency)} — расход, 💧 — стакан воды. Ссылки из виджета открываются в Safari — данные там те же, через таблицу.</div></div>`
   html += `<div class="muted small" style="text-align:center;margin:14px 0">Мой день · веб-приложение</div>`
   return html
@@ -2175,6 +2233,12 @@ function bind() {
     const f = fastStart(+k); render(); toast(`⏱ Окно откроется в ${hm(new Date(f.start + f.hours * 3600e3))}`) })
   $$("[data-goal]", v).forEach(b => b.onclick = () => { const g = goalToggle(b.dataset.goal); if (navigator.vibrate) navigator.vibrate(10); render(); if (g && g.done) toast("🎯 Готово!") })
   $$("[data-goals]", v).forEach(b => b.onclick = () => goalsForm(b.dataset.goals))
+  $$("[data-pf]", v).forEach(b => b.onclick = () => { plansF = b.dataset.pf; render(); scrollView(false) })
+  $$("[data-list]", v).forEach(b => b.onclick = () => listOpen(b.dataset.list))
+  $$("[data-chore]", v).forEach(el => el.onclick = () => choreForm(D.goals.find(z => z.id === el.dataset.chore)))
+  $$("[data-chore-done]", v).forEach(b => b.onclick = ev => { ev.stopPropagation(); const c = choreDone(b.dataset.choreDone); if (navigator.vibrate) navigator.vibrate(10); b.classList.add("on"); setTimeout(render, 300); toast(`Готово. Снова — ${choreWhen(c)}`) })
+  $$("[data-hd]", v).forEach(b => b.onclick = () => { const h = D.habits.find(z => z.id === b.dataset.hd), on = habitToggle(h, new Date(+b.dataset.hdd)); if (navigator.vibrate) navigator.vibrate(10); render()
+    if (on && !h.bad && sameDay(+b.dataset.hdd, new Date())) { const st = habitStreak(h); if (st > 1) toast(`Серия ${st} ${plural(st, "день", "дня", "дней")}`) } })
   $$("[data-pomo]", v).forEach(b => b.onclick = () => { if (b.dataset.pomo === "stop") { const p = pomoStop(); render(); return toast(p && p.full ? "🍅 Готово" : "Помидор остановлен") } pomoAsk() })
   $$("[data-habit]", v).forEach(b => b.onclick = () => {
     const h = D.habits.find(z => z.id === b.dataset.habit)
@@ -2214,7 +2278,7 @@ const DO = {
   "go-today": () => { selDay = sod(new Date()); stripCenter = null; stripJump = true; render(); if (stripJump) stripInit(null) },
   "tab-money": () => setTab("money"), "tab-health": () => setTab("health"), report: () => showReport("month"),
   sheet: () => window.open(D.conn.sheetUrl, "_blank"),
-  budgets: () => budgetForm(), "recur-add": () => recurForm(), habits: () => habitsForm(), weight: () => weightForm(), shop: () => shopForm(), kids: () => kidsForm(), goals: () => goalsForm("month"), search: () => searchSheet(),
+  budgets: () => budgetForm(), "recur-add": () => recurForm(), "chore-add": () => choreForm(), "list-add": () => listForm(), habits: () => habitsForm(), weight: () => weightForm(), shop: () => shopForm(), kids: () => kidsForm(), goals: () => goalsForm("month"), search: () => searchSheet(),
   sync: () => (!D.conn || !D.conn.hook) ? DO.connect() : sync().then(ok => toast(ok ? "Обновлено" : `Не получилось: ${D.sync.error || "нет связи"}`)),
   "run-widget": () => sync().then(runWidgetNow),
   autoconnect: () => autoConnect(),
@@ -2372,21 +2436,24 @@ function habitsCard(day) {
   html += `<div class="habits">${list.map(h => {
     const on = habitOn(h, day), st = habitStreak(h, day)
     const sub = h.bad ? (on ? "было" : `${st} ${plural(st, "день", "дня", "дней")} без`) : (st ? `${st} ${plural(st, "день", "дня", "дней")} подряд` : isT ? "ещё не сегодня" : "не было")
-    return `<button class="habit ${on ? "on" : ""} ${h.bad ? "bad" : ""}" data-habit="${esc(h.id)}"><i>${esc(h.emoji || (h.bad ? "🚫" : "✓"))}</i><b>${esc(h.title)}</b><span>${esc(sub)}</span></button>`
+    return `<button class="habit ${on ? "on" : ""} ${h.bad ? "bad" : ""}" data-habit="${esc(h.id)}"><i>${ICO[habitIco(h)]}</i><b>${esc(h.title)}</b><span>${esc(sub)}</span></button>`
   }).join("")}</div></div>`
   return html
 }
-const HABIT_EMOJI = ["🏃", "📖", "🧘", "💪", "🥗", "😴", "🍷", "🚬", "📵", "🍬", "💊", "✍️"]
+const HABIT_ICO = ["activity", "dumbbell", "book", "sun", "apple", "moon", "drop", "pill", "pen", "phone", "heart", "ban"]
+const EMO_ICO = { "🏃": "activity", "📖": "book", "🧘": "sun", "💪": "dumbbell", "🥗": "apple", "😴": "moon", "🍷": "ban", "🚬": "ban", "📵": "phone", "🍬": "ban", "💊": "pill", "✍️": "pen", "💧": "drop" }
+const ICO_EMO = { activity: "🏃", dumbbell: "💪", book: "📖", sun: "🧘", apple: "🥗", moon: "😴", drop: "💧", pill: "💊", pen: "✍️", phone: "📵", heart: "❤️", ban: "🚫" }   // смайлик — для виджета
+const habitIco = h => (h.ico && ICO[h.ico] ? h.ico : EMO_ICO[h.emoji]) || (h.bad ? "ban" : "check")
 function habitsForm() {
   const s = sheet(`<h3>Привычки</h3>
-    <div id="h-list">${habitList().map(h => `<div class="row"><span>${esc(h.emoji || "✓")}</span><div class="grow"><div class="t">${esc(h.title)}</div><div class="s">${h.bad ? "бросаю" : "хочу делать"}</div></div><button class="btn small red" data-del="${esc(h.id)}">Убрать</button></div>`).join("") || '<div class="empty">Пока нет привычек</div>'}</div>
+    <div id="h-list">${habitList().map(h => `<div class="row">${icoBox(habitIco(h), h.bad ? "red" : "")}<div class="grow"><div class="t">${esc(h.title)}</div><div class="s">${h.bad ? "бросаю" : "хочу делать"}</div></div><button class="btn small red" data-del="${esc(h.id)}">Убрать</button></div>`).join("") || '<div class="empty">Пока нет привычек</div>'}</div>
     <div class="field" style="margin-top:12px"><label>Новая привычка</label><input id="h-t" placeholder="Зарядка, чтение, без алкоголя…"></div>
-    <div class="field"><div class="chips" id="h-e">${HABIT_EMOJI.map(e => `<button class="chip" data-e="${e}">${e}</button>`).join("")}</div></div>
-    <div class="field"><div class="seg" id="h-k"><button data-k="good" class="on">✓ Хочу делать</button><button data-k="bad">🚫 Хочу бросить</button></div></div>
+    <div class="field"><label>Значок</label><div class="icos" id="h-e">${HABIT_ICO.map(e => `<button class="icon-pick" data-e="${e}">${icoBox(e, e === "ban" ? "red" : "")}</button>`).join("")}</div></div>
+    <div class="field"><div class="seg" id="h-k"><button data-k="good" class="on">Хочу делать</button><button data-k="bad">Хочу бросить</button></div></div>
     <div class="btns"><button class="btn" data-a="no">Готово</button><button class="btn primary" data-a="ok">Добавить</button></div>`, { onClose: () => render() })
   let emoji = "", bad = false
-  const paint = () => { $$("#h-e .chip", s.el).forEach(b => b.classList.toggle("on", b.dataset.e === emoji)); $$("#h-k button", s.el).forEach(b => b.classList.toggle("on", (b.dataset.k === "bad") === bad)) }
-  $$("#h-e .chip", s.el).forEach(b => b.onclick = () => { emoji = b.dataset.e; paint() })
+  const paint = () => { $$("#h-e button", s.el).forEach(b => b.classList.toggle("on", b.dataset.e === emoji)); $$("#h-k button", s.el).forEach(b => b.classList.toggle("on", (b.dataset.k === "bad") === bad)) }
+  $$("#h-e button", s.el).forEach(b => b.onclick = () => { emoji = b.dataset.e; paint() })
   $$("#h-k button", s.el).forEach(b => b.onclick = () => { bad = b.dataset.k === "bad"; paint() })
   $("#h-t", s.el).oninput = ev => { if (/алког|кур|сигар|сладк|соцсет|телефон|без /i.test(ev.target.value) && !bad) { bad = true; paint() } }
   $$("[data-del]", s.el).forEach(b => b.onclick = async () => {
@@ -2398,7 +2465,7 @@ function habitsForm() {
   $('[data-a="ok"]', s.el).onclick = () => {
     const title = $("#h-t", s.el).value.trim()
     if (!title) return toast("Напишите привычку")
-    upsert("habits", { id: uid("h"), date: Date.now(), title, emoji: emoji || (bad ? "🚫" : "✓"), bad })
+    upsert("habits", { id: uid("h"), date: Date.now(), title, ico: emoji || (bad ? "ban" : "check"), emoji: ICO_EMO[emoji] || (bad ? "🚫" : "✓"), bad })
     s.close(); habitsForm(); toast("Добавлено")
   }
 }
@@ -2520,6 +2587,7 @@ function fastCard() {
 // ── Цели: на месяц, «100 желаний» (с подсказками), «10 мечт» — крупное, на срок до 2 лет, с разбивкой на шаги ──
 const GOAL_KIND = { month: ["🎯", "На месяц"], wish: ["✨", "100 желаний"], dream: ["🌠", "10 мечт"] }
 const GOAL_MAX = { month: 0, wish: 100, dream: 10 }
+const GOAL_ICO = { month: "target", wish: "star", dream: "summit" }
 const WISH_HINTS = ["Куда хочу поехать?", "Чему хочу научиться?", "Что хочу попробовать впервые?", "Что хочу сделать вместе с детьми?", "Что хочу для семьи и дома?",
   "Каким хочу чувствовать своё тело?", "Сколько хочу зарабатывать и откладывать?", "С кем хочу встретиться или подружиться?", "Какое приключение хочу пережить?",
   "Что хочу сделать для других?", "Какие книги и фильмы хочу открыть?", "Что хочу создать своими руками?", "Какой рабочий навык хочу прокачать?",
@@ -2543,7 +2611,7 @@ function goalAdd(kind, items, due) {
   }
   return { added: out, total: have.length + out.length }
 }
-function goalFind(t, kind) { const n = normT(t), l = live(D.goals).filter(g => g.title && (!kind || g.kind === kind) && (g.kind !== "month" || g.month === curMonth()))
+function goalFind(t, kind) { const n = normT(t), l = live(D.goals).filter(g => g.title && (kind ? g.kind === kind : GOAL_KIND[g.kind]) && (g.kind !== "month" || g.month === curMonth()))
   return l.find(g => g.id === t || normT(g.title) === n) || l.find(g => normT(g.title).includes(n) || n.includes(normT(g.title))) }
 function goalToggle(id, done) { const g = D.goals.find(x => x.id === id); if (g) return upsert("goals", Object.assign({}, g, { done: done == null ? !g.done : !!done, doneAt: (done == null ? !g.done : done) ? Date.now() : 0 })) }
 const goalsLeft = () => { const p = new Date(); p.setDate(0); return goalsOf("month", core.monthKey(p)).filter(g => !g.done) }   // незавершённые прошлого месяца
@@ -2610,12 +2678,12 @@ function pomoStop() {
 const pomoLeft = p => { const ms = Math.max(0, p.start + p.min * 60e3 - Date.now()), m = Math.floor(ms / 60e3), sec = Math.floor(ms / 1000) % 60; return `${m}:${String(sec).padStart(2, "0")}` }
 function pomoCard() {
   const p = pomoNow(), n = pomoToday().length
-  let html = `<div class="card" id="pomo"><h2>🍅 Помидоро${n ? `<span class="muted small" style="margin-left:auto">сегодня ${n}</span>` : ""}</h2>`
+  let html = `<div class="card" id="pomo"><h2>Помидоро${n ? `<span class="muted small" style="margin-left:auto">сегодня ${n}</span>` : ""}</h2>`
   if (p) return html + `<div class="wt"><b id="pomo-left">${pomoLeft(p)}</b><span class="muted small">${esc(p.title)}</span></div>
     <div class="prog"><div id="pomo-bar" style="width:${Math.min(1, (Date.now() - p.start) / (p.min * 60e3)) * 100}%"></div></div>
     <div class="btns" style="margin-top:10px"><button class="btn small" data-pomo="stop">Остановить</button></div></div>`
   return html + `<div class="btns"><button class="btn primary" data-pomo="start">Фокус ${POMO.work} минут</button></div>
-    <div class="muted small" style="margin-top:8px">${n ? `${n * POMO.work} минут фокуса сегодня. ` : ""}Начните помидор с шага мечты (кнопка 🍅) или скажите помощнику «помидор на отчёт».</div></div>`
+    <div class="muted small" style="margin-top:8px">${n ? `${n * POMO.work} минут фокуса сегодня. ` : ""}Начните с шага мечты или скажите помощнику «помидор на отчёт».</div></div>`
 }
 async function pomoAsk() {
   const t = await ui.ask("🍅 Фокус 25 минут", "Над чем работаете?", "", { type: "text", ok: "Начать" })
@@ -2623,18 +2691,18 @@ async function pomoAsk() {
   pomoStart(t || "Фокус"); render(); toast(`🍅 ${POMO.work} минут. Когда закончится — придёт уведомление`)
 }
 setInterval(() => { const p = pomoNow(), el = $("#pomo-left"); if (el && p) { el.textContent = pomoLeft(p); const b = $("#pomo-bar"); if (b) b.style.width = Math.min(1, (Date.now() - p.start) / (p.min * 60e3)) * 100 + "%" } else if (el && !p && !stack.length) render() }, 1000)
-function goalsCard() {
+function goalsCard(always) {
   const l = goalsOf("month"), done = l.filter(g => g.done).length, day = new Date().getDate()
-  if (!l.length && day > 7) return ""
-  let html = `<div class="card" id="goals"><h2>🎯 Цели на месяц<button class="act" data-do="goals">${l.length ? `${done} из ${l.length}` : "+ Поставить"}</button></h2>`
+  if (!l.length && day > 7 && !always) return ""
+  let html = `<div class="card" id="goals"><h2>Цели на месяц<button class="act" data-do="goals">${l.length ? `${done} из ${l.length}` : "+ Поставить"}</button></h2>`
   if (!l.length) return html + `<div class="empty">Новый месяц — 3–5 целей на него. Можно сказать помощнику: «цели на месяц: …»${goalsLeft().length ? `. С прошлого осталось ${goalsLeft().length}.` : ""}</div></div>`
   html += l.map(g => `<div class="row"><button class="check ${g.done ? "on" : ""}" data-goal="${esc(g.id)}"></button><div class="grow"><div class="t">${esc(g.title)}</div></div></div>`).join("")
   return html + `<div class="prog"><div style="width:${done / l.length * 100}%"></div></div></div>`
 }
 function goalsMore() {
   const n = k => goalsOf(k).length, d = k => goalsOf(k).filter(g => g.done).length
-  return `<div class="card"><h2>Цели и мечты</h2>${["month", "wish", "dream"].map(k => `<button class="row" style="width:100%;text-align:left;background:none;border:0;padding:10px 0" data-goals="${k}"><span class="pin">${GOAL_KIND[k][0]}</span>
-    <div class="grow"><div class="t">${GOAL_KIND[k][1]}</div><div class="s">${n(k) ? `${d(k)} ${k === "month" ? "сделано" : "сбылось"} из ${n(k)}${GOAL_MAX[k] ? ` · мест ${GOAL_MAX[k]}` : ""}` : k === "wish" ? "Пишите всё, чего хочется: большое и маленькое" : k === "dream" ? "Крупное: на год, два, три" : "3–5 целей на этот месяц"}</div></div><span class="muted">›</span></button>`).join("")}</div>`
+  return `<div class="card"><h2>Цели и мечты</h2>${["month", "wish", "dream"].map(k => `<button class="row list-row" data-goals="${k}">${icoBox(GOAL_ICO[k])}
+    <div class="grow"><div class="t">${GOAL_KIND[k][1]}</div><div class="s">${n(k) ? `${d(k)} ${k === "month" ? "сделано" : "сбылось"} из ${n(k)}${GOAL_MAX[k] ? ` · мест ${GOAL_MAX[k]}` : ""}` : k === "wish" ? "Пишите всё, чего хочется: большое и маленькое" : k === "dream" ? "Крупное: на год, два, три" : "3–5 целей на этот месяц"}</div></div><span class="chev">${ICO.chev}</span></button>`).join("")}</div>`
 }
 function goalsForm(kind = "month") {
   const l = goalsOf(kind), hints = kind === "dream" ? DREAM_HINTS : WISH_HINTS, full = GOAL_MAX[kind] && l.length >= GOAL_MAX[kind]
@@ -2670,6 +2738,193 @@ function goalsForm(kind = "month") {
   if (ok) { const add = () => { const t = $("#g-t", s.el).value.trim(); if (!t) return toast("Напишите, что хотите")
       const r = goalAdd(kind, [t], kind === "dream" ? $("#g-d", s.el).value : ""); again(kind); toast(r.added.length ? (kind === "wish" ? `✨ ${r.total} из 100` : "Добавлено") : "Уже есть") }
     ok.onclick = add; $("#g-t", s.el).onkeydown = e => { if (e.key === "Enter") add() } }
+}
+
+// ═════════════ Планы: списки, привычки по неделе, «Снова пора», цели, помидоро ═════════════
+// Свои списки и «снова пора» живут в синхронизируемом списке goals (kind: "list" / "chore") — виджет и таблица их пропускают
+const TONE = { cart: "orange", star: "pink", summit: "violet", target: "green", list: "blue", leaf: "green", car: "blue", home: "orange", sparkle: "violet", shirt: "blue",
+  drop: "blue", pill: "pink", heart: "pink", repeat: "green", gift: "pink", plane: "blue", book: "orange", timer: "pink", activity: "green", dumbbell: "orange",
+  apple: "green", moon: "violet", sun: "orange", pen: "blue", phone: "blue", ban: "red", check: "green", paw: "orange", tool: "blue" }
+const icoBox = (k, tone) => `<span class="ic ${tone || TONE[k] || "green"}">${ICO[k] || ICO.list}</span>`
+let plansF = "all"
+const PLAN_F = [["all", "Всё"], ["lists", "Списки"], ["habits", "Привычки"], ["again", "Снова пора"], ["goals", "Цели"]]
+function renderPlans() {
+  const f = plansF, all = f === "all"
+  let html = `<div class="chips pf">${PLAN_F.map(([k, t]) => `<button class="chip ${f === k ? "on" : ""}" data-pf="${k}">${t}</button>`).join("")}</div>`
+  if (all || f === "again") html += choresCard(all ? 4 : 0)
+  if (all || f === "lists") html += listsCard()
+  if (all || f === "habits") html += habitsWeek()
+  if (all || f === "goals") html += goalsCard(true)
+  if (f === "goals") html += goalsMore()
+  if (all || f === "goals") html += pomoCard()
+  return html
+}
+
+// ── «Снова пора»: дела, которые повторяются раз в N дней (полить цветы, помыть машину, сменить постель)
+const CHORE_ICO = ["leaf", "home", "sparkle", "shirt", "car", "drop", "pill", "heart", "paw", "tool", "cart", "repeat"]
+const chores = () => live(D.goals).filter(g => g.kind === "chore" && g.title).sort((a, b) => choreLeft(a) - choreLeft(b) || a.date - b.date)
+const choreDue = c => c.last ? addDays(sod(new Date(c.last)), Math.max(1, +c.every || 7)) : sod(new Date())
+const choreLeft = c => Math.round((choreDue(c) - sod(new Date())) / 864e5)
+const choreWhen = c => { const n = choreLeft(c); return n < 0 ? `просрочено на ${-n} ${plural(-n, "день", "дня", "дней")}` : n === 0 ? "сегодня" : n === 1 ? "завтра" : `через ${n} ${plural(n, "день", "дня", "дней")}` }
+const everyTxt = n => +n === 1 ? "каждый день" : +n === 7 ? "раз в неделю" : +n === 14 ? "раз в 2 недели" : +n === 30 ? "раз в месяц" : `каждые ${n} ${plural(+n, "день", "дня", "дней")}`
+const agoTxt = t => { if (!t) return "ещё не делали"; const n = Math.round((sod(new Date()) - sod(new Date(t))) / 864e5); return n <= 0 ? "сделано сегодня" : n === 1 ? "было вчера" : `было ${n} ${plural(n, "день", "дня", "дней")} назад` }
+function choreAdd(title, every, last, ico) {
+  title = String(title || "").trim(); if (!title) return null
+  const old = chores().find(c => normT(c.title) === normT(title))
+  return upsert("goals", Object.assign({}, old || { id: uid("o"), date: Date.now(), kind: "chore" }, { title: title.charAt(0).toUpperCase() + title.slice(1),
+    every: Math.max(1, Math.min(365, Math.round(+every || (old && old.every) || 7))), last: last != null ? last : (old ? old.last : 0), ico: ico || (old && old.ico) || choreGuess(title) }))
+}
+const choreGuess = t => /цвет|полив|растен|сад/i.test(t) ? "leaf" : /машин|авто|шин|масл/i.test(t) ? "car" : /стир|постел|бель|полотен/i.test(t) ? "shirt" : /убор|пыл|пылесос|мыть пол|холодил/i.test(t) ? "sparkle"
+  : /кош|собак|корм|лоток|питом/i.test(t) ? "paw" : /фильтр|вод/i.test(t) ? "drop" : /таблет|витамин|лекар/i.test(t) ? "pill" : /стриж|парикмах|ногт|врач|стомат/i.test(t) ? "heart" : /ремонт|почин|батар/i.test(t) ? "tool" : "repeat"
+const choreFind = q => { const n = normT(q); return chores().find(c => c.id === q || normT(c.title) === n) || chores().find(c => normT(c.title).includes(n) || n.includes(normT(c.title))) }
+function choreDone(id, at = Date.now()) { const c = D.goals.find(x => x.id === id); return c ? upsert("goals", Object.assign({}, c, { last: at })) : null }
+const choreRow = c => { const n = choreLeft(c)
+  return `<div class="row chore" data-chore="${esc(c.id)}">${icoBox(c.ico || "repeat")}<div class="grow"><div class="t">${esc(c.title)}</div><div class="s">${esc(everyTxt(c.every))} · ${esc(agoTxt(c.last))}</div></div>
+    <span class="due ${n < 0 ? "late" : n === 0 ? "now" : ""}">${esc(choreWhen(c))}</span><button class="check" data-chore-done="${esc(c.id)}" aria-label="Сделано"></button></div>` }
+function choresCard(max = 0) {
+  const l = chores(), show = max ? l.slice(0, max) : l
+  let html = `<div class="card" id="chores"><h2>Снова пора<button class="act" data-do="chore-add">+ Дело</button></h2>`
+  if (!l.length) return html + `<div class="empty">Дела, которые повторяются: полить цветы раз в 3 дня, помыть машину раз в 2 недели, сменить постель раз в неделю. Отметили — приложение посчитает, когда снова пора.</div></div>`
+  html += show.map(choreRow).join("")
+  if (max && l.length > max) html += `<button class="more-link" data-pf="again">Все дела · ${l.length}</button>`
+  return html + `</div>`
+}
+function choresToday() {
+  const l = chores().filter(c => choreLeft(c) <= 0)
+  return l.length ? `<div class="card" id="chores-today"><h2>Снова пора<span class="muted small">${l.length}</span></h2>${l.map(choreRow).join("")}</div>` : ""
+}
+function choreForm(c) {
+  let every = c ? c.every : 7, ico = c ? c.ico : ""
+  const s = sheet(`<h3>${c ? esc(c.title) : "Снова пора"}</h3>
+    <div class="field"><label>Что делать</label><input id="c-t" value="${c ? esc(c.title) : ""}" placeholder="Полить цветы, помыть машину…"></div>
+    <div class="field"><label>Как часто</label><div class="chips" id="c-n">${[[1, "каждый день"], [3, "3 дня"], [7, "неделя"], [14, "2 недели"], [30, "месяц"]].map(([n, t]) => `<button class="chip ${n === every ? "on" : ""}" data-n="${n}">${t}</button>`).join("")}</div>
+      <div class="set" style="margin-top:8px"><span>Каждые, дней</span><input id="c-e" type="number" min="1" max="365" value="${every}"></div></div>
+    ${c ? "" : `<div class="field"><label>Последний раз</label><div class="seg" id="c-l"><button data-l="0" class="on">Сегодня</button><button data-l="1">Вчера</button><button data-l="-1">Не помню</button></div></div>`}
+    <div class="field"><label>Значок</label><div class="icos" id="c-i">${CHORE_ICO.map(k => `<button class="icon-pick ${k === ico ? "on" : ""}" data-i="${k}">${icoBox(k)}</button>`).join("")}</div></div>
+    <div class="btns">${c ? '<button class="btn red" data-a="del">Удалить</button>' : '<button class="btn" data-a="no">Отмена</button>'}<button class="btn primary" data-a="ok">${c ? "Сохранить" : "Добавить"}</button></div>`, { onClose: () => render() })
+  let lastAgo = 0
+  $$("#c-n .chip", s.el).forEach(b => b.onclick = () => { every = +b.dataset.n; $("#c-e", s.el).value = every; $$("#c-n .chip", s.el).forEach(x => x.classList.toggle("on", x === b)) })
+  $("#c-e", s.el).oninput = ev => { every = Math.round(+ev.target.value) || every; $$("#c-n .chip", s.el).forEach(x => x.classList.toggle("on", +x.dataset.n === every)) }
+  $$("#c-l button", s.el).forEach(b => b.onclick = () => { lastAgo = +b.dataset.l; $$("#c-l button", s.el).forEach(x => x.classList.toggle("on", x === b)) })
+  $$("#c-i button", s.el).forEach(b => b.onclick = () => { ico = b.dataset.i; $$("#c-i button", s.el).forEach(x => x.classList.toggle("on", x === b)) })
+  const no = $('[data-a="no"]', s.el); if (no) no.onclick = () => s.close()
+  const del = $('[data-a="del"]', s.el); if (del) del.onclick = async () => {
+    if ((await ui.confirm("Удалить дело?", `<div class="msg">«${esc(c.title)}» больше не будет напоминать.</div>`, ["Отмена", "Удалить"])) !== "Удалить") return
+    remove("goals", c.id); s.close(); render()
+  }
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const t = $("#c-t", s.el).value.trim(); if (!t) return toast("Напишите, что делать")
+    if (!(every >= 1 && every <= 365)) return toast("От 1 до 365 дней")
+    const r = c ? upsert("goals", Object.assign({}, c, { title: t, every, ico: ico || c.ico })) : choreAdd(t, every, lastAgo < 0 ? 0 : +addDays(new Date(), -lastAgo), ico)
+    s.close(); render(); toast(`Снова пора: ${choreWhen(r)}`)
+  }
+}
+
+// ── Списки: покупки, 100 желаний, 10 мечт и свои (на выходные, в отпуск, подарки…)
+const LIST_ICO = ["list", "cart", "gift", "plane", "book", "home", "star", "heart", "sparkle", "tool", "paw", "apple"]
+const myLists = () => live(D.goals).filter(g => g.kind === "list" && g.title).sort((a, b) => (!!b.pin - !!a.pin) || a.date - b.date)
+const itemsOf = l => (l && Array.isArray(l.items) ? l.items : []).filter(x => x && x.t)
+const listFind = q => { const n = normT(q); return myLists().find(l => l.id === q || normT(l.title) === n) || myLists().find(l => normT(l.title).includes(n) || n.includes(normT(l.title))) }
+function listNew(title, ico) {
+  title = String(title || "").trim(); if (!title) return null
+  return listFind(title) && normT(listFind(title).title) === normT(title) ? listFind(title)
+    : upsert("goals", { id: uid("o"), date: Date.now(), kind: "list", title: title.charAt(0).toUpperCase() + title.slice(1), ico: ico || listGuess(title), items: [] })
+}
+const listGuess = t => /подар/i.test(t) ? "gift" : /отпуск|поезд|путеш|чемодан|взять/i.test(t) ? "plane" : /книг|чита|фильм|сериал/i.test(t) ? "book" : /дом|ремонт|квартир/i.test(t) ? "home" : /куп|магаз/i.test(t) ? "cart" : "list"
+function listItems(id, add) {
+  const l = D.goals.find(x => x.id === id); if (!l) return []
+  const it = itemsOf(l).slice(), out = []
+  for (const t of add.map(x => String(x).trim()).filter(Boolean)) if (!it.some(x => !x.done && normT(x.t) === normT(t))) { const x = { id: uid("i"), t: t.charAt(0).toUpperCase() + t.slice(1), done: false }; it.push(x); out.push(x) }
+  upsert("goals", Object.assign({}, l, { items: it }))
+  return out
+}
+function listItemSet(id, iid, patch) {
+  const l = D.goals.find(x => x.id === id); if (!l) return null
+  return upsert("goals", Object.assign({}, l, { items: itemsOf(l).map(x => x.id === iid ? Object.assign({}, x, patch) : x).filter(x => !x.deleted) }))
+}
+function listsCard() {
+  const wish = goalsOf("wish"), dream = goalsOf("dream"), sh = shopOpen(), d1 = dream.find(g => !g.done && stepsOf(g).length) || dream.find(g => !g.done)
+  const row = (k, key, title, sub, n = "") => `<button class="row list-row" data-list="${esc(key)}">${icoBox(k)}<div class="grow"><div class="t">${esc(title)}</div><div class="s">${esc(sub)}</div></div>${n ? `<span class="cnt">${esc(n)}</span>` : ""}<span class="chev">${ICO.chev}</span></button>`
+  let html = `<div class="card" id="lists"><h2>Списки<button class="act" data-do="list-add">+ Список</button></h2>`
+  html += row("cart", "shop", "Покупки", sh.length ? sh.slice(0, 3).map(s => s.title).join(", ") + (sh.length > 3 ? "…" : "") : "Пусто — скажите «купить молоко»", sh.length ? String(sh.length) : "")
+  html += row("star", "wish", "100 желаний", wish.length ? `сбылось ${wish.filter(g => g.done).length}` : "Всё, чего хочется, — большое и маленькое", wish.length ? `${wish.length} из 100` : "")
+  html += row("summit", "dream", "10 мечт", d1 ? `${d1.title}${stepsOf(d1).length ? " · " + stepsTxt(d1) : ""}` : "Крупное на срок до 2 лет, с шагами", dream.length ? `${dream.length} из 10` : "")
+  html += myLists().map(l => { const it = itemsOf(l), done = it.filter(x => x.done).length, open = it.filter(x => !x.done)
+    return row(l.ico || "list", l.id, l.title, it.length ? open.slice(0, 3).map(x => x.t).join(", ") || "всё отмечено" : "Пустой список", it.length ? `${done} из ${it.length}` : "") }).join("")
+  return html + `</div>`
+}
+function listOpen(key) {
+  if (key === "shop") return shopSheet()
+  if (key === "wish" || key === "dream") return goalsForm(key)
+  return listSheet(key)
+}
+function itemSheet(title, sub, items, h) {
+  const open = items.filter(x => !x.done), done = items.filter(x => x.done)
+  const one = x => `<div class="row"><button class="check ${x.done ? "on" : ""}" data-it="${esc(x.id)}"></button><div class="grow"><div class="t ${x.done ? "struck" : ""}">${esc(x.t)}</div></div><button class="x-btn" data-ix="${esc(x.id)}" aria-label="Убрать">${ICO.x}</button></div>`
+  const s = sheet(`<div class="sh-head">${h.ico ? icoBox(h.ico) : ""}<div class="grow"><h3>${esc(title)}</h3><div class="muted small">${esc(sub)}</div></div></div>
+    <div class="add-line"><input id="it-t" placeholder="+ Добавить пункт" enterkeyhint="done"><button class="btn primary small" data-a="add">Добавить</button></div>
+    <div>${open.map(one).join("") || (done.length ? "" : `<div class="empty">${esc(h.empty)}</div>`)}</div>
+    ${done.length ? `<div class="sub-h">Отмечено · ${done.length}</div><div>${done.map(one).join("")}</div>` : ""}
+    <div class="btns" style="margin-top:12px">${h.extra || ""}<button class="btn" data-a="no">Готово</button></div>`, { onClose: () => render() })
+  $$("[data-it]", s.el).forEach(b => b.onclick = () => { h.toggle(b.dataset.it); if (navigator.vibrate) navigator.vibrate(10); h.again(s) })
+  $$("[data-ix]", s.el).forEach(b => b.onclick = () => { h.del(b.dataset.ix); h.again(s) })
+  const add = () => { const t = $("#it-t", s.el).value.trim(); if (!t) return; h.add(t); h.again(s, true) }
+  $('[data-a="add"]', s.el).onclick = add; $("#it-t", s.el).onkeydown = e => { if (e.key === "Enter") add() }
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  if (h.bind) h.bind(s)
+  if (h.focus) setTimeout(() => $("#it-t", s.el).focus(), 50)
+  return s
+}
+function listSheet(id, focus) {
+  const l = D.goals.find(x => x.id === id); if (!l || l.deleted) return
+  const it = itemsOf(l), done = it.filter(x => x.done).length
+  itemSheet(l.title, it.length ? `${done} из ${it.length}` : "Пустой список", it, { ico: l.ico || "list", focus, empty: "Добавьте первый пункт",
+    extra: `<button class="btn" data-a="pin">${l.pin ? "Открепить" : "Закрепить"}</button><button class="btn red" data-a="del">Удалить</button>`,
+    toggle: iid => { const x = it.find(z => z.id === iid); listItemSet(id, iid, { done: !x.done }) },
+    del: iid => listItemSet(id, iid, { deleted: true }), add: t => listItems(id, [t]),
+    again: (s, f) => { s.close(); listSheet(id, f) },
+    bind: s => {
+      $('[data-a="pin"]', s.el).onclick = () => { upsert("goals", Object.assign({}, l, { pin: !l.pin })); s.close(); render() }
+      $('[data-a="del"]', s.el).onclick = async () => {
+        if ((await ui.confirm("Удалить список?", `<div class="msg">«${esc(l.title)}» и все пункты в нём.</div>`, ["Отмена", "Удалить"])) !== "Удалить") return
+        remove("goals", id); s.close(); render()
+      }
+    } })
+}
+function shopSheet(focus) {
+  const it = live(D.shop).filter(x => !x.done || (x.doneAt && x.doneAt > Date.now() - 3 * 864e5)).sort((a, b) => a.date - b.date).map(x => ({ id: x.id, t: x.title, done: !!x.done }))
+  const st = shopStores()
+  itemSheet("Покупки", st.length ? "Напомню у: " + st.map(p => p.query).join(", ") : `${it.filter(x => !x.done).length} купить`, it, { ico: "cart", focus, empty: "Скажите помощнику «купить молоко и хлеб» или добавьте здесь",
+    toggle: iid => { const x = it.find(z => z.id === iid); shopToggle(iid, !x.done) }, del: iid => remove("shop", iid), add: t => shopAdd(t.split(/[,;\n]/)),
+    again: (s, f) => { s.close(); shopSheet(f) } })
+}
+function listForm() {
+  let ico = "list"
+  const s = sheet(`<h3>Новый список</h3>
+    <div class="field"><label>Название</label><input id="l-t" placeholder="На выходные, в отпуск, подарки…"></div>
+    <div class="field"><label>Значок</label><div class="icos" id="l-i">${LIST_ICO.map(k => `<button class="icon-pick ${k === ico ? "on" : ""}" data-i="${k}">${icoBox(k)}</button>`).join("")}</div></div>
+    <div class="btns"><button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Создать</button></div>`)
+  let picked = false
+  $$("#l-i button", s.el).forEach(b => b.onclick = () => { ico = b.dataset.i; picked = true; $$("#l-i button", s.el).forEach(x => x.classList.toggle("on", x === b)) })
+  $("#l-t", s.el).oninput = ev => { if (!picked) { ico = listGuess(ev.target.value); $$("#l-i button", s.el).forEach(x => x.classList.toggle("on", x.dataset.i === ico)) } }
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  $('[data-a="ok"]', s.el).onclick = () => { const t = $("#l-t", s.el).value.trim(); if (!t) return toast("Назовите список"); const l = listNew(t, ico); s.close(); render(); listSheet(l.id, true) }
+}
+
+// ── Привычки по неделе: 7 последних дней кружками, нажатие — отметить день
+function habitsWeek() {
+  const list = habitList(), t0 = sod(new Date()), days = [...Array(7)].map((_, i) => addDays(t0, i - 6))
+  let html = `<div class="card" id="habits-week"><h2>Привычки<button class="act" data-do="habits">${list.length ? "Изменить" : "+ Добавить"}</button></h2>`
+  if (!list.length) return html + `<div class="empty">Что хотите делать каждый день (зарядка, чтение) или бросить (сладкое, алкоголь). Отмечайте — увидите серию и неделю целиком.</div></div>`
+  const doneToday = list.filter(h => !h.bad && habitOn(h, t0)).length, good = list.filter(h => !h.bad).length
+  html += `<div class="hw-head"><span class="muted small">${good ? `сегодня ${doneToday} из ${good}` : ""}</span><div class="dots">${days.map(d => `<span class="${sameDay(d, t0) ? "td" : ""}">${WD[d.getDay()].slice(0, 2)}</span>`).join("")}</div></div>`
+  html += list.map(h => {
+    const st = habitStreak(h), n = days.filter(d => habitOn(h, d)).length
+    const sub = h.bad ? `${st} ${plural(st, "день", "дня", "дней")} без · было ${n} из 7` : `${st ? `серия ${st}` : "серии пока нет"} · ${n} из 7`
+    return `<div class="row hw">${icoBox(habitIco(h), h.bad ? "red" : "")}<div class="grow"><div class="t">${esc(h.title)}</div><div class="s">${esc(sub)}</div></div>
+      <div class="dots">${days.map(d => `<button class="dot ${habitOn(h, d) ? "on" : ""} ${h.bad ? "bad" : ""} ${sameDay(d, t0) ? "td" : ""}" data-hd="${esc(h.id)}" data-hdd="${+d}" aria-label="${esc(WD[d.getDay()])}"></button>`).join("")}</div></div>`
+  }).join("")
+  return html + `</div>`
 }
 
 // Поиск по всему: операции, еда, напоминания, события, регулярные платежи, привычки, чат
@@ -2922,7 +3177,7 @@ if (window.visualViewport) {
   visualViewport.addEventListener("resize", kb); visualViewport.addEventListener("scroll", kb)
 }
 addEventListener("orientationchange", () => setTimeout(fitHeight, 300))
-$("#fab").innerHTML = ICO.mic
+$("#fab .orb").innerHTML = ICO.mic
 // Зелёная кнопка с микрофоном: нажатие — чат с помощником; держите — сразу запись голосовой команды,
 // отпустили — команда уходит помощнику (как рация). Меню «Добавить» — кнопка «+» вверху
 const PTT = { holding: false }
@@ -2963,10 +3218,12 @@ function pttShow(text) {
 $("#add").innerHTML = ICO.add
 $("#add").onclick = () => addMenu()
 $("#sync").innerHTML = ICO.sync
+$("#gear").innerHTML = ICO.more
+$("#gear").onclick = () => setTab(tab === "more" ? "today" : "more")
 $("#sync").onclick = () => DO.sync()
 $("#find").innerHTML = ICO.find
 $("#find").onclick = () => searchSheet()
-$$("#tabs button").forEach(b => b.onclick = () => setTab(b.dataset.tab))
+$$("#tabs button:not(#fab)").forEach(b => b.onclick = () => setTab(b.dataset.tab))
 onPhoto($("#photo")); onPhoto($("#photo-lib")); onPhoto($("#doc"))
 load()
 pushConn()

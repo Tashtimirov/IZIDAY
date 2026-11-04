@@ -86,7 +86,7 @@ check(t.includes("Привычки"), "карточка привычек на «
 
 // 2. привычки: добавить, отметить, серия, в таблицу
 await page.click('[data-do="habits"]')
-await page.fill("#h-t", "Зарядка"); await page.click('#h-e [data-e="💪"]'); await page.click('.sheet [data-a="ok"]'); await page.waitForTimeout(300)
+await page.fill("#h-t", "Зарядка"); await page.click('#h-e [data-e="dumbbell"]'); await page.click('.sheet [data-a="ok"]'); await page.waitForTimeout(300)
 await page.fill("#h-t", "Без алкоголя"); await page.click('.sheet [data-a="ok"]'); await page.waitForTimeout(300)
 await page.click('.sheet [data-a="no"]'); await page.waitForTimeout(300)
 const hs = await page.evaluate(() => habitList().map(h => ({ t: h.title, bad: !!h.bad, id: h.id })))
@@ -181,7 +181,7 @@ check((await page.textContent("#chat-list")).includes("Потрачено нем
 
 // 9. уведомления: карточка в «Ещё», адрес таблицы для сервис-воркера
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await page.waitForTimeout(200)
-await page.click('[data-tab="more"]'); await page.waitForTimeout(500)
+await page.click('#gear'); await page.waitForTimeout(500)
 check((await today()).includes("Уведомления") && (await page.textContent("#push-btns")).length > 0, "в «Ещё» — карточка уведомлений", await page.textContent("#push-btns").catch(() => ""))
 const cc = await page.evaluate(async () => { const r = await (await caches.open("myday-conn")).match("conn"); return r ? r.json() : null }).catch(e => String(e))
 check(cc === null || (cc && cc.hook === "https://script.google.com/macros/s/TEST/exec"), "сервис-воркер знает адрес таблицы (на https)", cc)
@@ -236,8 +236,8 @@ await page.click('#g-y [data-y="1.5"]')
 check(await page.evaluate(() => $("#g-d").value) === y3, "кнопка «1,5 года» ставит срок через полтора года")
 await page.screenshot({ path: SHOTS + "f-goals.png" })
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await page.waitForTimeout(300)
-await page.click('[data-tab="more"]'); await page.waitForTimeout(300)
-check((await today()).includes("Цели и мечты") && (await today()).includes("100 желаний"), "«Ещё»: цели и мечты")
+await page.click('[data-tab="plans"]'); await page.click('[data-pf="goals"]'); await page.waitForTimeout(300)
+check((await today()).includes("Цели и мечты") && (await today()).includes("100 желаний"), "«Планы» → Цели: цели и мечты")
 
 // 12б. шаги мечты
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() })
@@ -261,7 +261,7 @@ const ps = await page.evaluate(() => runTool("stop_pomodoro", {}))
 check(ps.ok && !ps.completed && await page.evaluate(() => !D.nudges.some(x => String(x.id).startsWith("pq") && !x.deleted)), "остановил раньше — пуша не будет", ps)
 const pr = await page.evaluate(() => runTool("start_pomodoro", { title: "отчёт", minutes: 50 }))
 check(pr.ok && pr.minutes === 50 && await page.evaluate(() => { const p = D.pomo.find(x => x.title === "отчёт"); p.start -= 51 * 60e3; save(); render(); return pomoToday().length === 0 && !pomoNow() }), "помощник: помидор на 50 минут", pr)
-check(await page.evaluate(() => { pomoStop(); return pomoToday().length === 1 && /сегодня 1/.test((render(), $("#pomo").textContent)) }), "прошедший помидор засчитан")
+check(await page.evaluate(() => { pomoStop(); plansF = "all"; setTab("plans"); return pomoToday().length === 1 && /сегодня 1/.test($("#pomo").textContent) }), "прошедший помидор засчитан")
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() })
 
 // 13. нажатие на подсказку в уведомлении: чат с ней и микрофон

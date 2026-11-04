@@ -149,7 +149,7 @@ check(!(await page.textContent("#view")).includes("Падел"), "удалённ
 sheet.post({ secret: SECRET, hub: { from: "widget", since: 0, done: st.ops.map(o => ({ id: o.id, result: { ok: true } })),
   snap: { events: [{ id: "E1", title: "Созвон с командой", start: iso(day(0, 23, 0)), end: iso(day(0, 23, 30)), calendar: "Работа" }],
     reminders: [{ id: "R2", title: "Оплатить интернет", due: null, completed: false }], watch: null } } })
-await page.click("#sync")
+await page.evaluate(() => DO.sync())
 await settle()
 check(/iPhone: (только что|\d+ мин)/.test(await page.textContent("#top-sub")) && !/⏳/.test(await page.textContent("#top-sub")), "очередь пуста после виджета", await page.textContent("#top-sub"))
 
@@ -158,7 +158,7 @@ await page.click('[data-tab="health"]')
 const hv = await page.textContent("#view")
 check(hv.includes("Омлет с тостом") && /0,5 л/.test(hv), "здоровье: еда и вода", hv.slice(0, 200))
 await page.screenshot({ path: SHOTS + "4-health.png", fullPage: true })
-await page.click('[data-tab="more"]')
+await page.click('#gear')
 check((await page.textContent("#view")).includes("Последний обмен"), "«Ещё»: подключено")
 await page.screenshot({ path: SHOTS + "5-more.png", fullPage: true })
 
