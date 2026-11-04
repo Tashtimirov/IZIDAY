@@ -22,17 +22,17 @@
       <div id="top-title">Мой день</div>
       <div id="top-sub"></div>
     </div>
-    <button id="add" aria-label="Добавить"></button><button id="find" aria-label="Поиск"></button><button id="sync" aria-label="Обновить"></button>
+    <button id="add" aria-label="Добавить"></button><button id="find" aria-label="Поиск"></button><button id="sync" aria-label="Обновить" hidden></button><button id="gear" aria-label="Настройки"></button>
   </div>
 </header>
 <main id="view"></main>
-<button id="fab" aria-label="Помощник: нажмите — чат, держите — голосовая команда"></button><div id="ptt" hidden></div>
+<div id="ptt" hidden></div>
 <nav id="tabs">
   <button data-tab="today"><i data-ico="today"></i><span>Сегодня</span></button>
-  <button data-tab="chat"><i data-ico="chat"></i><span>Помощник</span></button>
+  <button data-tab="plans"><i data-ico="plans"></i><span>Планы</span></button>
+  <button data-tab="chat" id="fab" aria-label="Помощник: нажмите — чат, держите — голосовая команда"><b class="orb"></b><span>Помощник</span></button>
   <button data-tab="money"><i data-ico="money"></i><span>Деньги</span></button>
   <button data-tab="health"><i data-ico="health"></i><span>Здоровье</span></button>
-  <button data-tab="more"><i data-ico="more"></i><span>Ещё</span></button>
 </nav>
 <input id="photo" type="file" accept="image/*" capture="environment" hidden>
 <input id="photo-lib" type="file" accept="image/*" hidden>
