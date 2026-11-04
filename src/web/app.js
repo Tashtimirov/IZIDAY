@@ -2920,7 +2920,7 @@ function habitsWeek() {
   html += `<div class="hw-head"><span class="muted small">${good ? `сегодня ${doneToday} из ${good}` : ""}</span><div class="dots">${days.map(d => `<span class="${sameDay(d, t0) ? "td" : ""}">${WD[d.getDay()].slice(0, 2)}</span>`).join("")}</div></div>`
   html += list.map(h => {
     const st = habitStreak(h), n = days.filter(d => habitOn(h, d)).length
-    const sub = h.bad ? `${st} ${plural(st, "день", "дня", "дней")} без · было ${n} из 7` : `${st ? `серия ${st}` : "серии пока нет"} · ${n} из 7`
+    const sub = h.bad ? `${st} ${plural(st, "день", "дня", "дней")} без` : st ? `серия ${st}` : `${n} из 7`
     return `<div class="row hw">${icoBox(habitIco(h), h.bad ? "red" : "")}<div class="grow"><div class="t">${esc(h.title)}</div><div class="s">${esc(sub)}</div></div>
       <div class="dots">${days.map(d => `<button class="dot ${habitOn(h, d) ? "on" : ""} ${h.bad ? "bad" : ""} ${sameDay(d, t0) ? "td" : ""}" data-hd="${esc(h.id)}" data-hdd="${+d}" aria-label="${esc(WD[d.getDay()])}"></button>`).join("")}</div></div>`
   }).join("")
