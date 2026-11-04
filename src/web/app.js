@@ -684,8 +684,10 @@ const AGENT_TOOLS = [
   { name: "list_item_done", description: "Отметить пункты своего списка (done=false — снять отметку).", input_schema: { type: "object", properties: { list: { type: "string" }, items: { type: "array", items: { type: "string" } }, done: { type: "boolean" } }, required: ["list", "items"] } },
   { name: "get_lists", description: "Свои списки пользователя и пункты в них.", input_schema: { type: "object", properties: {} } },
   { name: "delete_list", description: "Удалить свой список целиком по id (из get_lists) — только если пользователь прямо попросил.", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
-  { name: "add_goal_steps", description: "Разбить мечту (или цель) на шаги: goal — название или id, steps — шаги по порядку («узнать цены», «накопить 30%»). Повторы не добавляются.",
-    input_schema: { type: "object", properties: { goal: { type: "string" }, steps: { type: "array", items: { type: "string" } } }, required: ["goal", "steps"] } },
+  { name: "wish_to_goal", description: "Перевести желание из «100 желаний» в цели на этот месяц (желание остаётся в списке с пометкой). Потом предложи разбить цель на шаги с датами (add_goal_steps).",
+    input_schema: { type: "object", properties: { wish: { type: "string" } }, required: ["wish"] } },
+  { name: "add_goal_steps", description: "Разбить цель на месяц, мечту или желание на шаги — конкретный план: goal — название или id, steps — шаги по порядку («узнать цены», «записаться в школу»), dates — даты шагов в том же порядке (YYYY-MM-DD или YYYY-MM-DDTHH:MM, можно пропускать). Повторы не добавляются; у существующего шага без даты дата проставится. Внести шаги в календарь — отдельно через create_event, после согласия.",
+    input_schema: { type: "object", properties: { goal: { type: "string" }, steps: { type: "array", items: { type: "string" } }, dates: { type: "array", items: { type: "string" } } }, required: ["goal", "steps"] } },
   { name: "goal_step_done", description: "Отметить шаг мечты сделанным (done=false — снять отметку).", input_schema: { type: "object", properties: { goal: { type: "string" }, step: { type: "string" }, done: { type: "boolean" } }, required: ["goal", "step"] } },
   { name: "get_goals", description: "Цели на месяц, 100 желаний, 10 мечт: что есть и что сбылось.", input_schema: { type: "object", properties: { kind: { type: "string", enum: ["month", "wish", "dream"] } } } },
   { name: "goal_done", description: "Отметить цель, желание или мечту выполненной (done=false — снять отметку).", input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } }, kind: { type: "string", enum: ["month", "wish", "dream"] }, done: { type: "boolean" } }, required: ["items"] } },
@@ -1067,7 +1069,7 @@ async function runTool(name, x) {
     case "add_goal": { const r = goalAdd(x.kind, x.items || [], x.due); if (r.error) return r
       return { ok: true, added: r.added.map(g => g.title), total: r.total, max: GOAL_MAX[x.kind] || undefined, note: r.added.length < (x.items || []).length ? "часть уже есть или места кончились" : undefined } }
     case "get_goals": { const kinds = x.kind ? [x.kind] : Object.keys(GOAL_KIND), out = {}
-      for (const k of kinds) out[k] = goalsOf(k).map(g => Object.assign({ id: g.id, title: g.title, done: !!g.done, due: g.due }, stepsOf(g).length ? { steps: stepsOf(g).map(x => ({ step: x.t, done: !!x.done })) } : {}))
+      for (const k of kinds) out[k] = goalsOf(k).map(g => Object.assign({ id: g.id, title: g.title, done: !!g.done, due: g.due }, g.toMonth ? { moved_to_goals: g.toMonth } : {}, stepsOf(g).length ? { steps: stepsOf(g).map(x => Object.assign({ step: x.t, done: !!x.done }, x.date ? { date: x.date, in_calendar: !!x.cal } : {})) } : {}))
       if (!x.kind || x.kind === "month") out.month_left_from_last = goalsLeft().map(g => g.title)
       return out }
     case "start_pomodoro": { const p = pomoStart(x.title, "", x.minutes); return { ok: true, title: p.title, minutes: p.min, ends: iso(new Date(p.start + p.min * 60e3)), today_done: pomoToday().length } }
@@ -1087,8 +1089,10 @@ async function runTool(name, x) {
       return got.length ? { ok: true, marked: got } : { error: "нет таких пунктов", items: itemsOf(l).map(z => z.t) } }
     case "get_lists": return { lists: myLists().map(l => ({ id: l.id, title: l.title, items: itemsOf(l).map(i => ({ item: i.t, done: !!i.done })) })) }
     case "delete_list": { const l = myLists().find(z => z.id === x.id); if (!l) return { error: "нет такого" }; remove("goals", l.id); return { ok: true } }
+    case "wish_to_goal": { const w = goalFind(x.wish, "wish"); if (!w) return { error: "нет такого желания", have: goalsOf("wish").map(z => z.title).slice(0, 40) }
+      const g = wishToGoal(w.id); return g ? { ok: true, goal: g.title, id: g.id, month: curMonth() } : { error: "не получилось" } }
     case "add_goal_steps": { const g = goalFind(x.goal, "dream") || goalFind(x.goal); if (!g) return { error: "не нашёл такую мечту или цель" }
-      const a = goalSteps(g.id, x.steps || []); return { ok: true, goal: g.title, added: a.map(z => z.t), steps: stepsOf(D.goals.find(z => z.id === g.id)).map(z => z.t) } }
+      const a = goalSteps(g.id, x.steps || [], x.dates || []); return { ok: true, goal: g.title, added: a.map(z => z.t), steps: stepsOf(D.goals.find(z => z.id === g.id)).map(z => z.t + (z.date ? ` (${z.date})` : "")) } }
     case "goal_step_done": { const g = goalFind(x.goal, "dream") || goalFind(x.goal); if (!g) return { error: "не нашёл такую мечту или цель" }
       const st = stepFind(g, x.step); if (!st) return { error: "нет такого шага", steps: stepsOf(g).map(z => z.t) }
       const g2 = stepSet(g.id, st.id, { done: x.done !== false, doneAt: x.done !== false ? Date.now() : 0 })
@@ -2246,6 +2250,7 @@ function bind() {
     const f = fastStart(+k); render(); toast(`⏱ Окно откроется в ${hm(new Date(f.start + f.hours * 3600e3))}`) })
   $$("[data-goal]", v).forEach(b => b.onclick = () => { const g = goalToggle(b.dataset.goal); if (navigator.vibrate) navigator.vibrate(10); render(); if (g && g.done) toast("🎯 Готово!") })
   $$("[data-goals]", v).forEach(b => b.onclick = () => goalsForm(b.dataset.goals))
+  $$("[data-gsteps]", v).forEach(b => b.onclick = () => stepsForm(b.dataset.gsteps))
   $$("[data-pf]", v).forEach(b => b.onclick = () => { plansF = b.dataset.pf; render(); scrollView(false) })
   $$("[data-list]", v).forEach(b => b.onclick = () => listOpen(b.dataset.list))
   $$("[data-chore]", v).forEach(el => el.onclick = () => choreForm(D.goals.find(z => z.id === el.dataset.chore)))
@@ -2626,16 +2631,26 @@ function goalAdd(kind, items, due) {
 }
 function goalFind(t, kind) { const n = normT(t), l = live(D.goals).filter(g => g.title && (kind ? g.kind === kind : GOAL_KIND[g.kind]) && (g.kind !== "month" || g.month === curMonth()))
   return l.find(g => g.id === t || normT(g.title) === n) || l.find(g => normT(g.title).includes(n) || n.includes(normT(g.title))) }
+function wishToGoal(id) {
+  const w = D.goals.find(x => x.id === id); if (!w) return null
+  const r = goalAdd("month", [w.title]), g = r.added[0] || goalsOf("month").find(x => normT(x.title) === normT(w.title))
+  if (g) { upsert("goals", Object.assign({}, g, { from: w.id, steps: stepsOf(g).length ? g.steps : stepsOf(w) })); upsert("goals", Object.assign({}, w, { toMonth: curMonth() })) }
+  return g
+}
 function goalToggle(id, done) { const g = D.goals.find(x => x.id === id); if (g) return upsert("goals", Object.assign({}, g, { done: done == null ? !g.done : !!done, doneAt: (done == null ? !g.done : done) ? Date.now() : 0 })) }
 const goalsLeft = () => { const p = new Date(); p.setDate(0); return goalsOf("month", core.monthKey(p)).filter(g => !g.done) }   // незавершённые прошлого месяца
 const dueTxt = d => { if (!d) return ""; const [y, m] = d.split("-").map(Number); return `до ${MON_GEN[m - 1]} ${y}` }
 // Шаги мечты: из чего она складывается. Отметили все шаги — мечта сбылась (спросим)
 const stepsOf = g => (g && Array.isArray(g.steps) ? g.steps : []).filter(x => x && x.t)
 const stepsTxt = g => { const l = stepsOf(g); return l.length ? `шаги ${l.filter(x => x.done).length} из ${l.length}` : "" }
-function goalSteps(id, add) {
+function goalSteps(id, add, dates = []) {
   const g = D.goals.find(x => x.id === id); if (!g) return null
   const l = stepsOf(g).slice(), out = []
-  for (const t of add.map(x => String(x).trim()).filter(Boolean)) if (!l.some(x => normT(x.t) === normT(t))) { const st = { id: uid("s"), t: t.charAt(0).toUpperCase() + t.slice(1), done: false }; l.push(st); out.push(st) }
+  add.forEach((x, i) => { const t = String(x || "").trim(), d = String(dates[i] || "").trim(), date = /^\d{4}-\d\d-\d\d(T\d\d:\d\d)?$/.test(d) ? d : ""
+    if (!t) return
+    const old = l.find(z => normT(z.t) === normT(t))
+    if (old) { if (date && !old.date) { old.date = date; out.push(old) } return }
+    const st = Object.assign({ id: uid("s"), t: t.charAt(0).toUpperCase() + t.slice(1), done: false }, date ? { date } : {}); l.push(st); out.push(st) })
   upsert("goals", Object.assign({}, g, { steps: l }))
   return out
 }
@@ -2645,27 +2660,69 @@ function stepSet(id, sid, patch) {
   return upsert("goals", Object.assign({}, g, { steps: l }))
 }
 function stepFind(g, q) { const n = normT(q), l = stepsOf(g); return l.find(x => x.id === q || normT(x.t) === n) || l.find(x => normT(x.t).includes(n) || n.includes(normT(x.t))) }
+// Дата шага: «2026-11-10» (весь день) или «2026-11-10T10:00»
+const stepWhen = x => { const d = parseIso(x.date); if (!d) return ""; return `${dayName(d)}${/T/.test(x.date) ? " " + hm(d) : ""}` }
+function stepDate(text) {
+  const p = core.parseWhen(" " + core.normalizeSpeech(String(text || "")) + " ")
+  if (!p.date) return ""
+  const d = new Date(p.date), timed = d.getHours() || d.getMinutes()
+  return timed ? iso(d) : dayKey(d)
+}
+async function stepToCal(id, sid) {
+  const g = D.goals.find(x => x.id === id), st = stepsOf(g).find(x => x.id === sid), d = st && parseIso(st.date)
+  if (!d) return { error: "у шага нет даты" }
+  const timed = /T/.test(st.date)
+  const ev = timed ? { title: st.t, start: iso(d), end: iso(new Date(+d + 60 * 60e3)), notes: `Шаг к цели «${g.title}»` }
+    : { title: st.t, start: dayKey(d), end: dayKey(addDays(d, 1)), all_day: true, notes: `Шаг к цели «${g.title}»` }
+  if (gcalOn()) { const r = await calDo("create", ev); if (r.error) return { error: r.error } }
+  else queueOp("create_event", ev)
+  stepSet(id, sid, { cal: true })
+  return { ok: true }
+}
 function stepsForm(id) {
   const g = D.goals.find(x => x.id === id); if (!g) return
-  const l = stepsOf(g), done = l.filter(x => x.done).length
-  const s = sheet(`<h3>🌠 ${esc(g.title)}</h3><div class="muted small">${esc(dueTxt(g.due))}${l.length ? ` · сделано ${done} из ${l.length}` : ""}</div>
-    ${l.length ? `<div class="prog" style="margin-top:8px"><div style="width:${done / l.length * 100}%"></div></div>` : ""}
-    <div style="margin-top:10px">${l.map((x, i) => `<div class="row"><button class="check ${x.done ? "on" : ""}" data-st="${esc(x.id)}"></button><div class="grow"><div class="t">${i + 1}. ${esc(x.t)}</div></div>${x.done ? "" : `<button class="btn small" data-spomo="${esc(x.id)}">🍅</button>`}<button class="btn small red" data-sdel="${esc(x.id)}">✕</button></div>`).join("")
-      || '<div class="empty">Разбейте мечту на шаги: что сделать первым, вторым… Маленькие шаги легче начать. Не знаете с чего начать — «Разбить с помощником».</div>'}</div>
-    <div class="field" style="margin-top:12px"><label>Шаг ${l.length + 1}</label><input id="st-t" placeholder="${l.length ? "Следующий шаг" : "Например: узнать цены, накопить первые 10%…"}"></div>
-    <div class="btns" style="margin-top:10px"><button class="btn" data-a="back">‹ Мечты</button><button class="btn" data-a="ai">Разбить с помощником</button><button class="btn primary" data-a="ok">Добавить</button></div>`, { onClose: () => render() })
+  const l = stepsOf(g), done = l.filter(x => x.done).length, noCal = l.filter(x => !x.done && x.date && !x.cal)
+  const back = g.kind === "dream" ? "Мечты" : g.kind === "wish" ? "Желания" : "Цели"
+  const sub = [g.kind === "month" ? "цель на " + core.monthTitle(g.month || curMonth()).toLowerCase() : dueTxt(g.due), l.length ? `сделано ${done} из ${l.length}` : ""].filter(Boolean).join(" · ")
+  const s = sheet(`<div class="sh-head">${icoBox(GOAL_ICO[g.kind] || "target")}<div class="grow"><h3>${esc(g.title)}</h3><div class="muted small">${esc(sub)}</div></div></div>
+    ${l.length ? `<div class="prog"><div style="width:${done / l.length * 100}%"></div></div>` : ""}
+    <div style="margin-top:8px">${l.map((x, i) => `<div class="row step"><button class="check ${x.done ? "on" : ""}" data-st="${esc(x.id)}"></button><div class="grow"><div class="t ${x.done ? "struck" : ""}">${i + 1}. ${esc(x.t)}</div>${x.date ? `<div class="s">${esc(stepWhen(x))}${x.cal ? " · в календаре" : ""}</div>` : ""}</div>
+      ${x.done ? "" : `<button class="i-btn ${x.date ? "on" : ""}" data-sdate="${esc(x.id)}" aria-label="Дата">${ICO.today}</button><button class="i-btn" data-spomo="${esc(x.id)}" aria-label="Помидоро">${ICO.timer}</button>`}<button class="x-btn" data-sdel="${esc(x.id)}" aria-label="Убрать">${ICO.x}</button></div>`).join("")
+      || '<div class="empty">Разбейте на шаги: что сделать первым, вторым… Каждому шагу можно дать дату и внести в календарь. Не знаете, с чего начать, — «План с помощником».</div>'}</div>
+    <div class="add-line" style="margin-top:12px"><input id="st-t" placeholder="${l.length ? "+ Следующий шаг" : "+ Первый шаг: узнать цены, записаться…"}"><button class="btn primary small" data-a="ok">Добавить</button></div>
+    ${noCal.length ? `<button class="btn primary" data-a="cal" style="width:100%;margin-top:10px">Внести план в календарь · ${noCal.length}</button>` : ""}
+    <div class="btns" style="margin-top:10px"><button class="btn" data-a="back">‹ ${back}</button><button class="btn" data-a="ai">План с помощником</button></div>`, { onClose: () => render() })
   const again = () => { s.close(); stepsForm(id) }
   $$("[data-st]", s.el).forEach(b => b.onclick = async () => {
     const st = l.find(x => x.id === b.dataset.st), g2 = stepSet(id, st.id, { done: !st.done, doneAt: st.done ? 0 : Date.now() })
-    if (!st.done && stepsOf(g2).every(x => x.done) && !g2.done) { s.close(); if ((await ui.confirm("🌠 Все шаги сделаны!", `<div class="msg">«${esc(g2.title)}» — отметить мечту сбывшейся?</div>`, ["Пока нет", "Сбылась!"])) === "Сбылась!") { goalToggle(id, true); toast("✨ Сбылось!") } return stepsForm(id) }
+    if (!st.done && stepsOf(g2).every(x => x.done) && !g2.done) { s.close()
+      const ok = g2.kind === "month" ? "Готово!" : "Сбылась!"
+      if ((await ui.confirm("Все шаги сделаны!", `<div class="msg">«${esc(g2.title)}» — отметить ${g2.kind === "month" ? "цель выполненной" : "сбывшейся"}?</div>`, ["Пока нет", ok])) === ok) { goalToggle(id, true); toast(g2.kind === "month" ? "Цель выполнена" : "Сбылось!") }
+      return stepsForm(id) }
     again()
   })
   $$("[data-sdel]", s.el).forEach(b => b.onclick = () => { stepSet(id, b.dataset.sdel, { deleted: true }); again() })
-  $$("[data-spomo]", s.el).forEach(b => b.onclick = () => { const st = l.find(x => x.id === b.dataset.spomo); pomoStart(st.t, id); s.close(); setTab("today"); toast(`🍅 ${POMO.work} минут: ${st.t}`) })
-  $('[data-a="back"]', s.el).onclick = () => { s.close(); goalsForm("dream") }
+  $$("[data-spomo]", s.el).forEach(b => b.onclick = () => { const st = l.find(x => x.id === b.dataset.spomo); pomoStart(st.t, id); s.close(); setTab("today"); toast(`Фокус ${POMO.work} минут: ${st.t}`) })
+  $$("[data-sdate]", s.el).forEach(b => b.onclick = async () => {
+    const st = l.find(x => x.id === b.dataset.sdate); s.close()
+    const w = await ui.ask(st.t, "Когда? Например: «завтра», «в субботу в 10», «15 ноября»", st.date ? stepWhen(st) : "", { ok: "Дальше" })
+    if (!w) return stepsForm(id)
+    const date = stepDate(w); if (!date) { toast("Не понял дату"); return stepsForm(id) }
+    stepSet(id, st.id, { date, cal: false })
+    const b2 = await ui.confirm("Внести в календарь?", `<div class="msg">${esc(st.t)}\n${esc(core.cap(stepWhen({ date })))}</div>`, ["Только дата", "В календарь"])
+    if (b2 === "В календарь") { const r = await stepToCal(id, st.id); toast(r.error ? "Не получилось: " + r.error : "Внесено в календарь") }
+    stepsForm(id)
+  })
+  const cal = $('[data-a="cal"]', s.el); if (cal) cal.onclick = async () => {
+    cal.disabled = true; cal.textContent = "Вношу…"; let n = 0, err = ""
+    for (const x of noCal) { const r = await stepToCal(id, x.id); if (r.error) err = r.error; else n++ }
+    toast(err ? `Внесено ${n}, ошибка: ${err}` : `В календаре: ${n} ${plural(n, "шаг", "шага", "шагов")}`); again()
+  }
+  $('[data-a="back"]', s.el).onclick = () => { s.close(); goalsForm(g.kind) }
   $('[data-a="ai"]', s.el).onclick = () => {
     s.close(); setTab("chat")
-    setTimeout(() => chatSend(`Помоги разбить мою мечту «${g.title}» (${dueTxt(g.due)}) на конкретные шаги${l.length ? `; уже есть шаги: ${l.map(x => x.t).join("; ")}` : ""}. Задай 1–2 уточняющих вопроса, потом предложи 3–7 шагов по порядку со сроками и запиши их через add_goal_steps.`), 30)
+    const what = g.kind === "month" ? `цель на месяц «${g.title}»` : g.kind === "dream" ? `мечту «${g.title}» (${dueTxt(g.due)})` : `«${g.title}»`
+    setTimeout(() => chatSend(`Помоги превратить ${what} в конкретный план${l.length ? `; уже есть шаги: ${l.map(x => x.t + (x.date ? ` (${stepWhen(x)})` : "")).join("; ")}` : ""}. Задай 1–2 уточняющих вопроса, учти мой календарь, потом предложи 3–7 шагов по порядку с конкретными датами (и временем, где уместно) и запиши их через add_goal_steps с датами. Затем спроси через ask_user, внести ли шаги в календарь, и если да — создай события через create_event.`), 30)
   }
   const add = () => { const t = $("#st-t", s.el).value.trim(); if (!t) return toast("Напишите шаг"); goalSteps(id, [t]); again() }
   $('[data-a="ok"]', s.el).onclick = add; $("#st-t", s.el).onkeydown = e => { if (e.key === "Enter") add() }
@@ -2709,7 +2766,8 @@ function goalsCard(always) {
   if (!l.length && day > 7 && !always) return ""
   let html = `<div class="card" id="goals"><h2>Цели на месяц<button class="act" data-do="goals">${l.length ? `${done} из ${l.length}` : "+ Поставить"}</button></h2>`
   if (!l.length) return html + `<div class="empty">Новый месяц — 3–5 целей на него. Можно сказать помощнику: «цели на месяц: …»${goalsLeft().length ? `. С прошлого осталось ${goalsLeft().length}.` : ""}</div></div>`
-  html += l.map(g => `<div class="row"><button class="check ${g.done ? "on" : ""}" data-goal="${esc(g.id)}"></button><div class="grow"><div class="t">${esc(g.title)}</div></div></div>`).join("")
+  html += l.map(g => { const nx = stepsOf(g).find(x => !x.done)
+    return `<div class="row"><button class="check ${g.done ? "on" : ""}" data-goal="${esc(g.id)}"></button><button class="grow goal-open" data-gsteps="${esc(g.id)}"><div class="t ${g.done ? "struck" : ""}">${esc(g.title)}</div><div class="s">${stepsOf(g).length ? esc(stepsTxt(g) + (nx ? " · дальше: " + nx.t + (nx.date ? ", " + stepWhen(nx) : "") : "")) : "разбить на шаги ›"}</div></button></div>` }).join("")
   return html + `<div class="prog"><div style="width:${done / l.length * 100}%"></div></div></div>`
 }
 function goalsMore() {
@@ -2723,7 +2781,7 @@ function goalsForm(kind = "month") {
   const left = kind === "month" ? goalsLeft().filter(g => !l.some(x => normT(x.title) === normT(g.title))) : []
   const s = sheet(`<h3>${kind === "month" ? "Цели на " + esc(core.monthTitle(curMonth()).toLowerCase()) : GOAL_KIND[kind][1]}</h3>
     <div class="seg" id="g-k">${Object.keys(GOAL_KIND).map(k => `<button data-k="${k}" class="${k === kind ? "on" : ""}">${{ month: "Месяц", wish: "Желания", dream: "Мечты" }[k]}</button>`).join("")}</div>
-    <div style="margin-top:10px">${l.map(g => `<div class="row"><button class="check ${g.done ? "on" : ""}" data-g="${esc(g.id)}"></button><div class="grow"><div class="t">${esc(g.title)}</div>${g.due || stepsOf(g).length ? `<div class="s">${esc([dueTxt(g.due), stepsTxt(g)].filter(Boolean).join(" · "))}</div>` : ""}</div>${kind === "dream" ? `<button class="btn small" data-steps="${esc(g.id)}">Шаги</button>` : ""}<button class="btn small red" data-del="${esc(g.id)}">✕</button></div>`).join("")
+    <div style="margin-top:10px">${l.map(g => `<div class="row"><button class="check ${g.done ? "on" : ""}" data-g="${esc(g.id)}"></button><div class="grow"><div class="t">${esc(g.title)}</div>${g.due || stepsOf(g).length ? `<div class="s">${esc([dueTxt(g.due), stepsTxt(g)].filter(Boolean).join(" · "))}</div>` : ""}</div>${kind === "wish" && !g.done ? (g.toMonth === curMonth() ? `<span class="tag">в целях</span>` : `<button class="btn small" data-tomonth="${esc(g.id)}">В цели</button>`) : ""}${kind !== "wish" ? `<button class="btn small" data-steps="${esc(g.id)}">Шаги</button>` : ""}<button class="x-btn" data-del="${esc(g.id)}" aria-label="Убрать">${ICO.x}</button></div>`).join("")
       || `<div class="empty">${kind === "wish" ? "Пишите всё, чего хочется, — большое и маленькое. Не получается? Нажмите «Подсказка» или «Помочь придумать»." : kind === "dream" ? "До 10 крупных мечт на срок до 2 лет. Каждую можно разбить на шаги." : "3–5 целей на этот месяц."}</div>`}</div>
     ${left.length ? `<button class="btn small" data-a="carry" style="margin-top:8px">Перенести с прошлого месяца (${left.length})</button>` : ""}
     ${full ? `<div class="muted small" style="margin-top:12px">Все ${GOAL_MAX[kind]} мест заняты — отметьте сбывшееся или уберите лишнее.</div>` : `
@@ -2737,6 +2795,9 @@ function goalsForm(kind = "month") {
   $$("[data-g]", s.el).forEach(b => b.onclick = () => { const g = goalToggle(b.dataset.g); b.classList.toggle("on", !!(g && g.done)); if (g && g.done) toast(kind === "month" ? "🎯 Готово!" : "✨ Сбылось!") })
   $$("[data-del]", s.el).forEach(b => b.onclick = () => { remove("goals", b.dataset.del); again(kind) })
   $$("[data-steps]", s.el).forEach(b => b.onclick = () => { s.close(); stepsForm(b.dataset.steps) })
+  $$("[data-tomonth]", s.el).forEach(b => b.onclick = async () => { const g = wishToGoal(b.dataset.tomonth); s.close(); if (!g) return goalsForm(kind)
+    const c = await ui.confirm("Теперь это цель на месяц", `<div class="msg">«${esc(g.title)}». Разбить на шаги с датами и внести план в календарь?</div>`, ["Позже", "Разбить на шаги"])
+    if (c === "Разбить на шаги") stepsForm(g.id); else goalsForm(kind) })
   const carry = $('[data-a="carry"]', s.el); if (carry) carry.onclick = () => { goalAdd("month", left.map(g => g.title)); again(kind) }
   const hint = $('[data-a="hint"]', s.el); if (hint) hint.onclick = () => { hi = (hi + 1) % hints.length; $("#g-h", s.el).textContent = "💡 " + hints[hi]; $("#g-t", s.el).placeholder = hints[hi]; $("#g-t", s.el).focus() }
   $('[data-a="ai"]', s.el).onclick = () => {

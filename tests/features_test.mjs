@@ -249,7 +249,7 @@ check((await page.evaluate(() => runTool("get_goals", { kind: "dream" }))).dream
 await page.evaluate(() => goalsForm("dream")); await page.waitForTimeout(300)
 check(await page.evaluate(() => /шаги 1 из 2/.test(document.body.textContent) && !!$("[data-steps]")), "в списке мечт — прогресс шагов и кнопка «Шаги»")
 await page.click("[data-steps]"); await page.waitForTimeout(300)
-check(await page.evaluate(() => /Разбить с помощником/.test(document.body.textContent) && $$("[data-st]").length === 2 && /Шаг 3/.test(document.body.textContent)), "экран шагов мечты")
+check(await page.evaluate(() => /План с помощником/.test(document.body.textContent) && $$("[data-st]").length === 2 && !!$("#st-t")), "экран шагов мечты")
 await page.fill("#st-t", "Съездить посмотреть дома"); await page.click('[data-a="ok"]'); await page.waitForTimeout(300)
 check(await page.evaluate(() => $$("[data-st]").length === 3), "шаг добавлен руками")
 await page.screenshot({ path: SHOTS + "f-steps.png" })
