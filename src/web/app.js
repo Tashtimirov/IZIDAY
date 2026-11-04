@@ -1411,6 +1411,7 @@ function micStart(auto) {
     r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
     let fin = "", all = ""
     r.onresult = e => {
+      if (voice !== v) return   // уже отправлено: поздний результат после stop() не должен снова заполнить поле
       let interim = ""
       fin = ""
       for (let i = 0; i < e.results.length; i++) {

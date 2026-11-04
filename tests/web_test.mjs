@@ -372,6 +372,8 @@ await page.click(".chat-bar .mic"); await page.waitForTimeout(100)
 await page.evaluate(() => { const r = window.__sr; r.onresult({ results: [Object.assign([{ transcript: "привет" }], { isFinal: true })] }) })
 claudeQueue.push({ content: [{ type: "text", text: "Привет!" }], stop_reason: "end_turn" })
 await page.click(".chat-bar .send")
+await page.evaluate(() => window.__sr.onresult({ results: [Object.assign([{ transcript: "привет" }], { isFinal: true })] }))   // Safari присылает итог уже после stop()
+check(await page.evaluate(() => $("#chat-in").value === ""), "после ➤ поле пустое: поздний итог распознавания не возвращает текст", await page.evaluate(() => $("#chat-in").value))
 await page.click(".chat-bar .mic"); await page.waitForTimeout(900)
 check(await page.evaluate(() => !!voice && window.__starts === 2), "сразу после ➤ микрофон запускается снова", await page.evaluate(() => [!!voice, window.__starts]))
 // ошибка распознавания — без бесконечного перезапуска, с подсказкой
