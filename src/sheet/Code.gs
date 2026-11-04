@@ -837,7 +837,7 @@ function out_(obj) {
 // воду и ближайшие события с адресом (сколько ехать — по Картам Google) и шлёт пуш в приложение на iPhone.
 // Пуш приходит пустым (без шифрования содержимого) — приложение само забирает текст из «исходящих» (push: outbox).
 // Ключи VAPID (P-256) создаются здесь при первом запросе и хранятся в свойствах скрипта.
-const PUSH = { tick: 5, sub: "https://tashtimirov.github.io/IZIDAY/", water: [2, 3.5, 5], waterFrom: 9, waterTo: 21, buffer: 10, look: 3 * 3600e3, kidsAt: 7, kidsLead: 30 };
+const PUSH = { tick: 5, sub: "https://tashtimirov.github.io/IZIDAY/", water: [2, 3.5, 5], waterFrom: 9, waterTo: 21, buffer: 10, look: 3 * 3600e3, kidsAt: 7, kidsLead: 30, briefs: { morning: "08:00", evening: "21:00" } };
 
 function push_(p, from) {
   const a = p.action;
@@ -932,6 +932,24 @@ function pushTick() {
     for (const f of alive("fast")) if (!f.end && f.start && f.hours) {
       const at = Number(f.start) + Number(f.hours) * 3600e3;
       if (at <= now + 60e3 && at > now - 6 * 3600e3) once("f:" + f.id, { title: "🍽 Окно открыто", body: `${f.hours} ч голодания позади — можно есть. Записать еду — по фото или словами.`, url: "./#health" });
+    }
+    // 7. утренняя (8:00) и вечерняя (21:00) сводка: нажатие — помощник собирает сводку; вечером разбираем непонятные траты
+    const UNKNOWN = /^(другое|прочее|без категории)?$/i;
+    const briefAt = Object.assign({}, PUSH.briefs, (hubGet_("push_cfg") || {}).briefs);   // время можно поменять из приложения
+    for (const kind of ["morning", "evening"]) {
+      const hm = briefAt[kind]; if (!hm) continue;
+      const at = pushParse_(dayOf(now) + "T" + hm, tz); if (!at || !(at.getTime() > from && at.getTime() <= now + 60e3)) continue;
+      const cur = (hubGet_("push_cfg") || {}).currency || "฿", fmt = n => Math.round(n).toLocaleString("ru-RU") + " " + cur;
+      const spent = alive("money").filter(e => e.type === "expense" && dayOf(e.date) === dayOf(now));
+      if (kind === "morning") {
+        let ev = [];
+        try { ev = CalendarApp.getDefaultCalendar().getEventsForDay(new Date(now)).filter(e => !e.isAllDayEvent()); } catch (e) {}
+        const first = ev[0] ? `Первое: ${Utilities.formatDate(ev[0].getStartTime(), tz, "HH:mm")} ${ev[0].getTitle()}. ` : "";
+        once("b:m:" + dayOf(now), { title: "☀️ Утренняя сводка", body: `${ev.length ? `Сегодня ${ev.length} ${ev.length === 1 ? "встреча" : ev.length < 5 ? "встречи" : "встреч"}. ${first}` : "Встреч в календаре нет. "}Нажмите — расскажу план дня.`, url: "./#brief=morning" });
+      } else {
+        const sum = spent.reduce((s, e) => s + (Number(e.amount) || 0), 0), unk = spent.filter(e => UNKNOWN.test(String(e.category || "").trim()));
+        once("b:e:" + dayOf(now), { title: "🌙 Итоги дня", body: `${spent.length ? `Потрачено ${fmt(sum)}` : "Трат сегодня нет"}${unk.length ? `, ${unk.length} без категории — разберём, куда отнести` : ""}. Нажмите — пройдём по дню.`, url: "./#brief=evening" });
+      }
     }
     // 4. «Пора выезжать»: события с адресом в ближайшие 3 часа, дорога от того места, где пользователь сейчас
     const here = pushHere_(), travel = hubGet_("push_travel") || {};

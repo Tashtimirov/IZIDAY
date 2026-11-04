@@ -77,6 +77,17 @@ const out3 = hub({ from: "app", push: { action: "outbox" } }).push.items.map(x =
 check(out3.some(x => /Через 30 мин: Плавание \| .*Плавание \(Алия\) — взять: очки и полотенце/.test(x)), "дети: за 30 минут — что взять", out3.slice(-3))
 check(!out3.some(x => /Не сегодня/.test(x)), "дети: дела другого дня не приходят")
 check(out3.some(x => /Окно открыто \| 16 ч голодания позади/.test(x)), "голодание: окно открылось — пуш", out3.slice(-3))
+// 4г. утренняя и вечерняя сводка: пуш в своё время, вечером — сколько трат без категории
+hub({ from: "app", push: { action: "subscribe", sub: { endpoint: "https://push.example/abc", keys: { p256dh: "x", auth: "y" } }, cfg: { waterGoal: 2000, currency: "฿", briefs: { morning: hhmm(new Date(now)), evening: hhmm(new Date(now + 60e3)) } } } })
+hub({ from: "app", since: 0, lists: { money: [{ id: "f1", date: now, u: now + 9, type: "expense", amount: 300, category: "Транспорт", method: "cash" },
+  { id: "f2", date: now, u: now + 9, type: "expense", amount: 1250, category: "Другое", method: "transfer", comment: "Платёж по карте" }] } })
+sh.pushTick()
+const out4 = hub({ from: "app", push: { action: "outbox" } }).push.items
+check(out4.some(x => x.title === "☀️ Утренняя сводка" && x.url === "./#brief=morning"), "утренняя сводка — пуш, открывает сводку в приложении", out4.slice(-3).map(x => x.title))
+const evn = out4.find(x => x.title === "🌙 Итоги дня")
+check(evn && /Потрачено 1\s?550 ฿, 1 без категории — разберём/.test(evn.body) && evn.url === "./#brief=evening", "вечером: итог трат и сколько без категории", evn)
+const n4 = sh.pushes.length; sh.pushTick()
+check(!hub({ from: "app", push: { action: "outbox" } }).push.items.slice(out4.length).some(x => /сводка|Итоги/.test(x.title)), "сводка — раз в день", n4)
 // 5. исчезнувшая подписка удаляется
 hub({ from: "app", push: { action: "subscribe", sub: { endpoint: "https://push.example/gone", keys: { p256dh: "x", auth: "y" } } } })
 hub({ from: "app", push: { action: "test" } })

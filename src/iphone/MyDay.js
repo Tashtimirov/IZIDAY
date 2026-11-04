@@ -3911,6 +3911,7 @@ function chatHTML(items) {
 // ── Утренняя и вечерняя сводка: ежедневное уведомление, нажатие открывает чат и помощник собирает сводку
 async function scheduleBriefs() {
   if (!CONFIG.assistantChat) return
+  if ((await loadSettings()).pushOn) { Notification.removePending(["myday-brief-morning", "myday-brief-evening"]); return }   // сводки шлёт таблица пушем — открываются в приложении, не в Safari
   for (const kind of ["morning", "evening"]) {
     try {
       const at = (CONFIG.briefs || {})[kind]

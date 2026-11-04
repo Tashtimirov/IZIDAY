@@ -636,6 +636,8 @@ const AGENT_TOOLS = [
       done: { type: "boolean" }, create: { type: "boolean" }, bad: { type: "boolean", description: "При создании: true — привычка, которую бросают" } }, required: ["habit"] } },
   { name: "get_money", description: "Операции и итоги по деньгам за месяц.",
     input_schema: { type: "object", properties: { month: { type: "string", description: "YYYY-MM, по умолчанию текущий" } } } },
+  { name: "update_money", description: "Исправить операцию по id (из get_money или get_history details): категорию и/или комментарий. Для разбора непонятных трат.",
+    input_schema: { type: "object", properties: { id: { type: "string" }, category: { type: "string", description: "Одна из категорий из системного сообщения" }, comment: { type: "string" } }, required: ["id"] } },
   { name: "delete_money", description: "Удалить ошибочную операцию по id.",
     input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "get_history", description: "Сводка по дням за период (до 92 дней): еда (ккал, БЖУ), вода, тренировки, шаги и активность с часов, расходы и доходы. " +
@@ -778,6 +780,14 @@ async function runTool(name, x) {
       const now = Date.now()
       upsert("skips", { id: uid("k"), date: now, amount: x.amount, note: String(x.note || "").slice(0, 120), until: now + (x.days || 14) * 864e5 })
       return { ok: true, note: `Платёж ${x.amount} по карте в ближайшие ${x.days || 14} дн. не попадёт в расходы` }
+    }
+    case "update_money": {
+      const e = live(D.money).find(m => m.id === x.id)
+      if (!e) return { error: "нет такой операции" }
+      const names = (core.CONFIG.categories[e.type] || []).map(c => c[0])
+      if (x.category != null && !names.includes(x.category)) return { error: `категория должна быть одной из: ${names.join(", ")}` }
+      const rec = upsert("money", Object.assign({}, e, x.category != null ? { category: x.category } : {}, x.comment != null ? { comment: String(x.comment).trim() } : {}))
+      return { ok: true, id: rec.id, category: rec.category, comment: rec.comment || "" }
     }
     case "add_money": {
       const names = core.CONFIG.categories[x.type] ? core.CONFIG.categories[x.type].map(c => c[0]) : []
@@ -1238,7 +1248,9 @@ const BRIEFS = {
     "деньги и еду с водой и активностью за сегодня, события на завтра. Расскажи: что сделано, что не сделано; сколько потрачено сегодня " +
     "(итог и главные траты); сколько съедено ккал и БЖУ, вода, активность; что завтра. Если есть невыполненные напоминания на сегодня " +
     "или просроченные — спроси через ask_user, перенести ли их на завтра (варианты: «Перенести всё на завтра», «Выберу сам», «Оставить как есть») " +
-    "и сделай, как ответят; время у перенесённых сохраняй, без времени — на завтра." },
+    "и сделай, как ответят; время у перенесённых сохраняй, без времени — на завтра. " +
+    "Обязательно разбери расходы за сегодня (и вчера, если не разбирали): каждую трату с категорией «Другое» или с непонятным комментарием (платёж по карте без описания, перевод без пояснения) " +
+    "по одной спроси через ask_user, на что она была, — с 3–4 самыми вероятными категориями как вариантами; ответ запиши через update_money (категория и короткий комментарий)." },
 }
 function chatContext() {
   const out = []

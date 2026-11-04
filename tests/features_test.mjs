@@ -245,6 +245,12 @@ check(await page.evaluate(() => tab === "chat" && D.chat.some(m => m.role === "a
 await page.evaluate(() => { location.hash = "reply=" + encodeURIComponent("🍽 Ужин\nОсталось около 1400 ккал") }); await page.waitForTimeout(400)
 check(await page.evaluate(() => D.chat.filter(m => m.text.includes("Осталось около 1400")).length === 1), "второе нажатие не дублирует")
 
+// 14. вечерний разбор трат: исправить категорию операции
+const um0 = await page.evaluate(() => runTool("add_money", { type: "expense", amount: 1250, method: "transfer", category: "Другое", comment: "Платёж по карте" }))
+const um = await page.evaluate(id => runTool("update_money", { id, category: "Кафе и рестораны", comment: "ужин с семьёй" }), um0.id)
+check(um.ok && um.category === "Кафе и рестораны" && um.comment === "ужин с семьёй" && (await page.evaluate(id => runTool("update_money", { id, category: "Нет такой" }), um0.id)).error, "update_money: категория и комментарий, чужая категория — ошибка", um)
+check(await page.evaluate(() => /update_money/.test(BRIEFS.evening.prompt) && /Другое/.test(BRIEFS.evening.prompt)), "вечерняя сводка разбирает траты без категории")
+
 // 10. тёмная тема
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await page.waitForTimeout(300)
 await page.emulateMedia({ colorScheme: "dark" })
