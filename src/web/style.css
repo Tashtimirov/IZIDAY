@@ -549,3 +549,5 @@ body.kb #tabs #fab { visibility: hidden; }
 .habit.bad i { color: var(--red); }
 .habit:not(.on) i { opacity: .45; }
 #tabs #fab.on { color: var(--accent); font-weight: 600; }
+.add-line input { min-width: 0; border: 0; border-radius: 14px; padding: 12px 14px; background: var(--card); box-shadow: var(--shadow); font-size: 16px; outline: none; }
+.add-line input:focus { box-shadow: 0 0 0 2px var(--accent); }
