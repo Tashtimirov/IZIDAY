@@ -362,7 +362,7 @@ function sheet(html, { onClose } = {}) {
   const layer = $("#layer")
   const scrim = document.createElement("div"); scrim.className = "scrim"
   const el = document.createElement("div"); el.className = "sheet"
-  el.innerHTML = '<div class="grab"></div>' + html
+  el.innerHTML = '<div class="grab"></div><button class="sh-x" aria-label="Закрыть">' + ICO.x + '</button>' + html
   layer.append(scrim, el)
   requestAnimationFrame(() => { scrim.classList.add("show"); el.classList.add("show") })
   const entry = { el, close: null }
@@ -375,6 +375,14 @@ function sheet(html, { onClose } = {}) {
     if (onClose) onClose()
   }
   scrim.onclick = () => entry.close()
+  $(".sh-x", el).onclick = () => entry.close()
+  // смахнуть вниз: тянем за верх окна (или когда список уже прокручен до начала) — окно закрывается
+  let y0 = null, dy = 0
+  el.addEventListener("touchstart", e => { y0 = el.scrollTop <= 0 || e.target.closest(".grab") ? e.touches[0].clientY : null; dy = 0 }, { passive: true })
+  el.addEventListener("touchmove", e => { if (y0 == null) return; dy = e.touches[0].clientY - y0
+    if (dy > 0 && el.scrollTop <= 0) { el.style.transition = "none"; el.style.transform = `translateY(${dy}px)` } else if (dy < 0) { y0 = null; el.style.transform = "" } }, { passive: true })
+  el.addEventListener("touchend", () => { if (y0 == null) return; y0 = null; el.style.transition = ""
+    if (dy > 90) { el.style.transform = ""; entry.close() } else el.style.transform = "" }, { passive: true })
   stack.push(entry)
   return entry
 }
