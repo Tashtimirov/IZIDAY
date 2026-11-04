@@ -1091,9 +1091,9 @@ async function runTool(name, x) {
     case "delete_list": { const l = myLists().find(z => z.id === x.id); if (!l) return { error: "нет такого" }; remove("goals", l.id); return { ok: true } }
     case "wish_to_goal": { const w = goalFind(x.wish, "wish"); if (!w) return { error: "нет такого желания", have: goalsOf("wish").map(z => z.title).slice(0, 40) }
       const g = wishToGoal(w.id); return g ? { ok: true, goal: g.title, id: g.id, month: curMonth() } : { error: "не получилось" } }
-    case "add_goal_steps": { const g = goalFind(x.goal, "dream") || goalFind(x.goal); if (!g) return { error: "не нашёл такую мечту или цель" }
+    case "add_goal_steps": { const g = goalFind(x.goal, "month") || goalFind(x.goal, "dream") || goalFind(x.goal); if (!g) return { error: "не нашёл такую мечту или цель" }
       const a = goalSteps(g.id, x.steps || [], x.dates || []); return { ok: true, goal: g.title, added: a.map(z => z.t), steps: stepsOf(D.goals.find(z => z.id === g.id)).map(z => z.t + (z.date ? ` (${z.date})` : "")) } }
-    case "goal_step_done": { const g = goalFind(x.goal, "dream") || goalFind(x.goal); if (!g) return { error: "не нашёл такую мечту или цель" }
+    case "goal_step_done": { const g = goalFind(x.goal, "month") || goalFind(x.goal, "dream") || goalFind(x.goal); if (!g) return { error: "не нашёл такую мечту или цель" }
       const st = stepFind(g, x.step); if (!st) return { error: "нет такого шага", steps: stepsOf(g).map(z => z.t) }
       const g2 = stepSet(g.id, st.id, { done: x.done !== false, doneAt: x.done !== false ? Date.now() : 0 })
       return { ok: true, step: st.t, progress: stepsTxt(g2), all_done: stepsOf(g2).every(z => z.done) } }
