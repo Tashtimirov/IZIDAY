@@ -362,7 +362,7 @@ function sheet(html, { onClose } = {}) {
   const layer = $("#layer")
   const scrim = document.createElement("div"); scrim.className = "scrim"
   const el = document.createElement("div"); el.className = "sheet"
-  el.innerHTML = '<div class="grab"></div><button class="sh-x" aria-label="Закрыть">' + ICO.x + '</button>' + html
+  el.innerHTML = '<div class="grab"></div>' + html
   layer.append(scrim, el)
   requestAnimationFrame(() => { scrim.classList.add("show"); el.classList.add("show") })
   const entry = { el, close: null }
@@ -375,14 +375,19 @@ function sheet(html, { onClose } = {}) {
     if (onClose) onClose()
   }
   scrim.onclick = () => entry.close()
-  $(".sh-x", el).onclick = () => entry.close()
-  // смахнуть вниз: тянем за верх окна (или когда список уже прокручен до начала) — окно закрывается
-  let y0 = null, dy = 0
-  el.addEventListener("touchstart", e => { y0 = el.scrollTop <= 0 || e.target.closest(".grab") ? e.touches[0].clientY : null; dy = 0 }, { passive: true })
-  el.addEventListener("touchmove", e => { if (y0 == null) return; dy = e.touches[0].clientY - y0
-    if (dy > 0 && el.scrollTop <= 0) { el.style.transition = "none"; el.style.transform = `translateY(${dy}px)` } else if (dy < 0) { y0 = null; el.style.transform = "" } }, { passive: true })
-  el.addEventListener("touchend", () => { if (y0 == null) return; y0 = null; el.style.transition = ""
-    if (dy > 90) { el.style.transform = ""; entry.close() } else el.style.transform = "" }, { passive: true })
+  // смахнуть вниз: окно едет за пальцем, фон светлеет; отпустили быстро или ниже трети — закрылось, иначе пружиной назад
+  let y0 = null, dy = 0, t0 = 0, vy = 0, ly = 0, lt = 0
+  const follow = d => { el.style.transform = `translateY(${d}px)`; scrim.style.opacity = String(Math.max(0, 1 - d / (el.offsetHeight || 600))) }
+  el.addEventListener("touchstart", e => { const top = el.scrollTop <= 0 || e.target.closest(".grab")
+    y0 = top ? e.touches[0].clientY : null; dy = 0; vy = 0; ly = y0; lt = t0 = e.timeStamp }, { passive: true })
+  el.addEventListener("touchmove", e => { if (y0 == null) return
+    const y = e.touches[0].clientY; dy = y - y0
+    if (e.timeStamp > lt) { vy = (y - ly) / (e.timeStamp - lt); ly = y; lt = e.timeStamp }
+    if (dy > 0 && el.scrollTop <= 0) { el.classList.add("drag"); follow(dy) } else if (dy < 0) { y0 = null; el.classList.remove("drag"); el.style.transform = ""; scrim.style.opacity = "" } }, { passive: true })
+  const release = () => { if (y0 == null) return; y0 = null; el.classList.remove("drag")
+    if (dy > Math.min(140, el.offsetHeight / 3) || (vy > 0.45 && dy > 24)) { el.classList.add("flick"); el.style.transform = ""; scrim.style.opacity = ""; entry.close() }
+    else { el.classList.add("spring"); el.style.transform = ""; scrim.style.opacity = ""; setTimeout(() => el.classList.remove("spring"), 500) } }
+  el.addEventListener("touchend", release, { passive: true }); el.addEventListener("touchcancel", release, { passive: true })
   stack.push(entry)
   return entry
 }
