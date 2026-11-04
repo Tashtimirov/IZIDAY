@@ -146,7 +146,7 @@ check(await page.evaluate(() => !!$("#habits-week") && !$("#lists")), "филь�
 await page.click('[data-pf="again"]'); await page.waitForTimeout(200)
 await page.click(`[data-chore-done]`); await page.waitForTimeout(500)
 check(await page.evaluate(() => chores().find(c => c.title === "Помыть машину").last > Date.now() - 60e3 && /через 14 дней/i.test($("#chores").textContent)), "машину помыл — снова через 14 дней")
-await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close(); listSheet(listFind("На выходные").id) }); await page.waitForTimeout(300)
+await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close(); listSheet(listFind("На выходные").id) }); await page.waitForTimeout(2600)
 await page.screenshot({ path: SHOTS + "p-list.png" })
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close(); choreForm() }); await page.waitForTimeout(300)
 await page.fill("#c-t", "Полить цветы на балконе"); await page.click('#c-n [data-n="3"]'); await page.click('#c-i [data-i="leaf"]')
