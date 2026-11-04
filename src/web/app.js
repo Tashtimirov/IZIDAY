@@ -623,7 +623,7 @@ const AGENT_TOOLS = [
   { name: "delete_kids_item", description: "Убрать дело детей по id (из get_kids).", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "start_fast", description: "Начать интервальное голодание (по умолчанию 16 ч). Когда окно откроется — придёт пуш.", input_schema: { type: "object", properties: { hours: { type: "number" } } } },
   { name: "stop_fast", description: "Закончить голодание сейчас (поел).", input_schema: { type: "object", properties: {} } },
-  { name: "add_goal", description: "Цели: kind=month — цели на этот месяц; wish — «100 желаний» (любые желания, большие и маленькие); dream — «10 мечт», крупное на срок до года (due YYYY-MM-DD, не дальше года). " +
+  { name: "add_goal", description: "Цели: kind=month — цели на этот месяц; wish — «100 желаний» (любые желания, большие и маленькие); dream — «10 мечт», крупное на год, два, три и больше (due YYYY-MM-DD, по умолчанию через год, не дальше 10 лет). " +
       "Если пользователю трудно придумать — задавай по одному вопросу про разные стороны жизни (поездки, учёба, семья, тело, деньги, дом, люди, творчество) и записывай ответы.",
     input_schema: { type: "object", properties: { kind: { type: "string", enum: ["month", "wish", "dream"] }, items: { type: "array", items: { type: "string" } }, due: { type: "string", description: "Для dream: YYYY-MM-DD" } }, required: ["kind", "items"] } },
   { name: "get_goals", description: "Цели на месяц, 100 желаний, 10 мечт: что есть и что сбылось.", input_schema: { type: "object", properties: { kind: { type: "string", enum: ["month", "wish", "dream"] } } } },
@@ -2485,7 +2485,7 @@ function fastCard() {
     <div class="btns" style="margin-top:10px"><button class="btn small" data-fast="stop">${left > 0 ? "Прервать" : "Поел — закончить"}</button></div></div>`
 }
 
-// ── Цели: на месяц, «100 желаний» (с подсказками), «10 мечт» — крупное, в пределах года ──
+// ── Цели: на месяц, «100 желаний» (с подсказками), «10 мечт» — крупное, на год и больше (до 10 лет) ──
 const GOAL_KIND = { month: ["🎯", "На месяц"], wish: ["✨", "100 желаний"], dream: ["🌠", "10 мечт"] }
 const GOAL_MAX = { month: 0, wish: 100, dream: 10 }
 const WISH_HINTS = ["Куда хочу поехать?", "Чему хочу научиться?", "Что хочу попробовать впервые?", "Что хочу сделать вместе с детьми?", "Что хочу для семьи и дома?",
@@ -2497,11 +2497,11 @@ const DREAM_HINTS = ["Большая поездка", "Дом, квартира,
 const curMonth = () => core.monthKey(new Date())
 const goalsOf = (kind, month = curMonth()) => live(D.goals).filter(g => g.title && g.kind === kind && (kind !== "month" || g.month === month))
   .sort((a, b) => (!!a.done - !!b.done) || a.date - b.date)
-const yearAhead = () => dayKey(addDays(new Date(), 365))
+const yearAhead = (n = 1) => { const d = new Date(); d.setFullYear(d.getFullYear() + n); return dayKey(d) }   // мечта: по умолчанию год, можно 2, 3, 5 лет — не дальше 10
 function goalAdd(kind, items, due) {
   if (!GOAL_KIND[kind]) return { error: "kind: month, wish или dream" }
   const have = goalsOf(kind), out = []
-  if (kind === "dream" && due) { if (!/^\d{4}-\d\d-\d\d$/.test(due)) due = ""; else if (due > yearAhead()) due = yearAhead() }
+  if (kind === "dream" && due) { if (!/^\d{4}-\d\d-\d\d$/.test(due)) due = ""; else if (due > yearAhead(10)) due = yearAhead(10) }
   for (const t of items.map(s => String(s).trim()).filter(Boolean)) {
     if (GOAL_MAX[kind] && have.length + out.length >= GOAL_MAX[kind]) break
     if ([...have, ...out].some(g => normT(g.title) === normT(t))) continue
@@ -2526,7 +2526,7 @@ function goalsCard() {
 function goalsMore() {
   const n = k => goalsOf(k).length, d = k => goalsOf(k).filter(g => g.done).length
   return `<div class="card"><h2>Цели и мечты</h2>${["month", "wish", "dream"].map(k => `<button class="row" style="width:100%;text-align:left;background:none;border:0;padding:10px 0" data-goals="${k}"><span class="pin">${GOAL_KIND[k][0]}</span>
-    <div class="grow"><div class="t">${GOAL_KIND[k][1]}</div><div class="s">${n(k) ? `${d(k)} ${k === "month" ? "сделано" : "сбылось"} из ${n(k)}${GOAL_MAX[k] ? ` · мест ${GOAL_MAX[k]}` : ""}` : k === "wish" ? "Пишите всё, чего хочется: большое и маленькое" : k === "dream" ? "Крупное, что сделаю за год" : "3–5 целей на этот месяц"}</div></div><span class="muted">›</span></button>`).join("")}</div>`
+    <div class="grow"><div class="t">${GOAL_KIND[k][1]}</div><div class="s">${n(k) ? `${d(k)} ${k === "month" ? "сделано" : "сбылось"} из ${n(k)}${GOAL_MAX[k] ? ` · мест ${GOAL_MAX[k]}` : ""}` : k === "wish" ? "Пишите всё, чего хочется: большое и маленькое" : k === "dream" ? "Крупное: на год, два, три" : "3–5 целей на этот месяц"}</div></div><span class="muted">›</span></button>`).join("")}</div>`
 }
 function goalsForm(kind = "month") {
   const l = goalsOf(kind), hints = kind === "dream" ? DREAM_HINTS : WISH_HINTS, full = GOAL_MAX[kind] && l.length >= GOAL_MAX[kind]
@@ -2535,14 +2535,15 @@ function goalsForm(kind = "month") {
   const s = sheet(`<h3>${GOAL_KIND[kind][0]} ${kind === "month" ? "Цели на " + esc(core.monthTitle(curMonth()).toLowerCase()) : GOAL_KIND[kind][1]}</h3>
     <div class="seg" id="g-k">${Object.keys(GOAL_KIND).map(k => `<button data-k="${k}" class="${k === kind ? "on" : ""}">${{ month: "Месяц", wish: "Желания", dream: "Мечты" }[k]}</button>`).join("")}</div>
     <div style="margin-top:10px">${l.map(g => `<div class="row"><button class="check ${g.done ? "on" : ""}" data-g="${esc(g.id)}"></button><div class="grow"><div class="t">${esc(g.title)}</div>${g.due ? `<div class="s">${esc(dueTxt(g.due))}</div>` : ""}</div><button class="btn small red" data-del="${esc(g.id)}">✕</button></div>`).join("")
-      || `<div class="empty">${kind === "wish" ? "Пишите всё, чего хочется, — большое и маленькое. Не получается? Нажмите «Подсказка» или «Помочь придумать»." : kind === "dream" ? "До 10 крупных мечт, которые реально сделать за год." : "3–5 целей на этот месяц."}</div>`}</div>
+      || `<div class="empty">${kind === "wish" ? "Пишите всё, чего хочется, — большое и маленькое. Не получается? Нажмите «Подсказка» или «Помочь придумать»." : kind === "dream" ? "До 10 крупных мечт: на год, два, три и больше." : "3–5 целей на этот месяц."}</div>`}</div>
     ${left.length ? `<button class="btn small" data-a="carry" style="margin-top:8px">Перенести с прошлого месяца (${left.length})</button>` : ""}
     ${full ? `<div class="muted small" style="margin-top:12px">Все ${GOAL_MAX[kind]} мест заняты — отметьте сбывшееся или уберите лишнее.</div>` : `
     <div class="field" style="margin-top:12px"><label>${kind === "month" ? "Новая цель" : kind === "wish" ? `Желание №${l.length + 1}` : `Мечта №${l.length + 1}`}</label><input id="g-t" placeholder="${esc(kind === "month" ? "Пробежать 50 км, прочитать книгу…" : hints[hi])}"></div>
-    ${kind === "dream" ? `<div class="field"><label>Срок (не дальше года)</label><input id="g-d" type="date" value="${yearAhead()}" max="${yearAhead()}" min="${dayKey(new Date())}"></div>` : ""}
+    ${kind === "dream" ? `<div class="field"><label>Срок</label><div class="chips" id="g-y">${[1, 2, 3, 5].map(n => `<button class="chip ${n === 1 ? "on" : ""}" data-y="${n}">${n} ${plural(n, "год", "года", "лет")}</button>`).join("")}</div><input id="g-d" type="date" style="margin-top:8px" value="${yearAhead()}" max="${yearAhead(10)}" min="${dayKey(new Date())}"></div>` : ""}
     ${kind !== "month" ? `<div class="muted small" id="g-h">💡 ${esc(hints[hi])}</div>` : ""}`}
     <div class="btns" style="margin-top:10px">${kind !== "month" && !full ? '<button class="btn" data-a="hint">Подсказка</button>' : ""}<button class="btn" data-a="ai">Помочь придумать</button>${full ? "" : '<button class="btn primary" data-a="ok">Добавить</button>'}</div>`, { onClose: () => render() })
   const again = k => { s.close(); goalsForm(k) }
+  $$("#g-y .chip", s.el).forEach(b => b.onclick = () => { $("#g-d", s.el).value = yearAhead(+b.dataset.y); $$("#g-y .chip", s.el).forEach(c => c.classList.toggle("on", c === b)) })
   $$("#g-k button", s.el).forEach(b => b.onclick = () => again(b.dataset.k))
   $$("[data-g]", s.el).forEach(b => b.onclick = () => { const g = goalToggle(b.dataset.g); b.classList.toggle("on", !!(g && g.done)); if (g && g.done) toast(kind === "month" ? "🎯 Готово!" : "✨ Сбылось!") })
   $$("[data-del]", s.el).forEach(b => b.onclick = () => { remove("goals", b.dataset.del); again(kind) })
@@ -2552,8 +2553,8 @@ function goalsForm(kind = "month") {
     s.close(); setTab("chat")
     const have = l.map(g => g.title).join("; ")
     const q = kind === "wish" ? `Помоги дополнить мои «100 желаний» (сейчас ${l.length}${have ? ": " + have : ""}). Задавай по одному вопросу про разные стороны жизни и записывай мои ответы.`
-      : kind === "dream" ? `Помоги сформулировать крупные мечты на год (сейчас ${l.length} из 10${have ? ": " + have : ""}). Спроси, что для меня важно, и запиши мечты со сроком.`
-      : `Помоги поставить 3–5 целей на этот месяц${have ? ` (уже есть: ${have})` : ""}. Учти мои мечты на год и то, что не успел в прошлом месяце.`
+      : kind === "dream" ? `Помоги сформулировать крупные мечты — на год, два, три и дальше (сейчас ${l.length} из 10${have ? ": " + have : ""}). Спроси, что для меня важно, и запиши мечты со сроком.`
+      : `Помоги поставить 3–5 целей на этот месяц${have ? ` (уже есть: ${have})` : ""}. Учти мои мечты и то, что не успел в прошлом месяце.`
     setTimeout(() => chatSend(q), 30)
   }
   const ok = $('[data-a="ok"]', s.el)

@@ -3293,7 +3293,7 @@ const AGENT_TOOLS = [
   { name: "shop_done", description: "Отметить купленным (или убрать из списка).", input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } } }, required: ["items"] } },
   { name: "start_fast", description: "Начать интервальное голодание (по умолчанию 16 ч). Когда окно откроется — придёт пуш.", input_schema: { type: "object", properties: { hours: { type: "number" } } } },
   { name: "stop_fast", description: "Закончить голодание сейчас (поел).", input_schema: { type: "object", properties: {} } },
-  { name: "add_goal", description: "Цели: kind=month — на этот месяц; wish — «100 желаний»; dream — «10 мечт», крупное на срок до года (due YYYY-MM-DD).",
+  { name: "add_goal", description: "Цели: kind=month — на этот месяц; wish — «100 желаний»; dream — «10 мечт», крупное на год, два, три и больше (due YYYY-MM-DD, по умолчанию через год).",
     input_schema: { type: "object", properties: { kind: { type: "string", enum: ["month", "wish", "dream"] }, items: { type: "array", items: { type: "string" } }, due: { type: "string" } }, required: ["kind", "items"] } },
   { name: "get_goals", description: "Цели на месяц, желания и мечты.", input_schema: { type: "object", properties: {} } },
   { name: "add_water", description: "Записать выпитую воду. Стакан — 250 мл.",
@@ -3506,8 +3506,8 @@ async function runTool(name, x) {
       if (name === "get_goals") return { month: of("month").map(g => ({ title: g.title, done: !!g.done })), wish: of("wish").map(g => ({ title: g.title, done: !!g.done })), dream: of("dream").map(g => ({ title: g.title, done: !!g.done, due: g.due })) }
       const max = { month: 0, wish: 100, dream: 10 }[x.kind]
       if (max == null) return { error: "kind: month, wish или dream" }
-      const y = new Date(now + 365 * 864e5), year = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, "0")}-${String(y.getDate()).padStart(2, "0")}`
-      const due = /^\d{4}-\d\d-\d\d$/.test(x.due || "") && x.due < year ? x.due : year
+      const ymd = n => { const y = new Date(now); y.setFullYear(y.getFullYear() + n); return `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, "0")}-${String(y.getDate()).padStart(2, "0")}` }
+      const due = /^\d{4}-\d\d-\d\d$/.test(x.due || "") ? (x.due < ymd(10) ? x.due : ymd(10)) : ymd(1)   // мечта: по умолчанию через год, не дальше 10 лет
       const same = (a, b) => String(a).toLowerCase().replace(/ё/g, "е").trim() === String(b).toLowerCase().replace(/ё/g, "е").trim()
       let n = 0
       for (const t of (x.items || []).map(s => String(s).trim()).filter(Boolean)) {
