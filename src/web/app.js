@@ -1869,6 +1869,7 @@ function renderTop() {
   else {
     const p = gcalOn() ? 0 : pendingOps().length
     sub = gcalOn() ? `Обновлено ${ago(D.sync.at)}` : `iPhone: ${v.at ? ago(v.at) : "ждём виджет"}` + (p ? ` · ⏳ ${p} в очереди` : "")
+    if (tab === "today" && wxLine()) sub = wxLine() + " · " + sub
   }
   $("#top-sub").textContent = sub
 }
@@ -1897,9 +1898,13 @@ function renderToday() {
   const onDay = d => v.events.filter(e => e.s < addDays(d, 1) && e.e > d).sort((a, b) => (b.all_day ? 1 : 0) - (a.all_day ? 1 : 0) || a.s - b.s)
   const dayEvs = onDay(selDay)
   const nSel = dayEvs.length
+  if (isToday) html += todayTop(v, now)
   html += `<div class="card daycard"><div class="dayhead"><div><div class="dh-t">${isToday ? "Сегодня" : esc(core.cap(dayName(selDay)))}, ${selDay.getDate()} ${MONTHS_GEN[selDay.getMonth()]}</div>
     <div class="dh-n">${nSel ? `${nSel} ${plural(nSel, "событие", "события", "событий")}` : "Нет событий"}</div></div><button class="act" data-do="event">+ Событие</button></div>`
-  html += dayEvs.length ? dayEvs.map((e, i) => {
+  const useTl = selDay >= t0
+  const allDay = dayEvs.map((e, i) => [e, i]).filter(([e]) => e.all_day || e.s < selDay)
+  if (useTl) html += allDay.map(([e, i]) => `<div class="row" data-ev="${i}"><div class="bar-l" style="background:${esc(e.color || "var(--teal)")}"></div><div class="time" style="font-size:11.5px">${e.all_day ? "весь день" : "до " + hm(e.e)}</div><div class="grow"><div class="t">${esc(e.title || "(без названия)")}</div></div></div>`).join("") + timelineHTML(v, selDay, dayEvs, now)
+  else html += dayEvs.length ? dayEvs.map((e, i) => {
     const t = e.all_day ? "весь день" : e.s < selDay ? "до " + hm(e.e) : hm(e.s)
     const past = isToday && !e.all_day && e.e <= now
     return `<div class="row ${e.pending ? "pending" : ""} ${past ? "past" : ""}" data-ev="${i}"><div class="bar-l" style="background:${esc(e.color || "var(--teal)")}"></div>
@@ -1934,18 +1939,7 @@ function renderToday() {
   if (isToday) html += choresToday()
   if (isToday && pomoNow()) html += pomoCard()
   if (isToday) html += goalsCard()
-  if (isToday) {
-    const h = dayHealth(), g = H()
-    const t = core.monthTotals(live(D.money), core.monthKey(t0))
-    const spent = live(D.money).filter(e => e.type === "expense" && sameDay(e.date, t0)).reduce((s, e) => s + e.amount, 0)
-    const mini = (p, color, icon) => { const r = 23, c = 2 * Math.PI * r
-      return `<span class="mr"><svg viewBox="0 0 56 56"><circle cx="28" cy="28" r="${r}" class="mr-t"/><circle cx="28" cy="28" r="${r}" stroke="${color}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - Math.max(0, Math.min(1, p || 0)))}"/></svg><i>${icon}</i></span>` }
-    html += `<div class="card"><h2>За день</h2><div class="stats">
-      <button class="stat" data-do="water">${mini(h.water / g.waterGoal, "var(--teal)", "💧")}<div class="v">${liters(h.water)} л</div><div class="l">${waterGap(h) ? `<span class="exp">${waterGap(h)} ч без воды</span>` : `из ${liters(g.waterGoal)}`} · +стакан</div></button>
-      <button class="stat" data-do="tab-health">${mini(h.kcal / (g.kcalGoal || 2000), "var(--gold)", "🍽")}<div class="v">${num(h.kcal)}</div><div class="l">ккал${h.active ? ` · −${num(h.active)}` : ""}</div></button>
-      <button class="stat" data-do="tab-money">${mini(t.expense ? spent / Math.max(spent, t.expense / Math.max(1, t0.getDate())) : 0, "var(--red)", "฿")}<div class="v">−${num(spent)}</div><div class="l">сегодня · −${num(t.expense)} за мес.</div></button>
-    </div></div>`
-  }
+  if (isToday) html += todayBottom(v, now)
   const failed = D.ops.filter(o => o.state === "done" && o.result && o.result.error)
   if (failed.length && !gcalOn()) html += `<div class="card"><h2>Не внеслось в iPhone</h2>${failed.map(o => `<div class="row"><div class="grow"><div class="t">${esc(OP_LABEL[o.tool] || o.tool)}: ${esc((o.input || {}).title || "")}</div><div class="s exp">${esc(o.result.error)}</div></div></div>`).join("")}</div>`
   return html
@@ -2258,7 +2252,7 @@ function bind() {
     ev.stopPropagation()
     const id = b.dataset.check
     b.classList.add("on")
-    b.closest(".row").classList.add("done-anim")
+    const row = b.closest(".row, .tl-it"); if (row) row.classList.add("done-anim")
     remSet(id, { completed: true })
     toast("✓ Выполнено")
     setTimeout(render, 380)
@@ -2312,7 +2306,8 @@ function bind() {
     const n = budgetNote(r.category); toast(`−${core.money(r.amount)} · ${r.title}${n ? " · " + n : ""}`)
   })
   $$("[data-brief]", v).forEach(b => b.onclick = () => brief(b.dataset.brief))
-  $$("[data-do]", v).forEach(b => b.onclick = () => DO[b.dataset.do]())
+  $$("[data-do]", v).forEach(b => { if (DO[b.dataset.do]) b.onclick = () => DO[b.dataset.do]() })
+  if (tab === "today") bindToday(v)
   const inp = $("#chat-in", v)
   if (inp) {
     inp.oninput = () => grow(inp)
@@ -3463,6 +3458,360 @@ $("#find").innerHTML = ICO.find
 $("#find").onclick = () => searchSheet()
 $$("#tabs button:not(#fab)").forEach(b => b.onclick = () => setTab(b.dataset.tab))
 onPhoto($("#photo")); onPhoto($("#photo-lib")); onPhoto($("#doc"))
+// ═════════════ «Сегодня» 2.0: сейчас, кольца, три главных, перегруз, таймлайн, погода, подсказка, шаблоны, итоги ═════════════
+// Хранится в goals (синхронизируется без нового деплоя скрипта): kind "top3" {day, ids}, "daynote" {day, text, mood}, "dtpl" {title, items:[{t, time}]}
+const TD_ICO = {
+  car: '<path d="M5 16l1.5-5A2 2 0 0 1 8.4 9.5h7.2a2 2 0 0 1 1.9 1.5L19 16"/><rect x="3" y="15" width="18" height="4" rx="1.5"/><circle cx="7" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>',
+  focus: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>', alert: '<path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17v.5"/>',
+  rain: '<path d="M7 15a4 4 0 1 1 1-7.9A5 5 0 0 1 18 9a3.5 3.5 0 0 1-1 6.9z"/><path d="M9 18l-1 2.5M13 18l-1 2.5M17 18l-1 2.5"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  cloud: '<path d="M7 18a4 4 0 1 1 1-7.9A5 5 0 0 1 18 11a3.5 3.5 0 0 1-1 7z"/>', wallet: '<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M16 14.5h2"/>',
+  drop: '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>', bill: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>', moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>', star: '<path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"/>',
+  brief: '<rect x="3" y="7" width="18" height="13" rx="3"/><path d="M9 7V5h6v2M3 12h18"/>', kid: '<circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/>', tpl: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 10h16M10 10v10"/>'
+}
+const tdIco = (n, s = 16) => `<i class="tdi" style="width:${s}px;height:${s}px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${TD_ICO[n]}</svg></i>`
+const goalOf = (kind, day) => live(D.goals).find(g => g.kind === kind && g.day === day)
+const DAY_FROM = 8, DAY_TO = 22   // рабочее окно дня для окон и перегруза
+
+// — Деньги: сколько можно потратить сегодня (доходы месяца − траты − неоплаченные платежи) / оставшиеся дни
+function canSpend(now = new Date()) {
+  const key = core.monthKey(now), t = core.monthTotals(live(D.money), key)
+  const bills = live(D.recur).filter(r => r.type !== "income" && !recurPaid(r)).reduce((s, r) => s + (+r.amount || 0), 0)
+  const spentToday = live(D.money).filter(e => e.type === "expense" && sameDay(e.date, now)).reduce((s, e) => s + e.amount, 0)
+  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(), daysLeft = last - now.getDate() + 1
+  if (!t.income) return null
+  const pool = t.income - (t.expense - spentToday) - bills
+  return { today: Math.max(0, Math.round(pool / daysLeft - spentToday)), perDay: Math.round(pool / daysLeft), left: Math.round(pool - spentToday), bills, last }
+}
+
+// — Погода (Open-Meteo, без ключа): по месту из телефона или виджета, раз в час
+async function wxLoad(force) {
+  if (!force && D.wx && Date.now() - D.wx.at < 3600e3) return
+  const here = await whereAmI().catch(() => null)
+  if (!here) return
+  try {
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${here.lat.toFixed(3)}&longitude=${here.lng.toFixed(3)}&hourly=temperature_2m,precipitation_probability,precipitation&forecast_days=3&timezone=auto`)
+    const j = await r.json()
+    if (!j.hourly) return
+    D.wx = { at: Date.now(), h: j.hourly.time.map((t, i) => ({ t: +parseIso(t), c: Math.round(j.hourly.temperature_2m[i]), p: j.hourly.precipitation_probability[i] || 0, mm: j.hourly.precipitation[i] || 0 })) }
+    save(false); if (tab === "today") render()
+  } catch (e) {}
+}
+const wxAt = at => D.wx && D.wx.h.find(x => x.t <= +at && +at < x.t + 3600e3)
+function wxLine(now = new Date()) {
+  if (!D.wx) return ""
+  const cur = wxAt(now); if (!cur) return ""
+  const rain = D.wx.h.find(x => x.t > +now && x.t < +addDays(sod(now), 1) && x.p >= 60 && x.mm >= 0.5)
+  return `${cur.c}°${rain ? `, после ${hm(new Date(rain.t))} ${rain.mm >= 4 ? "ливень" : "дождь"}` : cur.p >= 60 ? ", дождь" : ""}`
+}
+const wxRain = (s, e) => D.wx && D.wx.h.find(x => x.t + 3600e3 > +s && x.t < +e && x.p >= 60 && x.mm >= 0.5)
+
+// — Дорога до места события: считает таблица (route), кэш на 20 минут
+function travelOf(e) {
+  if (!e || !e.location || e.all_day) return null
+  const k = (e.id || e.title) + "|" + e.start, c = (D.trav || {})[k]
+  if (c && Date.now() - c.at < 20 * 60e3) return c
+  if (!travBusy[k] && D.conn) { travBusy[k] = 1; travelCalc(e, k).finally(() => { delete travBusy[k] }) }
+  return c || null
+}
+const travBusy = {}
+async function travelCalc(e, k) {
+  const r = await runTool("route_to", { to: e.location }).catch(() => null)
+  D.trav = D.trav || {}
+  for (const x of Object.keys(D.trav)) if (Date.now() - D.trav[x].at > 12 * 3600e3) delete D.trav[x]
+  D.trav[k] = r && !r.error && (r.minutes_in_traffic || r.minutes) ? { at: Date.now(), min: Math.round(r.minutes_in_traffic || r.minutes), km: r.km } : { at: Date.now(), min: 0 }
+  save(false); if (tab === "today") render()
+}
+
+// — 4. «Сейчас»: текущее или следующее событие, когда выезжать, кнопка «Фокус»
+function nowCard(v, now = new Date()) {
+  const evs = v.events.filter(e => !e.all_day && e.e > now && sameDay(e.s, now)).sort((a, b) => a.s - b.s)
+  const e = evs[0]
+  if (!e) return ""
+  const tr = travelOf(e), going = e.s <= now, mins = Math.round((e.s - now) / 60e3)
+  const leave = tr && tr.min ? new Date(+e.s - (tr.min + 10) * 60e3) : null, inL = leave ? Math.round((leave - now) / 60e3) : null
+  const when = going ? `идёт · до ${hm(e.e)}` : mins < 60 ? `через ${mins} мин` : `в ${hm(e.s)}`
+  return `<div class="hero-now" data-now="${esc(e.id || "")}"><div class="k">${going ? "Сейчас" : "Дальше"} · ${when}</div><div class="v">${esc(e.title || "(без названия)")}</div>
+    <div class="s2">${hm(e.s)}–${hm(e.e)}${e.location ? " · " + esc(e.location) : ""}${tr && tr.km ? `, ${Math.round(tr.km)} км` : ""}</div>
+    <div class="pills">${leave && !going ? `<span class="pill ${inL < 15 ? "hot" : ""}">${tdIco("car")} ${inL <= 0 ? "пора выезжать" : `выехать в ${hm(leave)} — через ${inL} мин`}</span>` : ""}
+    <button class="pill" data-do="td-focus">${tdIco("focus")} Фокус ${POMO.work} мин</button></div></div>`
+}
+
+// — 6. Кольца дня
+function ringsCard(v, now = new Date()) {
+  const h = dayHealth(), g = H(), t0 = sod(now)
+  const remsToday = v.reminders.filter(r => { const d = remDue(r); return d && sameDay(d, now) || r.completed && r.doneAt && sameDay(r.doneAt, now) })
+  const done = remsToday.filter(r => r.completed).length
+  const cs = canSpend(now)
+  const R = (p, color, label, val, act) => { const r = 21, L = 2 * Math.PI * r
+    return `<button class="rg" data-do="${act}"><svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="${r}" class="mr-t"/><circle cx="26" cy="26" r="${r}" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${L * Math.max(0.001, Math.min(1, p || 0))} ${L}" transform="rotate(-90 26 26)"/></svg><span>${label}</span><b>${val}</b></button>` }
+  return `<div class="card rings-card"><div class="rings">
+    ${R(remsToday.length ? done / remsToday.length : 0, "var(--ok, #0A9F6E)", "дела", `${done} из ${remsToday.length}`, "td-top3")}
+    ${R(h.water / g.waterGoal, "#0A84FF", "вода", liters(h.water) + " л", "water")}
+    ${R((h.steps || 0) / (g.stepGoal || 10000), "#FF9F0A", "шаги", h.steps != null ? num(h.steps) : "—", "tab-health")}
+    ${R((h.protein || 0) / proteinGoal(), "#AF52DE", "белок", num(h.protein) + " г", "tab-health")}
+    ${cs ? R(cs.perDay ? cs.today / cs.perDay : 0, "#30B0C7", "можно", core.money(cs.today), "tab-money") : R(0, "#30B0C7", "траты", "−" + num(live(D.money).filter(e => e.type === "expense" && sameDay(e.date, now)).reduce((s, e) => s + e.amount, 0)), "tab-money")}
+  </div></div>`
+}
+
+// — 2. Три главных дела дня
+function top3Ids(day = dayKey(new Date())) { const g = goalOf("top3", day); return g ? (g.ids || []) : [] }
+function top3Card(v, now = new Date()) {
+  const ids = top3Ids(), byId = id => v.reminders.find(r => r.id === id)
+  const list = ids.map(byId).filter(Boolean)
+  if (!list.length) {
+    const cand = openRems(v).filter(r => !remDue(r) || remDue(r) < addDays(sod(now), 1))
+    if (!cand.length || now.getHours() >= 15) return ""
+    return `<div class="card top3"><h2>Три главных<button class="act" data-do="td-top3">Выбрать</button></h2><div class="muted small">Минута утром: выберите три дела, ради которых день будет удачным. Они встанут наверх.</div></div>`
+  }
+  return `<div class="card top3"><h2>Три главных<button class="act" data-do="td-top3">Изменить</button></h2>${list.map((r, i) => `<div class="row ${r.completed ? "past" : ""}">
+    <button class="n ${r.completed ? "on" : ""}" ${r.completed ? "" : `data-check="${esc(r.id)}"`}>${r.completed ? tdIco("check", 14) : i + 1}</button>
+    <div class="grow"><div class="t">${esc(r.title)}</div>${remDue(r) && remHasTime(r) ? `<div class="s">${hm(remDue(r))}</div>` : ""}</div></div>`).join("")}</div>`
+}
+function top3Pick() {
+  const v = iphone(), now = new Date(), cur = top3Ids()
+  const cand = openRems(v).filter(r => !remDue(r) || remDue(r) < addDays(sod(now), 2)).sort((a, b) => (cur.includes(b.id) - cur.includes(a.id)) || (!remDue(a)) - (!remDue(b)) || (remDue(a) || 0) - (remDue(b) || 0))
+  let sel = cur.filter(id => cand.some(r => r.id === id))
+  const s = sheet(`<h3>Три главных на сегодня</h3><div class="msg">Отметьте до трёх дел. Остальное — если останется время.</div>
+    <div id="t3">${cand.slice(0, 30).map(r => `<button class="opt t3 ${sel.includes(r.id) ? "on" : ""}" data-id="${esc(r.id)}">${esc(r.title)}${remDue(r) ? `<span class="muted small"> · ${esc(remLabel(r))}</span>` : ""}</button>`).join("") || '<div class="empty">Нет открытых дел</div>'}</div>
+    <div class="field"><input id="t3-new" placeholder="Или новое дело…"></div>
+    <div class="btns"><button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Готово</button></div>`)
+  $$(".t3", s.el).forEach(b => b.onclick = () => {
+    const id = b.dataset.id
+    if (sel.includes(id)) sel = sel.filter(x => x !== id); else if (sel.length < 3) sel.push(id); else return toast("Не больше трёх")
+    $$(".t3", s.el).forEach(x => x.classList.toggle("on", sel.includes(x.dataset.id)))
+  })
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const t = $("#t3-new", s.el).value.trim()
+    if (t && sel.length < 3) sel.push(remAdd({ title: t, due: dayKey(new Date()) }).id)
+    const day = dayKey(new Date()), g = goalOf("top3", day)
+    upsert("goals", Object.assign(g || { id: uid("t"), date: Date.now(), kind: "top3", day }, { ids: sel }))
+    s.close(); render()
+  }
+}
+
+// — 3. Перегруз: дела без времени по 30 мин против свободного времени до 22:00
+function dayLoad(v, now = new Date()) {
+  const end = new Date(sod(now)); end.setHours(DAY_TO, 0, 0, 0)
+  const from = new Date(Math.max(+now, +new Date(sod(now)).setHours(DAY_FROM, 0, 0, 0)))
+  if (from >= end) return null
+  const busy = v.events.filter(e => !e.all_day && e.e > from && e.s < end).reduce((s, e) => s + (Math.min(+e.e, +end) - Math.max(+e.s, +from)) / 60e3 + ((travelOf(e) || {}).min || 0) * 2, 0)
+  const tasks = openRems(v).filter(r => { const d = remDue(r); return d && sameDay(d, now) || (d && d < sod(now)) })
+  const need = tasks.reduce((s, r) => s + (+(D.rems.find(x => x.id === r.id) || {}).est || 30), 0)
+  const free = Math.max(0, (end - from) / 60e3 - busy)
+  return { need, free, tasks }
+}
+function loadCard(v, now = new Date()) {
+  const day = dayKey(now)
+  if ((D.tdOff || {})["load:" + day] || now.getHours() >= 18) return ""
+  const l = dayLoad(v, now)
+  if (!l || l.need <= l.free + 30 || l.tasks.length < 3) return ""
+  const keep = new Set(top3Ids(day)), move = l.tasks.filter(r => !keep.has(r.id)).slice(-Math.max(1, Math.ceil((l.need - l.free) / 30)))
+  if (!move.length) return ""
+  const h = m => (m / 60).toFixed(m % 60 ? 1 : 0).replace(".", ",")
+  return `<div class="warn-card">${tdIco("alert", 22)}<div><b>День перегружен</b>Дел примерно на ${h(l.need)} ч, свободно ${h(l.free)} ч. Перенести ${move.slice(0, 2).map(r => `«${esc(r.title)}»`).join(" и ")}${move.length > 2 ? ` и ещё ${move.length - 2}` : ""} на завтра?
+    <div class="chips"><button class="chip on" data-do="td-move" data-ids="${esc(move.map(r => r.id).join(","))}">Перенести</button><button class="chip" data-do="td-load-off">Оставить</button></div></div></div>`
+}
+function tdMoveTomorrow(ids) {
+  const tm = addDays(sod(new Date()), 1)
+  for (const id of ids) { const r = D.rems.find(x => x.id === id); if (!r) continue
+    const d = remDue(r), nd = d && remHasTime(r) ? iso(new Date(tm.getFullYear(), tm.getMonth(), tm.getDate(), d.getHours(), d.getMinutes())) : dayKey(tm)
+    remSet(id, { due: nd }) }
+  toast(`Перенесено на завтра: ${ids.length}`); render()
+}
+
+// — 1. Таймлайн дня: события, дорога, дела со временем, свободные окна, линия «сейчас», дождь
+function timelineHTML(v, day, evs, now = new Date()) {
+  const isT = sameDay(day, now), t0 = sod(day)
+  const items = []
+  evs.forEach((e, i) => {
+    if (e.all_day || e.s < t0) return
+    const tr = isT && e.s > now ? travelOf(e) : null
+    if (tr && tr.min) items.push({ s: new Date(+e.s - tr.min * 60e3), e: e.s, kind: "road", min: tr.min })
+    items.push({ s: e.s, e: e.e, kind: "ev", ev: e, i })
+  })
+  const rems = v.reminders.filter(r => !r.completed && remHasTime(r) && sameDay(remDue(r), day))
+  rems.forEach(r => items.push({ s: remDue(r), e: new Date(+remDue(r) + 30 * 60e3), kind: "rem", r }))
+  items.sort((a, b) => a.s - b.s)
+  // свободные окна ≥ 45 мин в пределах 8–22 (на сегодня — от текущего момента)
+  const start = new Date(t0); start.setHours(DAY_FROM, 0, 0, 0)
+  const end = new Date(t0); end.setHours(DAY_TO, 0, 0, 0)
+  let cur = isT ? new Date(Math.max(+start, Math.ceil(+now / 9e5) * 9e5)) : start
+  const gaps = []
+  for (const it of items.filter(x => x.kind !== "rem")) { if (it.s - cur >= 45 * 60e3) gaps.push({ s: new Date(cur), e: it.s, kind: "free" }); if (it.e > cur) cur = new Date(it.e) }
+  if (end - cur >= 45 * 60e3) gaps.push({ s: new Date(cur), e: end, kind: "free" })
+  const undated = openRems(v).filter(r => !remDue(r) || (!remHasTime(r) && sameDay(remDue(r), day)))
+  const all = items.concat(gaps).sort((a, b) => a.s - b.s || (a.kind === "road" ? -1 : 1))
+  let html = "", nowDone = !isT, lastH = -1
+  const dur = (a, b) => { const m = Math.round((b - a) / 60e3); return m >= 60 ? `${Math.floor(m / 60)} ч${m % 60 ? " " + (m % 60) + " мин" : ""}` : m + " мин" }
+  let sugg = 0
+  for (const it of all) {
+    if (!nowDone && it.s > now) { html += `<div class="tl-now"><span>${hm(now)}</span></div>`; nowDone = true }
+    const hh = it.s.getHours(), lbl = hh !== lastH && it.kind !== "road" ? `<div class="tl-h">${hm(it.s)}</div>` : ""
+    if (it.kind !== "road") lastH = hh
+    const past = isT && it.e <= now
+    if (it.kind === "road") html += `<div class="tl-it road">${tdIco("car", 14)} дорога ${it.min} мин · выехать в ${hm(it.s)}</div>`
+    else if (it.kind === "ev") { const e = it.ev, rain = wxRain(e.s, e.e)
+      html += `${lbl}<div class="tl-it ev ${past ? "past" : ""} ${e.pending ? "pending" : ""}" data-ev="${it.i}" style="--c:${esc(e.color || "var(--teal)")}"><b>${esc(e.title || "(без названия)")}</b><small>${hm(e.s)}–${hm(e.e)}${e.location ? " · " + esc(e.location) : ""}${rain ? ` · ${tdIco("rain", 12)} ${rain.mm >= 4 ? "ливень" : "дождь"}` : ""}</small></div>` }
+    else if (it.kind === "rem") { const r = it.r
+      html += `${lbl}<div class="tl-it task ${r.completed ? "past" : ""}"><button class="check ${r.completed ? "on" : ""}" ${r.completed ? "" : `data-check="${esc(r.id)}"`}></button><div><b>${esc(r.title)}</b><small>${hm(it.s)}</small></div></div>` }
+    else if (it.kind === "free") { const pick = undated[sugg++]
+      html += `${lbl}<button class="tl-it free" data-gap="${+it.s}" data-gap-end="${+it.e}">+ Свободно ${hm(it.s)}–${hm(it.e)} · ${dur(it.s, it.e)}${pick ? ` · поставить «${esc(pick.title)}»?` : ""}</button>` }
+  }
+  if (!nowDone) html += `<div class="tl-now"><span>${hm(now)}</span></div>`
+  return `<div class="tl">${html || '<div class="empty">Ничего не запланировано</div>'}</div>`
+}
+// Нажали на свободное окно: выбрать дело и поставить его на это время
+function gapPick(s, e) {
+  const v = iphone(), day = new Date(s)
+  const cand = openRems(v).filter(r => !remDue(r) || !remHasTime(r) || remDue(r) < new Date())
+  ui.choose(`Свободно ${hm(new Date(s))}–${hm(new Date(e))}`, "Что поставить на это время?", cand.slice(0, 12).map(r => r.title).concat(["+ Новое дело"])).then(async i => {
+    if (i < 0) return
+    let r = cand[i]
+    if (!r) { const t = await ui.ask("Новое дело", "", ""); if (!t) return; r = remAdd({ title: t }) }
+    remSet(r.id, { due: iso(day) }); toast(`«${r.title}» — в ${hm(day)}`); render()
+  })
+}
+
+// — 7. Одна подсказка дня (можно смахнуть или скрыть до завтра)
+function tipCard(v, now = new Date()) {
+  const day = dayKey(now), off = (D.tdOff || {})
+  const tips = []
+  const cats = (core.CONFIG.categories.expense || []).map(c => c[0])
+  for (const c of cats) { const b = budgetState(c); if (b && b.p >= 0.8 && b.p <= 1.5) tips.push({ k: "b:" + c, ico: "wallet", col: "#30B0C7", t: b.left >= 0 ? `До лимита «${c}» осталось ${core.money(b.left)}` : `«${c}»: лимит превышен на ${core.money(-b.left)}`, s: `Потрачено ${num(b.spent)} из ${core.money(b.limit)} в этом месяце` }) }
+  const bill = recurSoon()[0]; if (bill) tips.push({ k: "r:" + bill.id, ico: "bill", col: "#FF9F0A", t: `${bill.title}: ${core.money(bill.amount)} ${recurLabel(bill)}`, s: "Регулярный платёж — нажмите «Оплачено» в напоминаниях, когда оплатите" })
+  const h = dayHealth(), gap = waterGap(h); if (gap) tips.push({ k: "w", ico: "drop", col: "#0A84FF", t: `${gap} ч без воды`, s: `Выпито ${liters(h.water)} из ${liters(H().waterGoal)} л — стакан сейчас` })
+  const tip = tips.find(t => !off["tip:" + day + ":" + t.k])
+  if (!tip) return ""
+  return `<div class="tip-card" data-tip="${esc(tip.k)}"><div class="ic" style="background:${tip.col}">${tdIco(tip.ico, 20)}</div><div class="grow"><b>${esc(tip.t)}</b><div class="small muted">${esc(tip.s)}</div></div><button class="x" data-tip-off="${esc(tip.k)}" aria-label="Скрыть">${ICO.x}</button></div>`
+}
+
+// — 8. Шаблоны дня: набор дел со временем одним нажатием
+const dayTpls = () => live(D.goals).filter(g => g.kind === "dtpl" && g.title)
+function tplCard(now = new Date()) {
+  const l = dayTpls()
+  return `<div class="card"><h2>Шаблон дня<button class="act" data-do="td-tpl-new">+ Свой</button></h2>${l.length ? `<div class="chips">${l.map(t => `<button class="chip" data-tpl="${esc(t.id)}">${tdIco(t.ico || "tpl", 15)} ${esc(t.title)}</button>`).join("")}</div>`
+    : '<div class="muted small">Сохраните обычный день как шаблон — «Рабочий», «Выходной с детьми», «Поездка» — и ставьте все его дела одним нажатием.</div>'}</div>`
+}
+function tplApply(id) {
+  const t = D.goals.find(x => x.id === id); if (!t) return
+  const d = sod(new Date()), have = new Set(live(D.rems).filter(r => !r.done && remDue(r) && sameDay(remDue(r), d)).map(r => normT(r.title)))
+  let n = 0
+  for (const it of t.items || []) { if (have.has(normT(it.t))) continue
+    const [hh, mm] = String(it.time || "").split(":").map(Number)
+    remAdd({ title: it.t, due: it.time ? iso(new Date(d.getFullYear(), d.getMonth(), d.getDate(), hh, mm || 0)) : dayKey(d) }); n++ }
+  toast(n ? `«${t.title}»: добавлено ${n} ${plural(n, "дело", "дела", "дел")}` : "Все дела шаблона уже есть"); render()
+}
+function tplForm(t) {
+  const d = sod(new Date())
+  const base = t ? (t.items || []) : live(D.rems).filter(r => remDue(r) && sameDay(remDue(r), d)).map(r => ({ t: r.title, time: remHasTime(r) ? hm(remDue(r)) : "" }))
+  let ico = t ? t.ico || "tpl" : "brief"
+  const s = sheet(`<h3>${t ? esc(t.title) : "Новый шаблон дня"}</h3><div class="msg">По строке на дело. Время в начале — по желанию: «9:00 Зарядка».</div>
+    <div class="field"><label>Название</label><input id="tp-t" value="${t ? esc(t.title) : ""}" placeholder="Рабочий, Выходной с детьми…"></div>
+    <div class="field"><label>Значок</label><div class="chips" id="tp-i">${["brief", "kid", "car", "sun", "moon", "star"].map(k => `<button class="chip ${k === ico ? "on" : ""}" data-i="${k}">${tdIco(k, 16)}</button>`).join("")}</div></div>
+    <div class="field"><label>Дела</label><textarea id="tp-l" rows="7">${esc(base.map(x => (x.time ? x.time + " " : "") + x.t).join("\n"))}</textarea></div>
+    <div class="btns">${t ? '<button class="btn red" data-a="del">Удалить</button>' : '<button class="btn" data-a="no">Отмена</button>'}<button class="btn primary" data-a="ok">Сохранить</button></div>`)
+  $$("#tp-i .chip", s.el).forEach(b => b.onclick = () => { ico = b.dataset.i; $$("#tp-i .chip", s.el).forEach(x => x.classList.toggle("on", x === b)) })
+  const no = $('[data-a="no"]', s.el); if (no) no.onclick = () => s.close()
+  const del = $('[data-a="del"]', s.el); if (del) del.onclick = () => { remove("goals", t.id); s.close(); render() }
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const title = $("#tp-t", s.el).value.trim(); if (!title) return toast("Назовите шаблон")
+    const items = $("#tp-l", s.el).value.split("\n").map(x => x.trim()).filter(Boolean).map(x => { const m = x.match(/^(\d{1,2})[:.](\d{2})\s+(.+)$/); return m ? { t: m[3], time: `${z2(+m[1])}:${m[2]}` } : { t: x, time: "" } })
+    if (!items.length) return toast("Добавьте хотя бы одно дело")
+    upsert("goals", Object.assign(t || { id: uid("d"), date: Date.now(), kind: "dtpl" }, { title, ico, items })); s.close(); render(); toast("Шаблон сохранён")
+  }
+}
+
+// — 5. Вечернее закрытие дня (с 19:00): что сделано, что перенести, строка о дне и настроение
+const MOODS = [["#FF453A", "M8 16c2-2 6-2 8 0"], ["#FF9F0A", "M8 16h8"], ["#E5B800", "M8 15.5c2 1 6 1 8 0"], ["#34C759", "M8 14.5c2 2.5 6 2.5 8 0"], ["#0A9F6E", "M7.5 13.5c2 4 7 4 9 0"]]
+const moodFace = (i, s = 28) => { const [c, m] = MOODS[i]; return `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.5"/><circle cx="9" cy="10" r=".7" fill="${c}"/><circle cx="15" cy="10" r=".7" fill="${c}"/><path d="${m}"/></svg>` }
+function closeDayCard(v, now = new Date()) {
+  if (now.getHours() < 19) return ""
+  const day = dayKey(now), note = goalOf("daynote", day)
+  const st = dayStats(v, now)
+  return `<div class="hero-eve" data-do="td-close"><div class="k">${note ? "День закрыт" : "Закрыть день"}</div><div class="v">${st.done} из ${st.total}</div>
+    <div class="s2">${st.top ? `Главные: ${st.topDone} из ${st.top}. ` : ""}Вода ${liters(st.water)} л${st.steps != null ? `, шаги ${num(st.steps)}` : ""}.${note && note.text ? ` «${esc(note.text.slice(0, 60))}»` : ""}</div>
+    ${note ? "" : '<span class="pill">Подвести итог за минуту →</span>'}</div>`
+}
+function dayStats(v, now = new Date()) {
+  const rs = v.reminders.filter(r => { const d = remDue(r); return d && sameDay(d, now) || r.completed && r.doneAt && sameDay(r.doneAt, now) })
+  const ids = top3Ids(dayKey(now)), h = dayHealth()
+  return { total: rs.length, done: rs.filter(r => r.completed).length, top: ids.length, topDone: ids.filter(id => (v.reminders.find(r => r.id === id) || {}).completed).length, water: h.water, steps: h.steps }
+}
+function closeDay() {
+  const v = iphone(), now = new Date(), day = dayKey(now), g = goalOf("daynote", day)
+  const left = openRems(v).filter(r => { const d = remDue(r); return d && d < addDays(sod(now), 1) })
+  let mood = g ? g.mood : -1
+  const s = sheet(`<h3>Итоги дня</h3>${left.length ? `<div class="msg">Не сделано — перенести на завтра или убрать:</div>${left.map(r => `<div class="row cd" data-id="${esc(r.id)}"><div class="grow"><div class="t">${esc(r.title)}</div><div class="s">${esc(remLabel(r))}</div></div><button class="chip" data-m="tm">Завтра</button><button class="chip" data-m="del">Убрать</button></div>`).join("")}` : '<div class="msg">Все дела на сегодня сделаны.</div>'}
+    <div class="field"><label>Одна строка о дне</label><textarea id="cd-t" rows="2" placeholder="Что было главным, что получилось">${g ? esc(g.text || "") : ""}</textarea></div>
+    <div class="field"><label>Настроение</label><div class="moods" id="cd-m">${MOODS.map((_, i) => `<button class="${i === mood ? "on" : ""}" data-i="${i}">${moodFace(i)}</button>`).join("")}</div></div>
+    <div class="btns"><button class="btn" data-a="no">Позже</button><button class="btn primary" data-a="ok">Закрыть день</button></div>`)
+  $$(".cd [data-m]", s.el).forEach(b => b.onclick = () => { const row = b.closest(".cd"), id = row.dataset.id
+    if (b.dataset.m === "tm") tdMoveTomorrow([id]); else { const r = D.rems.find(x => x.id === id); if (r) upsert("rems", Object.assign({}, r, { deleted: true })) }
+    row.remove() })
+  $$("#cd-m button", s.el).forEach(b => b.onclick = () => { mood = +b.dataset.i; $$("#cd-m button", s.el).forEach(x => x.classList.toggle("on", x === b)) })
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  $('[data-a="ok"]', s.el).onclick = () => {
+    upsert("goals", Object.assign(g || { id: uid("n"), date: Date.now(), kind: "daynote", day }, { text: $("#cd-t", s.el).value.trim().slice(0, 500), mood }))
+    s.close(); render(); toast("День закрыт. Хорошего вечера")
+  }
+}
+
+// — 10. Итог недели: по воскресеньям после 17:00 и в понедельник утром
+function weekCard(v, now = new Date()) {
+  const dw = now.getDay()
+  if (!(dw === 0 && now.getHours() >= 17 || dw === 1 && now.getHours() < 12)) return ""
+  const end = dw === 0 ? addDays(sod(now), 1) : sod(now), start = addDays(end, -7), pstart = addDays(start, -7)
+  const inW = (t, a = start, b = end) => t && t >= +a && t < +b
+  const doneN = live(D.rems).filter(r => r.done && inW(r.doneAt)).length
+  const dueN = live(D.rems).filter(r => { const d = remDue(r); return d && inW(+d) }).length
+  const exp = (a, b) => live(D.money).filter(e => e.type === "expense" && inW(e.date, a, b)).reduce((s, e) => s + e.amount, 0)
+  const e1 = exp(start, end), e0 = exp(pstart, start), dlt = e0 ? Math.round((e1 - e0) / e0 * 100) : 0
+  const hb = habitList().map(h => ({ h, n: habitStreak(h, addDays(end, -1)) })).sort((a, b) => b.n - a.n)[0]
+  const steps = []; for (let d = start; d < end; d = addDays(d, 1)) { const x = dayHealth(d); if (x.steps) steps.push(x.steps) }
+  const tile = (val, k, p, col) => `<div class="tile"><div class="v">${val}</div><div class="k">${k}</div>${p != null ? `<div class="bar"><i style="width:${Math.round(Math.min(1, p) * 100)}%;${col ? "background:" + col : ""}"></i></div>` : ""}</div>`
+  return `<div class="card"><h2>Итог недели<span class="muted small" style="font-weight:500">${start.getDate()}–${addDays(end, -1).getDate()} ${MONTHS_GEN[addDays(end, -1).getMonth()]}</span></h2><div class="grid2">
+    ${tile(`${doneN}${dueN ? " / " + Math.max(dueN, doneN) : ""}`, "дел сделано", dueN ? doneN / Math.max(dueN, doneN) : null)}
+    ${hb ? tile(`${hb.n} ${plural(hb.n, "день", "дня", "дней")}`, `серия «${esc(hb.h.title)}»`, hb.n / 7, "#FF9F0A") : tile("—", "привычек нет")}
+    ${tile("−" + core.money(e1), e0 ? `расходы, ${dlt <= 0 ? "на " + -dlt + "% меньше" : "на " + dlt + "% больше"}` : "расходы за неделю")}
+    ${tile(steps.length ? num(steps.reduce((a, b) => a + b, 0) / steps.length) : "—", "шагов в среднем")}</div>
+    <button class="btn primary wide" data-do="td-week-plan">План на следующую неделю</button></div>`
+}
+
+// — сборка экрана «Сегодня» для текущего дня
+function todayTop(v, now = new Date()) {
+  wxLoad()
+  return closeDayCard(v, now) + nowCard(v, now) + ringsCard(v, now) + loadCard(v, now) + top3Card(v, now) + weekCard(v, now)
+}
+function todayBottom(v, now = new Date()) { return tipCard(v, now) + tplCard(now) }
+Object.assign(DO, {
+  "td-focus": () => { const v = iphone(), now = new Date(), e = v.events.filter(e => !e.all_day && e.e > now && sameDay(e.s, now)).sort((a, b) => a.s - b.s)[0]
+    const t = top3Ids().map(id => v.reminders.find(r => r.id === id)).find(r => r && !r.completed)
+    pomoStart(t ? t.title : e ? "Подготовка: " + e.title : "Фокус"); render() },
+  "td-top3": () => top3Pick(),
+  "td-load-off": () => { D.tdOff = D.tdOff || {}; D.tdOff["load:" + dayKey(new Date())] = 1; save(false); render() },
+  "td-tpl-new": () => tplForm(),
+  "td-close": () => closeDay(),
+  "td-week-plan": () => { setTab("chat"); setTimeout(() => chatSend("Составь со мной план на следующую неделю: посмотри мой календарь, дела, цели месяца и итоги этой недели. Предложи три главных цели недели и разложи их по дням."), 50) },
+})
+function bindToday(v) {
+  $$('[data-do="td-move"]', v).forEach(b => b.onclick = () => tdMoveTomorrow(b.dataset.ids.split(",")))
+  $$("[data-gap]", v).forEach(b => b.onclick = () => gapPick(+b.dataset.gap, +b.dataset.gapEnd))
+  $$("[data-tpl]", v).forEach(b => { let t = null
+    b.onpointerdown = () => { t = setTimeout(() => { t = "long"; tplForm(D.goals.find(x => x.id === b.dataset.tpl)) }, 600) }
+    b.onpointerup = b.onpointerleave = () => { if (t && t !== "long") clearTimeout(t) }
+    b.onclick = () => { if (t === "long") { t = null; return } tplApply(b.dataset.tpl) } })
+  $$("[data-tip-off]", v).forEach(b => b.onclick = ev => { ev.stopPropagation(); D.tdOff = D.tdOff || {}; D.tdOff["tip:" + dayKey(new Date()) + ":" + b.dataset.tipOff] = 1
+    for (const k of Object.keys(D.tdOff)) if (!k.includes(dayKey(new Date()))) delete D.tdOff[k]
+    save(false); const c = b.closest(".tip-card"); c.classList.add("gone"); setTimeout(render, 250) })
+  $$(".tip-card", v).forEach(c => { let x0 = null
+    c.addEventListener("touchstart", e => { x0 = e.touches[0].clientX }, { passive: true })
+    c.addEventListener("touchmove", e => { if (x0 == null) return; const dx = e.touches[0].clientX - x0; c.style.transform = `translateX(${dx}px)`; c.style.opacity = 1 - Math.min(1, Math.abs(dx) / 220) }, { passive: true })
+    c.addEventListener("touchend", e => { const dx = (e.changedTouches[0].clientX - x0) || 0; x0 = null; if (Math.abs(dx) > 90) $("[data-tip-off]", c).click(); else { c.style.transform = ""; c.style.opacity = "" } }) })
+}
+
 load()
 pushConn()
 setTab("today")
@@ -3491,3 +3840,4 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
   document.addEventListener("visibilitychange", () => { if (pending && document.visibilityState === "hidden") reload() })
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {}) })
 }
+
