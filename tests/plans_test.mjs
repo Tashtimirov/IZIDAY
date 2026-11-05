@@ -85,7 +85,7 @@ check(await page.evaluate(() => !!$("#fab .orb canvas") && $("#fab").dataset.tab
 await page.click("#gear"); await page.waitForTimeout(300)
 check(await page.evaluate(() => tab === "more" && $("#top-title").textContent === "Настройки"), "шестерёнка — настройки")
 await page.click('[data-tab="plans"]'); await page.waitForTimeout(300)
-check(await page.evaluate(() => tab === "plans" && $("#top-title").textContent === "Планы" && $$(".pf .chip").length === 5), "«Планы» с фильтрами")
+check(await page.evaluate(() => tab === "plans" && $("#top-title").textContent === "Планы" && $$(".pf .chip").length === 6), "«Планы» с фильтрами")
 
 // снова пора
 let r = await page.evaluate(() => runTool("add_chore", { title: "Полить цветы", every_days: 3, last_done: dayKey(addDays(new Date(), -2)) }))
