@@ -1755,6 +1755,7 @@ function micStart(auto) {
   const inp = $("#chat-in")
   if (!SR) { if (inp) inp.focus(); toast("Нажмите 🎤 на клавиатуре и говорите"); return }
   if (voice) return voiceFinish()
+  if (window.STT && STT.on() && Date.now() > sttOffUntil) return micWhisper(auto)
   voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: !!PTT.holding }
   const v = voice
   lastVoice = v
@@ -1770,13 +1771,8 @@ function micStart(auto) {
     let fin = "", all = ""
     r.onresult = e => {
       if (v.sent) return   // уже отправлено: поздний итог после stop() не должен снова заполнить поле (а после касания поля — пусть дописывает)
-      let interim = ""
-      fin = ""
-      for (let i = 0; i < e.results.length; i++) {
-        if (e.results[i].isFinal) fin += e.results[i][0].transcript + " "
-        else interim += e.results[i][0].transcript
-      }
-      all = fin + interim
+      const g = srGlue(e.results)
+      fin = g.fin; all = g.all
       show(all)
       arm(SILENCE_MS)
     }
@@ -1803,11 +1799,79 @@ function micStart(auto) {
     setTimeout(() => { if (voice !== v) return; try { rec = run(true); arm(FIRST_WORD_MS) } catch (e2) { fail(e2) } }, 500)
   }
 }
+// Safari на iPhone в непрерывном режиме иногда присылает следующим куском ту же фразу целиком
+// («как дела» → «как дела как дела у тебя»): склеиваем без повторов
+function srGlue(results) {
+  let fin = "", all = ""
+  const add = (acc, t) => {
+    t = String(t || "").trim(); if (!t) return acc
+    const a = acc.trim(), al = a.toLowerCase(), tl = t.toLowerCase()
+    if (!a) return t
+    if (tl.startsWith(al)) return t            // новый кусок уже содержит всё прежнее
+    if (al.endsWith(tl)) return a              // повтор хвоста
+    return a + " " + t
+  }
+  for (let i = 0; i < results.length; i++) {
+    const t = results[i][0].transcript
+    if (results[i].isFinal) fin = add(fin, t)
+    all = add(all, t)
+  }
+  return { fin: fin ? fin + " " : "", all }
+}
+// ── Точное распознавание (Whisper, stt.js): пишем звук, паузу ловим по громкости, фразу целиком — в Whisper ──
+let sttOffUntil = 0   // Groq не ответил или упёрлись в минутный лимит — какое-то время распознаёт Safari
+function sttFail(e) {
+  const st = e && e.status
+  sttOffUntil = Date.now() + (st === 401 ? 3600e3 : 60e3)
+  toast(st === 401 ? "Ключ Groq не подошёл — пока распознаёт iPhone. Проверьте ключ в «Настройках» → «Помощник»"
+    : st === 429 ? "Groq: лимит на минуту — минуту распознаёт iPhone" : "Точное распознавание не ответило — пока распознаёт iPhone")
+}
+function micWhisper(auto) {
+  const inp = $("#chat-in")
+  try { STT.prime() } catch (e) {}
+  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: !!PTT.holding, w: true, text: inp ? inp.value.trim() : "" }
+  const v = voice
+  lastVoice = v
+  v.t0 = Date.now()
+  $(".chat-bar .mic") && $(".chat-bar .mic").classList.add("on")
+  if (inp) inp.placeholder = "Слушаю… ➤ — отправить сразу"
+  pttShow("")
+  STT.record({ onVoice: l => { SILK.en = Math.max(SILK.en, Math.min(1, l * 28)) } }).then(h => {
+    if (voice !== v) return h.close()
+    v.h = h; rec = h
+    v.timer = setInterval(() => {
+      if (voice !== v || v.finishing || v.ptt) return
+      const now = Date.now()
+      if (!h.voiced && now - v.t0 > FIRST_WORD_MS) return voiceFinish()        // так ничего и не сказали
+      if (h.voiced > .25 && now - h.lastVoice > SILENCE_MS) return voiceFinish()  // договорили — пауза
+      if (h.secs() > 180) voiceFinish()
+    }, 150)
+  }).catch(e => {
+    if (voice !== v) return
+    voiceReset()
+    if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) { if (auto) return micPrompt(); toast("Нет доступа к микрофону: Настройки → Safari → Микрофон"); return }
+    sttOffUntil = Date.now() + 60e3; micStart(auto)   // запись не пошла — распознаёт Safari
+  })
+}
+async function voiceWhisper(v) {
+  const h = v.h, inp = $("#chat-in")
+  if (!h) { voiceReset(); if (inp) { inp.value = v.base || ""; grow(inp) }; return }
+  h.close()
+  if (h.voiced < .25) { voiceReset(); if (inp) { inp.value = v.base || ""; grow(inp) }; return }   // одна тишина
+  if (inp) inp.placeholder = "Распознаю…"
+  v.text = [v.base, "Распознаю…"].filter(Boolean).join(" "); pttShow(v.text)
+  try { v.done = await STT.transcribe(h.wav()) }
+  catch (e) { if (voice !== v) return; voiceReset(); sttFail(e); if (inp) { inp.value = v.base || ""; grow(inp) }; return }
+  if (voice !== v) return   // пока распознавали — отменили
+  if (!v.done) { voiceReset(); if (inp) { inp.value = v.base || ""; grow(inp) }; toast("Не расслышал — скажите ещё раз"); return }
+  voiceSend(v)
+}
 function voiceFinish() {
   const v = voice
   if (!v || v.finishing) return
   v.finishing = true
-  clearTimeout(v.timer)
+  clearTimeout(v.timer); clearInterval(v.timer)
+  if (v.w) return voiceWhisper(v)
   try { rec && rec.stop() } catch (e) { voiceSend(v) }
   setTimeout(() => { if (voice === v) voiceSend(v) }, 1500)   // если onend не пришёл
 }
@@ -1824,6 +1888,7 @@ function voiceSend(v) {
 // Зелёная ➤ во время записи: отправить то, что уже услышано, не дожидаясь паузы
 function voiceSendNow() {
   const v = voice, i = $("#chat-in")
+  if (v && v.w) return voiceFinish()   // Whisper: дослушали — распознать и отправить
   const t = ((i && i.value) || v.text || "").trim()
   const r = rec
   voiceSent()
@@ -1837,13 +1902,14 @@ function voiceCancel() {
   const v = voice; if (!v) return
   const r = rec
   v.sent = true
+  if (v.h) v.h.close()
   voiceReset()
   try { r && r.stop() } catch (e) {}
   const i = $("#chat-in"); if (i) { i.value = v.base || ""; grow(i) }
   toast("Запись отменена")
 }
 function voiceReset() {
-  if (voice) clearTimeout(voice.timer)
+  if (voice) { clearTimeout(voice.timer); clearInterval(voice.timer) }
   voice = null; rec = null
   const b = $(".chat-bar .mic"); if (b) b.classList.remove("on")
   pttShow(null)
@@ -2591,7 +2657,7 @@ function bindChatBar(v) {
 }
 
 const DO = {
-  talk: () => talkOpen(), "izi-voice": () => voicePicker(),
+  talk: () => talkOpen(), "izi-voice": () => voicePicker(), stt: () => window.STT && STT.sheetOpen(),
   event: () => eventForm(), reminder: () => reminderForm(), food: () => foodMenu(), workout: () => workoutForm(), photo: () => photoPrompt(),
   expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
   "push-on": () => pushEnable(),
@@ -3806,6 +3872,7 @@ function holdToTalk(btn, onTap) {
   btn.addEventListener("pointerdown", e => {
     long = false; locked = false; id = e.pointerId; x0 = e.clientX; y0 = e.clientY
     try { btn.setPointerCapture(e.pointerId) } catch (err) {}
+    try { if (window.STT && STT.on()) STT.prime() } catch (err) {}   // iPhone: звук запускается только в самом касании
     clearTimeout(lp)
     lp = setTimeout(() => {
       long = true
@@ -3855,6 +3922,11 @@ function pinHint(up) {
 // Удержание «Изи» + вверх: запись рации переходит в живой разговор, закреплённый над меню
 function pttPin() {
   const v = voice, r = rec
+  if (v && v.w) {   // Whisper: сказанное до «вверх» сначала распознать, потом — в разговор
+    const h = v.h; v.sent = true; voiceReset(); const i = $("#chat-in"); if (i) { i.value = v.base || ""; grow(i) }
+    if (!h || (h.close(), h.voiced < .25)) return talkOpen({ pin: true })
+    return STT.transcribe(h.wav()).then(say => talkOpen({ pin: true, say }), e => { sttFail(e); talkOpen({ pin: true }) })
+  }
   let say = v ? String(v.text || "").trim() : ""
   if (v && v.base && say.startsWith(v.base)) say = say.slice(v.base.length).trim()   // то, что уже было в поле чата, не отправляем
   if (v) { v.sent = true; voiceReset(); try { r && r.stop() } catch (e) {}; const i = $("#chat-in"); if (i) { i.value = v.base || ""; grow(i) } }
@@ -5467,6 +5539,7 @@ function talkOpen(o = {}) {
   if (!aiKey()) { if (!D.conn && window.FRIEND && FRIEND.on()) return FRIEND.ask(); setTab("more"); return ui.info("Нужен ключ Claude", "Подключите приложение кодом из виджета: в Scriptable меню → 📱 Приложение «Мой день» → «Подключить приложение».") }
   if (voice) voiceReset()
   ttsUnlock()
+  try { if (window.STT && STT.on()) STT.prime() } catch (e) {}
   const el = document.createElement("div"); el.id = "talk"
   el.innerHTML = `<div class="tk-sheet"><div class="grab"></div>
     <div class="tk-top"><b>${esc(iziName())}</b><span class="tk-st"></span></div>
@@ -5524,7 +5597,7 @@ function talkPin(on, quiet) {
 function talkClose() {
   const t = TALK; if (!t) return
   TALK = null
-  ttsStop(); clearTimeout(t.timer)
+  ttsStop(); clearTimeout(t.timer); clearInterval(t.poll)
   try { t.rec && t.rec.abort() } catch (e) {}
   t.el.classList.remove("on"); t.el.classList.add("off")
   document.body.classList.remove("talk-pin")
@@ -5543,7 +5616,7 @@ function talkState(s, izi, you) {
 function talkTap() {
   const t = TALK; if (!t) return
   if (t.state === "say") { ttsStop(); return talkListen() }       // перебить
-  if (t.state === "listen") return talkSendNow()                  // сказали всё — отправить сразу
+  if (t.state === "listen") { if (t.w && t.rec && t.rec.wav) { t.force = true; return } return talkSendNow() }   // сказали всё — отправить сразу (Whisper: сперва дораспознать)
   if (t.state === "pause") return talkListen()
 }
 function talkPause() { const t = TALK; if (!t) return; ttsStop(); clearTimeout(t.timer); clearTimeout(t.idle); t.n++; const r = t.rec; t.rec = null; try { r && r.abort() } catch (e) {}; talkState("pause", null, "Нажмите на шар, чтобы продолжить") }
@@ -5567,6 +5640,7 @@ function talkEcho(heard, said) {
 }
 function talkListen(first, keep) {
   const t = TALK; if (!t) return
+  if (window.STT && STT.on() && Date.now() > sttOffUntil) return talkListenW(first, keep)
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
   if (!SR) { talkState("pause", "Распознавание речи недоступно в этом браузере", ""); return }
   clearTimeout(t.timer); clearTimeout(t.idle)
@@ -5582,8 +5656,7 @@ function talkListen(first, keep) {
     let cur = ""
     r.onresult = e => {
       if (TALK !== t || t.n !== my || t.rec !== r) return
-      let s = ""; for (let i = 0; i < e.results.length; i++) s += e.results[i][0].transcript
-      s = s.trim()
+      const s = srGlue(e.results).all
       if (!t.done && t.said && talkEcho(s, t.said) && Date.now() - t.saidAt < 2500) return   // своё эхо — пропускаем
       cur = s
       const all = [t.done, cur].filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
@@ -5613,6 +5686,69 @@ function talkListen(first, keep) {
   // 20 секунд тишины — пауза, чтобы микрофон не висел впустую
   t.idle = setTimeout(() => { if (TALK === t && t.n === my && t.state === "listen" && !t.heard) talkPause() }, 20000)
 }
+// Живой разговор с Whisper: запись идёт всё время, пока Изи слушает. На каждой паузе (0,7 с) вся запись
+// распознаётся заново — так видно сказанное и понятно, «висит» ли фраза (talkWait). Отправка — когда
+// тишина дольше talkWait, а распознан уже весь звук. Продолжил говорить после отправки — talkResume
+function talkListenW(first, keep) {
+  const t = TALK; if (!t) return
+  clearTimeout(t.timer); clearTimeout(t.idle); clearInterval(t.poll)
+  t.done = String(keep || "").trim(); t.heard = t.done; t.sent = ""; t.w = true
+  const prev = t.rec; try { prev && prev.abort() } catch (e) {}
+  talkState("listen", null, t.done || (first ? "Говорите — я слушаю" : ""))
+  const my = ++t.n
+  const live = () => TALK === t && t.n === my
+  let dead = false
+  t.rec = { abort() { dead = true }, stop() { dead = true } }   // место занято, пока микрофон включается
+  const go = () => {
+    if (!live() || dead) return
+    STT.record({ onVoice: l => { if (live() && t.state === "listen") SILK.ye = Math.min(1.3, SILK.ye + l * 6) } }).then(h => {
+      if (!live() || dead) return h.close()
+      t.rec = h
+      let busy = false, doneAt = -1, txt = "", vAtSend = 0
+      const glue = () => [t.done, txt].filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
+      const run = () => {
+        busy = true; const mark = h.lastVoice
+        STT.transcribe(h.wav()).then(r => {
+          busy = false
+          if (!live() || t.rec !== h) return
+          txt = r; doneAt = mark
+          if (t.state === "listen") { t.heard = glue(); talkState("listen", null, t.heard || "") }
+        }, e => {
+          busy = false
+          if (!live() || t.rec !== h) return
+          sttFail(e); clearInterval(t.poll); h.close(); t.rec = null
+          if (t.state === "listen") talkListen(false, glue())   // дальше слушает Safari, уже сказанное сохраняем
+        })
+      }
+      t.poll = setInterval(() => {
+        if (!live() || t.rec !== h) return clearInterval(t.poll)
+        const now = Date.now(), quiet = now - h.lastVoice
+        if (t.state === "think") {   // отправили, а человек снова заговорил — значит не договорил
+          if (t.canResume && now - t.sentAt < TALK_RESUME_MS && h.voiced - vAtSend > .35) { doneAt = -1; talkResume(t.sent) }
+          return
+        }
+        if (t.state !== "listen") return
+        if (!h.voiced) { if (t.force) { t.force = false; if (t.heard) talkSendNow() } return }
+        if (h.voiced > .25 && (quiet > 700 || t.force) && !busy && doneAt !== h.lastVoice) return run()
+        const hs = t.heard || "", wait = /(,|…|\.\.\.)$/.test(hs) ? TALK_SILENCE_HANG : talkWait(hs)   // Whisper ставит запятую или многоточие, если фраза повисла
+        if (doneAt === h.lastVoice && !busy && (quiet > wait || t.force)) {
+          t.force = false
+          if (!t.heard) return   // распознана тишина — слушаем дальше
+          vAtSend = h.voiced
+          talkSendNow()
+        }
+        if (h.secs() > 240) talkSendNow()
+      }, 150)
+    }).catch(e => {
+      if (!live()) return
+      t.rec = null
+      if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) return talkState("pause", "Нет доступа к микрофону", "Настройки → Safari → Микрофон")
+      sttOffUntil = Date.now() + 60e3; talkListen(first, t.done)
+    })
+  }
+  if (t.said && Date.now() - t.saidAt < 600) setTimeout(go, 350); else go()
+  t.idle = setTimeout(() => { if (live() && t.state === "listen" && !t.heard && !(t.rec && t.rec.voiced)) talkPause() }, 20000)
+}
 function talkSendNow() {
   const t = TALK; if (!t || t.state !== "listen") return
   const text = t.heard.trim()
@@ -5633,7 +5769,7 @@ function talkResume(all) {
   // chatSend сам уберёт отменённый вопрос; продолжаем ту же запись, не перезапуская микрофон
   t.heard = all; t.sent = ""
   talkState("listen", null, all)
-  clearTimeout(t.timer); t.timer = setTimeout(() => talkSendNow(), talkWait(all))
+  clearTimeout(t.timer); if (!t.w) t.timer = setTimeout(() => talkSendNow(), talkWait(all))   // с Whisper отправку решает сама запись
   if (!r || t.n !== my) talkListen(false, all)
 }
 // Отменённый ответ в живом разговоре: если человек продолжил — уже слушаем, иначе слушать заново
@@ -5697,6 +5833,7 @@ function iziCard() {
     ${tg("speak", "Читать ответы вслух", "выключено — Изи отвечает текстом, а вы можете говорить голосом")}
     <button class="set voice-row" data-do="izi-voice"><span><b>${esc(voiceLabel(v))}</b><small>${canTalk ? "голос iPhone · нажмите, чтобы выбрать и послушать" : "в этом браузере нет голоса"}</small></span><i class="chev">${ICO.chev}</i></button>
     <div class="set col"><span>Темп речи</span><div class="seg izi-rate">${IZI_RATES.map(([r, t]) => `<button data-izi-rate="${r}" class="${Math.abs((x.rate || 1) - r) < .01 ? "on" : ""}">${t}</button>`).join("")}</div></div>
+    ${window.STT ? `<div class="izi-sub">Распознавание речи</div>${STT.row()}` : ""}
     <div class="izi-sub">Чему учится и как помогает</div>
     ${tg("goals", "Советы по целям", "как ставить цели и доходить до конца: шаг на неделю, «если — то», копилка")}
     ${tg("psy", "Психология", "сначала слышит, бережно помогает разобраться в чувствах и отношениях")}
