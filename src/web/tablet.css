@@ -42,6 +42,8 @@ input, textarea, [contenteditable] { -webkit-user-select: text; user-select: tex
   .sheet > .btns:last-child { box-shadow: none; padding-bottom: 2px; }
   .sheet .grab { display: none; }
   #toast { left: 50%; right: auto; transform: translateX(-50%); max-width: 520px; }
+  /* закреплённый разговор с Изи — не на всю ширину */
+  #talk.pin .tk-sheet { left: max(10px, calc((100% - 640px) / 2)); right: max(10px, calc((100% - 640px) / 2)); }
 }
 
 @media (min-width: 1024px) {
@@ -66,6 +68,8 @@ input, textarea, [contenteditable] { -webkit-user-select: text; user-select: tex
   body.chat .chat-bar { bottom: calc(14px + var(--kb, 0px)); }
   .sheet, .sheet.half { left: 252px; }
   #toast { left: calc(50% + 126px); }
+  #talk.pin .tk-sheet { left: max(266px, calc((100% + 252px - 640px) / 2)); right: max(14px, calc((100% - 252px - 640px) / 2)); bottom: calc(14px + env(safe-area-inset-bottom)); }
+  body.side #talk.pin .tk-sheet { right: 418px; left: 266px; }
 
   /* ── чат Изи панелью справа ── */
   body.side { padding-right: 404px; }
