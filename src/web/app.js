@@ -131,8 +131,8 @@ function applyCfg() {
   if (Array.isArray(cfg.calendars)) c.calendars = cfg.calendars
 }
 const H = () => Object.assign({ waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30, weight: 80, kcalGoal: 2000, proteinGoal: 0 }, core.CONFIG.health || {})
-// Имя и пол помощника — меняются в настройках; по умолчанию «Изи», мужской род
-const IZI = () => { const z = D.izi || {}; return { name: String(z.name || "").trim() || "Изи", g: z.g === "f" ? "f" : "m" } }
+// Имя и пол помощника — меняются в настройках и показываются как введены; по умолчанию «Изи» (у владельца с маршрутами в Claude Code — «ИЗИ»), мужской род
+const IZI = () => { const z = D.izi || {}; return { name: String(z.name || "").trim() || (routes().length ? "ИЗИ" : "Изи"), g: z.g === "f" ? "f" : "m" } }
 const iziName = () => IZI().name
 const iziG = (m, f) => IZI().g === "f" ? f : m
 const proteinGoal = () => H().proteinGoal || Math.round((H().weight || 80) * 1.6)   // по умолчанию 1,6 г на кг веса
