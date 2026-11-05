@@ -26,7 +26,7 @@
   </div>
 </header>
 <main id="view"></main>
-<div id="ptt" hidden></div>
+<div id="silk" hidden><div class="tx"><span></span></div><button class="x" aria-label="Отменить запись">‹ отмена</button><canvas></canvas><b class="tm">0:00</b></div>
 <nav id="tabs">
   <button data-tab="today"><i data-ico="today"></i><span>Сегодня</span></button>
   <button data-tab="plans"><i data-ico="plans"></i><span>Планы</span></button>
@@ -35,8 +35,8 @@
   <button data-tab="health"><i data-ico="health"></i><span>Здоровье</span></button>
 </nav>
 <input id="photo" type="file" accept="image/*" capture="environment" hidden>
-<input id="photo-lib" type="file" accept="image/*" hidden>
-<input id="doc" type="file" accept="image/*,application/pdf,.pdf" hidden>
+<input id="photo-lib" type="file" accept="image/*,video/*" hidden>
+<input id="doc" type="file" accept="image/*,application/pdf,.pdf,video/*" hidden>
 <div id="layer"></div>
 <div id="toast"></div>
 <script src="core.js"></script>

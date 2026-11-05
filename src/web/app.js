@@ -62,6 +62,8 @@ const ICO = {
   money: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="13" rx="3"/><path d="M2.5 10h19"/><path d="M6.5 15h4"/></svg>',
   health: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"/><path d="M7 12h3l1.3-2.5L13 14l1.2-2H17"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>',
+  gallery: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><rect x="8.5" y="2.5" width="7" height="12" rx="3.5"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5"/></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="#fff"/></svg>',
   send: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></svg>',
@@ -580,8 +582,31 @@ async function scanFile(f) {
   } else if (/^image\//.test(f.type) || /\.(jpe?g|png|heic|webp|gif)$/i.test(f.name || "")) {
     const url = await shrinkPhoto(f, 1568)
     att = { type: "image", media_type: "image/jpeg", data: url.split(",")[1], thumb: await shrinkData(url, 360) }
-  } else throw new Error("Можно фото или PDF")
-  chatSend(SCAN_PROMPT, { label: att.type === "document" ? `📄 ${att.name}` : "📷 Фото", attach: att })
+  } else if (/^video\//.test(f.type) || /\.(mov|mp4|m4v|webm)$/i.test(f.name || "")) {
+    const url = await videoFrame(f)   // помощник видит кадр из середины видео
+    att = { type: "image", media_type: "image/jpeg", data: url.split(",")[1], thumb: await shrinkData(url, 360), video: true }
+  } else throw new Error("Можно фото, видео или PDF")
+  const label = att.type === "document" ? `📄 ${att.name}` : att.video ? "🎬 Видео" : "📷 Фото"
+  delete att.video
+  chatSend(SCAN_PROMPT, { label, attach: att })
+}
+function videoFrame(f) {
+  return new Promise((res, rej) => {
+    const u = URL.createObjectURL(f), v = document.createElement("video")
+    const fail = () => { clearTimeout(t); URL.revokeObjectURL(u); rej(new Error("Не удалось открыть видео — пришлите фото или кадр с экрана")) }
+    const t = setTimeout(fail, 12000)
+    v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = u
+    v.onloadeddata = () => { v.currentTime = Math.min(1.5, (v.duration || 2) / 2) }
+    v.onseeked = () => {
+      clearTimeout(t)
+      const k = Math.min(1, 1568 / Math.max(v.videoWidth || 1, v.videoHeight || 1)), c = document.createElement("canvas")
+      c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k)
+      c.getContext("2d").drawImage(v, 0, 0, c.width, c.height)
+      URL.revokeObjectURL(u); res(c.toDataURL("image/jpeg", .85))
+    }
+    v.onerror = fail
+    v.load()
+  })
 }
 function shrinkData(url, max) {
   return new Promise(res => { const img = new Image(); img.onload = () => { const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement("canvas")
@@ -1453,7 +1478,7 @@ async function chatSend(text, opts = {}) {
 }
 function setBusyUI(on) {
   const b = $(".chat-bar .send"); if (!b) return
-  b.classList.toggle("stop", on); b.innerHTML = on ? ICO.stop : ICO.send; b.setAttribute("aria-label", on ? "Остановить" : "Отправить")
+  b.classList.toggle("stop", on); b.parentNode.classList.toggle("busy", on); b.innerHTML = on ? ICO.stop : ICO.send; b.setAttribute("aria-label", on ? "Остановить" : "Отправить")
 }
 function chatStop() {
   if (!chatStopCtl) return
@@ -1504,10 +1529,12 @@ function micStart(auto) {
   voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: !!PTT.holding }
   const v = voice
   lastVoice = v
-  const show = (extra = "") => { v.text = [v.base, v.done, extra].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); const i = $("#chat-in"); if (i) { i.value = v.text; grow(i) }; pttShow(v.text) }
+  const show = (extra = "") => { SILK.en = 1; v.text = [v.base, v.done, extra].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); const i = $("#chat-in"); if (i) { i.value = v.text; grow(i) }; pttShow(v.text) }
   const arm = ms => { clearTimeout(v.timer); if (!v.ptt) v.timer = setTimeout(voiceFinish, ms) }   // пока кнопку держат — пауза не обрывает запись
+  v.t0 = Date.now()
   $(".chat-bar .mic") && $(".chat-bar .mic").classList.add("on")
   if (inp) inp.placeholder = "Слушаю… ➤ — отправить сразу"
+  pttShow("")
   const run = first => {
     const r = new SR()
     r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
@@ -1576,6 +1603,16 @@ function voiceSendNow() {
   if (i) { i.value = ""; grow(i) }
   if (t) chatSend(t, { voice: true })
 }
+// «‹ отмена» на полосе или смахнуть влево: запись выбрасывается, в поле возвращается то, что было до неё
+function voiceCancel() {
+  const v = voice; if (!v) return
+  const r = rec
+  v.sent = true
+  voiceReset()
+  try { r && r.stop() } catch (e) {}
+  const i = $("#chat-in"); if (i) { i.value = v.base || ""; grow(i) }
+  toast("Запись отменена")
+}
 function voiceReset() {
   if (voice) clearTimeout(voice.timer)
   voice = null; rec = null
@@ -1585,7 +1622,8 @@ function voiceReset() {
 }
 // Прокручивается только середина (main), шапка и нижнее меню стоят на месте
 const scrollView = end => { const m = $("#view"); if (m) m.scrollTop = end ? m.scrollHeight : 0 }
-const grow = el => { el.style.height = "auto"; el.style.height = Math.min(120, el.scrollHeight) + "px" }
+const grow = el => { el.style.height = "auto"; el.style.height = Math.min(120, el.scrollHeight) + "px"
+  const bar = el.closest && el.closest(".chat-bar"); if (bar) bar.classList.toggle("typed", !!el.value.trim()) }   // есть текст — вместо волны стрелка «отправить»
 
 // ───────────── Формы ─────────────
 function moneyForm(type, entry) {
@@ -1798,6 +1836,7 @@ function setTab(t) {
   $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t))
   $("#gear").classList.toggle("on", t === "more")
   document.body.classList.toggle("chat", t === "chat")
+  if (plusClose) plusClose()
   render()
   if (t === "chat") setTimeout(() => scrollView(true), 30)
   else scrollView(false)
@@ -1948,12 +1987,12 @@ function stripInit(keep) {
 function renderChatHTML() {
   return `<div class="chat-tools"><button data-brief="morning">☀️ Утренняя сводка</button><button data-brief="evening">🌙 Вечерняя</button><button data-do="memory">🧠 Память</button><button data-do="chat-clear">🧹 Очистить</button></div>
     <div class="chat-list" id="chat-list">${chatItems()}</div>
-    <div class="chat-bar"><button class="cam" aria-label="Фото или файл">${ICO.cam}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
-    <button class="mic" aria-label="Сказать">${ICO.mic}</button><button class="send" aria-label="Отправить">${ICO.send}</button></div>`
+    <div class="chat-bar"><button class="cam plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
+    <button class="mic wave" aria-label="Нажмите — говорить, держите — как рация"><canvas></canvas></button><button class="send" aria-label="Отправить">${ICO.send}</button></div>`
 }
 const linkify = s => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`)
 function chatItems() {
-  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я ваш помощник: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Нажмите 🎤 и скажите, например: «завтра в 10 встреча с Олей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
+  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я ваш помощник: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Нажмите на волну справа и скажите — или держите её, как рацию. Например: «завтра в 10 встреча с Олей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
   const last = D.chat.length - 1
   return D.chat.slice(-60).map((m, i, arr) => {
     const isLast = i === arr.length - 1 && askWait
@@ -2283,8 +2322,9 @@ function bind() {
     // тронули текст во время записи — не отправлять по паузе: можно поправить и нажать ➤
     inp.addEventListener("focus", () => { if (voice) { const t = inp.value, r = rec; voiceReset(); try { r && r.stop() } catch (e) {} inp.value = t; grow(inp); toast("✎ Поправьте и нажмите ➤") } })
     if (voice) { $(".chat-bar .mic", v).classList.add("on"); inp.placeholder = "Слушаю… ➤ — отправить сразу"; if (voice.text) { inp.value = voice.text; grow(inp) } }
-    $(".chat-bar .mic", v).onclick = () => micStart()
-    $(".chat-bar .cam", v).onclick = () => photoPrompt()
+    const wb = $(".chat-bar .mic", v); silkCanvas($("canvas", wb), "btn"); holdToTalk(wb, () => micStart())
+    $(".chat-bar .cam", v).onclick = e => plusMenu(e.currentTarget)
+    grow(inp)
     bindChatList()
   }
 }
@@ -3226,6 +3266,116 @@ function photoPrompt() {
   $('[data-a="txt"]', s.el).onclick = async () => { s.close(); const t = await ui.ask("Что съели?", "Например: тарелка том яма и рис", "", { ok: "Посчитать" }); if (t) foodFlow(null, t) }
 }
 
+// ── «Шёлк»: живая волна из двух линий ──
+// В покое плывёт медленно; пока говорите — быстрее и выше. Громкость iPhone не отдаёт, пока работает
+// распознавание речи, поэтому волна «слышит» по приходящим словам: каждое слово подталкивает её.
+const SILK = { cv: new Set(), raf: 0, en: 0, lv: 0, last: 0 }
+function silkCanvas(c, kind) { if (!c) return; c.dataset.k = kind; SILK.cv.add(c); silkLoop() }
+function silkLoop() {
+  if (SILK.raf || document.hidden) return
+  SILK.raf = requestAnimationFrame(silkFrame)
+}
+document.addEventListener("visibilitychange", silkLoop)
+function silkFrame(t) {
+  SILK.raf = 0
+  if (document.hidden) return
+  const live = [...SILK.cv].filter(c => c.isConnected); SILK.cv = new Set(live)
+  if (!live.length) return
+  SILK.raf = requestAnimationFrame(silkFrame)
+  if (t - SILK.last < 32) return   // ~30 кадров в секунду — плавно и бережно к батарее
+  SILK.last = t
+  const T = t / 1000
+  const syl = Math.pow(Math.max(0, Math.sin(T * 7.3)), .6) * (Math.sin(T * 1.9) > -.6 ? 1 : .3)
+  const target = voice ? (.18 + .82 * syl) * Math.max(.2, SILK.en) : 0
+  SILK.lv += (target - SILK.lv) * (target > SILK.lv ? .35 : .12)
+  SILK.en *= .965
+  const d = Math.min(2, devicePixelRatio || 1)
+  for (const c of live) {
+    const w = Math.round(c.clientWidth * d), h = Math.round(c.clientHeight * d)
+    if (!w || !h) continue
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h }
+    const k = c.dataset.k
+    if (k === "comet") silkComet(c, T, d); else silkLines(c, T, d, k === "orb" && voice && PTT.holding)
+  }
+  const tm = $("#silk .tm"); if (tm && voice && voice.t0) { const sec = Math.floor((Date.now() - voice.t0) / 1000); tm.textContent = Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0") }
+}
+function silkLines(c, T, d, active) {
+  const x = c.getContext("2d"), W = c.width, H = c.height, a = active ? SILK.lv : 0
+  x.clearRect(0, 0, W, H)
+  const pad = W * .2, amp = (.14 + a * .25) * H, sp = active ? 3 + a * 3 : .9
+  ;[["rgba(255,255,255,.98)", 0, 1], ["rgba(255,255,255,.55)", 2.2, .75]].forEach(([col, off, k], j) => {
+    x.beginPath()
+    for (let px = pad; px <= W - pad; px += 2) {
+      const u = (px - pad) / (W - 2 * pad), env = Math.pow(Math.sin(Math.PI * u), 1.4)
+      const y = H / 2 + amp * k * env * Math.sin(u * Math.PI * 2 * 1.15 + T * sp * (j ? 1.25 : 1) + off)
+      px === pad ? x.moveTo(px, y) : x.lineTo(px, y)
+    }
+    x.strokeStyle = col; x.lineWidth = 1.8 * d; x.lineCap = "round"; x.lineJoin = "round"; x.stroke()
+  })
+}
+// Полоса записи: волна тянется за яркой точкой-лучом, которая рвётся вперёд
+function silkComet(c, T, d) {
+  const x = c.getContext("2d"), W = c.width, H = c.height, a = SILK.lv
+  x.clearRect(0, 0, W, H)
+  const head = W - 14 * d, L = 12 * d, sp = 1.2 + a * 4
+  const amp = (.16 + a * .42) * H, hy = H / 2 + Math.sin(T * sp * 1.3) * amp * .15
+  ;[["rgba(255,255,255,", 0, 1], ["rgba(190,240,255,", 2.1, .75]].forEach(([col, off, k], j) => {
+    const g = x.createLinearGradient(L, 0, head, 0)
+    g.addColorStop(0, col + "0)"); g.addColorStop(.18, col + ".5)"); g.addColorStop(1, col + "1)")
+    x.beginPath()
+    for (let px = L; px <= head; px += 2) {
+      const u = (px - L) / (head - L), env = Math.pow(u, .55) * Math.pow(1 - u, .4) * 1.5
+      const y = hy + (H / 2 - hy) * (1 - u) + amp * k * env * (Math.sin(u * Math.PI * 4.2 - T * sp * 2.2 + off) + .3 * Math.sin(u * 17 - T * 7) * a)
+      px === L ? x.moveTo(px, y) : x.lineTo(px, y)
+    }
+    x.strokeStyle = g; x.lineWidth = (j ? 2 : 2.5) * d; x.lineCap = "round"; x.shadowColor = "#bff"; x.shadowBlur = (6 + a * 10) * d; x.stroke(); x.shadowBlur = 0
+  })
+  const bl = W * .35, rg = x.createLinearGradient(head - bl, 0, head, 0)
+  rg.addColorStop(0, "rgba(255,255,255,0)"); rg.addColorStop(1, "rgba(255,255,255,.9)")
+  x.beginPath(); x.moveTo(head - bl, hy); x.lineTo(head, hy); x.strokeStyle = rg; x.lineWidth = 2 * d; x.stroke()
+  const R = (5 + a * 9) * (1 + .25 * Math.sin(T * 9)) * d
+  const gl = x.createRadialGradient(head, hy, 0, head, hy, R * 2.6)
+  gl.addColorStop(0, "#fff"); gl.addColorStop(.25, "rgba(200,255,240,.95)"); gl.addColorStop(.6, "rgba(90,220,255,.35)"); gl.addColorStop(1, "rgba(90,220,255,0)")
+  x.fillStyle = gl; x.beginPath(); x.arc(head, hy, R * 2.6, 0, 7); x.fill()
+  x.fillStyle = "#fff"; x.beginPath(); x.arc(head, hy, R * .45, 0, 7); x.fill()
+}
+let silkHide = null
+function silkShow(text) {
+  const el = $("#silk"); if (!el) return
+  clearTimeout(silkHide)
+  document.body.classList.toggle("voice", text !== null)
+  if (text === null) { el.classList.remove("on"); silkHide = setTimeout(() => { el.hidden = true }, 320); return }
+  const tx = $(".tx span", el)
+  tx.textContent = text || "Слушаю…"; tx.classList.toggle("ph", !text)
+  if (el.hidden) { el.hidden = false; void el.offsetWidth }
+  el.classList.add("on"); silkLoop()
+}
+// «+» в чате: плюс поворачивается, из него раскрывается короткий список. Закрыть — смахнуть вниз или нажать мимо
+let plusClose = null
+function plusMenu(btn) {
+  if (plusClose) return plusClose()
+  const layer = $("#layer"), bar = btn.closest(".chat-bar")
+  const scrim = document.createElement("div"); scrim.className = "plus-scrim"
+  const m = document.createElement("div"); m.className = "plus-menu"
+  const items = [["photo", "cam", "c-cam", "Камера", "Снять фото или видео"], ["photo-lib", "gallery", "c-lib", "Фото и видео", "Загрузить из галереи"], ["doc", "doc", "c-doc", "Файл", "PDF или документ"]]
+  m.innerHTML = items.map(([id, ic, cl, t, sub]) => `<button data-in="${id}"><span class="ic ${cl}">${ICO[ic]}</span><span><b>${t}</b><small>${sub}</small></span></button>`).join("")
+  layer.append(scrim, m)
+  btn.classList.add("open"); if (bar) bar.classList.add("menu")
+  requestAnimationFrame(() => { scrim.classList.add("show"); m.classList.add("show") })
+  const close = () => {
+    if (plusClose !== close) return
+    plusClose = null
+    btn.classList.remove("open"); scrim.classList.remove("show"); m.classList.remove("show")
+    setTimeout(() => { scrim.remove(); m.remove(); if (bar) bar.classList.remove("menu") }, 320)
+  }
+  plusClose = close
+  scrim.onclick = close
+  $$("[data-in]", m).forEach(b => b.onclick = () => { close(); $("#" + b.dataset.in).click() })
+  let y0 = null
+  m.addEventListener("touchstart", e => { y0 = e.touches[0].clientY }, { passive: true })
+  m.addEventListener("touchmove", e => { if (y0 != null && e.touches[0].clientY - y0 > 36) { y0 = null; close() } }, { passive: true })
+}
+
 // ───────────── Старт ─────────────
 document.querySelectorAll("[data-ico]").forEach(i => i.innerHTML = ICO[i.dataset.ico])
 // Настоящая высота экрана: в приложении со значка iOS отдаёт в CSS высоту без строки состояния, и внизу оставалась пустая полоса
@@ -3250,32 +3400,33 @@ if (window.visualViewport) {
   visualViewport.addEventListener("resize", kb); visualViewport.addEventListener("scroll", kb)
 }
 addEventListener("orientationchange", () => setTimeout(fitHeight, 300))
-$("#fab .orb").innerHTML = ICO.mic
-// Зелёная кнопка с микрофоном: нажатие — чат с помощником; держите — сразу запись голосовой команды,
+{ const c = document.createElement("canvas"); $("#fab .orb").append(c); silkCanvas(c, "orb") }
+// Зелёная кнопка с волной: нажатие — чат с помощником; держите — сразу запись голосовой команды,
 // отпустили — команда уходит помощнику (как рация). Меню «Добавить» — кнопка «+» вверху
 const PTT = { holding: false }
 function pttShow(text) {
-  const el = $("#ptt"), fab = $("#fab")
-  if (!el) return
-  const on = text !== null && (PTT.holding || (voice && voice.ptt))
-  el.hidden = !on; if (fab) fab.classList.toggle("rec", !!on)
-  if (on) el.textContent = text || "Слушаю… отпустите, чтобы отправить"
+  const fab = $("#fab"), on = text !== null && !!voice
+  if (fab) fab.classList.toggle("rec", !!(on && (PTT.holding || voice.ptt)))
+  silkShow(on ? text : null)
 }
-{
-  const fab = $("#fab")
-  let lp = null, long = false, id = null
-  const HOLD_MS = 280
-  fab.addEventListener("pointerdown", e => {
-    long = false; id = e.pointerId
-    try { fab.setPointerCapture(e.pointerId) } catch (err) {}
+// Нажатие — onTap; держите дольше 280 мс — запись, пока держите; отпустили — ушло; увели палец влево — отмена
+function holdToTalk(btn, onTap) {
+  let lp = null, long = false, id = null, x0 = 0
+  btn.addEventListener("pointerdown", e => {
+    long = false; id = e.pointerId; x0 = e.clientX
+    try { btn.setPointerCapture(e.pointerId) } catch (err) {}
     clearTimeout(lp)
     lp = setTimeout(() => {
       long = true; PTT.holding = true
       if (navigator.vibrate) navigator.vibrate(15)
       if (voice) voiceReset()
-      pttShow("")
       micStart(true)
-    }, HOLD_MS)
+      pttShow("")
+    }, 280)
+  })
+  btn.addEventListener("pointermove", e => {
+    if (!long || e.pointerId !== id || !voice || e.clientX - x0 > -90) return
+    PTT.holding = false; voiceCancel()
   })
   const up = e => {
     if (e && id !== null && e.pointerId !== id) return
@@ -3284,9 +3435,23 @@ function pttShow(text) {
     PTT.holding = false
     if (voice) { voice.ptt = false; pttShow(voice.text || ""); voiceFinish() } else pttShow(null)
   }
-  fab.addEventListener("pointerup", up); fab.addEventListener("pointercancel", up)
-  fab.addEventListener("contextmenu", e => e.preventDefault())
-  fab.onclick = () => { if (long) { long = false; return } setTab("chat") }
+  btn.addEventListener("pointerup", up); btn.addEventListener("pointercancel", up)
+  btn.addEventListener("contextmenu", e => e.preventDefault())
+  btn.onclick = () => { if (long) { long = false; return } onTap() }
+}
+holdToTalk($("#fab"), () => setTab("chat"))
+// Полоса записи «Шёлк»: сверху текст, ниже волна с яркой точкой, «‹ отмена» и секунды.
+// Нажать на текст — поправить его в поле; на волну или секунды — отправить сразу; смахнуть влево — отмена
+{
+  const el = $("#silk")
+  silkCanvas($("canvas", el), "comet")
+  $(".x", el).onclick = e => { e.stopPropagation(); voiceCancel() }
+  $(".tx", el).onclick = e => { e.stopPropagation(); const i = $("#chat-in"); if (voice && i && tab === "chat") i.focus() }
+  el.onclick = () => { if (voice && !PTT.holding) voiceSendNow() }
+  let sx = null
+  el.addEventListener("pointerdown", e => { sx = e.clientX })
+  el.addEventListener("pointermove", e => { if (sx != null && e.clientX - sx < -70) { sx = null; voiceCancel() } })
+  el.addEventListener("pointerup", () => { sx = null })
 }
 $("#add").innerHTML = ICO.add
 $("#add").onclick = () => addMenu()

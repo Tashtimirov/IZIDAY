@@ -81,7 +81,7 @@ await settle(); await page.evaluate(() => sync()); await settle()
 
 // ── «Планы»: новое меню, списки, «снова пора», привычки по неделе
 check(await page.evaluate(() => [...document.querySelectorAll("#tabs button")].map(b => b.dataset.tab).join()) === "today,plans,chat,money,health", "внизу: Сегодня, Планы, Помощник, Деньги, Здоровье")
-check(await page.evaluate(() => !!$("#fab .orb svg") && $("#fab").dataset.tab === "chat"), "помощник — круглая кнопка в центре")
+check(await page.evaluate(() => !!$("#fab .orb canvas") && $("#fab").dataset.tab === "chat"), "помощник — круглая кнопка с волной в центре")
 await page.click("#gear"); await page.waitForTimeout(300)
 check(await page.evaluate(() => tab === "more" && $("#top-title").textContent === "Настройки"), "шестерёнка — настройки")
 await page.click('[data-tab="plans"]'); await page.waitForTimeout(300)
