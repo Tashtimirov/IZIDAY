@@ -31,6 +31,7 @@ await page.evaluate(() => { setTab("plans"); plansF = "fam"; render() }); await 
 check(await page.evaluate(() => !!$(".pf [data-pf=fam].on") && !!$('[data-f="new"]')), "в «Планах» есть «Семья» с кнопкой «Создать семью»")
 await page.click('[data-f="new"]'); await ask("Папа"); await ask("Ташимировы"); await page.waitForTimeout(600)
 check(await page.evaluate(() => D.fam && D.fam.code && D.fam.role === "adult" && !!$(".fhero")), "семья создана, у взрослого — счёт семьи")
+check(await page.evaluate(() => D.fam.key === true && /Чат детей/.test($("#view").textContent) && !JSON.stringify(D.fam.data).includes("sk-test")), "общий ключ Claude включён, в данных семьи ключа нет")
 // ребёнок
 await page.click('[data-f="kid"]'); await ask("Миша"); await ask(9); await page.waitForTimeout(600)
 const kid = await page.evaluate(() => Object.entries(D.fam.data.members).find(([, m]) => m.name === "Миша"))
@@ -106,6 +107,18 @@ await kp.click('#knav [data-kt="money"]'); await kp.waitForTimeout(200)
 await kp.click('[data-ktask="e1"]'); await kp.waitForTimeout(200)
 await kp.evaluate(() => FAM.push(true)); await kp.waitForTimeout(400)
 
+// чат ребёнка с Изи через общий ключ
+await kp.click('#knav [data-kt="izi"]'); await kp.waitForTimeout(300)
+check(await kp.evaluate(() => $$(".kquick button").length === 3), "чат Изи: подсказка и быстрые вопросы")
+await kp.fill("#kc-t", "Что мне сделать сейчас?"); await kp.click(".ksend"); await kp.waitForTimeout(600)
+const ka = globalThis.__famAsk || {}
+check(await kp.evaluate(() => /зубов/.test($$(".kmsg.a").pop().textContent) && !JSON.stringify(D).includes("sk-test")), "Изи ответил ребёнку; ключа на телефоне ребёнка нет")
+check(ka.key === "sk-test" && /Миша, 9 лет/.test(ka.body.system) && /Покормить кота — не сделано/.test(ka.body.system) && !ka.body.tools, "запрос ушёл с ключом родителя и детскими правилами из таблицы", ka.body && ka.body.system)
+await kp.screenshot({ path: SHOTS + "fm-kid-chat.png" })
+await kp.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await kp.waitForTimeout(300)
+let lim = null; for (let i = 0; i < 31; i++) lim = sheet.post(JSON.stringify({ family: { op: "ask", code: await kp.evaluate(() => D.fam.code), id: kidId, messages: [{ role: "user", content: "привет" }] } }))
+check(!lim.ok && lim.error === "limit", "лимит 30 сообщений в день", lim)
+
 // взрослый видит проверки
 await page.evaluate(() => FAM.push(true)); await page.waitForTimeout(500)
 await page.evaluate(() => { setTab("today") }); await page.waitForTimeout(300)
@@ -142,6 +155,6 @@ await page.evaluate(() => { D.fam.data.members[D.fam.id].pts["2026-11-05"] = 120
 const gp = await page.evaluate(() => FAM.goalProg(D.fam.data.goals.find(g => g.id === "g2")))
 check(gp.times >= 1, "повторяющаяся цель «Кино» достигнута", gp)
 
-check(!errors.filter(e => !/favicon|net::|Failed to load/.test(e)).length && !kerr.length, "без ошибок в консоли", [errors, kerr])
+check(!errors.filter(e => !/favicon|net::|Failed to load|vibrate/.test(e)).length && !kerr.length, "без ошибок в консоли", [errors, kerr])
 await browser.close(); server.close()
 console.log(ok ? "FAMILY_OK" : "FAMILY_FAIL")

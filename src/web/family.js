@@ -401,13 +401,43 @@ function moneyHist(kid) {
   const s = sheet(`<h3>Что было с деньгами</h3>${l.map(m => `<div class="row"><div class="grow"><div class="t">${esc(m.note || "")}</div><div class="s">${esc(shortDate(new Date(m.at)))} · ${(JARS.find(j => j[0] === m.jar) || [0, ""])[1]}${m.st === "wait" ? " · ждёт" : m.st === "no" ? " · отказано" : ""}</div></div><b style="color:${m.amount < 0 ? "var(--red,#FF453A)" : "#18B57A"}">${m.amount > 0 ? "+" : ""}${num(m.amount)} ${esc(cur)}</b></div>`).join("") || '<div class="empty">Пока ничего</div>'}`)
   s.el.classList.add("kid-sheet")
 }
-function kidIzi() {
+function kidTipText() {
   const me = meId(), les = nextLesson(me), left = todayTasks(me).filter(t => !logOf(me, t.id)).length, m = mainDream(me)
-  const tip = left ? `У тебя ${left} ${plural(left, "дело", "дела", "дел")} на сегодня. Сделаешь — получишь звёзды для семьи!` : les ? `Дела сделаны! Хочешь урок «${les.t}»?` : m ? `Как там «${m.title}»? Загляни в «Мечты»: может, пора отметить шаг.` : "Ты сегодня молодец! Придумай новое желание для банки."
-  const s = sheet(`<div class="ksheet kizi">${orb(120)}<div class="kbub c">${esc(tip)}</div><div class="btns">${les ? `<button class="kbtn" data-a="les">Урок «${esc(les.t)}»</button>` : ""}<button class="kbtn soft" data-a="day">Мои дела</button></div></div>`)
-  s.el.classList.add("kid-sheet")
-  const a = $('[data-a="les"]', s.el); if (a) a.onclick = () => { s.close(); lesson(les) }
-  $('[data-a="day"]', s.el).onclick = () => { s.close(); kTab = "day"; render() }
+  return left ? `У тебя ${left} ${plural(left, "дело", "дела", "дел")} на сегодня. Сделаешь — получишь звёзды для семьи!` : les ? `Дела сделаны! Хочешь урок «${les.t}»?` : m ? `Как там «${m.title}»? Загляни в «Мечты»: может, пора отметить шаг.` : "Ты сегодня молодец! Придумай новое желание для банки."
+}
+// Что Изи знает о ребёнке: только его дела, звёзды, копилки и мечты
+function kidCtx() {
+  const j = jars(meId()), m = mainDream(meId()), les = nextLesson(meId())
+  const t = todayTasks(meId()).map(x => { const st = (logOf(meId(), x.id) || {}).st; return `${x.title} — ${st === "ok" ? "сделано" : st === "wait" ? "ждёт проверки" : "не сделано"}` }).join("; ")
+  return `Сегодня ${fullDate(new Date())}. Дела: ${t || "нет"}. Звёзд всего: ${kidStars(meId())}. Копилки: Трачу ${j.spend}, Коплю ${j.save}, Делюсь ${j.share} ${core.CONFIG.currency || "฿"}. ${m ? `Главная мечта: ${m.title}${m.price ? `, стоит ${m.price}` : ""}.` : ""} Банка желаний: ${kidDreams(meId()).filter(d => !d.main && !d.done).map(d => d.title).join(", ") || "пусто"}. ${les ? `Следующий урок: ${les.t}.` : ""} Семейная цель: ${(famGoals().find(x => !x.done) || {}).title || "нет"}.`
+}
+function kidIzi() {
+  const chat = D.kchat || (D.kchat = [])
+  let busyK = false
+  const s = sheet(`<div class="ksheet kchat"><div class="kchat-h">${orb(44)}<b>${esc(iziName())}</b></div><div class="kmsgs"></div>
+    <div class="kin"><input id="kc-t" placeholder="Напиши ${esc(iziName())}…" enterkeyhint="send"><button class="ksend" aria-label="Отправить">${ic("chev", 22, "#fff", 3)}</button></div></div>`)
+  s.el.classList.add("kid-sheet", "kfull")
+  const box = $(".kmsgs", s.el), inp = $("#kc-t", s.el)
+  const draw = () => {
+    const l = chat.slice(-30)
+    box.innerHTML = (l.length ? "" : `<div class="kmsg a">${esc(kidTipText())}</div><div class="kquick">${["Что мне сделать сейчас?", "Как быстрее накопить на мечту?", "Придумай мне цель на неделю"].map(q => `<button data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>`) +
+      l.map(x => `<div class="kmsg ${x.role === "user" ? "u" : "a"}">${esc(x.content)}</div>`).join("") + (busyK ? `<div class="kmsg a kdots"><i></i><i></i><i></i></div>` : "")
+    $$("[data-q]", box).forEach(b => b.onclick = () => send(b.dataset.q))
+    box.scrollTop = box.scrollHeight
+  }
+  const send = async text => {
+    text = String(text || "").trim(); if (!text || busyK) return
+    chat.push({ role: "user", content: text.slice(0, 500), at: Date.now() }); inp.value = ""; busyK = true; draw()
+    const r = await post(D.fam.url, { op: "ask", code: D.fam.code, id: D.fam.id, ctx: kidCtx(), messages: chat.slice(-12).map(x => ({ role: x.role, content: x.content })) })
+    busyK = false
+    const ans = r && r.ok && r.text ? r.text : r && r.error === "nokey" ? `Мама или папа ещё не включили для меня разговоры. А пока подсказка: ${kidTipText()}` : r && r.error === "limit" ? "На сегодня мы наболтались! Завтра продолжим. А пока можно пройти урок или отметить дела." : "Ой, связь пропала. Попробуй ещё раз чуть позже."
+    chat.push({ role: "assistant", content: ans, at: Date.now() })
+    while (chat.length > 60) chat.shift()
+    save(false); draw()
+  }
+  $(".ksend", s.el).onclick = () => send(inp.value)
+  inp.onkeydown = e => { if (e.key === "Enter") send(inp.value) }
+  draw()
 }
 function lesson(l) {
   let i = 0, picked = null, coins = { spend: 0, save: 0, share: 0 }
@@ -469,6 +499,7 @@ function famPage() {
     return `<div class="row" data-fg="${esc(g.id)}"><span class="ftile" style="background:${gi[1]}1F">${ic(g.ic || gi[0], 22, gi[1])}</span><div class="grow"><div class="t">${esc(g.title)}${g.done ? " · достигнута" : ""}</div><div class="s">${g.repeat ? `каждые ${num(g.target)} баллов${p.times ? ` · было ${p.times} ${plural(p.times, "раз", "раза", "раз")}` : ""}` : `${num(p.have)} из ${num(g.target)} баллов${g.due ? " · до " + esc(g.due.split("-").reverse().slice(0, 2).join(".")) : ""}`}</div><div class="fgbar"><i style="width:${Math.round(p.p * 100)}%;background:${gi[1]}"></i></div></div></div>` }).join("") || `<div class="empty">Например: «Аквапарк всей семьёй» за 3 000 баллов или «Кино с попкорном» каждые 1 000.</div>`}</div>`
   const kd = kids().filter(k => mainDream(k.id) || kidDreams(k.id).length)
   if (kd.length) h += `<div class="card fcard"><h2>Мечты детей</h2>${kd.map(k => kidDreams(k.id).filter(d => !d.done).slice(0, 4).map(d => dreamRow(k, d)).join("")).join("")}</div>`
+  if (D.fam.owner) h += `<div class="card fcard"><div class="row"><span class="ftile" style="background:#6A4BF21F">${ic("bulb", 22, "#6A4BF2")}</span><div class="grow"><div class="t">Чат детей с ${esc(iziName())}</div><div class="s">${D.fam.key ? "через ваш ключ Claude, до 30 сообщений в день на ребёнка; ключ детям не виден" : aiKey() ? "выключен — дети видят только подсказки" : "нужен ключ Claude в вашем приложении"}</div></div>${aiKey() ? `<button class="btn small ${D.fam.key ? "" : "primary"}" data-f="${D.fam.key ? "keyoff" : "keyon"}">${D.fam.key ? "Выключить" : "Включить"}</button>` : ""}</div></div>`
   h += `<div class="muted small" style="text-align:center;margin:4px 0 14px">Семья «${esc(F().name || D.fam.fname || "")}»${D.fam.err ? ` · ${esc(D.fam.err)}` : ""} · <button class="linkbtn" data-f="leave">Выйти</button></div>`
   return h
 }
@@ -583,7 +614,14 @@ async function famNew() {
   const r = await post(D.conn.hook, { op: "new", name }, D.conn.secret)
   if (!r || !r.ok || !r.family) return ui.info("Семья пока не создаётся", r && r.error && r.error !== "нет связи" ? `Таблица ответила: ${r.error}` : r && r.ok ? "В таблице ещё старая версия скрипта — после её обновления семья заработает." : "Нет связи с таблицей. Попробуйте позже.")
   D.fam = { url: D.conn.hook, code: r.family.code, id: uid("m"), role: "adult", name: me, owner: true, data: r.family, at: 0, out: {}, seen: {}, me: { color: COLORS[0], owner: true } }
-  save(false); await push(true); render()
+  save(false); await push(true); await shareKey(true); render()
+}
+// Общий ключ Claude: детям — чат с Изи через таблицу хозяина семьи; ключ лежит в скрипте таблицы, телефонам не виден
+async function shareKey(on) {
+  if (!famOn() || !D.fam.owner || !D.conn || !D.conn.hook) return
+  const r = await post(D.conn.hook, { op: "key", code: D.fam.code, key: on && aiKey() ? aiKey() : "", model: core.CONFIG.agentModel || "claude-sonnet-5-5" }, D.conn.secret)
+  if (r && r.ok) { D.fam.key = !!r.key; save(false) } else if (on) toast("Общий ключ не включился: " + ((r && r.error) || "нет связи"))
+  if (!stack.length) render()
 }
 async function kidAdd() {
   const name = await ui.ask("Как зовут ребёнка?", "", "", { placeholder: "Имя" }); if (!name) return
@@ -636,7 +674,7 @@ async function leave() {
 
 // ───────────── Встраивание в экраны ─────────────
 function openFam() { plansF = "fam"; if (tab !== "plans") setTab("plans"); else render(); scrollView(false) }
-const FDO = { new: () => famNew(), paste: () => window.famJoin(), invite: () => invite(null), kid: () => kidAdd(), goal: () => goalForm(), leave: () => leave(), open: () => openFam() }
+const FDO = { keyon: () => shareKey(true), keyoff: () => shareKey(false), new: () => famNew(), paste: () => window.famJoin(), invite: () => invite(null), kid: () => kidAdd(), goal: () => goalForm(), leave: () => leave(), open: () => openFam() }
 function bindFam(v) {
   $$("[data-f]", v).forEach(b => b.onclick = e => { e.stopPropagation(); const f = FDO[b.dataset.f]; if (f) f() })
   $$("[data-fm]", v).forEach(b => b.onclick = () => kidSheet(b.dataset.fm))
