@@ -113,6 +113,7 @@ function load() {
   try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
   for (const k of [...Object.keys(LISTS), "chat", "ops", "chatArchive"]) if (!Array.isArray(D[k])) D[k] = []
   D.conn = D.conn || null
+  if (!D.cc || typeof D.cc !== "object" || Array.isArray(D.cc)) D.cc = {}
   D.sync = Object.assign({ since: 0, pushedAt: 0, snapAt: 0, at: 0, error: "" }, D.sync || {})
   applyCfg()
 }
@@ -223,6 +224,7 @@ function sync() {
           if (o && so.state === "done" && o.state !== "done") { o.state = "done"; o.result = so.result; o.doneAt = so.doneAt; opDone(o) }
         }
         D.ops = D.ops.filter(o => o.state !== "done" || o.doneAt > Date.now() - 864e5)
+        if (res.cc) ccIn(res.cc)
         if (res.url) D.conn.sheetUrl = D.conn.sheetUrl || res.url
         Object.assign(D.sync, { since: res.now, pushedAt: started, at: Date.now(), error: "" })
         save(false)
@@ -230,6 +232,7 @@ function sync() {
       if (!stack.length && tab !== "chat") render()
       else renderTop()
       pushHere()
+      ccLate()
       calRefresh()   // Google Календарь — отдельным запросом, чтобы не задерживать обмен
       return true
     } catch (e) {
@@ -825,9 +828,10 @@ function chatTools() {
   const r = routes()
   if (r.length) list.push({ name: "claude_code",
     description: "Передать задачу в Claude Code: запускается новая сессия, она работает сама (код, документы, исследование, " +
-      "длинные многошаговые задачи) и возвращает ссылку. Маршруты:\n" + r.map(x => `- «${x.name}»: ${x.hint || "без описания"}`).join("\n"),
+      "длинные многошаговые задачи). Сразу появляется ссылка на сессию, а когда сессия закончит, её итог сам придёт в этот чат. Маршруты:\n" + r.map(x => `- «${x.name}»: ${x.hint || "без описания"}`).join("\n"),
     input_schema: { type: "object", properties: {
       route: { type: "string", enum: r.map(x => x.name) },
+      title: { type: "string", description: "Короткое название задачи, 2–5 слов: так она будет подписана в чате" },
       task: { type: "string", description: "Полная постановка задачи: что сделать, весь нужный контекст из разговора, что вернуть. Сессия этот чат не видит." },
     }, required: ["route", "task"] } })
   return list.concat(IZI_TOOL_DEFS)
@@ -1227,8 +1231,14 @@ async function runTool(name, x) {
       const r = routes().find(z => z.name === x.route)
       if (!r) return { error: `нет маршрута «${x.route}»` }
       try {
-        const res = await hubPost({ fire: { url: r.url, token: r.token, text: x.task } }, 45000)
-        if (res.fire && res.fire.session_url) { chatLinks.push(res.fire.session_url); return { ok: true, session_url: res.fire.session_url } }
+        const id = "cc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+        const title = String(x.title || x.task).replace(/\s+/g, " ").trim().slice(0, 60)
+        const res = await hubPost({ fire: { id, title, route: r.name, url: r.url, token: r.token, text: x.task } }, 45000)
+        if (res.fire && res.fire.session_url) {
+          ccSet({ id: res.fire.id || id, title, route: r.name, url: res.fire.session_url, at: Date.now(), state: "run" })
+          if (res.fire.id) chatCC.push(res.fire.id); else chatLinks.push(res.fire.session_url)   // старый скрипт таблицы итог не вернёт — только ссылка
+          return { ok: true, session_url: res.fire.session_url, result: res.fire.id ? "итог сам придёт в этот чат, когда сессия закончит" : "итог останется в сессии" }
+        }
         return { error: (res.fire && res.fire.error) || "таблица не запустила задачу (обновите скрипт таблицы)" }
       } catch (e) { return { error: String(e.message || e) } }
     }
@@ -1500,7 +1510,7 @@ async function agentTurn(messages, system, tools) {
   return "Не удалось закончить — попробуйте сформулировать проще."
 }
 
-let chatBusy = false, chatLinks = [], askWait = null
+let chatBusy = false, chatLinks = [], chatCC = [], askWait = null
 async function chatSend(text, opts = {}) {
   text = String(text || "").trim()
   if (!text) return
@@ -1513,6 +1523,7 @@ async function chatSend(text, opts = {}) {
   D.chat.push(item)
   chatBusy = true
   chatLinks = []
+  chatCC = []
   chatDraft = null
   save(false)
   if (tab !== "chat") setTab("chat"); else renderChat()
@@ -1538,7 +1549,7 @@ async function chatSend(text, opts = {}) {
     toast("⏹ Остановлено — поправьте и отправьте")
     return
   }
-  D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice(), draft: chatDraft || undefined })
+  D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice(), cc: chatCC.length ? chatCC.slice() : undefined, draft: chatDraft || undefined })
   chatDraft = null
   talkHear(reply)
   if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
@@ -2083,7 +2094,7 @@ function chatItems() {
     const isLast = i === arr.length - 1 && askWait
     const gi = D.chat.length - arr.length + i
     const edit = m.role === "user" && !m.local && !m.thumb && !m.prompt && i >= arr.length - 6 ? `<button class="ed" data-edit="${gi}" aria-label="Изменить">✎</button>` : ""
-    return `<div class="m ${m.role}" data-i="${gi}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? "🎤 " : ""}${linkify(m.text)}${draftHTML(m)}${m.pro && m.opts && m.opts.length && i === arr.length - 1 ? `<div class="opts">${m.opts.map(o => `<button data-pro="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}${(m.links || []).length ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>` : ""}` +
+    return `<div class="m ${m.role}" data-i="${gi}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? "🎤 " : ""}${linkify(m.text)}${draftHTML(m)}${m.pro && m.opts && m.opts.length && i === arr.length - 1 ? `<div class="opts">${m.opts.map(o => `<button data-pro="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}${(m.links || []).length && !m.ccDone ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>` : ""}${ccCards(m)}` +
       `${m.opts && m.opts.length && isLast ? `<div class="opts">${m.opts.map(o => `<button data-opt="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}<span class="tm">${hm(new Date(m.at || Date.now()))}</span></div>`
   }).join("") + (chatBusy && !askWait ? `<div class="typing"><i></i><i></i><i></i>${chatStatus ? `<span class="st">${esc(chatStatus)}</span>` : ""}</div>` : "") + (last < 0 ? "" : "")
 }
@@ -5303,6 +5314,62 @@ function bindIzi(v) {
 }
 
 // ── Изи пишет первым: окно в расписании, подготовка к встрече, «как прошло?», сверка целей в воскресенье ──
+// ───────────── Задачи в Claude Code: карточка «в работе» и итог в чате ─────────────
+// Сессия по окончании вписывает итог в лист «Ответы Claude Code» таблицы, таблица отдаёт его при обмене (res.cc).
+// D.cc[id] = { id, title, route, url, at, state: "run" | "done", text, links, doneAt, said, late }
+var CC_LATE = 3 * 3600e3, CC_LOST = 24 * 3600e3
+function ccSet(j) {
+  D.cc[j.id] = Object.assign(D.cc[j.id] || {}, j)
+  for (const k of Object.keys(D.cc)) if ((D.cc[k].doneAt || D.cc[k].at || 0) < Date.now() - 30 * 864e5) delete D.cc[k]
+}
+function ccIn(list) {
+  let said = false
+  for (const x of list || []) {
+    if (!x || !x.id) continue
+    const j = D.cc[x.id]
+    if (!j) { if (x.state === "run") ccSet(x); continue }   // задача с другого устройства: молча следим
+    if (x.state !== "done" || j.state === "done") continue
+    ccSet({ id: x.id, state: "done", text: String(x.text || ""), links: (x.links || []).filter(u => /^https:\/\//.test(u)), doneAt: x.doneAt || Date.now() })
+    if (j.said) continue
+    j.said = 1; said = true
+    const text = `Готово: «${j.title}».\n${j.text}`
+    D.chat.push({ role: "assistant", at: Date.now(), text, ccDone: j.id })
+    if (!chatBusy && !askWait) talkHear(text)
+    if (tab !== "chat") toast(`${iziName()}: готово «${j.title}»`)
+  }
+  if (said && tab === "chat") renderChat()
+  else if (tab === "chat") ccRefresh()
+}
+// Долго молчит — сказать один раз и дать ссылку на сессию
+function ccLate() {
+  const now = Date.now()
+  for (const j of Object.values(D.cc)) {
+    if (j.state !== "run" || j.late || now - j.at < CC_LATE || now - j.at > CC_LOST) continue
+    j.late = 1
+    D.chat.push({ role: "assistant", at: now, text: `Задача «${j.title}» идёт уже ${Math.round((now - j.at) / 3600e3)} ч и пока без итога. Возможно, сессия ждёт ответа или застряла — загляните в неё.`, ccDone: j.id })
+    save(false)
+    if (tab === "chat") renderChat()
+  }
+}
+function ccStatus(j) {
+  if (j.state === "done") return "готово"
+  const min = Math.round((Date.now() - j.at) / 60e3)
+  if (Date.now() - j.at > CC_LOST) return "нет ответа"
+  return min < 1 ? "в работе" : min < 60 ? `в работе · ${min} мин` : `в работе · ${Math.floor(min / 60)} ч ${min % 60} мин`
+}
+const ccHost = u => { try { const h = new URL(u).hostname.replace(/^www\./, ""); return /github/.test(h) ? "GitHub" : /docs\.google/.test(h) ? "Документ Google" : /claude\.ai/.test(h) ? "Claude" : h } catch (e) { return "Ссылка" } }
+function ccCards(m) {
+  const ids = m.cc || (m.ccDone ? [m.ccDone] : [])
+  return ids.map(id => {
+    const j = D.cc[id]; if (!j) return ""
+    const done = j.state === "done", res = m.ccDone && done ? (j.links || []) : []
+    return (m.ccDone ? "" : `<div class="cc-card ${done ? "done" : ""}" data-cc="${esc(id)}"><span class="cc-ic">${done ? ICO.check : ICO.timer}</span><span class="cc-tx"><b>${esc(j.title)}</b><small>Claude Code · <span class="cc-st">${esc(ccStatus(j))}</span></small></span></div>`) +
+      `<div class="cc-links">${res.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(ccHost(u))}</a>`).join("")}<a href="${esc(j.url)}" target="_blank" rel="noopener">Открыть сессию</a></div>`
+  }).join("")
+}
+// Обновить статусы на карточках без перерисовки всего чата
+function ccRefresh() { $$(".cc-card").forEach(el => { const j = D.cc[el.dataset.cc]; if (!j) return; const st = el.querySelector(".cc-st"); if (st) st.textContent = ccStatus(j); el.classList.toggle("done", j.state === "done") }) }
+
 // Не чаще 3 раз в день, только пока приложение открыто и Изи свободен. Состояние — D.izi.pro (на телефоне)
 var PRO_MAX = 3
 function proState() { const p = Object.assign({ day: "", n: 0, seen: {} }, (D.izi || {}).ps), dk = iso(new Date()).slice(0, 10); if (p.day !== dk) { p.day = dk; p.n = 0; p.seen = {} } return p }
