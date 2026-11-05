@@ -974,3 +974,18 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 .m .dr-opts a { text-decoration: none; }
 .m .dr-opts a { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 16px; padding: 7px 12px; font-size: 14px; }
 .m .dr-opts a.on { background: var(--accent, #0A9F6E); border-color: transparent; color: #fff; font-weight: 600; }
+/* Задача в Claude Code: карточка «в работе» → «готово» */
+.m .cc-card { display: flex; align-items: center; gap: 10px; margin-top: 9px; padding: 9px 11px; border-radius: 14px; white-space: normal;
+  background: color-mix(in srgb, var(--teal) 9%, transparent); border: 1px solid color-mix(in srgb, var(--teal) 22%, transparent); }
+.m .cc-ic { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 16%, transparent); }
+.m .cc-ic svg { width: 17px; height: 17px; }
+.m .cc-card:not(.done) .cc-ic svg { animation: cc-pulse 2.4s ease-in-out infinite; }
+.m .cc-card.done .cc-ic { color: #fff; background: var(--teal); }
+.m .cc-tx { display: flex; flex-direction: column; min-width: 0; }
+.m .cc-tx b { font-size: 14.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m .cc-tx small { font-size: 12.5px; color: var(--sub); }
+.m .cc-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; white-space: normal; }
+.m .cc-links a { font-size: 13.5px; font-weight: 600; text-decoration: none; padding: 5px 11px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg); }
+@keyframes cc-pulse { 0%, 100% { opacity: 1; transform: scale(1) } 50% { opacity: .55; transform: scale(.9) } }
+@media (prefers-reduced-motion: reduce) { .m .cc-card .cc-ic svg { animation: none } }

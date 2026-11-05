@@ -26,7 +26,7 @@ class Sheet {
 }
 const sheets = [new Sheet("Лист1")]
 const ss = { getSheetByName: n => sheets.find(s => s.name === n) || null, insertSheet: n => { const s = new Sheet(n); sheets.push(s); return s },
-  getSheets: () => sheets, deleteSheet: s => sheets.splice(sheets.indexOf(s), 1), getName: () => "Мой день", getUrl: () => "https://docs.google.com/spreadsheets/d/T/edit",
+  getSheets: () => sheets, deleteSheet: s => sheets.splice(sheets.indexOf(s), 1), getName: () => "Мой день", getId: () => "SHEETID", getUrl: () => "https://docs.google.com/spreadsheets/d/T/edit",
   setActiveSheet: s => { ss.active = s }, moveActiveSheet: i => { sheets.splice(sheets.indexOf(ss.active), 1); sheets.splice(i - 1, 0, ss.active) },
   getSpreadsheetTimeZone: () => "Asia/Bangkok" }
 const props = {}, fetched = [], overpassQ = []
@@ -113,6 +113,21 @@ a = hub({ from: "app", fire: { url: "https://api.anthropic.com/v1/claude_code/ro
 check("рутина запущена, ссылка на сессию", a.fire && a.fire.session_url === "https://claude.ai/code/session_x" && fetched[0].o.headers.Authorization === "Bearer t", a.fire)
 a = hub({ from: "app", fire: { url: "https://evil.example/fire", token: "t", text: "x" } })
 check("чужой адрес не вызывается", !a.fire && fetched.length === 1)
+// ответ Claude Code возвращается через лист «Ответы Claude Code»
+a = hub({ from: "app", fire: { id: "cc_t1", title: "Сравнить тарифы", route: "Личное", url: "https://api.anthropic.com/v1/claude_code/routines/trig_abc/fire", token: "t", text: "сравни тарифы" } })
+const sent1 = JSON.parse(fetched[1].o.payload).text
+check("к постановке дописано, как вернуть итог", a.fire.id === "cc_t1" && sent1.startsWith("сравни тарифы") && sent1.includes("cc_t1") && sent1.includes("SHEETID") && sent1.includes("'Ответы Claude Code'!A:D"), sent1)
+const ccSh = ss.getSheetByName("Ответы Claude Code")
+check("лист ответов создан с заголовком", ccSh && ccSh.cells[0][0] === "Номер задачи", ccSh && ccSh.cells[0])
+let since1 = a.now
+a = hub({ from: "app", since: since1 })
+check("задача в работе видна приложению", a.cc.length >= 1 && a.cc.find(j => j.id === "cc_t1").state === "run" && a.cc.find(j => j.id === "cc_t1").url === "https://claude.ai/code/session_x", a.cc)
+ccSh.cells.push(["чужое", "", "не то", ""], ["cc_t1", "2026-11-05 10:00", "Сравнил 3 тарифа.\nДешевле всего — AIS.", "https://docs.google.com/x javascript:alert(1) https://github.com/p/1"])
+a = hub({ from: "app", since: since1 })
+const d1 = a.cc.find(j => j.id === "cc_t1")
+check("итог из листа: готово, текст и только https-ссылки", d1.state === "done" && d1.text.startsWith("Сравнил 3 тарифа") && d1.links.length === 2 && d1.links[1] === "https://github.com/p/1", d1)
+a = hub({ from: "app", since: a.now + 1 })
+check("готовая задача не приходит повторно", !a.cc.some(j => j.id === "cc_t1"), a.cc)
 // чтение листов для помощника
 a = hub({ from: "app", read: {} })
 check("список листов без скрытого _hub", a.read && a.read.sheets.some(x => x.name === "Операции" && x.head.includes("Сумма")) && !a.read.sheets.some(x => x.name === "_hub"), a.read)

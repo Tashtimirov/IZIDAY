@@ -219,12 +219,14 @@ function hub_(h) {
   if (h.from === "widget") out.travel = Object.values(hubGet_("push_travel") || {}).filter(x => x.min && x.start > now).map(x => ({ start: x.start, t: x.t, min: x.min, buf: PUSH.buffer }));
   // 4. Задача в Claude Code (браузер не может обратиться к API рутин напрямую)
   if (h.fire && ROUTE_URL.test(h.fire.url || "")) {
+    const ccId = String(h.fire.id || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40) || "cc" + now.toString(36);
     try {
       const res = UrlFetchApp.fetch(h.fire.url, { method: "post", contentType: "application/json", muteHttpExceptions: true,
         headers: { Authorization: "Bearer " + h.fire.token, "anthropic-version": "2023-06-01", "anthropic-beta": "experimental-cc-routine-2026-04-01" },
-        payload: JSON.stringify({ text: String(h.fire.text || "").slice(0, 60000) }) });
+        payload: JSON.stringify({ text: String(h.fire.text || "").slice(0, 57000) + ccNote_(ss, ccId) }) });
       const j = JSON.parse(res.getContentText() || "{}");
-      out.fire = j.claude_code_session_url ? { ok: true, session_url: j.claude_code_session_url }
+      if (j.claude_code_session_url) ccAdd_({ id: ccId, title: String(h.fire.title || h.fire.text || "").slice(0, 80), route: String(h.fire.route || ""), url: j.claude_code_session_url, at: now, state: "run" });
+      out.fire = j.claude_code_session_url ? { ok: true, session_url: j.claude_code_session_url, id: ccId }
         : { error: j.error ? j.error.type + ": " + j.error.message : "пустой ответ" };
     } catch (err) { out.fire = { error: "нет связи: " + err }; }
   }
@@ -235,9 +237,62 @@ function hub_(h) {
   if (h.read) out.read = readSheet_(ss, h.read);
   if (h.cal) { try { out.cal = cal_(h.cal); } catch (e) { out.cal = { error: String(e.message || e) }; } }
   if (h.mail) { try { out.mail = mail_(h.mail); } catch (e) { out.mail = { error: String(e.message || e) }; } }
+  // 7. Ответы Claude Code: сессия вписывает итог в лист «Ответы Claude Code», приложение показывает его в чате
+  if (h.from === "app") out.cc = ccCheck_(ss, now).filter(j => j.state === "run" || (Number(j.doneAt) || 0) >= since);
   out.pushOn = pushOn_();
   out.url = ss.getUrl();
   return out;
+}
+
+// ── Ответы Claude Code ──
+// Сессия Claude Code работает в облаке, где адрес этого скрипта закрыт. Зато у неё есть подключённые Google Таблицы:
+// по окончании она добавляет строку в лист «Ответы Claude Code» (номер задачи, время, итог, ссылки).
+// Скрипт сверяет задачи «в работе» (_hub → cc) с этим листом и отдаёт готовые приложению; пуш — в pushTick.
+const CC = { sheet: "Ответы Claude Code", keep: 14 };
+function ccSheet_(ss) {
+  let sh = ss.getSheetByName(CC.sheet);
+  if (!sh) {
+    sh = ss.insertSheet(CC.sheet);
+    sh.getRange(1, 1, 1, 4).setValues([["Номер задачи", "Когда", "Итог", "Ссылки"]]).setFontWeight("bold").setBackground("#0B4A33").setFontColor("#F0CC60");
+    sh.setFrozenRows(1);
+    if (sh.setColumnWidth) { sh.setColumnWidth(1, 150); sh.setColumnWidth(3, 520); }
+  }
+  return sh;
+}
+// Дописывается к постановке задачи: как вернуть результат
+function ccNote_(ss, id) {
+  ccSheet_(ss);
+  return "\n\n---\nКак вернуть результат в чат помощника (обязательный последний шаг, даже если задача не удалась): " +
+    "добавь одну строку в Google Таблицу пользователя инструментом Google Таблиц (добавление значений, append).\n" +
+    "Таблица: " + ss.getId() + " («" + ss.getName() + "»), диапазон: '" + CC.sheet + "'!A:D.\n" +
+    "Столбцы: A — номер задачи ровно " + id + "; B — дата и время; C — итог по-русски для чата: 2–6 коротких строк, что сделано " +
+    "(или что не получилось и почему) и что пользователю сделать дальше, без Markdown-таблиц; D — ссылки через пробел (PR, документ, файл), если есть.\n" +
+    "Другие листы этой таблицы не меняй. Если инструмента Google Таблиц нет — напиши об этом в конце итога сессии.";
+}
+function ccAdd_(job) {
+  const jobs = (hubGet_("cc") || []).filter(j => j.id !== job.id);
+  jobs.push(job);
+  hubSet_("cc", jobs.slice(-40));
+}
+function ccCheck_(ss, now) {
+  now = now || Date.now();
+  const jobs = hubGet_("cc") || [];
+  let changed = false;
+  const run = jobs.filter(j => j.state === "run");
+  const sh = run.length ? ss.getSheetByName(CC.sheet) : null;
+  if (sh && sh.getLastRow() > 1) {
+    const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getDisplayValues();
+    for (const j of run) {
+      const r = rows.filter(x => String(x[0]).trim() === j.id).pop();
+      if (!r) continue;
+      Object.assign(j, { state: "done", doneAt: now, text: String(r[2] || "").trim().slice(0, 4000) || "Готово, подробности — в сессии.",
+        links: String(r[3] || "").split(/\s+/).filter(u => /^https:\/\/\S+$/.test(u)).slice(0, 5) });
+      changed = true;
+    }
+  }
+  const keep = jobs.filter(j => (Number(j.doneAt || j.at) || 0) > now - CC.keep * 864e5);
+  if (changed || keep.length !== jobs.length) hubSet_("cc", keep);
+  return keep;
 }
 
 // Время и расстояние в пути (встроенный сервис Карт Apps Script, ключ не нужен). from/to — {lat,lng} или адрес
@@ -980,6 +1035,9 @@ function pushTick() {
       for (const k of Object.keys(travel)) if (now - travel[k].at > 6 * 3600e3) delete travel[k];
       hubSet_("push_travel", travel);
     }
+    // 8. Claude Code закончил переданную задачу (итог появился на листе «Ответы Claude Code»)
+    for (const j of ccCheck_(SpreadsheetApp.getActiveSpreadsheet(), now))
+      if (j.state === "done" && j.doneAt > now - 6 * 3600e3) once("cc:" + j.id, { title: "Задача готова", body: `«${j.title}»: ${String(j.text || "").split("\n")[0].slice(0, 140)}`, url: "./#chat" });
     for (const k of Object.keys(sent)) if (now - sent[k] > 3 * 864e5) delete sent[k];
     hubSet_("push_sent", sent);
     const res = items.length ? pushSend_(items) : { sent: 0 };
