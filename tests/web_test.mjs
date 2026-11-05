@@ -342,8 +342,9 @@ const sentBefore = claudeSeen.length
 await page.click('[data-tab="today"]'); await page.click("#fab")
 await page.waitForTimeout(300)
 check(await page.evaluate(() => tab === "chat" && !voice), "зелёная кнопка: нажатие — чат, без записи")
-await page.click(".chat-bar .mic"); await page.waitForTimeout(300)
-check(await page.evaluate(() => !!voice && $(".chat-bar .mic").classList.contains("on") && !$("#silk").hidden), "волна в чате — сразу слушает, видна полоса записи")
+check(await page.evaluate(() => !$(".chat-bar .mic")), "в чате одна кнопка голоса — большая «Изи», маленькой волны у поля нет")
+await page.evaluate(() => micStart()); await page.waitForTimeout(300)
+check(await page.evaluate(() => !!voice && !$("#silk").hidden), "диктовка — сразу слушает, видна полоса записи")
 await page.click("#silk .tm")
 await page.waitForSelector("text=Сегодня 0,5 л", { timeout: 5000 }).catch(() => {})
 check(claudeSeen.length === sentBefore + 1 && JSON.stringify(claudeSeen.at(-1).body.messages).includes("сколько я выпил воды"), "➤ отправил услышанное сразу", claudeSeen.length - sentBefore)
@@ -364,16 +365,16 @@ await page.waitForTimeout(1500)
 check(claudeSeen.length === sentPtt + 1 && await page.evaluate(() => tab === "chat" && !voice && $("#silk").hidden && !$("#fab").classList.contains("rec")), "отпустил — команда ушла помощнику, открыт чат", [claudeSeen.length - sentPtt, await page.evaluate(() => tab)])
 check(await page.evaluate(() => !!$("#add svg")), "меню «Добавить» — кнопка «+» вверху")
 // «+» в чате: плюс поворачивается, список из трёх пунктов; нажали мимо — закрылось
-check(await page.evaluate(() => !$(".chat-bar .send").offsetParent && !!$(".chat-bar .mic").offsetParent), "пустое поле — волна вместо стрелки")
+check(await page.evaluate(() => !$(".chat-bar .send").offsetParent), "пустое поле — справа ничего лишнего, без стрелки")
 await page.fill("#chat-in", "тест")
-check(await page.evaluate(() => !!$(".chat-bar .send").offsetParent && !$(".chat-bar .mic").offsetParent), "есть текст — стрелка вместо волны")
+check(await page.evaluate(() => !!$(".chat-bar .send").offsetParent), "есть текст — появилась стрелка «отправить»")
 await page.fill("#chat-in", "")
 await page.click(".chat-bar .cam"); await page.waitForTimeout(500)
 check(await page.evaluate(() => $(".chat-bar .cam").classList.contains("open") && $$(".plus-menu button").length === 3 && /Камера.*Фото и видео.*Файл/.test($(".plus-menu").textContent)), "«+»: камера, фото и видео, файл", await page.evaluate(() => $(".plus-menu") && $(".plus-menu").textContent))
 await page.mouse.click(300, 150); await page.waitForTimeout(450)
 check(await page.evaluate(() => !$(".plus-menu") && !$(".chat-bar .cam").classList.contains("open")), "нажали мимо — меню закрылось")
 // отмена записи: «‹ отмена» — ничего не ушло, поле пустое
-await page.click(".chat-bar .mic"); await page.waitForTimeout(200)
+await page.evaluate(() => micStart()); await page.waitForTimeout(200)
 const sentCancel = claudeSeen.length
 await page.click("#silk .x"); await page.waitForTimeout(1500)
 check(await page.evaluate(() => !voice && $("#silk").hidden && $("#chat-in").value === "") && claudeSeen.length === sentCancel, "«‹ отмена» — запись выброшена, ничего не отправлено")
@@ -384,14 +385,14 @@ await page.evaluate(() => {
     stop() { setTimeout(() => { window.__busy = false; this.onend && this.onend() }, 200) } abort() { this.stop() } }
   window.SpeechRecognition = window.webkitSpeechRecognition = SafariSR
 })
-await page.click(".chat-bar .mic"); await page.waitForTimeout(100)
+await page.evaluate(() => micStart()); await page.waitForTimeout(100)
 await page.evaluate(() => { const r = window.__sr; r.onresult({ results: [Object.assign([{ transcript: "привет" }], { isFinal: true })] }) })
 check(await page.evaluate(() => $("#silk .tx").textContent === "привет"), "слова видны в полосе записи", await page.evaluate(() => $("#silk .tx").textContent))
 claudeQueue.push({ content: [{ type: "text", text: "Привет!" }], stop_reason: "end_turn" })
 await page.click("#silk .tm")
 await page.evaluate(() => window.__sr.onresult({ results: [Object.assign([{ transcript: "привет" }], { isFinal: true })] }))   // Safari присылает итог уже после stop()
 check(await page.evaluate(() => $("#chat-in").value === ""), "после ➤ поле пустое: поздний итог распознавания не возвращает текст", await page.evaluate(() => $("#chat-in").value))
-await page.click(".chat-bar .mic"); await page.waitForTimeout(900)
+await page.evaluate(() => micStart()); await page.waitForTimeout(900)
 check(await page.evaluate(() => !!voice && window.__starts === 2), "сразу после ➤ микрофон запускается снова", await page.evaluate(() => [!!voice, window.__starts]))
 // ошибка распознавания — без бесконечного перезапуска, с подсказкой
 await page.evaluate(() => { const r = window.__sr; r.onerror({ error: "network" }); window.__busy = false; r.onend() })
@@ -401,7 +402,7 @@ check(/нет сети/.test(await page.textContent("#toast")), "и видно, 
 await page.waitForTimeout(2500)
 // iPhone: коснулись поля во время записи — запись остановлена, но итог распознавания всё равно дописывается в поле;
 // нажали ➤ — ушло, и поздний итог поле больше не заполняет
-await page.click(".chat-bar .mic"); await page.waitForTimeout(100)
+await page.evaluate(() => micStart()); await page.waitForTimeout(100)
 await page.evaluate(() => window.__sr.onresult({ results: [Object.assign([{ transcript: "купить молоко" }], { isFinal: false })] }))
 check(await page.evaluate(() => $("#chat-in").value === "купить молоко"), "слова появляются во время записи", await page.evaluate(() => $("#chat-in").value))
 await page.focus("#chat-in"); await page.waitForTimeout(50)

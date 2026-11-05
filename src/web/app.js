@@ -113,6 +113,7 @@ function load() {
   try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
   for (const k of [...Object.keys(LISTS), "chat", "ops", "chatArchive"]) if (!Array.isArray(D[k])) D[k] = []
   D.conn = D.conn || null
+  if (!D.cc || typeof D.cc !== "object" || Array.isArray(D.cc)) D.cc = {}
   D.sync = Object.assign({ since: 0, pushedAt: 0, snapAt: 0, at: 0, error: "" }, D.sync || {})
   applyCfg()
 }
@@ -149,7 +150,7 @@ let iziPainted = ""
 function iziPaint() {
   const p = iziCol(); if (iziPainted === p[0]) return; iziPainted = p[0]
   const st = document.documentElement.style; p[2].forEach((c, i) => st.setProperty("--izi" + (i + 1), c))
-  const l = document.querySelector('link[rel="apple-touch-icon"]'); if (l) l.href = p[0] === "em" ? "icon-180.png?v=4" : `icon-${p[0]}-180.png?v=1`   // значок берётся при добавлении на экран «Домой»
+  const l = document.querySelector('link[rel="apple-touch-icon"]'); if (l) l.href = p[0] === "em" ? "icon-180.png?v=5" : `icon-${p[0]}-180.png?v=2`   // значок берётся при добавлении на экран «Домой»
 }
 const proteinGoal = () => H().proteinGoal || Math.round((H().weight || 80) * 1.6)   // по умолчанию 1,6 г на кг веса
 const live = list => list.filter(x => x && !x.deleted)
@@ -223,6 +224,7 @@ function sync() {
           if (o && so.state === "done" && o.state !== "done") { o.state = "done"; o.result = so.result; o.doneAt = so.doneAt; opDone(o) }
         }
         D.ops = D.ops.filter(o => o.state !== "done" || o.doneAt > Date.now() - 864e5)
+        if (res.cc) ccIn(res.cc)
         if (res.url) D.conn.sheetUrl = D.conn.sheetUrl || res.url
         Object.assign(D.sync, { since: res.now, pushedAt: started, at: Date.now(), error: "" })
         save(false)
@@ -230,6 +232,7 @@ function sync() {
       if (!stack.length && tab !== "chat") render()
       else renderTop()
       pushHere()
+      ccLate()
       calRefresh()   // Google Календарь — отдельным запросом, чтобы не задерживать обмен
       return true
     } catch (e) {
@@ -825,9 +828,10 @@ function chatTools() {
   const r = routes()
   if (r.length) list.push({ name: "claude_code",
     description: "Передать задачу в Claude Code: запускается новая сессия, она работает сама (код, документы, исследование, " +
-      "длинные многошаговые задачи) и возвращает ссылку. Маршруты:\n" + r.map(x => `- «${x.name}»: ${x.hint || "без описания"}`).join("\n"),
+      "длинные многошаговые задачи). Сразу появляется ссылка на сессию, а когда сессия закончит, её итог сам придёт в этот чат. Маршруты:\n" + r.map(x => `- «${x.name}»: ${x.hint || "без описания"}`).join("\n"),
     input_schema: { type: "object", properties: {
       route: { type: "string", enum: r.map(x => x.name) },
+      title: { type: "string", description: "Короткое название задачи, 2–5 слов: так она будет подписана в чате" },
       task: { type: "string", description: "Полная постановка задачи: что сделать, весь нужный контекст из разговора, что вернуть. Сессия этот чат не видит." },
     }, required: ["route", "task"] } })
   return list.concat(IZI_TOOL_DEFS)
@@ -1227,8 +1231,14 @@ async function runTool(name, x) {
       const r = routes().find(z => z.name === x.route)
       if (!r) return { error: `нет маршрута «${x.route}»` }
       try {
-        const res = await hubPost({ fire: { url: r.url, token: r.token, text: x.task } }, 45000)
-        if (res.fire && res.fire.session_url) { chatLinks.push(res.fire.session_url); return { ok: true, session_url: res.fire.session_url } }
+        const id = "cc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+        const title = String(x.title || x.task).replace(/\s+/g, " ").trim().slice(0, 60)
+        const res = await hubPost({ fire: { id, title, route: r.name, url: r.url, token: r.token, text: x.task } }, 45000)
+        if (res.fire && res.fire.session_url) {
+          ccSet({ id: res.fire.id || id, title, route: r.name, url: res.fire.session_url, at: Date.now(), state: "run" })
+          if (res.fire.id) chatCC.push(res.fire.id); else chatLinks.push(res.fire.session_url)   // старый скрипт таблицы итог не вернёт — только ссылка
+          return { ok: true, session_url: res.fire.session_url, result: res.fire.id ? "итог сам придёт в этот чат, когда сессия закончит" : "итог останется в сессии" }
+        }
         return { error: (res.fire && res.fire.error) || "таблица не запустила задачу (обновите скрипт таблицы)" }
       } catch (e) { return { error: String(e.message || e) } }
     }
@@ -1500,7 +1510,7 @@ async function agentTurn(messages, system, tools) {
   return "Не удалось закончить — попробуйте сформулировать проще."
 }
 
-let chatBusy = false, chatLinks = [], askWait = null
+let chatBusy = false, chatLinks = [], chatCC = [], askWait = null
 async function chatSend(text, opts = {}) {
   text = String(text || "").trim()
   if (!text) return
@@ -1513,6 +1523,7 @@ async function chatSend(text, opts = {}) {
   D.chat.push(item)
   chatBusy = true
   chatLinks = []
+  chatCC = []
   chatDraft = null
   save(false)
   if (tab !== "chat") setTab("chat"); else renderChat()
@@ -1538,7 +1549,7 @@ async function chatSend(text, opts = {}) {
     toast("⏹ Остановлено — поправьте и отправьте")
     return
   }
-  D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice(), draft: chatDraft || undefined })
+  D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice(), cc: chatCC.length ? chatCC.slice() : undefined, draft: chatDraft || undefined })
   chatDraft = null
   talkHear(reply)
   if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
@@ -2073,7 +2084,7 @@ function renderChatHTML() {
   return `<div class="chat-tools"><button data-do="talk" class="tk-chip"><b class="mini-orb"></b>Поговорить</button><button data-brief="morning">☀️ Утренняя сводка</button><button data-brief="evening">🌙 Вечерняя</button><button data-do="memory">🧠 Память</button><button data-do="chat-clear">🧹 Очистить</button></div>
     <div class="chat-list" id="chat-list">${chatItems()}</div>
     <div class="chat-bar"><button class="cam plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
-    <button class="mic wave" aria-label="Нажмите — говорить, держите — как рация"><canvas></canvas></button><button class="send" aria-label="Отправить">${ICO.send}</button></div>`
+    <button class="send" aria-label="Отправить">${ICO.send}</button></div>`
 }
 const linkify = s => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`)
 function chatItems() {
@@ -2083,7 +2094,7 @@ function chatItems() {
     const isLast = i === arr.length - 1 && askWait
     const gi = D.chat.length - arr.length + i
     const edit = m.role === "user" && !m.local && !m.thumb && !m.prompt && i >= arr.length - 6 ? `<button class="ed" data-edit="${gi}" aria-label="Изменить">✎</button>` : ""
-    return `<div class="m ${m.role}" data-i="${gi}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? "🎤 " : ""}${linkify(m.text)}${draftHTML(m)}${m.pro && m.opts && m.opts.length && i === arr.length - 1 ? `<div class="opts">${m.opts.map(o => `<button data-pro="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}${(m.links || []).length ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>` : ""}` +
+    return `<div class="m ${m.role}" data-i="${gi}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? "🎤 " : ""}${linkify(m.text)}${draftHTML(m)}${m.pro && m.opts && m.opts.length && i === arr.length - 1 ? `<div class="opts">${m.opts.map(o => `<button data-pro="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}${(m.links || []).length && !m.ccDone ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>` : ""}${ccCards(m)}` +
       `${m.opts && m.opts.length && isLast ? `<div class="opts">${m.opts.map(o => `<button data-opt="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}<span class="tm">${hm(new Date(m.at || Date.now()))}</span></div>`
   }).join("") + (chatBusy && !askWait ? `<div class="typing"><i></i><i></i><i></i>${chatStatus ? `<span class="st">${esc(chatStatus)}</span>` : ""}</div>` : "") + (last < 0 ? "" : "")
 }
@@ -2378,8 +2389,8 @@ function bind() {
     if (chatBusy && !askWait) setBusyUI(true)
     // тронули текст во время записи — не отправлять по паузе: можно поправить и нажать ➤
     inp.addEventListener("focus", () => { if (voice) { const t = inp.value, r = rec; voiceReset(); try { r && r.stop() } catch (e) {} inp.value = t; grow(inp); toast("✎ Поправьте и нажмите ➤") } })
-    if (voice) { $(".chat-bar .mic", v).classList.add("on"); inp.placeholder = "Слушаю… ➤ — отправить сразу"; if (voice.text) { inp.value = voice.text; grow(inp) } }
-    const wb = $(".chat-bar .mic", v); silkCanvas($("canvas", wb), "btn"); holdToTalk(wb, () => micStart())
+    if (voice) { inp.placeholder = "Слушаю… ➤ — отправить сразу"; if (voice.text) { inp.value = voice.text; grow(inp) } }
+    // голос — одна кнопка: большая «Изи» внизу (держать — как рация, ещё раз нажать — разговор); справа только ➤, когда есть текст
     $(".chat-bar .cam", v).onclick = e => plusMenu(e.currentTarget)
     grow(inp)
     bindChatList()
@@ -3373,40 +3384,39 @@ function silkLines(c, T, d, active) {
     x.strokeStyle = g; x.lineWidth = 1.8 * d; x.lineCap = "round"; x.lineJoin = "round"; x.stroke()
   })
 }
-// Кнопка «Помощник» — как иконка приложения: стеклянный шар, внутри две светящиеся волны с растворяющимися концами
+// Кнопка «Помощник» — как иконка приложения: одна цветная сфера, волны прямо в ней (без внутреннего шара и обводки).
+// Край сферы тает наружу в ноль, концы волн растворяются, без светящихся точек
+function iziSphere(x, W, H, R, edge, P, waves, o = {}) {
+  const cx = W / 2, cy = H / 2
+  x.globalAlpha = o.alpha || 1
+  const bg = x.createLinearGradient(cx - R, cy + R, cx + R, cy - R); bg.addColorStop(0, P[2][0]); bg.addColorStop(.55, P[2][1]); bg.addColorStop(1, P[2][2]); x.fillStyle = bg; x.fillRect(0, 0, W, H)
+  const lt = x.createRadialGradient(cx - R * .35, cy - R * .45, 0, cx - R * .2, cy - R * .25, R * 1.25)   // объём: свет сверху слева
+  lt.addColorStop(0, "rgba(255,255,255,.3)"); lt.addColorStop(.5, "rgba(255,255,255,.06)"); lt.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = lt; x.fillRect(0, 0, W, H)
+  const sd = x.createRadialGradient(cx - R * .15, cy - R * .2, R * .6, cx, cy, R * 1.05)                  // и мягкая тень к краю
+  sd.addColorStop(0, "rgba(0,40,50,0)"); sd.addColorStop(1, "rgba(0,40,60,.22)"); x.fillStyle = sd; x.fillRect(0, 0, W, H)
+  x.globalAlpha = 1; x.globalCompositeOperation = o.mode || "lighter"; waves(); x.globalCompositeOperation = "destination-in"
+  const fm = x.createRadialGradient(cx, cy, 0, cx, cy, edge); fm.addColorStop(0, "#000"); fm.addColorStop(R / edge, "#000"); fm.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = fm; x.fillRect(0, 0, W, H)
+  x.globalCompositeOperation = "source-over"
+}
 function silkOrb(c, T, d, active) {
   const x = c.getContext("2d"), W = c.width, H = c.height, a = active ? SILK.lv : 0
   x.clearRect(0, 0, W, H)
-  const cx = W / 2, cy = H / 2, R = W * .42, P = iziCol()
-  const bg = x.createLinearGradient(0, H, W, 0); bg.addColorStop(0, P[2][0]); bg.addColorStop(.55, P[2][1]); bg.addColorStop(1, P[2][2]); x.fillStyle = bg; x.fillRect(0, 0, W, H)
-  const sh = x.createRadialGradient(W * .25, H * .15, 0, W * .25, H * .15, W * .8); sh.addColorStop(0, "rgba(255,255,255,.22)"); sh.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = sh; x.fillRect(0, 0, W, H)
-  x.globalCompositeOperation = "destination-in"   // внешнее кольцо: от стеклянного края наружу — в ноль
-  const fm = x.createRadialGradient(cx, cy, 0, cx, cy, W / 2); fm.addColorStop(0, "#000"); fm.addColorStop(R / (W / 2), "#000"); fm.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = fm; x.fillRect(0, 0, W, H)
-  x.globalCompositeOperation = "source-over"
-  const b = x.createRadialGradient(cx - R * .3, cy - R * .35, R * .1, cx, cy, R)
-  b.addColorStop(0, "rgba(255,255,255,.32)"); b.addColorStop(1, "rgba(255,255,255,.08)")
-  x.fillStyle = b; x.beginPath(); x.arc(cx, cy, R, 0, 7); x.fill()
-  x.save(); x.beginPath(); x.arc(cx, cy, R * .98, 0, 7); x.clip(); x.globalCompositeOperation = "lighter"
-  const sp = active ? 2 + a * 1.5 : .9, len = R * 1.85
-  ;[[P[3], .95, .04, .32, 2.1, .035, .18, 1.25], [P[4], 1, -.03, .42, 0, .045, .22, 1]].forEach(([rgb, al, dy, am, ph, lw, gw, k]) => {
-    const amp = R * am * (1 + a * .5), g = x.createLinearGradient(cx - len / 2, 0, cx + len / 2, 0)
-    g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(.28, `rgba(${rgb},${al})`); g.addColorStop(.72, `rgba(${rgb},${al})`); g.addColorStop(1, `rgba(${rgb},0)`)
-    x.beginPath()
-    for (let i = 0; i <= 80; i++) {
-      const u = i / 80, env = Math.pow(Math.sin(Math.PI * u), 1.5), px = cx - len / 2 + u * len
-      const py = cy + dy * R + amp * env * Math.sin(u * Math.PI * 2.3 + ph + T * sp * k)
-      i ? x.lineTo(px, py) : x.moveTo(px, py)
-    }
-    x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = g; x.lineWidth = Math.max(1.2 * d, R * lw)
-    x.shadowColor = `rgba(${rgb},1)`; x.shadowBlur = R * gw; x.stroke(); x.shadowBlur = 0
+  const cx = W / 2, cy = H / 2, R = W * .4, P = iziCol()
+  iziSphere(x, W, H, R, W / 2, P, () => {
+    const sp = active ? 2 + a * 1.5 : .9, len = R * 1.8
+    ;[[P[3], .95, .04, .32, 2.1, .035, .18, 1.25], [P[4], 1, -.03, .42, 0, .045, .22, 1]].forEach(([rgb, al, dy, am, ph, lw, gw, k]) => {
+      const amp = R * am * (1 + a * .5), g = x.createLinearGradient(cx - len / 2, 0, cx + len / 2, 0)
+      g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(.28, `rgba(${rgb},${al})`); g.addColorStop(.72, `rgba(${rgb},${al})`); g.addColorStop(1, `rgba(${rgb},0)`)
+      x.beginPath()
+      for (let i = 0; i <= 80; i++) {
+        const u = i / 80, env = Math.pow(Math.sin(Math.PI * u), 1.5), px = cx - len / 2 + u * len
+        const py = cy + dy * R + amp * env * Math.sin(u * Math.PI * 2.3 + ph + T * sp * k)
+        i ? x.lineTo(px, py) : x.moveTo(px, py)
+      }
+      x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = g; x.lineWidth = Math.max(1.2 * d, R * lw)
+      x.shadowColor = `rgba(${rgb},1)`; x.shadowBlur = R * gw; x.stroke(); x.shadowBlur = 0
+    })
   })
-  x.globalCompositeOperation = "source-over"; x.restore()
-  const rim = x.createLinearGradient(cx - R, cy - R, cx + R, cy + R)
-  rim.addColorStop(0, "rgba(255,255,255,.8)"); rim.addColorStop(.5, "rgba(255,255,255,.12)"); rim.addColorStop(1, "rgba(255,255,255,.5)")
-  x.strokeStyle = rim; x.lineWidth = Math.max(d, R * .025); x.beginPath(); x.arc(cx, cy, R, 0, 7); x.stroke()
-  const hl = x.createRadialGradient(cx - R * .38, cy - R * .5, 0, cx - R * .38, cy - R * .5, R * .45)
-  hl.addColorStop(0, "rgba(255,255,255,.5)"); hl.addColorStop(1, "rgba(255,255,255,0)")
-  x.fillStyle = hl; x.beginPath(); x.ellipse(cx - R * .38, cy - R * .5, R * .4, R * .24, -.6, 0, 7); x.fill()
 }
 // Полоса записи: две волны плывут медленно, как на кнопке; пока говорите — чуть шире размах, но не быстрее.
 // Без точки: только волны, концы растворяются. Всё свечение помещается внутри полосы
@@ -5238,39 +5248,26 @@ function silkTalk(c, T, d) {
   SILK.ie *= .975; SILK.ye *= .975
   x.clearRect(0, 0, W, H)
   const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .34
-  // внешнее кольцо: свет растворяется наружу, дышит с голосом
-  const halo = R * (1.5 + .12 * Math.max(SILK.il, SILK.yl))
-  const hg = x.createRadialGradient(cx, cy, R * .96, cx, cy, halo)
-  hg.addColorStop(0, `rgba(150,235,225,${.22 + .16 * Math.max(SILK.il, SILK.yl)})`); hg.addColorStop(.3, "rgba(120,200,255,.07)"); hg.addColorStop(1, "rgba(120,200,255,0)")
-  x.fillStyle = hg; x.beginPath(); x.arc(cx, cy, halo, 0, Math.PI * 2); x.moveTo(cx + R * .99, cy); x.arc(cx, cy, R * .99, 0, Math.PI * 2, true); x.fill()   // только снаружи шара
-  // стекло
-  const b = x.createRadialGradient(cx - R * .3, cy - R * .35, R * .1, cx, cy, R)
-  b.addColorStop(0, "rgba(255,255,255,.16)"); b.addColorStop(.7, "rgba(255,255,255,.03)"); b.addColorStop(1, "rgba(255,255,255,.1)")
-  x.fillStyle = b; x.beginPath(); x.arc(cx, cy, R, 0, 7); x.fill()
-  x.save(); x.beginPath(); x.arc(cx, cy, R * .985, 0, 7); x.clip(); x.globalCompositeOperation = "screen"
-  const len = R * 1.9
-  // [цвет, уровень, смещение, базовый размах, фаза, скорость, толщина]
+  // одна сфера в цветах Изи, без стеклянной оболочки; край тает наружу и дышит с голосом
   const P = iziCol(), ci = P[0] === "em" ? "95,185,255" : P[3], cy2 = P[0] === "em" ? "80,245,190" : P[4]
-  ;[[ci, SILK.il, .05, .2, 2.1, .75, .03], [cy2, SILK.yl, -.05, .24, 0, .62, .034]].forEach(([rgb, lv, dy, am, ph, sp, lw]) => {
-    const amp = R * am * (1 + lv * .6), jit = lv * .14
-    const g = x.createLinearGradient(cx - len / 2, 0, cx + len / 2, 0)
-    g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(.3, `rgba(${rgb},${.75 + lv * .25})`); g.addColorStop(.7, `rgba(${rgb},${.75 + lv * .25})`); g.addColorStop(1, `rgba(${rgb},0)`)
-    x.beginPath()
-    for (let i = 0; i <= 120; i++) {
-      const u = i / 120, env = Math.pow(Math.sin(Math.PI * u), 1.5), px = cx - len / 2 + u * len
-      const py = cy + dy * R + amp * env * (Math.sin(u * Math.PI * 2.2 + ph + T * sp) + jit * Math.sin(u * Math.PI * 9 + T * 7.5))
-      i ? x.lineTo(px, py) : x.moveTo(px, py)
-    }
-    x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = g; x.lineWidth = Math.max(1.4 * d, R * lw * (1 + lv * .25))
-    x.shadowColor = `rgba(${rgb},.9)`; x.shadowBlur = R * (.1 + lv * .12); x.stroke(); x.shadowBlur = 0
-  })
-  x.globalCompositeOperation = "source-over"; x.restore()
-  const rim = x.createLinearGradient(cx - R, cy - R, cx + R, cy + R)
-  rim.addColorStop(0, "rgba(255,255,255,.7)"); rim.addColorStop(.5, "rgba(255,255,255,.1)"); rim.addColorStop(1, "rgba(255,255,255,.4)")
-  x.strokeStyle = rim; x.lineWidth = Math.max(d, R * .018); x.beginPath(); x.arc(cx, cy, R, 0, 7); x.stroke()
-  const hl = x.createRadialGradient(cx - R * .38, cy - R * .5, 0, cx - R * .38, cy - R * .5, R * .45)
-  hl.addColorStop(0, "rgba(255,255,255,.3)"); hl.addColorStop(1, "rgba(255,255,255,0)")
-  x.fillStyle = hl; x.beginPath(); x.ellipse(cx - R * .38, cy - R * .5, R * .4, R * .22, -.6, 0, 7); x.fill()
+  const edge = R * (1.2 + .1 * Math.max(SILK.il, SILK.yl))
+  iziSphere(x, W, H, R, edge, P, () => {
+    const len = R * 1.9
+    // [цвет, уровень, смещение, базовый размах, фаза, скорость, толщина]
+    ;[[ci, SILK.il, .05, .2, 2.1, .75, .03], [cy2, SILK.yl, -.05, .24, 0, .62, .034]].forEach(([rgb, lv, dy, am, ph, sp, lw]) => {
+      const amp = R * am * (1 + lv * .6), jit = lv * .14
+      const g = x.createLinearGradient(cx - len / 2, 0, cx + len / 2, 0)
+      g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(.3, `rgba(${rgb},${.8 + lv * .2})`); g.addColorStop(.7, `rgba(${rgb},${.8 + lv * .2})`); g.addColorStop(1, `rgba(${rgb},0)`)
+      x.beginPath()
+      for (let i = 0; i <= 120; i++) {
+        const u = i / 120, env = Math.pow(Math.sin(Math.PI * u), 1.5), px = cx - len / 2 + u * len
+        const py = cy + dy * R + amp * env * (Math.sin(u * Math.PI * 2.2 + ph + T * sp) + jit * Math.sin(u * Math.PI * 9 + T * 7.5))
+        i ? x.lineTo(px, py) : x.moveTo(px, py)
+      }
+      x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = g; x.lineWidth = Math.max(1.4 * d, R * lw * (1 + lv * .25))
+      x.shadowColor = `rgba(${rgb},.9)`; x.shadowBlur = R * (.1 + lv * .12); x.stroke(); x.shadowBlur = 0
+    })
+  }, { alpha: .5, mode: "screen" })
 }
 Object.assign(SILK, { il: 0, yl: 0, ie: 0, ye: 0 })
 
@@ -5317,6 +5314,62 @@ function bindIzi(v) {
 }
 
 // ── Изи пишет первым: окно в расписании, подготовка к встрече, «как прошло?», сверка целей в воскресенье ──
+// ───────────── Задачи в Claude Code: карточка «в работе» и итог в чате ─────────────
+// Сессия по окончании вписывает итог в лист «Ответы Claude Code» таблицы, таблица отдаёт его при обмене (res.cc).
+// D.cc[id] = { id, title, route, url, at, state: "run" | "done", text, links, doneAt, said, late }
+var CC_LATE = 3 * 3600e3, CC_LOST = 24 * 3600e3
+function ccSet(j) {
+  D.cc[j.id] = Object.assign(D.cc[j.id] || {}, j)
+  for (const k of Object.keys(D.cc)) if ((D.cc[k].doneAt || D.cc[k].at || 0) < Date.now() - 30 * 864e5) delete D.cc[k]
+}
+function ccIn(list) {
+  let said = false
+  for (const x of list || []) {
+    if (!x || !x.id) continue
+    const j = D.cc[x.id]
+    if (!j) { if (x.state === "run") ccSet(x); continue }   // задача с другого устройства: молча следим
+    if (x.state !== "done" || j.state === "done") continue
+    ccSet({ id: x.id, state: "done", text: String(x.text || ""), links: (x.links || []).filter(u => /^https:\/\//.test(u)), doneAt: x.doneAt || Date.now() })
+    if (j.said) continue
+    j.said = 1; said = true
+    const text = `Готово: «${j.title}».\n${j.text}`
+    D.chat.push({ role: "assistant", at: Date.now(), text, ccDone: j.id })
+    if (!chatBusy && !askWait) talkHear(text)
+    if (tab !== "chat") toast(`${iziName()}: готово «${j.title}»`)
+  }
+  if (said && tab === "chat") renderChat()
+  else if (tab === "chat") ccRefresh()
+}
+// Долго молчит — сказать один раз и дать ссылку на сессию
+function ccLate() {
+  const now = Date.now()
+  for (const j of Object.values(D.cc)) {
+    if (j.state !== "run" || j.late || now - j.at < CC_LATE || now - j.at > CC_LOST) continue
+    j.late = 1
+    D.chat.push({ role: "assistant", at: now, text: `Задача «${j.title}» идёт уже ${Math.round((now - j.at) / 3600e3)} ч и пока без итога. Возможно, сессия ждёт ответа или застряла — загляните в неё.`, ccDone: j.id })
+    save(false)
+    if (tab === "chat") renderChat()
+  }
+}
+function ccStatus(j) {
+  if (j.state === "done") return "готово"
+  const min = Math.round((Date.now() - j.at) / 60e3)
+  if (Date.now() - j.at > CC_LOST) return "нет ответа"
+  return min < 1 ? "в работе" : min < 60 ? `в работе · ${min} мин` : `в работе · ${Math.floor(min / 60)} ч ${min % 60} мин`
+}
+const ccHost = u => { try { const h = new URL(u).hostname.replace(/^www\./, ""); return /github/.test(h) ? "GitHub" : /docs\.google/.test(h) ? "Документ Google" : /claude\.ai/.test(h) ? "Claude" : h } catch (e) { return "Ссылка" } }
+function ccCards(m) {
+  const ids = m.cc || (m.ccDone ? [m.ccDone] : [])
+  return ids.map(id => {
+    const j = D.cc[id]; if (!j) return ""
+    const done = j.state === "done", res = m.ccDone && done ? (j.links || []) : []
+    return (m.ccDone ? "" : `<div class="cc-card ${done ? "done" : ""}" data-cc="${esc(id)}"><span class="cc-ic">${done ? ICO.check : ICO.timer}</span><span class="cc-tx"><b>${esc(j.title)}</b><small>Claude Code · <span class="cc-st">${esc(ccStatus(j))}</span></small></span></div>`) +
+      `<div class="cc-links">${res.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(ccHost(u))}</a>`).join("")}<a href="${esc(j.url)}" target="_blank" rel="noopener">Открыть сессию</a></div>`
+  }).join("")
+}
+// Обновить статусы на карточках без перерисовки всего чата
+function ccRefresh() { $$(".cc-card").forEach(el => { const j = D.cc[el.dataset.cc]; if (!j) return; const st = el.querySelector(".cc-st"); if (st) st.textContent = ccStatus(j); el.classList.toggle("done", j.state === "done") }) }
+
 // Не чаще 3 раз в день, только пока приложение открыто и Изи свободен. Состояние — D.izi.pro (на телефоне)
 var PRO_MAX = 3
 function proState() { const p = Object.assign({ day: "", n: 0, seen: {} }, (D.izi || {}).ps), dk = iso(new Date()).slice(0, 10); if (p.day !== dk) { p.day = dk; p.n = 0; p.seen = {} } return p }
