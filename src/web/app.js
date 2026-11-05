@@ -228,6 +228,7 @@ async function calRefresh() {
   try {
     const r = (await hubPost({ cal: { action: "list", from: dayKey(addDays(sod(new Date()), -21)) } }, 60000)).cal
     if (r) D.gcal = r.events ? { ok: true, at: Date.now(), events: r.events, calendars: r.calendars || [] } : { ok: !!(D.gcal && D.gcal.ok), at: Date.now(), events: (D.gcal && D.gcal.events) || [], error: r.error || "" }
+    if (r && r.events) calReflow()
     save(false)
     if (!stack.length && tab !== "chat") render()
   } catch (e) {} finally { calBusy = false }
@@ -634,6 +635,7 @@ const AGENT_TOOLS = [
     input_schema: { type: "object", properties: {
       title: { type: "string" }, start: { type: "string" }, end: { type: "string" },
       all_day: { type: "boolean" }, location: { type: "string" }, notes: { type: "string" },
+      force: { type: "boolean", description: "true — поставить, даже если время защищено (только после «да» пользователя)" },
       calendar: { type: "string", description: "Название календаря; не указывайте, если пользователь не назвал" },
       repeat: { type: "object", description: "Повтор: {freq: daily|weekly|monthly|yearly, days: [MO,TU,...]} — days только для weekly",
         properties: { freq: { type: "string" }, days: { type: "array", items: { type: "string" } } } } },
@@ -814,6 +816,9 @@ async function runTool(name, x) {
     }
     case "create_event": {
       if (!parseIso(x.start)) return { error: "неверное начало" }
+      { const hit = !x.force && !x.all_day && protHit(parseIso(x.start), parseIso(x.end) || new Date(+parseIso(x.start) + 3600e3))
+        if (hit) return { warning: `Это время защищено: «${hit.p.title}» ${hm(hit.s)}–${hm(hit.e)}. Спроси пользователя: поставить всё равно (повтори с force: true) или найти другое время.` } }
+      x = Object.assign({}, x); delete x.force
       if (gcalOn()) { const r = await calDo("create", x); return r.error ? { error: r.error } : { ok: true, id: r.event.id, event: r.event } }
       const op = queueOp("create_event", x)
       return { ok: true, id: "op:" + op.id, note: QUEUED }
@@ -1824,7 +1829,7 @@ async function addMenu() {
   const glass = H().glass || 250
   const opts = [["💬 Сказать помощнику", () => { setTab("chat"); setTimeout(micStart, 300) }], ["➖ Расход", () => moneyForm("expense")], ["➕ Доход", () => moneyForm("income")],
     ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()], ["🛒 Покупка", shopForm], ["👧 Дела детей", kidsForm], ["🎯 Цель или желание", () => goalsForm("month")], ["🔁 Снова пора: повторяющееся дело", () => choreForm()], ["📋 Новый список", listForm], ["⏱ Помидоро — фокус 25 мин", pomoAsk],
-    ["⏰ Напоминание", reminderForm], ["📅 Событие", eventForm]]
+    ["⏰ Напоминание", reminderForm], ["📅 Событие", () => calQuick()]]
   const i = await ui.choose("Добавить", "", opts.map(o => o[0]))
   if (i >= 0) opts[i][1]()
 }
@@ -1833,7 +1838,7 @@ async function addMenu() {
 let tab = "today", selDay = sod(new Date()), monthKey = null, hiddenAt = 0
 function setTab(t) {
   tab = t
-  $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t))
+  $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t || t === "cal" && b.dataset.tab === "today"))
   $("#gear").classList.toggle("on", t === "more")
   document.body.classList.toggle("chat", t === "chat")
   if (plusClose) plusClose()
@@ -1845,7 +1850,7 @@ function setTab(t) {
 // плавное появление карточек — только при смене вкладки
 let lastHTML = "", lastTab = ""
 function render() {
-  const fn = { today: renderToday, plans: renderPlans, chat: renderChatHTML, money: renderMoney, health: renderHealth, more: renderMore }[tab]
+  const fn = { today: renderToday, cal: renderCal, plans: renderPlans, chat: renderChatHTML, money: renderMoney, health: renderHealth, more: renderMore }[tab]
   const html = fn(), v = $("#view")
   if (html === lastHTML && tab === lastTab && v.firstChild) { renderTop(); return }
   const strip = $("#strip", v), keep = strip && tab === lastTab ? strip.scrollLeft : null
@@ -1857,7 +1862,7 @@ function render() {
   if (tab === "more") pushCard()
   renderTop()
 }
-const TITLES = { plans: "Планы", chat: "Помощник", money: "Деньги", health: "Здоровье", more: "Настройки" }
+const TITLES = { cal: "Календарь", plans: "Планы", chat: "Помощник", money: "Деньги", health: "Здоровье", more: "Настройки" }
 function renderTop() {
   const v = iphone()
   if (tab === "today") { const d = new Date(); $("#top-title").innerHTML = `${esc(core.cap(WDF[d.getDay()]))}<span class="dt">${d.getDate()} ${MONTHS_GEN[d.getMonth()]}</span>` }
@@ -1865,6 +1870,7 @@ function renderTop() {
   let sub = ""
   if (!D.conn) sub = "Не подключено к виджету"
   else if (D.sync.error) sub = `⚠️ ${D.sync.error}`
+  else if (tab === "cal") { const S = calS(), st = calStart || new Date(); sub = `${core.cap(core.MONTH_NOM[st.getMonth()])} · ${({ 1: "день", 3: "3 дня", 7: "неделя", m: "месяц" })[S.view]}` }
   else if (tab === "money") { const t = core.monthTotals(live(D.money), monthKey || core.monthKey(new Date())); sub = `${core.monthTitle(monthKey || core.monthKey(new Date()))} · −${core.money(t.expense)}` }
   else {
     const p = gcalOn() ? 0 : pendingOps().length
@@ -1889,7 +1895,7 @@ function renderToday() {
   const wOff = Math.floor(Math.round((sod(selDay) - t0) / 864e5) / 7), w0 = addDays(t0, wOff * 7)
   const wc = stripCenter || w0, s0 = addDays(wc, -70), s1 = addDays(wc, 77)
   for (const e of v.events) for (let d = sod(e.s); d < e.e && d < s1; d = addDays(d, 1)) if (d >= s0) counts[dayKey(d)] = (counts[dayKey(d)] || 0) + 1
-  html += `<div class="month wnav"><b id="wk-lbl">${esc(weekLabel(w0))}</b><button class="today-btn" data-do="go-today" ${wOff === 0 && isToday ? "hidden" : ""}>Сегодня</button></div>`
+  html += `<div class="month wnav"><b id="wk-lbl">${esc(weekLabel(w0))}</b><button class="today-btn" data-do="go-today" ${wOff === 0 && isToday ? "hidden" : ""}>Сегодня</button><button class="cal-open" data-do="cal-open">${tdIco("grid", 16)} Календарь</button></div>`
   html += `<div class="week strip" id="strip" data-start="${+s0}" data-sel="${+wc}">${[...Array(147)].map((_, i) => {
     const d = addDays(s0, i), n = counts[dayKey(d)] || 0
     return `<button class="day ${sameDay(d, selDay) ? "on" : ""} ${sameDay(d, t0) ? "td" : ""} ${d.getDay() % 6 === 0 ? "we" : ""}" data-day="${+d}">
@@ -2308,6 +2314,7 @@ function bind() {
   $$("[data-brief]", v).forEach(b => b.onclick = () => brief(b.dataset.brief))
   $$("[data-do]", v).forEach(b => { if (DO[b.dataset.do]) b.onclick = () => DO[b.dataset.do]() })
   if (tab === "today") bindToday(v)
+  if (tab === "cal") bindCal(v)
   const inp = $("#chat-in", v)
   if (inp) {
     inp.oninput = () => grow(inp)
@@ -3280,9 +3287,9 @@ function silkFrame(t) {
   if (t - SILK.last < 32) return   // ~30 кадров в секунду — плавно и бережно к батарее
   SILK.last = t
   const T = t / 1000
-  const syl = .55 + .45 * Math.sin(T * 2.1) * Math.sin(T * .9)
+  const syl = .6 + .4 * Math.sin(T * 1.1) * Math.sin(T * .5)
   const target = voice ? (.18 + .82 * syl) * Math.max(.2, SILK.en) : 0
-  SILK.lv += (target - SILK.lv) * (target > SILK.lv ? .12 : .05)
+  SILK.lv += (target - SILK.lv) * (target > SILK.lv ? .06 : .03)
   SILK.en *= .985
   const d = Math.min(2, devicePixelRatio || 1)
   for (const c of live) {
@@ -3308,31 +3315,27 @@ function silkLines(c, T, d, active) {
     x.strokeStyle = col; x.lineWidth = 1.8 * d; x.lineCap = "round"; x.lineJoin = "round"; x.stroke()
   })
 }
-// Полоса записи: две волны плывут медленно, как на кнопке; пока говорите — шире размах.
-// Яркая точка-луч летит в центре полосы и тянет за собой свет слева
+// Полоса записи: две волны плывут медленно, как на кнопке; пока говорите — чуть шире размах, но не быстрее.
+// Яркая точка стоит в центре и только мягко дышит. Всё свечение помещается внутри полосы
 function silkComet(c, T, d) {
   const x = c.getContext("2d"), W = c.width, H = c.height, a = SILK.lv
   x.clearRect(0, 0, W, H)
-  const L = 6 * d, Rt = W - 6 * d, mid = W / 2, sp = .9 + a * .9
-  const amp = (.12 + a * .4) * H
-  const wy = (u, j) => H / 2 + amp * (j ? .75 : 1) * Math.pow(Math.sin(Math.PI * u), 1.4) * Math.sin(u * Math.PI * 2 * 1.15 + T * sp * (j ? 1.25 : 1) + (j ? 2.2 : 0))
+  const L = 6 * d, Rt = W - 6 * d, mid = W / 2, sp = .8 + a * .25
+  const glow = 4 * d, amp = (.12 + a * .16) * H   // волна + свечение не выходят за высоту полосы
+  const wy = (u, j) => H / 2 + amp * (j ? .75 : 1) * Math.pow(Math.sin(Math.PI * u), 1.4) * Math.sin(u * Math.PI * 2 * 1.15 + T * sp * (j ? 1.2 : 1) + (j ? 2.2 : 0))
   ;[["rgba(255,255,255,", 0], ["rgba(190,240,255,", 1]].forEach(([col, j]) => {
     const g = x.createLinearGradient(L, 0, Rt, 0)
     g.addColorStop(0, col + "0)"); g.addColorStop(.2, col + ".55)"); g.addColorStop(.5, col + "1)"); g.addColorStop(.8, col + ".55)"); g.addColorStop(1, col + "0)")
     x.beginPath()
     for (let px = L; px <= Rt; px += 2) { const y = wy((px - L) / (Rt - L), j); px === L ? x.moveTo(px, y) : x.lineTo(px, y) }
-    x.strokeStyle = g; x.lineWidth = (j ? 1.8 : 2.3) * d; x.lineCap = "round"; x.lineJoin = "round"
-    x.shadowColor = "#bff"; x.shadowBlur = (5 + a * 8) * d; x.stroke(); x.shadowBlur = 0
+    x.strokeStyle = g; x.lineWidth = (j ? 1.6 : 2) * d; x.lineCap = "round"; x.lineJoin = "round"
+    x.shadowColor = "#bff"; x.shadowBlur = glow; x.stroke(); x.shadowBlur = 0
   })
-  const hx = mid + Math.sin(T * .7) * W * .04, hy = wy((hx - L) / (Rt - L), 0)
-  const bl = W * .3, rg = x.createLinearGradient(hx - bl, 0, hx, 0)
-  rg.addColorStop(0, "rgba(255,255,255,0)"); rg.addColorStop(1, "rgba(255,255,255,.85)")
-  x.beginPath(); x.moveTo(hx - bl, hy); x.lineTo(hx, hy); x.strokeStyle = rg; x.lineWidth = 2 * d; x.stroke()
-  const R = (5 + a * 6) * (1 + .12 * Math.sin(T * 2.4)) * d
-  const gl = x.createRadialGradient(hx, hy, 0, hx, hy, R * 2.6)
-  gl.addColorStop(0, "#fff"); gl.addColorStop(.25, "rgba(200,255,240,.95)"); gl.addColorStop(.6, "rgba(90,220,255,.35)"); gl.addColorStop(1, "rgba(90,220,255,0)")
-  x.fillStyle = gl; x.beginPath(); x.arc(hx, hy, R * 2.6, 0, 7); x.fill()
-  x.fillStyle = "#fff"; x.beginPath(); x.arc(hx, hy, R * .45, 0, 7); x.fill()
+  const hy = H / 2, R = (3.2 + a * 1.2) * (1 + .08 * Math.sin(T * 1.6)) * d, rr = Math.min(R * 2.4, H / 2 - d)
+  const gl = x.createRadialGradient(mid, hy, 0, mid, hy, rr)
+  gl.addColorStop(0, "#fff"); gl.addColorStop(.3, "rgba(200,255,240,.9)"); gl.addColorStop(.65, "rgba(90,220,255,.3)"); gl.addColorStop(1, "rgba(90,220,255,0)")
+  x.fillStyle = gl; x.beginPath(); x.arc(mid, hy, rr, 0, 7); x.fill()
+  x.fillStyle = "#fff"; x.beginPath(); x.arc(mid, hy, R * .5, 0, 7); x.fill()
 }
 let silkHide = null
 function silkShow(text) {
@@ -3449,7 +3452,7 @@ holdToTalk($("#fab"), () => setTab("chat"))
   el.addEventListener("pointerup", () => { sx = null })
 }
 $("#add").innerHTML = ICO.add
-$("#add").onclick = () => addMenu()
+$("#add").onclick = () => tab === "cal" ? calQuick() : addMenu()
 $("#sync").innerHTML = ICO.sync
 $("#gear").innerHTML = ICO.more
 $("#gear").onclick = () => setTab(tab === "more" ? "today" : "more")
@@ -3491,11 +3494,11 @@ async function wxLoad(force) {
   const here = await whereAmI().catch(() => null)
   if (!here) return
   try {
-    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${here.lat.toFixed(3)}&longitude=${here.lng.toFixed(3)}&hourly=temperature_2m,precipitation_probability,precipitation&forecast_days=3&timezone=auto`)
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${here.lat.toFixed(3)}&longitude=${here.lng.toFixed(3)}&hourly=temperature_2m,precipitation_probability,precipitation&forecast_days=7&timezone=auto`)
     const j = await r.json()
     if (!j.hourly) return
     D.wx = { at: Date.now(), h: j.hourly.time.map((t, i) => ({ t: +parseIso(t), c: Math.round(j.hourly.temperature_2m[i]), p: j.hourly.precipitation_probability[i] || 0, mm: j.hourly.precipitation[i] || 0 })) }
-    save(false); if (tab === "today") render()
+    save(false); if ((tab === "today" || tab === "cal") && !stack.length) render()
   } catch (e) {}
 }
 const wxAt = at => D.wx && D.wx.h.find(x => x.t <= +at && +at < x.t + 3600e3)
@@ -3521,7 +3524,7 @@ async function travelCalc(e, k) {
   D.trav = D.trav || {}
   for (const x of Object.keys(D.trav)) if (Date.now() - D.trav[x].at > 12 * 3600e3) delete D.trav[x]
   D.trav[k] = r && !r.error && (r.minutes_in_traffic || r.minutes) ? { at: Date.now(), min: Math.round(r.minutes_in_traffic || r.minutes), km: r.km } : { at: Date.now(), min: 0 }
-  save(false); if (tab === "today") render()
+  save(false); if ((tab === "today" || tab === "cal") && !stack.length) render()
 }
 
 // — 4. «Сейчас»: текущее или следующее событие, когда выезжать, кнопка «Фокус»
@@ -3811,6 +3814,523 @@ function bindToday(v) {
     c.addEventListener("touchmove", e => { if (x0 == null) return; const dx = e.touches[0].clientX - x0; c.style.transform = `translateX(${dx}px)`; c.style.opacity = 1 - Math.min(1, Math.abs(dx) / 220) }, { passive: true })
     c.addEventListener("touchend", e => { const dx = (e.changedTouches[0].clientX - x0) || 0; x0 = null; if (Math.abs(dx) > 90) $("[data-tip-off]", c).click(); else { c.style.transform = ""; c.style.opacity = "" } }) })
 }
+
+// ═════════════ Календарь 2.0: день / 3 дня / неделя / месяц, слои семьи, дорога блоками, защищённое время, дела в окна,
+// ввод фразой с предпросмотром, шаблоны событий, нагрузка месяца, «когда я свободен», погода, второй часовой пояс ═════════════
+// В goals (синхронизируется без нового деплоя скрипта): kind "etpl" {title, min, location, remind, bring}, "pblk" {title, days:[1..7], from, to}
+// Настройки экрана — только на телефоне: D.cal {view, layers, tz, tzOn, map: {календарь: me|olya|kids|off}, names: {olya}}
+Object.assign(TD_ICO, {
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/>',
+  layers: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>', shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/>',
+  share: '<path d="M12 15V3M7.5 7.5L12 3l4.5 4.5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  pin: '<path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>', bell: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  grid: '<rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M7.5 13.5h2M11 13.5h2M14.5 13.5h2M7.5 17h2M11 17h2"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+  hand: '<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 10.5V4a1.5 1.5 0 0 1 3 0v6.5M14 10.5V5.5a1.5 1.5 0 0 1 3 0V14c0 4-2.7 7-6.5 7-2.6 0-4.3-1.3-5.7-3.5L3 14a1.5 1.5 0 0 1 2.4-1.8L8 15"/>',
+  chev: '<path d="M9 5l7 7-7 7"/>', back: '<path d="M15 5l-7 7 7 7"/>', wand: '<path d="M4 20L16 8M14 4v3M19 9h-3M18.5 4.5l-2 2"/>'
+})
+const LAYER_C = { me: "#0A9F6E", olya: "#AF52DE", kids: "#FF9F0A" }
+const TZS = [["Europe/Moscow", "Москва", "Мск"], ["Asia/Yekaterinburg", "Уфа", "Уфа"], ["Asia/Dubai", "Дубай", "Дуб"], ["Europe/London", "Лондон", "Лон"], ["America/New_York", "Нью-Йорк", "НЙ"]]
+function calS() {
+  const c = D.cal = D.cal || {}
+  for (const [k, v] of Object.entries({ view: "3", tz: "Europe/Moscow", tzOn: 0, map: {}, names: {}, layers: {} })) if (c[k] == null) c[k] = v
+  for (const k of ["me", "olya", "kids"]) if (c.layers[k] == null) c.layers[k] = 1
+  return c
+}
+function layerName(k) {
+  if (k === "me") return "Я"
+  if (k === "kids") return "Дети"
+  const S = calS(); if (S.names.olya) return S.names.olya
+  const c = ((D.gcal && D.gcal.events) || []).map(e => e.calendar).find(n => n && evLayer({ calendar: n }) === "olya")
+  return c && c.length <= 12 ? c : "Семья"
+}
+const tzInfo = () => TZS.find(t => t[0] === calS().tz) || TZS[0]
+function tzHm(d, tz = calS().tz) { try { return new Intl.DateTimeFormat("ru-RU", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d) } catch (e) { return "" } }
+function evLayer(e) {
+  const m = calS().map[e.calendar || ""]
+  if (m) return m
+  const c = normT(e.calendar)
+  if (/(^|\s)ол[яиеью]|olya|olga|жен[аы]|wife|муж|husband|семь|family/.test(c)) return "olya"
+  if (/дет|kid|сын|доч|школ|school|сад/.test(c)) return "kids"
+  return "me"
+}
+const atHM = (d, s) => { const [h, m] = String(s || "0:0").split(":").map(Number); const x = sod(d); x.setHours(h || 0, m || 0, 0, 0); return x }
+const durLbl = m => m >= 60 ? `${Math.floor(m / 60)} ч${m % 60 ? " " + (m % 60) + " мин" : ""}` : `${m} мин`
+const dayWord = d => { const t = sod(new Date()), k = Math.round((sod(d) - t) / 864e5); return k === 0 ? "сегодня" : k === 1 ? "завтра" : WD[d.getDay()] }
+
+// — 5. Защищённые блоки
+const pblks = () => live(D.goals).filter(g => g.kind === "pblk" && g.title)
+const pblkOn = d => pblks().filter(p => (p.days || []).map(Number).includes(wdOf(d))).map(p => ({ p, s: atHM(d, p.from), e: atHM(d, p.to) })).filter(x => x.e > x.s)
+function protHit(s, e) { for (let d = sod(s); d < e; d = addDays(d, 1)) { const h = pblkOn(d).find(x => x.s < e && x.e > s); if (h) return h } return null }
+
+// — занятость и свободные окна: мои события, совместные из других слоёв («Обед с Олей»), дорога, защищённое время, дела со временем
+const evMine = e => { const L = evLayer(e); return L === "me" || L !== "off" && /(^|\s)(с|со)\s+\S/i.test(e.title || "") }
+function travCached(e) { if (!e || !e.location || e.all_day) return null; const c = (D.trav || {})[(e.id || e.title) + "|" + e.start]; return c && c.min ? c : null }
+const remEst = r => +(D.rems.find(x => x.id === r.id) || {}).est || 30
+function busyOn(v, day) {
+  const d0 = sod(day), d1 = addDays(d0, 1), out = []
+  for (const e of v.events) {
+    if (e.all_day || e.e <= d0 || e.s >= d1 || !evMine(e)) continue
+    const tr = travCached(e)
+    out.push({ s: new Date(+e.s - (tr ? tr.min : 0) * 60e3), e: e.e, t: e.title, ev: e })
+  }
+  for (const x of pblkOn(d0)) out.push({ s: x.s, e: x.e, t: x.p.title, prot: 1 })
+  for (const r of v.reminders) if (!r.completed && remHasTime(r) && sameDay(remDue(r), d0)) out.push({ s: remDue(r), e: new Date(+remDue(r) + remEst(r) * 60e3), t: r.title, rem: r })
+  return out.sort((a, b) => a.s - b.s)
+}
+function freeGaps(v, day, from = DAY_FROM, to = DAY_TO, min = 30, after = null) {
+  const s0 = atHM(day, from + ":00"), s1 = atHM(day, to + ":00"), out = []
+  let cur = after && after > s0 ? new Date(Math.ceil(+after / 9e5) * 9e5) : s0, prev = null
+  for (const b of busyOn(v, day)) {
+    if (cur < s1 && Math.min(+b.s, +s1) - cur >= min * 60e3) out.push({ s: new Date(cur), e: new Date(Math.min(+b.s, +s1)), prev, next: b })
+    if (b.e > cur) { cur = new Date(b.e); prev = b }
+  }
+  if (s1 - cur >= min * 60e3) out.push({ s: new Date(cur), e: s1, prev, next: null })
+  return out
+}
+// — 1. Дело без времени → первое подходящее окно (после встречи — 15 минут запаса)
+function slotsFor(v, r, from = new Date(), taken = [], max = 1) {
+  const need = remEst(r), out = []
+  for (let i = 0; i < 4 && out.length < max; i++) {
+    const d = addDays(sod(from), i)
+    for (const g of freeGaps(v, d, DAY_FROM, DAY_TO, need, i === 0 ? from : null)) {
+      let s = g.prev && g.prev.ev ? new Date(Math.ceil((+g.s + 15 * 60e3) / 9e5) * 9e5) : g.s
+      for (const t of taken.filter(t => sameDay(t.s, d)).sort((a, b) => a.s - b.s)) if (t.s < new Date(+s + need * 60e3) && t.e > s) s = t.e
+      if (g.e - s >= need * 60e3) { out.push({ s, e: new Date(+s + need * 60e3), prev: g.prev, next: g.next }); if (out.length >= max) break }
+    }
+  }
+  return out
+}
+const slotWhy = sl => sl.prev && sl.next ? ` (между «${sl.prev.t}» и «${sl.next.t}»)` : sl.prev ? ` (после «${sl.prev.t}»)` : sl.next ? ` (до «${sl.next.t}»)` : ""
+function slotPut(r, sl) {
+  const x = D.rems.find(z => z.id === r.id); if (!x) return
+  const ev = sl.prev && sl.prev.ev
+  upsert("rems", Object.assign({}, x, { due: iso(sl.s), anchor: ev ? { ev: ev.id, at: ev.end, off: Math.round((sl.s - ev.e) / 60e3) } : null }))
+}
+// Встречу перенесли — дела, поставленные «после неё», едут следом
+function calReflow() {
+  const v = iphone(); let n = 0
+  for (const r of live(D.rems)) {
+    const a = r.anchor
+    if (!a || r.done || !remHasTime(r)) continue
+    const was = parseIso(a.at), c = v.events.filter(e => e.id === a.ev).sort((x, y) => Math.abs(x.e - was) - Math.abs(y.e - was))[0]
+    if (!c || Math.abs(c.e - was) > 3 * 864e5) { upsert("rems", Object.assign({}, r, { anchor: null })); continue }
+    if (c.end === a.at) continue
+    upsert("rems", Object.assign({}, r, { due: iso(new Date(+c.e + a.off * 60e3)), anchor: Object.assign({}, a, { at: c.end }) })); n++
+  }
+  if (n) toast(`Встреча сдвинулась — ${n} ${plural(n, "дело переехало", "дела переехали", "дел переехали")} следом`)
+}
+
+// — 9. Погода на день: максимум и дождь днём
+function wxDay(d) {
+  if (!D.wx) return ""
+  const a = +atHM(d, "08:00"), b = +atHM(d, "20:00"), h = D.wx.h.filter(x => x.t >= a && x.t < b)
+  if (!h.length) return ""
+  const rain = h.some(x => x.p >= 60 && x.mm >= 0.5)
+  return `<i class="wx ${rain ? "r" : ""}">${tdIco(rain ? "rain" : "sun", 13)}${Math.max(...h.map(x => x.c))}°</i>`
+}
+
+// — что рисуется в колонке дня
+let calCache = []
+function calItems(v, d, now) {
+  const S = calS(), d0 = sod(d), d1 = addDays(d0, 1), out = [], allDay = []
+  const prots = S.layers.me ? pblkOn(d0) : []
+  for (const e of v.events) {
+    if (e.e <= d0 || e.s >= d1) continue
+    const L = evLayer(e)
+    if (L === "off" || !S.layers[L]) continue
+    if (e.all_day) { allDay.push({ kind: "ev", ev: e, L }); continue }
+    const s = e.s < d0 ? d0 : e.s, en = e.e > d1 ? d1 : e.e
+    const pr = prots.find(p => normT(p.p.title) === normT(e.title) && p.s < en && p.e > s)
+    if (pr) pr.used = 1
+    out.push({ kind: "ev", ev: e, s, e: en, L, prot: !!pr })
+    if (L === "me" && e.location && e.s > now && e.s - now < 2 * 864e5) {
+      const tr = travelOf(e) || travCached(e)
+      if (tr && tr.min) out.push({ kind: "road", s: new Date(+e.s - tr.min * 60e3), e: e.s, min: tr.min, ev: e })
+    }
+  }
+  for (const p of prots) if (!p.used) out.push({ kind: "prot", s: p.s, e: p.e, p: p.p })
+  if (S.layers.kids) for (const k of kidsOn(d0)) if (/^\d{1,2}:\d\d/.test(k.time || "")) { const s = atHM(d0, k.time); out.push({ kind: "kid", s, e: new Date(+s + (+k.min || 60) * 60e3), k }) }
+  if (S.layers.me) for (const r of v.reminders) if (!r.completed && remHasTime(r) && sameDay(remDue(r), d0)) out.push({ kind: "rem", s: remDue(r), e: new Date(+remDue(r) + Math.max(30, remEst(r)) * 60e3), r })
+  // дорога, на которую нет времени: предыдущая встреча кончается позже, чем надо выезжать
+  for (const it of out) if (it.kind === "road") it.late = out.some(x => x.kind === "ev" && x.ev !== it.ev && x.L === "me" && x.e > it.s && x.s < it.s)
+  return { items: out.sort((a, b) => a.s - b.s), allDay }
+}
+// раскладка пересекающихся блоков по дорожкам
+function calLanes(items) {
+  const lane = items.filter(x => x.kind === "ev" || x.kind === "kid" || x.kind === "rem").sort((a, b) => a.s - b.s || b.e - a.e)
+  let grp = [], end = 0
+  const flush = () => { const n = Math.max(...grp.map(x => x.ln + 1)); grp.forEach(x => x.n = n); grp = [] }
+  for (const it of lane) {
+    if (grp.length && +it.s >= end) { flush(); end = 0 }
+    const used = grp.filter(x => x.e > it.s).map(x => x.ln)
+    let l = 0; while (used.includes(l)) l++
+    it.ln = l; grp.push(it); end = Math.max(end, +it.e)
+  }
+  if (grp.length) flush()
+}
+const CALL_RE = /звон|созвон|call|zoom|мам|пап|родител|москв|уф[аеу]/i
+function calGrid(v, start, n, now) {
+  const S = calS(), days = [...Array(n)].map((_, i) => addDays(start, i)), PX = n === 1 ? 62 : n === 3 ? 54 : 46
+  const cols = days.map(d => calItems(v, d, now))
+  let h0 = DAY_FROM, h1 = 21
+  for (const c of cols) for (const it of c.items) { h0 = Math.min(h0, it.s.getHours()); h1 = Math.max(h1, it.e.getHours() + (it.e.getMinutes() || sameDay(it.e, addDays(it.s, 1)) ? 1 : 0)) }
+  h0 = Math.max(0, h0); h1 = Math.min(24, Math.max(h1, h0 + 8))
+  const y = t => Math.round((t.getHours() + t.getMinutes() / 60 - h0) * PX)
+  const tz = tzInfo()
+  let html = `<div class="cg n${n}" style="--px:${PX}px"><div class="cg-head"><div class="cg-tc"></div>${days.map(d => `<button class="cg-dh ${sameDay(d, now) ? "td" : ""} ${d.getDay() % 6 === 0 ? "we" : ""}" data-cday="${+d}"><span>${WD[d.getDay()]}</span><b>${d.getDate()}</b>${wxDay(d)}</button>`).join("")}</div>`
+  if (cols.some(c => c.allDay.length)) html += `<div class="cg-ad"><div class="cg-tc"><small>весь день</small></div>${cols.map(c => `<div>${c.allDay.map(a => { calCache.push(a); return `<button class="cg-a" style="--c:${LAYER_C[a.L] || LAYER_C.me}" data-ci="${calCache.length - 1}">${esc(a.ev.title || "(без названия)")}</button>` }).join("")}</div>`).join("")}</div>`
+  html += `<div class="cg-body" style="height:${(h1 - h0) * PX}px"><div class="cg-tc">${[...Array(h1 - h0)].map((_, i) => `<div style="top:${i * PX}px"><b>${h0 + i}:00</b>${S.tzOn ? `<small>${tzHm(atHM(days[0], (h0 + i) + ":00")).replace(/^0/, "")} ${tz[2]}</small>` : ""}</div>`).join("")}</div>`
+  cols.forEach((c, di) => {
+    const d = days[di]
+    calLanes(c.items)
+    html += `<div class="cg-col ${sameDay(d, now) ? "td" : ""}" data-cd="${+d}" data-h0="${h0}">`
+    c.items.forEach((it, k) => {
+      const top = y(it.s), hh = Math.max(18, y(it.e) - top - 2)
+      const lw = it.n ? `left:calc(${(it.ln / it.n) * 100}% + 1px);width:calc(${100 / it.n}% - 3px);` : ""
+      calCache.push(it); const ci = calCache.length - 1, past = it.e <= now
+      const st = `top:${top}px;height:${hh}px;${lw}--d:${(di * 4 + k) * 22}ms;`
+      if (it.kind === "road") html += `<div class="cg-it road ${it.late ? "late" : ""}" style="${st}" data-ci="${ci}">${hh >= 20 ? `${tdIco("car", 11)} ${it.late ? "не успеть" : "дорога"} ${it.min} мин` : ""}</div>`
+      else if (it.kind === "prot") html += `<div class="cg-it prot" style="${st}" data-ci="${ci}"><b>${esc(it.p.title)}</b>${hh >= 34 ? "<small>защищено</small>" : ""}</div>`
+      else if (it.kind === "kid") html += `<div class="cg-it ev ${past ? "past" : ""}" style="${st}--c:${LAYER_C.kids}" data-ci="${ci}"><b>${esc(it.k.title)}${it.k.kid ? " · " + esc(it.k.kid) : ""}</b></div>`
+      else if (it.kind === "rem") html += `<div class="cg-it task" style="${st}" data-ci="${ci}"><b>${esc(it.r.title)}</b></div>`
+      else {
+        const e = it.ev, rain = e.location && wxRain(e.s, e.e), call = S.tzOn && CALL_RE.test(e.title || "")
+        const sub = [hh >= 46 && e.location ? esc(e.location) : "", rain ? `${tdIco("rain", 11)} дождь` : "", call ? `${tdIco("globe", 11)} у них ${tzHm(e.s)}` : "", it.prot ? "защищено" : ""].filter(Boolean)
+        html += `<div class="cg-it ev ${it.prot ? "prot" : ""} ${past ? "past" : ""} ${e.pending ? "pending" : ""}" style="${st}--c:${LAYER_C[it.L] || LAYER_C.me}" data-ci="${ci}"><b>${esc(e.title || "(без названия)")}</b>${sub.length && hh >= 34 ? `<small>${sub.join(" · ")}</small>` : ""}</div>`
+      }
+    })
+    if (sameDay(d, now) && now.getHours() >= h0 && now.getHours() < h1) html += `<div class="cg-now" style="top:${y(now)}px"></div>`
+    html += `</div>`
+  })
+  return html + `</div></div>`
+}
+
+// — 7. Нагрузка месяца: дни подсвечены по занятым часам
+function dayBusy(v, d) {
+  const d0 = sod(d), d1 = addDays(d0, 1); let min = 0, n = 0
+  for (const e of v.events) { if (e.all_day || e.e <= d0 || e.s >= d1 || evLayer(e) !== "me") continue; n++; min += (Math.min(+e.e, +d1) - Math.max(+e.s, +d0)) / 60e3 + ((travCached(e) || {}).min || 0) }
+  return { n, h: min / 60 }
+}
+function loadMonth(v, m0, big) {
+  const y = m0.getFullYear(), m = m0.getMonth(), last = new Date(y, m + 1, 0).getDate(), pad = (new Date(y, m, 1).getDay() + 6) % 7, t0 = sod(new Date())
+  const cells = [...Array(pad)].map(() => "<i></i>"), L = []
+  for (let i = 1; i <= last; i++) {
+    const d = new Date(y, m, i), b = dayBusy(v, d), lv = !b.n ? 0 : b.h < 2 ? 1 : b.h < 4 ? 2 : b.h < 6 ? 3 : 4
+    L.push(Object.assign({ d, lv }, b))
+    cells.push(`<button class="hm l${lv} ${sameDay(d, t0) ? "td" : ""} ${d < t0 ? "old" : ""}" data-cday="${+d}" style="--d:${i * 12}ms"><b>${i}</b>${big && b.n ? `<small>${b.n} ${plural(b.n, "встр.", "встр.", "встр.")}</small>` : ""}</button>`)
+  }
+  let warn = ""
+  const runs = []; let run = []
+  for (const x of L) { if (x.d >= t0 && (x.lv >= 4 || x.n >= 5)) run.push(x); else { if (run.length) runs.push(run); run = [] } }
+  if (run.length) runs.push(run)
+  const r = runs.sort((a, b) => b.length - a.length || a[0].d - b[0].d)[0]
+  if (r) {
+    const a = r[0].d, b = r[r.length - 1].d, cnt = r.reduce((s, x) => s + x.n, 0)
+    warn = `<button class="hm-warn" data-do="cal-unload" data-from="${+a}" data-to="${+b}">${tdIco("alert", 15)} ${a.getDate()}${r.length > 1 ? "–" + b.getDate() : ""} ${MONTHS_GEN[m]} ${r.length > 1 ? "перегружены" : "перегружен"}: ${cnt} ${plural(cnt, "встреча", "встречи", "встреч")}. Перенести часть?</button>`
+  }
+  return `<div class="card cal-load ${big ? "big" : ""}"><h2>Нагрузка ${MONTHS_GEN[m]}<span class="hm-key"><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i></span></h2>
+    <div class="hm-g hm-wd">${WD7.map(w => `<span>${w}</span>`).join("")}</div><div class="hm-g">${cells.join("")}</div>${warn}</div>`
+}
+
+// — 1. Дела без времени
+let calSlots = {}
+function undatedCard(v, now) {
+  const list = openRems(v).filter(r => !remDue(r) || (!remHasTime(r) && remDue(r) < addDays(sod(now), 3))).slice(0, 5)
+  if (!list.length) return ""
+  const taken = []; calSlots = {}
+  const rows = list.map(r => { const sl = slotsFor(v, r, now, taken)[0]; if (sl) { taken.push(sl); calSlots[r.id] = sl } return { r, sl } })
+  return `<div class="card cal-nt"><h2>Без времени<span class="muted small" style="text-transform:none;letter-spacing:0;font-weight:500">поставлю в окна</span></h2>${rows.map(({ r, sl }) => `<div class="row" data-nt="${esc(r.id)}"><div class="grow"><div class="t">${esc(r.title)}</div>
+    <div class="s">${durLbl(remEst(r))} · ${sl ? `предлагаю ${dayWord(sl.s)} ${hm(sl.s)}${esc(slotWhy(sl))}` : "окон на 3 дня нет"}</div></div>${sl ? `<button class="ok-b" data-slot="${esc(r.id)}">Ок</button>` : ""}</div>`).join("")}</div>`
+}
+async function slotChoose(id) {
+  const v = iphone(), r = v.reminders.find(x => x.id === id); if (!r) return
+  const l = slotsFor(v, r, new Date(), [], 6)
+  if (!l.length) return ui.info("Окон нет", "В ближайшие 4 дня свободного времени под это дело нет")
+  const i = await ui.choose(r.title, "Когда поставить?", l.map(sl => `${core.cap(dayWord(sl.s))} ${hm(sl.s)}–${hm(sl.e)}${slotWhy(sl)}`))
+  if (i < 0) return
+  slotPut(r, l[i]); toast(`«${r.title}» — ${dayWord(l[i].s)} в ${hm(l[i].s)}`); render()
+}
+
+// — экран
+let calStart = null, calAnim = ""
+function calLabel(start, n) {
+  if (n === 1) return core.cap(fullDate(start))
+  const e = addDays(start, n - 1)
+  return start.getMonth() === e.getMonth() ? `${start.getDate()}–${e.getDate()} ${MONTHS_GEN[e.getMonth()]}` : `${start.getDate()} ${MON_SHORT[start.getMonth()]} – ${e.getDate()} ${MON_SHORT[e.getMonth()]}`
+}
+function renderCal() {
+  const S = calS(), v = iphone(), now = new Date(), t0 = sod(now)
+  if (!calStart) calStart = S.view === "7" ? addDays(t0, -(wdOf(t0) - 1)) : t0
+  calCache = []
+  const views = [["1", "День"], ["3", "3 дня"], ["7", "Неделя"], ["m", "Месяц"]], vi = views.findIndex(x => x[0] === S.view)
+  let html = `<div class="seg" style="--i:${vi}"><i></i>${views.map(([k, l]) => `<button data-cv="${k}" class="${S.view === k ? "on" : ""}">${l}</button>`).join("")}</div>`
+  html += `<div class="chips pf cal-l">${["me", "olya", "kids"].map(k => `<button class="chip ly ${S.layers[k] ? "on" : ""}" data-ly="${k}" style="--c:${LAYER_C[k]}">${k === "me" ? "<i>Я</i>" : `<em></em>${esc(layerName(k))}`}</button>`).join("")}
+    <button class="chip ly tz ${S.tzOn ? "on" : ""}" data-ly="tz">${tdIco("globe", 15)} ${S.tzOn ? "" : "+ "}${esc(tzInfo()[1])}</button><button class="chip ly cog" data-do="cal-set" aria-label="Слои и календари">${tdIco("layers", 16)}</button></div>`
+  if (!gcalOn() && D.gcal && D.gcal.error) html += `<div class="banner"><b>Google Календарь не ответил</b>${esc(D.gcal.error)}</div>`
+  if (S.view === "m") {
+    const m0 = new Date(calStart.getFullYear(), calStart.getMonth(), 1)
+    html += `<div class="month wnav cal-nav"><button data-cs="-1" aria-label="Назад">${tdIco("back", 16)}</button><b>${esc(core.cap(core.MONTH_NOM[m0.getMonth()]))} ${m0.getFullYear()}</b><button data-cs="1" aria-label="Вперёд">${tdIco("chev", 16)}</button><button class="today-btn" data-do="cal-today" ${m0.getMonth() === now.getMonth() && m0.getFullYear() === now.getFullYear() ? "hidden" : ""}>Сегодня</button></div>`
+    html += `<div class="cal-anim ${calAnim}">${loadMonth(v, m0, true)}</div>`
+  } else {
+    const n = +S.view
+    html += `<div class="month wnav cal-nav"><button data-cs="-1" aria-label="Назад">${tdIco("back", 16)}</button><b>${esc(calLabel(calStart, n))}</b><button data-cs="1" aria-label="Вперёд">${tdIco("chev", 16)}</button><button class="today-btn" data-do="cal-today" ${calStart <= t0 && addDays(calStart, n) > t0 ? "hidden" : ""}>Сегодня</button></div>`
+    html += `<div class="card cal-card cal-anim ${calAnim}">${calGrid(v, calStart, n, now)}</div>`
+  }
+  calAnim = ""
+  html += undatedCard(v, now)
+  if (S.view !== "m") html += loadMonth(v, calStart, false)
+  html += `<div class="card cal-acts">
+    <button class="row" data-do="cal-free"><span class="ic" style="background:#0A84FF">${tdIco("share", 18)}</span><div class="grow"><div class="t">Когда я свободен</div><div class="s">Окна текстом — клиенту или другу в мессенджер</div></div>${tdIco("chev", 15)}</button>
+    <button class="row" data-do="cal-tpls"><span class="ic" style="background:#5E5CE6">${tdIco("tpl", 18)}</span><div class="grow"><div class="t">Шаблоны событий</div><div class="s">${etpls().length ? esc(etpls().slice(0, 3).map(t => t.title).join(", ")) : "Длительность, адрес, напоминание и «взять с собой»"}</div></div>${tdIco("chev", 15)}</button>
+    <button class="row" data-do="cal-prot"><span class="ic" style="background:#FF9F0A">${tdIco("shield", 18)}</span><div class="grow"><div class="t">Защищённое время</div><div class="s">${pblks().length ? esc(pblks().slice(0, 3).map(p => p.title).join(", ")) : "Спорт, дети, вечер с женой — помощник его не займёт"}</div></div>${tdIco("chev", 15)}</button></div>`
+  return html
+}
+function calShift(k) {
+  const S = calS()
+  if (S.view === "m") calStart = new Date(calStart.getFullYear(), calStart.getMonth() + k, 1)
+  else calStart = addDays(calStart, k * +S.view)
+  calAnim = k > 0 ? "in-r" : "in-l"; render()
+}
+function calSetView(k) {
+  const S = calS(), t0 = sod(new Date()), keep = calStart && (S.view === "m" ? null : calStart)
+  S.view = k; save(false)
+  const base = keep && Math.abs(keep - t0) < 40 * 864e5 ? keep : t0
+  calStart = k === "7" ? addDays(sod(base), -(wdOf(base) - 1)) : k === "m" ? new Date(base.getFullYear(), base.getMonth(), 1) : sod(base > t0 || k !== "1" ? base : t0)
+  calAnim = "in-f"; render()
+}
+function bindCal(v) {
+  const S = calS()
+  $$("[data-cv]", v).forEach(b => b.onclick = () => calSetView(b.dataset.cv))
+  $$("[data-cs]", v).forEach(b => b.onclick = () => calShift(+b.dataset.cs))
+  $$("[data-ly]", v).forEach(b => b.onclick = () => { const k = b.dataset.ly; if (k === "tz") S.tzOn = S.tzOn ? 0 : 1; else S.layers[k] = S.layers[k] ? 0 : 1; save(false); if (navigator.vibrate) navigator.vibrate(8); render() })
+  $$("[data-cday]", v).forEach(b => b.onclick = () => { S.view = "1"; calStart = sod(new Date(+b.dataset.cday)); calAnim = "in-f"; save(false); render() })
+  $$("[data-ci]", v).forEach(el => el.onclick = ev => { ev.stopPropagation(); calTap(calCache[+el.dataset.ci]) })
+  $$("[data-slot]", v).forEach(b => b.onclick = ev => { ev.stopPropagation(); const r = iphone().reminders.find(x => x.id === b.dataset.slot), sl = calSlots[b.dataset.slot]; if (!r || !sl) return
+    slotPut(r, sl); b.classList.add("on"); if (navigator.vibrate) navigator.vibrate(10); toast(`«${r.title}» — ${dayWord(sl.s)} в ${hm(sl.s)}`); setTimeout(render, 300) })
+  $$("[data-nt]", v).forEach(el => el.onclick = () => slotChoose(el.dataset.nt))
+  $$('[data-do="cal-unload"]', v).forEach(b => b.onclick = () => { const a = new Date(+b.dataset.from), z = new Date(+b.dataset.to)
+    setTab("chat"); setTimeout(() => chatSend(`С ${shortDate(a)} по ${shortDate(z)} у меня перегруз в календаре. Посмотри эти дни и предложи, какие встречи перенести и куда, чтобы не трогать защищённое время. Ничего не переноси без моего «да».`), 50) })
+  $$(".cg-col", v).forEach(c => c.onclick = ev => {
+    if (ev.target !== c) return
+    const px = parseFloat(getComputedStyle(c.closest(".cg")).getPropertyValue("--px")) || 54
+    const h = +c.dataset.h0 + ev.offsetY / px, d = new Date(+c.dataset.cd); d.setHours(Math.floor(h), Math.round((h % 1) * 2) * 30 % 60, 0, 0)
+    if (Math.round((h % 1) * 2) === 2) d.setHours(Math.floor(h) + 1, 0)
+    calQuick({ start: d })
+  })
+  const body = $(".cal-anim", v)
+  if (body) { let x0 = null, y0 = 0
+    body.addEventListener("touchstart", e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY }, { passive: true })
+    body.addEventListener("touchend", e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) calShift(dx < 0 ? 1 : -1) }, { passive: true }) }
+}
+async function calTap(it) {
+  if (!it) return
+  if (it.kind === "ev") return eventSheet(it.ev)
+  if (it.kind === "prot") return protForm(it.p)
+  if (it.kind === "kid") return kidsForm()
+  if (it.kind === "road") return ui.info(`Дорога ${it.min} мин`, `До «${it.ev.title}»${it.ev.location ? " (" + it.ev.location + ")" : ""}: выехать в ${hm(it.s)}.${it.late ? "\nПредыдущая встреча кончается позже — не успеваете. Сдвиньте одну из встреч." : ""}`)
+  if (it.kind === "rem") {
+    const i = await ui.choose(it.r.title, `${core.cap(dayWord(it.s))} в ${hm(it.s)}`, ["Выполнено", "Другое время", "Убрать время"])
+    if (i === 0) { remSet(it.r.id, { completed: true }); toast("Выполнено") }
+    if (i === 1) return slotChoose(it.r.id)
+    if (i === 2) { const x = D.rems.find(z => z.id === it.r.id); if (x) upsert("rems", Object.assign({}, x, { due: dayKey(it.s), anchor: null })) }
+    render()
+  }
+}
+
+// — 2 и 6. Ввод фразой с предпросмотром + шаблоны событий
+const etpls = () => live(D.goals).filter(g => g.kind === "etpl" && g.title).sort((a, b) => a.date - b.date)
+function calParse(text, base) {
+  let t = " " + core.normalizeSpeech(String(text || "")) + " ", remind = null, dur = null
+  const unit = u => /^ч/i.test(u) ? 60 : 1
+  t = t.replace(/[,\s]*напомни(?:ть)?\s+за\s+(полчаса|час|сутки|день|(\d+)\s*(минут\w*|мин|час\w*|ч)(?=[\s,.]|$))/i, (_, w, n, u) => { remind = /полчаса/i.test(w) ? 30 : /^час/i.test(w) ? 60 : /сутки|день/i.test(w) ? 1440 : +n * unit(u); return " " })
+  t = t.replace(/\s+на\s+(полтора\s+час\w*|полчаса|час|(\d+(?:[.,]\d+)?)\s*(час\w*|ч|минут\w*|мин)(?=[\s,.]|$))/i, (_, w, n, u) => { dur = /полтора/i.test(w) ? 90 : /полчаса/i.test(w) ? 30 : /^час/i.test(w) ? 60 : Math.round(parseFloat(n.replace(",", ".")) * unit(u)); return " " })
+  const a = core.buildActions([{ text: t.trim(), kind: "event" }])[0] || {}
+  let title = String(a.title || "").replace(/[\s,.]+$/, "").trim(), location = ""
+  const lm = title.match(/^(.+?)\s+(?:на|в|во)\s+((?:[A-ZА-ЯЁ0-9][^,]*))$/)
+  if (lm) { title = lm[1]; location = lm[2].trim() }
+  const tpl = title && etpls().find(p => normT(title).startsWith(normT(p.title)) || normT(p.title).startsWith(normT(title)) && normT(title).length >= 4)
+  if (tpl) { if (normT(title) !== normT(tpl.title) && normT(tpl.title).startsWith(normT(title))) title = tpl.title; location = location || tpl.location || ""; if (remind == null && tpl.remind) remind = +tpl.remind }
+  const explicit = dur != null || /\sдо\s+\d/.test(t)
+  const minutes = dur || (explicit ? a.minutes : tpl && +tpl.min || a.minutes || core.CONFIG.defaultEventMinutes || 60)
+  let start = a.date && a.hasTime ? new Date(a.date) : null
+  if (!start && base) { start = new Date(base); if (a.date && !sameDay(a.date, base)) { const x = new Date(a.date); x.setHours(base.getHours(), base.getMinutes(), 0, 0); start = x } }
+  if (!title) return null
+  return { title: core.cap(title), start, end: start ? new Date(+start + minutes * 60e3) : null, minutes, location, remind, bring: tpl ? tpl.bring || "" : "", tpl, recur: a.recur || null }
+}
+const remindLbl = m => m >= 1440 ? "за день" : m >= 60 ? `за ${m % 60 ? durLbl(m) : m / 60 === 1 ? "час" : m / 60 + " ч"}` : `за ${m} мин`
+const qTrav = {}
+function calQuick(pref = {}) {
+  let x = null, edit = false, force = false, timer = 0
+  const s = sheet(`<h3>Новое событие</h3><div class="cq-box"><textarea id="cq" rows="2" placeholder="Например: завтра в 15 стоматолог на Сукхумвите, напомни за час">${esc(pref.text || "")}</textarea>${pref.start ? `<div class="muted small">${esc(core.cap(fullDate(pref.start)))}, ${hm(pref.start)} — если время не скажете</div>` : ""}</div>
+    <div id="cq-pv"></div><div id="cq-tp"></div>`)
+  const inp = $("#cq", s.el), pv = $("#cq-pv", s.el)
+  const tpList = () => { const l = etpls(); $("#cq-tp", s.el).innerHTML = l.length ? `<div class="cq-tpl"><div class="k">${tdIco("tpl", 14)} Шаблоны</div>${l.map(t => `<button class="chip" data-tp="${esc(t.id)}">${esc(t.title)}</button>`).join("")}</div>` : ""
+    $$("[data-tp]", s.el).forEach(b => b.onclick = () => { const t = D.goals.find(z => z.id === b.dataset.tp); inp.value = t.title + " "; inp.focus(); upd() }) }
+  const draw = () => {
+    if (!x) { pv.innerHTML = `<div class="cq-hint">${tdIco("wand", 16)} Пишите как удобно — событие появится здесь до сохранения</div>`; return }
+    const hit = x.start && !force ? protHit(x.start, x.end) : null
+    const tr = x.location && qTrav[x.location], leave = tr && tr.min && x.start ? new Date(+x.start - (tr.min + 10) * 60e3) : null
+    const rain = x.start && wxRain(x.start, x.end), rem = x.remind && x.start ? new Date(+x.start - x.remind * 60e3) : null
+    pv.innerHTML = edit ? `<div class="cq-form">
+        <div class="field"><label>Название</label><input id="cf-t" value="${esc(x.title)}"></div>
+        <div class="field"><label>Начало</label><input id="cf-s" type="datetime-local" value="${x.start ? iso(x.start) : ""}"></div>
+        <div class="grid2"><div class="field"><label>Минут</label><input id="cf-m" type="number" inputmode="numeric" value="${x.minutes}"></div>
+        <div class="field"><label>Напомнить за, мин</label><input id="cf-r" type="number" inputmode="numeric" value="${x.remind || ""}" placeholder="нет"></div></div>
+        <div class="field"><label>Место</label><input id="cf-l" value="${esc(x.location)}" placeholder="адрес или название"></div>
+        <div class="field"><label>Взять с собой</label><input id="cf-b" value="${esc(x.bring)}" placeholder="необязательно"></div></div>`
+      : `<div class="cq-card"><b>${esc(x.title)}</b>
+        <div>${tdIco("clock", 14)} ${x.start ? `${esc(core.cap(fullDate(x.start)))} · ${hm(x.start)}–${hm(x.end)}` : '<span class="exp">когда? допишите время</span>'}</div>
+        ${x.location ? `<div>${tdIco("pin", 14)} ${esc(x.location)}${leave ? ` · ${tdIco("car", 14)} выехать в ${hm(leave)}` : ""}</div>` : ""}
+        ${rem || rain ? `<div>${rem ? `${tdIco("bell", 14)} напомнить в ${hm(rem)}` : ""}${rem && rain ? " · " : ""}${rain ? `<span class="rn">${tdIco("rain", 14)} в ${hm(new Date(rain.t))} ${rain.mm >= 4 ? "ливень" : "дождь"} — зонт</span>` : ""}</div>` : ""}
+        ${x.bring ? `<div>${tdIco("brief", 14)} взять: ${esc(x.bring)}</div>` : ""}${x.tpl ? `<div class="muted small">по шаблону «${esc(x.tpl.title)}»</div>` : ""}</div>`
+    pv.innerHTML += (hit ? `<div class="warn-card prot-w">${tdIco("hand", 22)}<div><b>Это время защищено</b>«${esc(hit.p.title)}» ${WD[hit.s.getDay()]} ${hm(hit.s)}–${hm(hit.e)}. Поставить всё равно или найти другое время?
+        <div class="chips"><button class="chip on" data-a="other">Другое время</button><button class="chip" data-a="force">Всё равно</button></div></div></div>` : "")
+      + `<div class="btns"><button class="btn primary" data-a="ok" ${x.start ? "" : "disabled"}>Сохранить</button><button class="btn" data-a="edit">${edit ? "Готово" : "Изменить"}</button></div>
+        ${x.tpl ? "" : `<button class="chip cq-mk" data-a="mk">${tdIco("tpl", 15)} Сделать шаблоном</button>`}`
+    const A = k => $(`[data-a="${k}"]`, pv)
+    if (A("other")) A("other").onclick = () => { const sl = calFindSlot(x.start, x.minutes); if (!sl) return toast("Свободного окна на неделю нет"); x.start = sl; x.end = new Date(+sl + x.minutes * 60e3); toast(`Предлагаю ${dayWord(sl)} ${hm(sl)}`); draw() }
+    if (A("force")) A("force").onclick = () => { force = true; draw() }
+    A("edit").onclick = () => { if (edit) readForm(); edit = !edit; draw() }
+    A("ok").onclick = async () => { if (edit) readForm(); if (!x.start) return; if (!force && protHit(x.start, x.end)) { draw(); return toast("Время защищено — выберите") }
+      A("ok").disabled = true; A("ok").textContent = "Сохраняю…"; const ok = await calSave(x); if (ok) s.close(); else { A("ok").disabled = false; A("ok").textContent = "Сохранить" } }
+    if (A("mk")) A("mk").onclick = () => { if (edit) readForm(); etplForm(null, x) }
+  }
+  const readForm = () => { const g = id => $(id, pv) && $(id, pv).value
+    const st = parseIso(g("#cf-s")); x.title = (g("#cf-t") || x.title).trim(); x.minutes = Math.max(5, Math.round(+g("#cf-m") || x.minutes))
+    if (st) x.start = st; x.end = x.start ? new Date(+x.start + x.minutes * 60e3) : null; x.remind = Math.round(+g("#cf-r")) || null; x.location = (g("#cf-l") || "").trim(); x.bring = (g("#cf-b") || "").trim() }
+  const upd = () => { x = calParse(inp.value, pref.start); force = false; edit = false; draw()
+    if (x && x.location && !qTrav[x.location] && D.conn) { const loc = x.location; qTrav[loc] = { min: 0 }; runTool("route_to", { to: loc }).then(r => { qTrav[loc] = r && !r.error ? { min: Math.round(r.minutes_in_traffic || r.minutes || 0) } : { min: 0 }; if (x && x.location === loc) draw() }).catch(() => {}) } }
+  inp.oninput = () => { clearTimeout(timer); timer = setTimeout(upd, 220) }
+  tpList(); upd()
+  setTimeout(() => inp.focus(), 250)
+  return s
+}
+// ближайшее свободное время той же длины (сначала в тот же день, потом дальше)
+function calFindSlot(from, minutes) {
+  const v = iphone()
+  for (let i = 0; i < 7; i++) { const d = addDays(sod(from), i)
+    const g = freeGaps(v, d, DAY_FROM, DAY_TO, minutes, i === 0 ? new Date(Math.max(+from, Date.now())) : (sameDay(d, new Date()) ? new Date() : null))[0]
+    if (g) return g.prev && g.prev.ev ? new Date(Math.min(+g.e - minutes * 60e3, Math.ceil((+g.s + 15 * 60e3) / 9e5) * 9e5)) : g.s }
+  return null
+}
+async function calSave(x) {
+  const ev = { title: x.title, start: iso(x.start), end: iso(x.end) }
+  if (x.location) ev.location = x.location
+  if (x.bring) ev.notes = "Взять с собой: " + x.bring
+  if (gcalOn()) { const r = await calDo("create", ev); if (r.error) { ui.info("Не получилось", r.error); return false } }
+  else queueOp("create_event", ev)
+  if (x.remind) remAdd({ title: `${x.title} в ${hm(x.start)}${x.bring ? " · взять: " + x.bring : ""}`, due: iso(new Date(+x.start - x.remind * 60e3)) })
+  toast(`${x.title} — ${dayWord(x.start)} в ${hm(x.start)}`); render()
+  return true
+}
+function etplForm(t, from) {
+  const b = t || { title: from ? from.title : "", min: from ? from.minutes : 60, location: from ? from.location : "", remind: from ? from.remind || "" : 60, bring: from ? from.bring : "" }
+  const s = sheet(`<h3>${t ? esc(t.title) : "Новый шаблон события"}</h3><div class="msg">Напишите «${esc(b.title || "Стоматолог")} завтра в 15» — длительность, место и напоминание подставятся сами.</div>
+    <div class="field"><label>Название</label><input id="et-t" value="${esc(b.title)}" placeholder="Показ объекта"></div>
+    <div class="grid2"><div class="field"><label>Длительность, мин</label><input id="et-m" type="number" inputmode="numeric" value="${esc(b.min || 60)}"></div>
+    <div class="field"><label>Напомнить за, мин</label><input id="et-r" type="number" inputmode="numeric" value="${esc(b.remind || "")}" placeholder="нет"></div></div>
+    <div class="field"><label>Место</label><input id="et-l" value="${esc(b.location || "")}" placeholder="адрес — или пусто, если каждый раз разное"></div>
+    <div class="field"><label>Взять с собой</label><input id="et-b" value="${esc(b.bring || "")}" placeholder="ключи, буклет, договор"></div>
+    <div class="btns">${t ? '<button class="btn red" data-a="del">Удалить</button>' : '<button class="btn" data-a="no">Отмена</button>'}<button class="btn primary" data-a="ok">Сохранить</button></div>`)
+  const no = $('[data-a="no"]', s.el); if (no) no.onclick = () => s.close()
+  const del = $('[data-a="del"]', s.el); if (del) del.onclick = () => { remove("goals", t.id); s.close(); render() }
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const title = $("#et-t", s.el).value.trim(); if (!title) return toast("Назовите шаблон")
+    upsert("goals", Object.assign(t || { id: uid("e"), date: Date.now(), kind: "etpl" }, { title, min: Math.max(5, Math.round(+$("#et-m", s.el).value || 60)), remind: Math.round(+$("#et-r", s.el).value) || 0,
+      location: $("#et-l", s.el).value.trim(), bring: $("#et-b", s.el).value.trim() }))
+    s.close(); render(); toast(`Шаблон «${title}» сохранён`)
+  }
+}
+function etplList() {
+  const tline = t => [durLbl(+t.min || 60), t.location, t.bring && `«${t.bring}»`, t.remind && "напомнить " + remindLbl(+t.remind)].filter(Boolean).map(esc).join(" · ")
+  const s = sheet(`<h3>Шаблоны событий</h3><div class="msg">Нажмите шаблон — откроется новое событие с ним. Значок справа — изменить.</div>
+    <div>${etpls().map(t => `<div class="row" data-u="${esc(t.id)}"><div class="grow"><div class="t">${esc(t.title)}</div><div class="s">${tline(t)}</div></div><button class="ibtn" data-e="${esc(t.id)}" aria-label="Изменить">${tdIco("tpl", 18)}</button></div>`).join("") || '<div class="empty">Пока пусто. «Показ объекта», «Стоматолог», «Тренировка» — заполните один раз.</div>'}</div>
+    <div class="btns"><button class="btn primary" data-a="new">+ Новый шаблон</button></div>`)
+  $$("[data-u]", s.el).forEach(r => r.onclick = () => { const t = D.goals.find(z => z.id === r.dataset.u); s.close(); calQuick({ text: t.title + " " }) })
+  $$("[data-e]", s.el).forEach(b => b.onclick = ev => { ev.stopPropagation(); s.close(); etplForm(D.goals.find(z => z.id === b.dataset.e)) })
+  $('[data-a="new"]', s.el).onclick = () => { s.close(); etplForm() }
+}
+
+// — 5. Защищённое время: список и форма
+const daysLbl = ds => { const l = (ds || []).map(Number).sort(); return l.length === 7 ? "каждый день" : l.join() === "1,2,3,4,5" ? "по будням" : l.join() === "6,7" ? "по выходным" : l.map(d => WD7[d - 1].toLowerCase()).join(", ") }
+function protList() {
+  const sug = [["Ужин с семьёй", [1, 2, 3, 4, 5, 6, 7], "19:00", "21:00"], ["Время с детьми", [6, 7], "10:00", "13:00"], ["Спорт", [1, 3, 5], "07:00", "08:00"], ["Вечер с женой", [5], "19:00", "22:00"]].filter(x => !pblks().some(p => normT(p.title) === normT(x[0])))
+  const s = sheet(`<h3>Защищённое время</h3><div class="msg">В эти часы помощник не ставит дела и предупредит, если туда попадёт встреча.</div>
+    <div>${pblks().map(p => `<div class="row" data-p="${esc(p.id)}"><span class="ic sm" style="background:#FF9F0A">${tdIco("shield", 15)}</span><div class="grow"><div class="t">${esc(p.title)}</div><div class="s">${esc(daysLbl(p.days))} · ${esc(p.from)}–${esc(p.to)}</div></div>${tdIco("chev", 15)}</div>`).join("") || '<div class="empty">Пока ничего не защищено</div>'}</div>
+    ${sug.length ? `<div class="field"><label>Быстро добавить</label><div class="chips">${sug.map((x, i) => `<button class="chip" data-sg="${i}">+ ${esc(x[0])}</button>`).join("")}</div></div>` : ""}
+    <div class="btns"><button class="btn primary" data-a="new">+ Своё время</button></div>`)
+  $$("[data-p]", s.el).forEach(r => r.onclick = () => { s.close(); protForm(D.goals.find(z => z.id === r.dataset.p)) })
+  $$("[data-sg]", s.el).forEach(b => b.onclick = () => { const x = sug[+b.dataset.sg]; s.close(); protForm(null, { title: x[0], days: x[1], from: x[2], to: x[3] }) })
+  $('[data-a="new"]', s.el).onclick = () => { s.close(); protForm() }
+}
+function protForm(p, pre) {
+  const b = p || pre || { title: "", days: [1, 2, 3, 4, 5], from: "19:00", to: "21:00" }
+  let days = (b.days || []).map(Number)
+  const s = sheet(`<h3>${p ? esc(p.title) : "Защитить время"}</h3>
+    <div class="field"><label>Что это</label><input id="pb-t" value="${esc(b.title)}" placeholder="Падел, ужин с семьёй, свидание"></div>
+    <div class="field"><label>Дни</label><div class="chips" id="pb-d">${WD7.map((w, i) => `<button class="chip ${days.includes(i + 1) ? "on" : ""}" data-d="${i + 1}">${w}</button>`).join("")}</div></div>
+    <div class="grid2"><div class="field"><label>С</label><input id="pb-f" type="time" value="${esc(b.from)}"></div><div class="field"><label>До</label><input id="pb-o" type="time" value="${esc(b.to)}"></div></div>
+    <div class="btns">${p ? '<button class="btn red" data-a="del">Убрать</button>' : '<button class="btn" data-a="no">Отмена</button>'}<button class="btn primary" data-a="ok">Сохранить</button></div>`)
+  $$("#pb-d .chip", s.el).forEach(c => c.onclick = () => { const d = +c.dataset.d; days = days.includes(d) ? days.filter(x => x !== d) : days.concat(d); c.classList.toggle("on", days.includes(d)) })
+  const no = $('[data-a="no"]', s.el); if (no) no.onclick = () => s.close()
+  const del = $('[data-a="del"]', s.el); if (del) del.onclick = () => { remove("goals", p.id); s.close(); render() }
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const title = $("#pb-t", s.el).value.trim(), from = $("#pb-f", s.el).value, to = $("#pb-o", s.el).value
+    if (!title) return toast("Назовите время"); if (!days.length) return toast("Выберите дни"); if (!(to > from)) return toast("Конец позже начала")
+    upsert("goals", Object.assign(p || { id: uid("p"), date: Date.now(), kind: "pblk" }, { title, days: days.sort(), from, to })); s.close(); render(); toast(`«${title}» защищено`)
+  }
+}
+
+// — 8. «Когда я свободен»: окна текстом для мессенджера
+function freeText(days = 3, who = "client", eve = false) {
+  const v = iphone(), now = new Date(), to = eve ? 22 : 19, lines = []
+  for (let i = 0; lines.length < days && i < 14; i++) {
+    const d = addDays(sod(now), i)
+    const gs = freeGaps(v, d, 9, to, 60, i === 0 ? new Date(+now + 3600e3) : null)
+    if (!gs.length) continue
+    lines.push(`• ${WD[d.getDay()]} ${d.getDate()} ${MONTHS_GEN[d.getMonth()]} — ${gs.map(g => +g.e === +atHM(d, to + ":00") && g.s.getHours() >= 12 && gs.length === 1 ? `после ${hm(g.s)}` : `${hm(g.s)}–${hm(g.e)}`).join(", ")}`)
+  }
+  if (!lines.length) return "На ближайшие две недели свободных окон нет."
+  return who === "client" ? `Здравствуйте! Могу показать объект:\n${lines.join("\n")}\nКакое время удобно?` : `Привет! Я свободен:\n${lines.join("\n")}\nКогда тебе удобно?`
+}
+function freeSheet() {
+  let days = 3, who = "client", eve = false
+  const s = sheet(`<h3>Когда я свободен</h3><div class="msg">Отправлю текстом — без ссылок и регистраций. Защищённое время и дорога учтены.</div>
+    <div class="chips" id="fs-w"><button class="chip on" data-w="client">Клиенту</button><button class="chip" data-w="friend">Другу</button><span class="sp"></span><button class="chip on" data-n="3">3 дня</button><button class="chip" data-n="5">5</button><button class="chip" data-n="7">7</button><button class="chip" data-e="1">вечер тоже</button></div>
+    <div class="field"><textarea id="fs-t" rows="6"></textarea></div>
+    <div class="share-row"><button class="sh wa" data-s="wa">WhatsApp</button><button class="sh tg" data-s="tg">Telegram</button><button class="sh ln" data-s="line">LINE</button><button class="sh cp" data-s="copy">${tdIco("copy", 16)}</button></div>`)
+  const ta = $("#fs-t", s.el), fill = () => { ta.value = freeText(days, who, eve) }
+  $$("#fs-w [data-w]", s.el).forEach(b => b.onclick = () => { who = b.dataset.w; $$("#fs-w [data-w]", s.el).forEach(x => x.classList.toggle("on", x === b)); fill() })
+  $$("#fs-w [data-n]", s.el).forEach(b => b.onclick = () => { days = +b.dataset.n; $$("#fs-w [data-n]", s.el).forEach(x => x.classList.toggle("on", x === b)); fill() })
+  $("#fs-w [data-e]", s.el).onclick = e => { eve = !eve; e.currentTarget.classList.toggle("on", eve); fill() }
+  $$("[data-s]", s.el).forEach(b => b.onclick = async () => {
+    const t = ta.value, u = encodeURIComponent(t), k = b.dataset.s
+    if (k === "copy") { try { await navigator.clipboard.writeText(t); toast("Скопировано") } catch (e) { ta.select(); toast("Выделено — скопируйте") } return }
+    window.open(k === "wa" ? `https://wa.me/?text=${u}` : k === "tg" ? `https://t.me/share/url?url=%20&text=${u}` : `https://line.me/R/share?text=${u}`, "_blank")
+  })
+  fill()
+}
+
+// — 4 и 10. Слои семьи, календари и второй часовой пояс
+function calSettings() {
+  const S = calS(), names = [...new Set(((D.gcal && D.gcal.calendars) || []).map(c => c.name || c).concat(iphone().events.map(e => e.calendar).filter(Boolean)))]
+  const opts = [["me", "Я"], ["olya", layerName("olya")], ["kids", "Дети"], ["off", "Скрыть"]]
+  const s = sheet(`<h3>Слои календаря</h3><div class="msg">Каждый календарь Google — в свой слой. Чужой календарь появится здесь, когда владелец откроет вам доступ к нему в Google Календаре (Настройки → Открыть доступ).</div>
+    ${names.map((n, i) => `<div class="field"><label>${esc(n)}</label><div class="chips" data-cal="${i}">${opts.map(([k, l]) => `<button class="chip ${evLayer({ calendar: n }) === k ? "on" : ""}" data-k="${k}">${esc(l)}</button>`).join("")}</div></div>`).join("") || '<div class="empty">Календари ещё не загружены</div>'}
+    <div class="field"><label>Как зовут второй слой</label><input id="cs-o" value="${esc(layerName("olya"))}"></div>
+    <div class="field"><label>Второй часовой пояс</label><div class="chips" id="cs-tz">${TZS.map(t => `<button class="chip ${S.tz === t[0] ? "on" : ""}" data-tz="${t[0]}">${t[1]}</button>`).join("")}</div></div>
+    <div class="btns"><button class="btn primary" data-a="ok">Готово</button></div>`, { onClose: () => render() })
+  $$("[data-cal]", s.el).forEach(g => $$(".chip", g).forEach(c => c.onclick = () => { S.map[names[+g.dataset.cal]] = c.dataset.k; $$(".chip", g).forEach(x => x.classList.toggle("on", x === c)); save(false) }))
+  $$("#cs-tz .chip", s.el).forEach(c => c.onclick = () => { S.tz = c.dataset.tz; S.tzOn = 1; $$("#cs-tz .chip", s.el).forEach(x => x.classList.toggle("on", x === c)); save(false) })
+  $("#cs-o", s.el).onchange = e => { S.names.olya = e.target.value.trim(); save(false) }
+  $('[data-a="ok"]', s.el).onclick = () => { const v = $("#cs-o", s.el).value.trim(); S.names.olya = v; save(false); s.close() }
+}
+Object.assign(DO, {
+  event: () => calQuick(), "cal-open": () => { calStart = null; setTab("cal") }, "cal-today": () => { calStart = null; calAnim = "in-f"; render() },
+  "cal-set": () => calSettings(), "cal-free": () => freeSheet(), "cal-tpls": () => etplList(), "cal-prot": () => protList(),
+})
 
 load()
 pushConn()
