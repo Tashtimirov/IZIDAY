@@ -579,13 +579,8 @@ body.kb #tabs #fab { visibility: hidden; }
 .tag { font-size: 12px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); padding: 4px 9px; border-radius: 10px; white-space: nowrap; }
 .goal-open { border: 0; background: none; padding: 0; text-align: left; color: inherit; min-width: 0; }
 
-/* ── «Шёлк»: кнопка-волна, полоса записи, меню «+» ── */
-.chat-bar .mic.wave, .chat-bar .mic.wave.on { position: relative; padding: 0; overflow: hidden; animation: none; background: linear-gradient(150deg, var(--accent-2), var(--accent));
-  box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--accent) 80%, transparent); touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
-.chat-bar .mic.wave canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.chat-bar .mic.wave:active { transform: scale(.93); }
+/* ── «Шёлк»: полоса записи, меню «+» (голос — большая кнопка «Изи», у поля только ➤) ── */
 .chat-bar:not(.typed):not(.busy) .send { display: none; }
-.chat-bar.typed .mic, .chat-bar.busy .mic { display: none; }
 .chat-bar .cam.plus { background: var(--card); color: var(--text); padding: 10px; box-shadow: 0 1px 2px rgba(0, 0, 0, .06); transition: background .25s, color .25s; }
 .chat-bar .cam.plus svg { transition: transform .45s cubic-bezier(.2, .9, .25, 1.3); }
 .chat-bar .cam.plus.open { background: var(--accent); color: #fff; }
@@ -891,7 +886,6 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 /* Кнопка «Помощник» в цветах иконки приложения: зелёный в голубой, мягкий блик */
 #tabs #fab .orb, #tabs #fab.rec .orb { padding: 0; background: none; border-radius: 0; overflow: visible; box-shadow: none;
   filter: drop-shadow(0 7px 10px color-mix(in srgb, var(--izi2, #18b98a) 45%, transparent)); }   /* фон шара рисует canvas, край растворяется */
-.chat-bar .mic.wave, .chat-bar .mic.wave.on { background: linear-gradient(150deg, var(--izi2, #18b98a), var(--izi1, #0b8f5c)); box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--izi1, #0b8f5c) 80%, transparent); }
 #silk { background: linear-gradient(110deg, var(--izi1, #0A9F6E), var(--izi2, #16B57E) 50%, var(--izi3, #0A84FF)); box-shadow: 0 12px 28px -10px color-mix(in srgb, var(--izi1, #0A9F6E) 80%, transparent); }
 .set .izi-c { display: flex; gap: 8px; }
 .set .izi-c button { width: 28px; height: 28px; border-radius: 50%; border: 0; padding: 0; box-shadow: 0 2px 6px rgba(0, 0, 0, .15); transition: transform .2s; }
@@ -986,3 +980,18 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 .m .ei { width: 1em; height: 1em; opacity: .85; }
 .m .ed svg { width: 13px; height: 13px; display: block; margin: auto; }
 #toast .ei { width: 17px; height: 17px; vertical-align: -3px; opacity: .9; }
+/* Задача в Claude Code: карточка «в работе» → «готово» */
+.m .cc-card { display: flex; align-items: center; gap: 10px; margin-top: 9px; padding: 9px 11px; border-radius: 14px; white-space: normal;
+  background: color-mix(in srgb, var(--teal) 9%, transparent); border: 1px solid color-mix(in srgb, var(--teal) 22%, transparent); }
+.m .cc-ic { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 16%, transparent); }
+.m .cc-ic svg { width: 17px; height: 17px; }
+.m .cc-card:not(.done) .cc-ic svg { animation: cc-pulse 2.4s ease-in-out infinite; }
+.m .cc-card.done .cc-ic { color: #fff; background: var(--teal); }
+.m .cc-tx { display: flex; flex-direction: column; min-width: 0; }
+.m .cc-tx b { font-size: 14.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m .cc-tx small { font-size: 12.5px; color: var(--sub); }
+.m .cc-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; white-space: normal; }
+.m .cc-links a { font-size: 13.5px; font-weight: 600; text-decoration: none; padding: 5px 11px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg); }
+@keyframes cc-pulse { 0%, 100% { opacity: 1; transform: scale(1) } 50% { opacity: .55; transform: scale(.9) } }
+@media (prefers-reduced-motion: reduce) { .m .cc-card .cc-ic svg { animation: none } }
