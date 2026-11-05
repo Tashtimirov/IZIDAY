@@ -82,13 +82,15 @@ function intro() {
   const draw = (dir = 0) => {
     list = cards()
     const last = i === list.length - 1
+    // друг без виджета: последняя карточка сразу ведёт ко входу через Google (friends.js)
+    const gl = last && !kid() && !D.conn && window.FRIEND && FRIEND.on()
     ov.className = "ob-ov" + (kid() ? " kid" : "")
-    ov.innerHTML = `<div class="ob-card ${dir > 0 ? "in-r" : dir < 0 ? "in-l" : "in"}">${list[i]}</div>
+    ov.innerHTML = `<div class="ob-card ${dir > 0 ? "in-r" : dir < 0 ? "in-l" : "in"}">${list[i]}${gl ? `<div class="ob-p">Осталось войти через Google — и всё настроится само.</div>` : ""}</div>
       <div class="ob-foot"><div class="ob-dots">${list.map((_, k) => `<i class="${k === i ? "on" : ""}"></i>`).join("")}</div>
-      <button class="ob-btn" data-ob="next">${last ? (kid() ? "Поехали!" : "Начать") : "Дальше"}</button>
-      <button class="ob-skip" data-ob="skip" ${last ? "hidden" : ""}>Пропустить</button></div>`
+      <button class="ob-btn" data-ob="next">${gl ? FRIEND.gico + "Войти через Google" : last ? (kid() ? "Поехали!" : "Начать") : "Дальше"}</button>
+      <button class="ob-skip" data-ob="skip" ${last && !gl ? "hidden" : ""}>${gl ? "Позже" : "Пропустить"}</button></div>`
     ov.querySelectorAll("[data-who]").forEach(b => b.onclick = () => { setWho(b.dataset.who); draw() })
-    ov.querySelector('[data-ob="next"]').onclick = () => last ? done() : (i++, draw(1))
+    ov.querySelector('[data-ob="next"]').onclick = () => last ? (done(), gl && setTimeout(() => FRIEND.login(), 340)) : (i++, draw(1))
     ov.querySelector('[data-ob="skip"]').onclick = done
   }
   // Листание пальцем: влево — дальше, вправо — назад

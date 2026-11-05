@@ -56,6 +56,10 @@ for country in ["ru", "th"]:
 (DIST / "Proxy.gs").write_text((ROOT / "src/proxy/Proxy.gs").read_text().replace("__AI_PROXY_TOKEN__", sec.get("ai_proxy_token", "")))
 (DIST / "Code-RU.gs").write_text((ROOT / "src/sheet/Code.gs").read_text().replace("__SHEET_SECRET__", "").replace("__CARD_SKIP__", ""))
 (DIST / "Code.gs").write_text(fill((ROOT / "src/sheet/Code.gs").read_text()))
+# Общий сервер для друзей: вход через Google, у каждого своя таблица (build_friends.py)
+sys.path.insert(0, str(ROOT))
+from build_friends import friends_gs
+(DIST / "Friends.gs").write_text(friends_gs(sec.get("google_client", "")))
 
 mac = DIST / "MyDay-Mac"
 shutil.copytree(ROOT / "src/mac", mac)

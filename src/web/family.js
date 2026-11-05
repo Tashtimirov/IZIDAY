@@ -629,7 +629,7 @@ async function ai(body, signal) {
 }
 // Свой ключ — в «Настройках»: три шага, проверка и сохранение только на этом телефоне
 function keyCard() {
-  const src = D.conn && D.conn.key ? "из виджета" : D.myKey ? "свой, вставлен вручную" : keyOn() ? `общий ключ семьи «${F().name || D.fam.fname || ""}»` : ""
+  const src = D.conn && D.conn.friend ? "общий ключ IZIDAY" : D.conn && D.conn.key ? "из виджета" : D.myKey ? "свой, вставлен вручную" : keyOn() ? `общий ключ семьи «${F().name || D.fam.fname || ""}»` : ""
   return `<div class="card fcard" id="fkey"><h2>Ключ Claude</h2><div class="row"><span class="ftile" style="background:${src ? "#0A9F6E1F" : "#FF9F0A1F"}">${ic(src ? "check" : "bulb", 22, src ? "#0A9F6E" : "#FF9F0A")}</span>
     <div class="grow"><div class="t">${src ? "Подключён" : "Не подключён"}</div><div class="s">${src ? esc(src) : `без ключа работает всё, кроме разговора с ${esc(iziName())} и калорий по фото`}</div></div>
     ${D.conn && D.conn.key ? "" : D.myKey ? `<button class="btn small" data-f="keydel">Убрать</button>` : `<button class="btn small primary" data-f="keyadd">Подключить</button>`}</div>

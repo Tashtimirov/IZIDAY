@@ -507,6 +507,7 @@ async function claude(body, timeout = 90000, opts = {}) {
   if (opts.signal) { if (opts.signal.aborted) ctl.abort(); else opts.signal.addEventListener("abort", () => ctl.abort()) }
   const send = async (b, beta) => {
     if (aiKey() === "fam") return await FAM.ai(b, ctl.signal)
+    if (aiKey() === "srv") return await FRIEND.ai(b, ctl.signal)   // друзья: Изи через общий сервер, ключ у владельца
     const headers = { "x-api-key": aiKey(), "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-dangerous-direct-browser-access": "true" }
     if (beta) headers["anthropic-beta"] = beta
     const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: ctl.signal, headers, body: JSON.stringify(b) })
@@ -587,7 +588,7 @@ const today = list => live(list).filter(x => sameDay(x.date, Date.now())).sort((
 const waterToday = () => today(D.water).reduce((s, w) => s + (w.ml || 0), 0)
 // Еда: фото → оценка → сохранить / уточнить / поправить калории
 async function foodFlow(dataUrl, hint) {
-  if (!aiKey()) return ui.info("Нужен ключ Claude", "Калории по фото считает Claude. Подключите ключ: шестерёнка → «Ключ Claude» → «Подключить», это около двух минут.")
+  if (!aiKey()) { if (!D.conn && window.FRIEND && FRIEND.on()) return FRIEND.ask(); return ui.info("Нужен ключ Claude", "Калории по фото считает Claude. Подключите ключ: шестерёнка → «Ключ Claude» → «Подключить», это около двух минут.") }
   while (true) {
     const wait = sheet(`<h3>🍽 Считаю калории…</h3>${dataUrl ? `<img class="photo-prev" src="${dataUrl}">` : ""}<div class="msg">Claude смотрит на ${dataUrl ? "фото" : "описание"}, это 5–15 секунд.</div>`)
     let est
@@ -899,7 +900,8 @@ const AGENT_TOOLS = [
 ]
 const routes = () => (D.conn && Array.isArray(D.conn.routes) ? D.conn.routes : [])
 function chatTools() {
-  const list = AGENT_TOOLS.map(t => Object.assign({}, t, { description: typeof t.description === "function" ? t.description() : t.description }))
+  const list = AGENT_TOOLS.filter(t => !(D.conn && D.conn.friend && /^mail_/.test(t.name)))   // у друзей почты нет
+    .map(t => Object.assign({}, t, { description: typeof t.description === "function" ? t.description() : t.description }))
   const r = routes()
   if (r.length) list.push({ name: "claude_code",
     description: "Передать задачу в Claude Code: запускается новая сессия, она работает сама (код, документы, исследование, " +
@@ -1610,7 +1612,7 @@ async function chatSend(text, opts = {}) {
   if (askWait) { const w = askWait; askWait = null; setBusyUI(); D.chat.push({ role: "user", text, at: Date.now(), voice: !!opts.voice, local: true }); save(false); renderChat(); w(text); return }
   if (chatBusy) { toast(`${iziName()} ещё отвечает…`); return }
   memorize()
-  if (!aiKey()) { setTab("more"); return ui.info("Нужен ключ Claude", "Здесь откроется «Ключ Claude» → «Подключить»: три шага, около двух минут. Если вы в семье, где включён общий ключ, он подключится сам.") }
+  if (!aiKey()) { if (!D.conn && window.FRIEND && FRIEND.on()) return FRIEND.ask(); setTab("more"); return ui.info("Нужен ключ Claude", "Здесь откроется «Ключ Claude» → «Подключить»: три шага, около двух минут. Если вы в семье, где включён общий ключ, он подключится сам.") }
   let staged = null
   if (chatAtt && !opts.attach) {   // фото или файл ждали подписи — уходят вместе с этим сообщением
     staged = chatAtt; chatAtt = null; attTray()
@@ -2109,7 +2111,7 @@ function renderTop() {
   iziPaint()
   const fl = $("#fab span"); if (fl && fl.textContent !== iziName()) { fl.textContent = iziName(); $("#fab").setAttribute("aria-label", `${iziName()}: нажмите — чат, держите — голосовая команда`) }
   let sub = ""
-  if (!D.conn) sub = "Не подключено к виджету"
+  if (!D.conn) sub = window.FRIEND && FRIEND.on() ? "Войдите через Google" : "Не подключено к виджету"
   else if (D.sync.error) sub = D.sync.error
   else if (tab === "cal") { const S = calS(), st = calStart || new Date(); sub = `${core.cap(core.MONTH_NOM[st.getMonth()])} · ${({ 1: "день", 3: "3 дня", 7: "неделя", m: "месяц" })[S.view]}` }
   else if (tab === "money") { const t = core.monthTotals(live(D.money), monthKey || core.monthKey(new Date())); sub = `${core.monthTitle(monthKey || core.monthKey(new Date()))} · −${core.money(t.expense)}` }
@@ -2128,7 +2130,8 @@ function renderToday() {
   const isToday = sameDay(selDay, t0)
   const counts = {}
   let html = ""
-  if (!D.conn) html += `<div class="banner"><b>Подключите приложение к виджету</b>Нажмите «Подключить»: откроется Scriptable, сам скопирует код, а вы вернётесь сюда кнопкой «◀ IZIDAY» слева вверху и нажмёте «Вставить».<div class="btns" style="margin-top:8px"><button class="btn" data-do="connect">Ввести код</button><button class="btn primary" data-do="autoconnect">🔗 Подключить</button></div></div>`
+  if (!D.conn && window.FRIEND && FRIEND.on()) html += FRIEND.banner()
+  else if (!D.conn) html += `<div class="banner"><b>Подключите приложение к виджету</b>Нажмите «Подключить»: откроется Scriptable, сам скопирует код, а вы вернётесь сюда кнопкой «◀ IZIDAY» слева вверху и нажмёте «Вставить».<div class="btns" style="margin-top:8px"><button class="btn" data-do="connect">Ввести код</button><button class="btn primary" data-do="autoconnect">🔗 Подключить</button></div></div>`
   else if (!gcalOn() && D.snap && pendingOps().length) html += `<div class="banner"><b>${ei("phone")}${pendingOps().length} ${plural(pendingOps().length, "изменение ждёт", "изменения ждут", "изменений ждут")} внесения в iPhone</b>Календарь и напоминания iPhone меняет только Scriptable. Нажмите — он внесёт сейчас и вернёт вас сюда.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="run-widget">Внести сейчас</button></div></div>`
   else if (!gcalOn() && D.gcal && D.gcal.error) html += `<div class="banner"><b>Google Календарь не ответил</b>${esc(D.gcal.error)}</div>`
   // Дни — лентой-каруселью: листаются пальцем, 7 видно сразу; лента ±10 недель вокруг выбранной недели
@@ -2326,6 +2329,9 @@ function renderMore() {
   if (!standalone()) html += `<div class="banner"><b>Поставьте на экран «Домой»</b>Нажмите «Поделиться» ⎋ внизу Safari → «На экран «Домой»». Приложение будет открываться отдельно и мгновенно.</div>`
   const z = IZI()
   html += iziCard()
+  if (c && c.friend) html += FRIEND.card()
+  else if (!c && window.FRIEND && FRIEND.on()) html += FRIEND.card()
+  else {
   html += `<div class="card"><h2>Связь с виджетом</h2>`
   if (c) html += `<div class="set"><span>Таблица</span><span class="ok">✓ ${esc((c.hook.match(/\/s\/(.{8})/) || [, "подключена"])[1])}</span></div>
       <div class="set"><span>Последний обмен</span><span>${esc(ago(D.sync.at))}</span></div>
@@ -2338,6 +2344,7 @@ function renderMore() {
       ${!gcalOn() && pendingOps().length ? `<div class="muted small" style="margin-top:8px">В очереди ${pendingOps().length}: ${esc(pendingOps().map(o => OP_LABEL[o.tool] || o.tool).join(", "))}. Виджет внесёт их сам при обновлении; кнопка «Внести сейчас» на секунду откроет Scriptable.</div>` : ""}`
   html += `<div class="btns" style="margin-top:10px"><button class="btn ${c ? "" : "primary"}" data-do="connect">${c ? "Подключить заново" : ei("link") + "Подключить"}</button>${c ? '<button class="btn red" data-do="disconnect">Отключить</button>' : ""}</div>
     <div class="muted small" style="margin-top:8px">Код подключения даёт виджет: в Scriptable меню → 📱 Приложение «Мой день». В нём ключ Claude и ключ таблицы — он хранится только на этом телефоне.</div></div>`
+  }
   const g = H()
   html += `<div class="card"><h2>Уведомления</h2><div class="set"><span>Подсказки и напоминания</span><span id="push-state">…</span></div>
     <div class="muted small">Подсказки помощника, напоминания, вода и «пора выезжать» приходят прямо от IZIDAY: их по расписанию (каждые 5 минут) отправляет таблица. Для «пора выезжать» разрешите приложению место.</div>
@@ -2559,6 +2566,7 @@ const DO = {
   sync: () => (!D.conn || !D.conn.hook) ? DO.connect() : sync().then(ok => toast(ok ? "Обновлено" : `Не получилось: ${D.sync.error || "нет связи"}`)),
   "run-widget": () => sync().then(runWidgetNow),
   autoconnect: () => autoConnect(),
+  glogin: () => FRIEND.login(), glogout: () => FRIEND.logout(),
   connect: async () => {
     const t = await ui.ask("Подключить к виджету", "Вставьте код из виджета: Scriptable → меню → 📱 Приложение «Мой день» → «Скопировать код подключения».", "", { multiline: true, ok: "Подключить" })
     if (t) connect(t)
@@ -5349,7 +5357,7 @@ function ttsUnlock() { try { const u = new SpeechSynthesisUtterance(" "); u.volu
 var TALK = null
 function talkOpen(o = {}) {
   if (TALK) { if (TALK.pin && !o.pin) talkPin(false); return }
-  if (!aiKey()) { setTab("more"); return ui.info("Нужен ключ Claude", "Подключите приложение кодом из виджета: в Scriptable меню → 📱 Приложение «Мой день» → «Подключить приложение».") }
+  if (!aiKey()) { if (!D.conn && window.FRIEND && FRIEND.on()) return FRIEND.ask(); setTab("more"); return ui.info("Нужен ключ Claude", "Подключите приложение кодом из виджета: в Scriptable меню → 📱 Приложение «Мой день» → «Подключить приложение».") }
   if (voice) voiceReset()
   ttsUnlock()
   const el = document.createElement("div"); el.id = "talk"

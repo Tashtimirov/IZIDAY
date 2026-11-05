@@ -53,8 +53,17 @@ def minify(p):
     if r.returncode:
         print(f"Внимание: {p.name} не сжат (esbuild недоступен): {r.stderr.strip()[:200]}")
     return not r.returncode
+# Вход для друзей: адрес общего сервера и вход Google (оба открытые, не секреты) — из secrets.json
+import json as _json
+_sec = _json.loads((ROOT / "secrets.json").read_text()) if (ROOT / "secrets.json").exists() else {}
+FRIENDS_HOOK = _sec.get("friends_hook", "")
+_f = OUT / "friends.js"
+_f.write_text(_f.read_text().replace("__FRIENDS_HOOK__", FRIENDS_HOOK).replace("__GOOGLE_CLIENT__", _sec.get("google_client", "")))
+if FRIENDS_HOOK and FRIENDS_HOOK == _sec.get("sheet_hook"):
+    sys.exit("friends_hook совпадает с личной таблицей — так нельзя")
+
 if "--no-minify" not in sys.argv:
-    for name in ["core.js", "app.js", "gami.js", "quest.js", "onb.js", "health.js", "fast.js", "family.js", "album.js", "mem.js", "design.js", "order.js", "tablet.js", "style.css", "gami.css", "quest.css", "onb.css", "health.css", "fast.css", "family.css", "album.css", "mem.css", "design.css", "order.css", "tablet.css"]:
+    for name in ["core.js", "app.js", "friends.js", "gami.js", "quest.js", "onb.js", "health.js", "fast.js", "family.js", "album.js", "mem.js", "design.js", "order.js", "tablet.js", "style.css", "gami.css", "quest.css", "onb.css", "health.css", "fast.css", "family.css", "album.css", "mem.css", "design.css", "order.css", "tablet.css"]:
         if not minify(OUT / name):
             break
 
@@ -62,6 +71,8 @@ if "--no-minify" not in sys.argv:
 for p in OUT.rglob("*"):
     if p.is_file() and p.suffix in (".js", ".html", ".css", ".json", ".webmanifest"):
         t = p.read_text()
+        if FRIENDS_HOOK:
+            t = t.replace(FRIENDS_HOOK, "")   # общий сервер друзей — открытый адрес, его и должно быть видно
         for private in ["docs.google.com/spreadsheets/d/1", "script.google.com/macros/s/", "sk-ant", "трекер", "Prime Thai", "PTP", "Семейная группа", "trig_0", "trig_1"]:
             if private in t:
                 sys.exit(f"В {p.relative_to(OUT)} осталось личное: {private}")
