@@ -56,6 +56,7 @@ await page.route("https://script.google.com/**", async route => {
   const body = route.request().postData()
   await route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(sheet.post(body)) })
 })
+await page.route("https://open.er-api.com/**", r => r.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify({ rates: { THB: 1, USD: 0.0283, RUB: 2.33 } }) }))   // курс валют
 await page.route("https://api.open-meteo.com/**", route => route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "{}" }))   // погода на «Сегодня»
 await page.route("https://api.anthropic.com/**", async route => {
   const req = route.request()

@@ -120,7 +120,7 @@ const STEPS = () => [
   ["water", "drop", kid() ? "Отметь стакан воды" : "Отметьте стакан воды", () => has("water"), () => addWater(H().glass || 250)],
   ["money", "money", kid() ? "Запиши, что потратил" : "Запишите первую трату", () => has("money"), () => moneyForm("expense")],
   ["top3", "star", kid() ? "Выбери три главных дела" : "Выберите три главных дела", () => live(D.goals || []).some(g => g.kind === "top3"), () => top3Pick()],
-  ["plan", "target", kid() ? "Загадай мечту в «Планах»" : "Добавьте цель или список в «Планы»", () => live(D.goals || []).some(g => !/^(top3|daynote|dtpl|reward|spend|ach|freeze)$/.test(g.kind || "")), () => setTab("plans")],
+  ["plan", "target", kid() ? "Загадай мечту в «Планах»" : "Добавьте цель или список в «Планы»", () => live(D.goals || []).some(g => /^(month|wish|dream|list|chore)$/.test(g.kind || "") || (D.habits && live(D.habits).length)), () => setTab("plans")],
   ["push", "bell", "Включите уведомления", () => typeof Notification !== "undefined" && Notification.permission === "granted", () => pushEnable()],
 ]
 function stepsHTML() {

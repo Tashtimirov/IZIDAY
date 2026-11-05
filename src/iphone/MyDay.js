@@ -1644,7 +1644,7 @@ function waterGap(d, now = new Date()) {
 }
 
 // Одна строка: еда · вода · активность, каждая часть открывает своё
-function healthStrip(parent, d, entries) {
+function healthStrip(parent, d, entries, spend) {
   const s = parent.addStack()
   s.centerAlignContent()
   const a = d.act, H = CONFIG.health
@@ -1667,7 +1667,8 @@ function healthStrip(parent, d, entries) {
     s.addSpacer()
     const spent = entries.filter(e => e.type === "expense" && sameDay(new Date(e.date), new Date())).reduce((x, e) => x + e.amount, 0)
     tile(p => { const c = p.addStack(); c.size = new Size(26, 26); c.cornerRadius = 13; c.backgroundColor = C.card; c.centerAlignContent(); c.addSpacer(); symbol(c, "creditcard.fill", C.gold, 12); c.addSpacer() },
-      spent ? `−${moneyShort(spent).replace(` ${CONFIG.currency}`, "")}` : "0", `${CONFIG.currency} сегодня`, actURL("report"))
+      spend ? moneyShort(spend.today).replace(` ${CONFIG.currency}`, "") : spent ? `−${moneyShort(spent).replace(` ${CONFIG.currency}`, "")}` : "0",
+      spend ? `можно ${CONFIG.currency}` : `${CONFIG.currency} сегодня`, actURL("report"))
   }
 }
 
@@ -1900,9 +1901,12 @@ async function buildWidget(family, param) {
   w.addSpacer(8)
   reminderPanel(cardBox(w, "Напоминания", rems.length, HOME_URL), rems, Math.max(2, CONFIG.large.rows - used), true)
   w.addSpacer()
-  healthStrip(w, health, entries)
+  // «сегодня можно потратить» считает приложение и кладёт в goals (запись id "spend")
+  const spend = (await loadJSON("goals.json")).find(g => g && g.id === "spend" && !g.deleted && g.day === dayKeyW(new Date()) && g.today != null)
+  healthStrip(w, health, entries, spend)
   return w
 }
+const dayKeyW = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 
 // ───────────── Диалоги ─────────────
 // Из Siri / Быстрой команды окна показывать нельзя (Scriptable падает) — вопросы молча отменяются, помощник спросит словами

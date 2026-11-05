@@ -118,7 +118,10 @@ function doGet() {
 function doPost(e) {
   let body;
   try { body = JSON.parse(e.postData.contents); } catch (err) { return out_({ ok: false, error: "bad json" }); }
+  // Лига друзей: без ключа таблицы, только по коду лиги — друзья видят друг у друга лишь баллы, ранг и серию
+  if (body.league && !body.secret) return out_(league_(body.league, false));
   if (!checkSecret_(body.secret)) return out_({ ok: false, error: "forbidden" });
+  if (body.league) return out_(league_(body.league, true));
 
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -1067,4 +1070,47 @@ function vapidAuth_(endpoint) {
   const enc = o => b64u_(Utilities.newBlob(JSON.stringify(o)).getBytes());
   const head = enc({ typ: "JWT", alg: "ES256" }) + "." + enc({ aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: PUSH.sub });
   return `vapid t=${head}.${es256_(head, BigInt("0x" + v.d))}, k=${v.pub}`;
+}
+
+// ── Лига друзей IZIDAY: недельные баллы участников и вызовы. Хранится в свойствах скрипта «lg_<код>».
+// Хозяин (с ключом таблицы) создаёт лигу; друзья вступают по ссылке с кодом и присылают только свои итоги.
+const LEAGUE = { max: 12, keepWeeks: 6 };
+function league_(q, owner) {
+  const props = PropertiesService.getScriptProperties();
+  const clean = (v, n) => String(v == null ? "" : v).replace(/[<>]/g, "").slice(0, n || 40);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    if (q.op === "new") {
+      if (!owner) return { ok: false, error: "forbidden" };
+      const code = Utilities.getUuid().replace(/-/g, "").slice(0, 12);
+      const lg = { code, name: clean(q.name, 40) || "Лига", created: Date.now(), members: {}, challenges: [] };
+      props.setProperty("lg_" + code, JSON.stringify(lg));
+      return { ok: true, league: lg };
+    }
+    const code = clean(q.code, 20), raw = code && props.getProperty("lg_" + code);
+    if (!raw) return { ok: false, error: "нет такой лиги" };
+    const lg = JSON.parse(raw), id = clean(q.id, 30), now = Date.now();
+    let changed = false;
+    if (q.op === "put" && id) {
+      if (!lg.members[id] && Object.keys(lg.members).length >= LEAGUE.max) return { ok: false, error: "в лиге уже " + LEAGUE.max + " человек" };
+      const m = lg.members[id] || { joined: now, weeks: {} };
+      m.name = clean(q.name, 24) || m.name || "Друг"; m.rank = clean(q.rank, 20); m.level = +q.level || 1; m.streak = +q.streak || 0; m.at = now;
+      const wk = clean(q.week, 10);
+      if (/^\d{4}-\d\d-\d\d$/.test(wk)) m.weeks[wk] = { pts: +q.pts || 0, steps: +q.steps || 0, water: +q.water || 0 };
+      const keys = Object.keys(m.weeks).sort(); while (keys.length > LEAGUE.keepWeeks) delete m.weeks[keys.shift()];
+      lg.members[id] = m; changed = true;
+    }
+    if (q.op === "leave" && id && lg.members[id]) { delete lg.members[id]; changed = true; }
+    if (q.op === "challenge" && id && lg.members[id]) {
+      const kind = ["pts", "steps", "water"].indexOf(q.kind) >= 0 ? q.kind : "pts";
+      lg.challenges = (lg.challenges || []).filter(c => c.week >= clean(q.week, 10) || false).slice(-10);
+      lg.challenges.push({ id: "c" + now.toString(36), by: id, kind, week: clean(q.week, 10), title: clean(q.title, 60), stake: clean(q.stake, 80), with: (q.with || []).map(x => clean(x, 30)).slice(0, 11) });
+      changed = true;
+    }
+    if (changed) props.setProperty("lg_" + code, JSON.stringify(lg));
+    return { ok: true, league: lg };
+  } finally {
+    lock.releaseLock();
+  }
 }
