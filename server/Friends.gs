@@ -1353,7 +1353,7 @@ function family_(q, owner) {
 // Почта, Google Календарь, банк и Claude Code владельца этому скрипту недоступны вовсе: их служб нет в коде,
 // поэтому Google и не спрашивает владельца о доступе к ним (build_friends.py это проверяет).
 //
-// Свойства скрипта (задаёт владелец): ANTHROPIC_KEY — ключ Claude для Изи; необязательно: MODEL, ALLOW (почты через запятую:
+// Свойства скрипта (задаёт владелец): ANTHROPIC_KEY — ключ Claude для Изи, GOOGLE_CLIENT — номер входа Google; необязательно: MODEL, ALLOW (почты через запятую:
 // войти смогут только они), AI_DAY (запросов к Claude в день на человека).
 
 const FR = { client: "", max: 30, aiDay: 80, aiAll: 1500, model: "claude-haiku-5-5", maxTokens: 4000,
@@ -1446,11 +1446,12 @@ function doPost(e) {
 // Телефон получает от Google id_token (подписанный Google пропуск с почтой и именем) и присылает сюда.
 // Google сам подтверждает пропуск; aud — наш вход, а не чужого сайта
 function login_(q) {
-  if (!FR.client || FR.client.indexOf("__") === 0) return { ok: false, error: "вход через Google ещё не настроен" };
+  const client = GP_().getProperty("GOOGLE_CLIENT") || FR.client;   // номер входа Google можно задать и свойством скрипта
+  if (!client || client.indexOf("__") === 0) return { ok: false, error: "вход через Google ещё не настроен" };
   const r = UrlFetchApp.fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(String(q.id_token || "")), { muteHttpExceptions: true });
   if (r.getResponseCode() !== 200) return { ok: false, error: "Google не подтвердил вход — попробуйте ещё раз" };
   let t; try { t = JSON.parse(r.getContentText()); } catch (e) { return { ok: false, error: "Google ответил непонятно" }; }
-  if (t.aud !== FR.client || !/^(https:\/\/)?accounts\.google\.com$/.test(t.iss || "") || !(Number(t.exp) * 1000 > Date.now()) ||
+  if (t.aud !== client || !/^(https:\/\/)?accounts\.google\.com$/.test(t.iss || "") || !(Number(t.exp) * 1000 > Date.now()) ||
     String(t.email_verified) !== "true" || !t.sub) return { ok: false, error: "вход не подтверждён" };
   if (q.nonce && t.nonce !== q.nonce) return { ok: false, error: "вход устарел — нажмите «Войти» ещё раз" };
   const email = String(t.email || "").toLowerCase();
