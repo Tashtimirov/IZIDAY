@@ -621,18 +621,28 @@ async function foodFlow(dataUrl, hint) {
 }
 async function foodMenu() {
   const i = await ui.choose("🍽 Еда", "", ["📷 Сфотографировать", "🖼 Выбрать из фото", "⌨️ Описать словами", "✏️ Вписать калории вручную"])
-  if (i === 0) $("#photo").click()
+  if (i === 0) seriesCam()
   if (i === 1) $("#photo-lib").click()
   if (i === 2) { const t = await ui.ask("Что съели?", "Например: тарелка том яма и рис", "", { ok: "Посчитать" }); if (t) foodFlow(null, t) }
   if (i === 3) foodForm()
 }
 function onPhoto(input) {
   input.onchange = async () => {
-    const f = input.files && input.files[0]
+    const fs = Array.from(input.files || [])
     input.value = ""
-    if (!f) return
-    try { await scanFile(f) } catch (e) { ui.info("Фото", e.message) }
+    if (fs.length) await scanFiles(fs)
   }
+}
+// Несколько фото сразу: из галереи можно выбрать пачку, всё ложится в одну карточку над полем и уходит Изи одним сообщением
+const ATT_MAX = 10
+const attCount = () => chatAtt ? chatAtt.length : 0
+async function scanFiles(fs) {
+  const room = ATT_MAX - attCount()
+  if (room <= 0) return toast(`За раз — до ${ATT_MAX} вложений. Отправьте эти, потом добавьте ещё`)
+  if (fs.length > room) toast(`За раз — до ${ATT_MAX} вложений, взял первые ${room}`)
+  fs = fs.slice(0, room)
+  if (fs.length > 2) toast(`Готовлю ${fs.length} фото…`)
+  for (const f of fs) { try { await scanFile(f) } catch (e) { ui.info("Фото", e.message) } }
 }
 // ── Фото или файл → помощник сам понимает, что это: еда, счёт, чек или другое ──
 const SCAN_PROMPT = "Разбери это вложение по правилам для фото и документов."
@@ -657,42 +667,66 @@ async function scanFile(f) {
 }
 // Вложение не уходит сразу: над полем появляется карточка, можно добавить подпись текстом или голосом («это мой обед»)
 // и отправить вместе. «Отправить» на карточке — без подписи. Смахнуть карточку — убрать вложение
-let chatAtt = null
+let chatAtt = null   // вложения, ждущие отправки: [{ att, label }], до ATT_MAX
 function attStage(att, label) {
-  chatAtt = { att, label }
+  if (attCount() >= ATT_MAX) return toast(`За раз — до ${ATT_MAX} вложений`)
+  chatAtt = (chatAtt || []).concat({ att, label })
   if (!chatOn()) setTab("chat"); else attTray()
 }
-function attCaption(c, text, voice) {   // что увидит Изи и что останется в ленте
-  const a = c.att
+const attIsVideo = c => /Видео/.test(c.label)
+function attSum(list) {   // «3 фото», «2 фото и файл»
+  const ph = list.filter(c => c.att.type !== "document" && !attIsVideo(c)).length, vd = list.filter(attIsVideo).length, dc = list.length - ph - vd
+  const w = (n, one, many) => !n ? "" : n === 1 ? one : `${n} ${many}`
+  return [w(ph, "фото", "фото"), w(vd, "видео", "видео"), w(dc, "файл", dc < 5 ? "файла" : "файлов")].filter(Boolean).join(" и ")
+}
+function attCaption(list, text, voice) {   // что увидит Изи и что останется в ленте
+  const one = list.length === 1, c = list[0]
+  const label = one ? c.label : `📷 ${attSum(list)}`, thumbs = list.every(x => x.att.thumb)
   return {
-    prompt: SCAN_PROMPT + (text ? `\nПодпись пользователя к вложению${voice ? " (сказал голосом)" : ""}: «${text}». Она главнее того, что видно: из неё понятно, что это и что с этим сделать.` : ""),
-    show: !text ? c.label : a.thumb ? text : `${c.label}\n${text}`,
+    prompt: SCAN_PROMPT + (one ? "" : `\nВложений ${list.length} — это одна серия: смотри их вместе (стороны одного предмета, страницы одного документа, несколько блюд или чеков). Одно и то же, снятое дважды, не записывай дважды; разное — разбери по очереди.`) +
+      (text ? `\nПодпись пользователя к ${one ? "вложению" : "вложениям"}${voice ? " (сказал голосом)" : ""}: «${text}». Она главнее того, что видно: из неё понятно, что это и что с этим сделать.` : ""),
+    show: !text ? label : thumbs ? text : `${label}\n${text}`,
   }
 }
 function attTray() {
   const t = $("#att-tray"); if (!t) return
   const bar = t.closest(".chat-bar"), inp = $("#chat-in")
   if (bar) bar.classList.toggle("has-att", !!chatAtt)
-  if (inp && !voice) inp.placeholder = chatAtt ? "Добавьте подпись…" : "Напишите или скажите…"
+  if (inp && !voice) inp.placeholder = chatAtt ? (chatAtt.length > 1 ? "Подпись ко всем…" : "Добавьте подпись…") : "Напишите или скажите…"
   if (!chatAtt) { t.classList.remove("show"); setTimeout(() => { if (!chatAtt) t.innerHTML = "" }, 260); return }
-  const a = chatAtt.att, doc = a.type === "document", kind = doc ? "Файл" : /Видео/.test(chatAtt.label) ? "Видео" : "Фото"
-  t.innerHTML = `<div class="att-card">${a.thumb ? `<img src="${esc(a.thumb)}" alt="">` : `<span class="att-doc">${ICO.doc}</span>`}
-    <div class="att-t"><b>${esc(doc ? a.name : kind)}</b><small>Добавьте подпись или отправьте так</small></div>
+  const n = chatAtt.length, c = chatAtt[0], a = c.att, doc = a.type === "document"
+  const th = (x, k) => `<button class="att-th" data-k="${k}" aria-label="Убрать">${x.att.thumb ? `<img src="${esc(x.att.thumb)}" alt="">` : `<span class="att-doc">${ICO.doc}</span>`}<i>Убрать</i></button>`
+  const add = n < ATT_MAX ? `<button class="att-add" aria-label="Добавить ещё">${ICO.plus}</button>` : ""
+  const title = n > 1 ? attSum(chatAtt) : doc ? a.name : attIsVideo(c) ? "Видео" : "Фото"
+  const sub = n > 1 ? "Подпись — ко всем сразу. Нажмите на кадр, чтобы убрать" : "Добавьте подпись или отправьте так"
+  t.innerHTML = `<div class="att-card${n > 1 ? " multi" : ""}"><div class="att-strip">${chatAtt.map(th).join("")}${add}</div>
+    <div class="att-t"><b>${esc(title)}</b><small>${sub}</small></div>
     <button class="att-go" aria-label="Отправить без подписи">${ICO.send}</button></div>`
   requestAnimationFrame(() => t.classList.add("show"))
-  const card = $(".att-card", t)
+  const card = $(".att-card", t), strip = $(".att-strip", t)
+  if (n > 1) requestAnimationFrame(() => { strip.scrollLeft = strip.scrollWidth })
   $(".att-go", t).onclick = () => { const i = $("#chat-in"), v = i ? i.value : ""; if (i) { i.value = ""; grow(i) } chatSend(v) }
-  // смахнуть вниз или в сторону — убрать
-  let x0 = null, y0 = null, dx = 0, dy = 0
-  card.addEventListener("touchstart", e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = dy = 0; card.style.transition = "none" }, { passive: true })
-  card.addEventListener("touchmove", e => { if (x0 == null) return; dx = e.touches[0].clientX - x0; dy = Math.max(0, e.touches[0].clientY - y0)
+  // нажать на кадр — на нём «Убрать», нажать ещё раз — убрать только его
+  $$(".att-th", t).forEach(b => b.onclick = e => {
+    e.stopPropagation()
+    if (!b.classList.contains("pick")) { $$(".att-th.pick", t).forEach(x => x.classList.remove("pick")); return b.classList.add("pick") }
+    b.classList.add("gone")
+    setTimeout(() => { if (!chatAtt) return; chatAtt.splice(+b.dataset.k, 1); if (!chatAtt.length) chatAtt = null; attTray() }, 200)
+  })
+  card.addEventListener("click", () => $$(".att-th.pick", t).forEach(x => x.classList.remove("pick")))
+  const addB = $(".att-add", t)
+  if (addB) addB.onclick = e => { e.stopPropagation(); const p = $(".chat-bar .cam"); if (p) plusMenu(p) }
+  // смахнуть вниз или в сторону — убрать всё (на полоске кадров в сторону — это прокрутка)
+  let x0 = null, y0 = null, dx = 0, dy = 0, inStrip = false
+  card.addEventListener("touchstart", e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = dy = 0; inStrip = n > 1 && !!e.target.closest(".att-strip"); card.style.transition = "none" }, { passive: true })
+  card.addEventListener("touchmove", e => { if (x0 == null) return; dx = inStrip ? 0 : e.touches[0].clientX - x0; dy = Math.max(0, e.touches[0].clientY - y0)
     card.style.transform = `translate(${dx}px, ${dy}px)`; card.style.opacity = String(1 - Math.min(.7, (Math.abs(dx) + dy) / 220)) }, { passive: true })
   card.addEventListener("touchend", () => { card.style.transition = ""
     if (Math.abs(dx) > 70 || dy > 40) { card.style.transform = `translate(${dx * 2}px, ${dy * 2 + 40}px)`; card.style.opacity = "0"; attDrop() }
     else { card.style.transform = ""; card.style.opacity = "" }
     x0 = null })
 }
-function attDrop() { chatAtt = null; attTray(); toast("Вложение убрано") }
+function attDrop() { const n = attCount(); chatAtt = null; attTray(); toast(n > 1 ? "Вложения убраны" : "Вложение убрано") }
 function videoFrame(f) {
   return new Promise((res, rej) => {
     const u = URL.createObjectURL(f), v = document.createElement("video")
@@ -1617,10 +1651,12 @@ async function chatSend(text, opts = {}) {
   if (chatAtt && !opts.attach) {   // фото или файл ждали подписи — уходят вместе с этим сообщением
     staged = chatAtt; chatAtt = null; attTray()
     const c = attCaption(staged, text, opts.voice)
-    opts = Object.assign({}, opts, { attach: staged.att, label: c.show, caption: text })
+    opts = Object.assign({}, opts, { attach: staged.map(x => x.att), label: c.show, caption: text })
     text = c.prompt
   }
-  const item = { role: "user", text: opts.label || text, prompt: opts.label ? text : undefined, at: Date.now(), voice: !!opts.voice, thumb: opts.attach && opts.attach.thumb || undefined }
+  const item = { role: "user", text: opts.label || text, prompt: opts.label ? text : undefined, at: Date.now(), voice: !!opts.voice }
+  const thumbs = (opts.attach || []).map(a => a.thumb).filter(Boolean)
+  if (thumbs.length === 1) item.thumb = thumbs[0]; else if (thumbs.length) item.thumbs = thumbs
   D.chat.push(item)
   chatBusy = true
   chatLinks = []
@@ -1631,8 +1667,8 @@ async function chatSend(text, opts = {}) {
   let reply
   const ctx = chatContext()
   if (opts.attach && ctx.length) {   // само вложение уходит только в этот запрос; в истории остаются миниатюра и ответ помощника
-    const a = opts.attach, last = ctx[ctx.length - 1]
-    last.content = [{ type: a.type, source: { type: "base64", media_type: a.media_type, data: a.data } }, { type: "text", text: last.content }]
+    const last = ctx[ctx.length - 1]
+    last.content = opts.attach.map(a => ({ type: a.type, source: { type: "base64", media_type: a.media_type, data: a.data } })).concat({ type: "text", text: last.content })
   }
   chatStopCtl = new AbortController()
   setBusyUI(true)
@@ -1655,7 +1691,7 @@ async function chatSend(text, opts = {}) {
   chatDraft = null
   talkHear(reply)
   if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
-  D.chat.filter(m => m.thumb).slice(0, -12).forEach(m => { delete m.thumb })   // миниатюры только у последних фото — память телефона
+  D.chat.filter(m => m.thumb || m.thumbs).slice(0, -12).forEach(m => { delete m.thumb; delete m.thumbs })   // миниатюры только у последних фото — память телефона
   save(false)
   sync()
   if (chatOn()) renderChat()
@@ -2242,8 +2278,8 @@ function chatItems() {
   return D.chat.slice(-60).map((m, i, arr) => {
     const isLast = i === arr.length - 1 && askWait
     const gi = D.chat.length - arr.length + i
-    const edit = m.role === "user" && !m.local && !m.thumb && !m.prompt && i >= arr.length - 6 ? `<button class="ed" data-edit="${gi}" aria-label="Изменить">${ICO.pen}</button>` : ""
-    return `<div class="m ${m.role}" data-i="${gi}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? ei("micl") : ""}${deEmo1(linkify(m.text))}${draftHTML(m)}${m.pro && m.opts && m.opts.length && i === arr.length - 1 ? `<div class="opts">${m.opts.map(o => `<button data-pro="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}${(m.links || []).length && !m.ccDone ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${ei("link")}Сессия Claude Code</a>`).join("")}</div>` : ""}${ccCards(m)}` + (window.memLine ? memLine(m) : "") +
+    const edit = m.role === "user" && !m.local && !m.thumb && !m.thumbs && !m.prompt && i >= arr.length - 6 ? `<button class="ed" data-edit="${gi}" aria-label="Изменить">${ICO.pen}</button>` : ""
+    return `<div class="m ${m.role}" data-i="${gi}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.thumbs ? `<div class="att-grid n${Math.min(m.thumbs.length, 4)}">${m.thumbs.slice(0, 4).map((u, k) => `<span><img src="${esc(u)}" alt="">${k === 3 && m.thumbs.length > 4 ? `<b>+${m.thumbs.length - 4}</b>` : ""}</span>`).join("")}</div>` : ""}${m.voice ? ei("micl") : ""}${deEmo1(linkify(m.text))}${draftHTML(m)}${m.pro && m.opts && m.opts.length && i === arr.length - 1 ? `<div class="opts">${m.opts.map(o => `<button data-pro="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}${(m.links || []).length && !m.ccDone ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${ei("link")}Сессия Claude Code</a>`).join("")}</div>` : ""}${ccCards(m)}` + (window.memLine ? memLine(m) : "") +
       `${m.opts && m.opts.length && isLast ? `<div class="opts">${m.opts.map(o => `<button data-opt="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}<span class="tm">${hm(new Date(m.at || Date.now()))}</span></div>`
   }).join("") + (chatBusy && !askWait ? `<div class="typing"><i></i><i></i><i></i>${chatStatus ? `<span class="st">${esc(chatStatus)}</span>` : ""}</div>` : "") + (last < 0 ? "" : "")
 }
@@ -3482,13 +3518,84 @@ function micPrompt() {
   const s = sheet(`<h3>🎤 Скажите помощнику</h3><div class="btns"><button class="btn gold" style="padding:18px;font-size:18px">Нажмите и говорите</button></div>`)
   $(".btn", s.el).onclick = () => { s.close(); micStart() }
 }
+// ── Камера серией: свой видоискатель в приложении, щёлкаете сколько нужно кадров подряд, «Готово» — все ложатся над полем ──
+// Системная камера iPhone отдаёт сайту только один снимок, поэтому снимаем сами. Нет доступа к камере — открывается системная
+let camOn = false
+async function seriesCam() {
+  if (camOn) return
+  const md = navigator.mediaDevices
+  if (!md || !md.getUserMedia) return $("#photo").click()
+  camOn = true
+  const el = document.createElement("div"); el.className = "scam"
+  el.innerHTML = `<video playsinline muted autoplay></video><div class="scam-flash"></div>
+    <div class="scam-top"><span class="scam-hint">Смахните вниз — закрыть</span><button class="scam-done" disabled>Готово</button></div>
+    <div class="scam-bot"><div class="scam-strip"></div><button class="scam-shot" aria-label="Снять"><i></i></button><button class="scam-flip" aria-label="Другая камера">${ICO.sync}</button></div>`
+  document.body.append(el)
+  const v = $("video", el), strip = $(".scam-strip", el), done = $(".scam-done", el), shotB = $(".scam-shot", el)
+  const shots = [], room = () => ATT_MAX - attCount() - shots.length
+  let stream = null, face = "environment", busy = false
+  const stop = () => { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null }
+  async function start() {
+    stop()
+    stream = await md.getUserMedia({ video: { facingMode: face, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false })
+    v.srcObject = stream; el.classList.toggle("selfie", face === "user")
+    try { await v.play() } catch (e) {}
+  }
+  const close = async keep => {
+    if (!camOn) return
+    camOn = false; stop()
+    el.classList.remove("show"); setTimeout(() => el.remove(), 320)
+    if (keep && shots.length) for (const url of shots) attStage({ type: "image", media_type: "image/jpeg", data: url.split(",")[1], thumb: await shrinkData(url, 360) }, "📷 Фото")
+  }
+  try { await start() } catch (e) {
+    camOn = false; el.remove()
+    const s = sheet(`<h3>Камера недоступна</h3><div class="msg">Разрешите камеру для сайта: Настройки → Safari → Камера → «Разрешить». Пока можно снять системной камерой — по одному кадру.</div>
+      <div class="btns"><button class="btn gold">Системная камера</button></div>`)
+    $(".btn", s.el).onclick = () => { s.close(); $("#photo").click() }
+    return
+  }
+  requestAnimationFrame(() => el.classList.add("show"))
+  const draw = () => {
+    strip.innerHTML = shots.map((u, k) => `<button class="scam-th" data-k="${k}"><img src="${u}" alt=""><i>Убрать</i></button>`).join("")
+    done.disabled = !shots.length
+    done.textContent = shots.length ? `Готово · ${shots.length}` : "Готово"
+    shotB.classList.toggle("full", room() <= 0)
+    strip.scrollLeft = strip.scrollWidth
+    $$(".scam-th", strip).forEach(b => b.onclick = () => {
+      if (!b.classList.contains("pick")) { $$(".scam-th.pick", strip).forEach(x => x.classList.remove("pick")); return b.classList.add("pick") }
+      shots.splice(+b.dataset.k, 1); draw()
+    })
+  }
+  shotB.onclick = () => {
+    if (busy || !v.videoWidth) return
+    if (room() <= 0) return toast(`За раз — до ${ATT_MAX} кадров. Нажмите «Готово»`)
+    busy = true
+    const k = Math.min(1, 1568 / Math.max(v.videoWidth, v.videoHeight)), c = document.createElement("canvas")
+    c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k)
+    const g = c.getContext("2d")
+    if (face === "user") { g.translate(c.width, 0); g.scale(-1, 1) }
+    g.drawImage(v, 0, 0, c.width, c.height)
+    shots.push(c.toDataURL("image/jpeg", .85))
+    el.classList.remove("snap"); void el.offsetWidth; el.classList.add("snap")
+    draw()
+    const th = strip.lastElementChild; if (th) th.classList.add("new")
+    setTimeout(() => { busy = false }, 180)
+  }
+  $(".scam-flip", el).onclick = async () => { face = face === "user" ? "environment" : "user"; try { await start() } catch (e) { toast("Вторая камера недоступна") } }
+  done.onclick = () => close(true)
+  // смахнуть вниз — закрыть; снятые кадры не теряются, они остаются над полем
+  let y0 = null, dy = 0
+  el.addEventListener("touchstart", e => { if (e.target.closest(".scam-strip")) return; y0 = e.touches[0].clientY; dy = 0; el.style.transition = "none" }, { passive: true })
+  el.addEventListener("touchmove", e => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); el.style.transform = `translateY(${dy}px)` }, { passive: true })
+  el.addEventListener("touchend", () => { if (y0 == null) return; y0 = null; el.style.transition = ""; el.style.transform = ""; if (dy > 90) close(true) })
+}
 function photoPrompt() {
   const s = sheet(`<h3>📷 Фото или файл</h3><div class="msg">Еда — посчитаю калории. Счёт — от кого, сумма и срок, напомню оплатить. Чек — что куплено и почём, запишу расход.</div>
     <div class="btns"><button class="btn gold" data-a="cam" style="padding:18px;font-size:18px">Сфотографировать</button></div>
     <div class="btns"><button class="btn" data-a="lib">Из фото</button><button class="btn" data-a="doc">Файл / PDF</button></div>
     <div class="btns"><button class="btn" data-a="txt">Описать еду словами</button></div>`)
   $('[data-a="doc"]', s.el).onclick = () => { s.close(); $("#doc").click() }
-  $('[data-a="cam"]', s.el).onclick = () => { s.close(); $("#photo").click() }
+  $('[data-a="cam"]', s.el).onclick = () => { s.close(); seriesCam() }
   $('[data-a="lib"]', s.el).onclick = () => { s.close(); $("#photo-lib").click() }
   $('[data-a="txt"]', s.el).onclick = async () => { s.close(); const t = await ui.ask("Что съели?", "Например: тарелка том яма и рис", "", { ok: "Посчитать" }); if (t) foodFlow(null, t) }
 }
@@ -3641,7 +3748,7 @@ function plusMenu(btn) {
   const layer = $("#layer"), bar = btn.closest(".chat-bar")
   const scrim = document.createElement("div"); scrim.className = "plus-scrim"
   const m = document.createElement("div"); m.className = "plus-menu"
-  const items = [["photo", "cam", "c-cam", "Камера", "Снять фото или видео"], ["photo-lib", "gallery", "c-lib", "Фото и видео", "Загрузить из галереи"], ["doc", "doc", "c-doc", "Файл", "PDF или документ"]]
+  const items = [["photo", "cam", "c-cam", "Камера", "Один кадр или серия подряд"], ["photo-lib", "gallery", "c-lib", "Фото и видео", "Из галереи, можно несколько"], ["doc", "doc", "c-doc", "Файл", "PDF или документ"]]
   m.innerHTML = items.map(([id, ic, cl, t, sub]) => `<button data-in="${id}"><span class="ic ${cl}">${ICO[ic]}</span><span><b>${t}</b><small>${sub}</small></span></button>`).join("")
   layer.append(scrim, m)
   btn.classList.add("open"); if (bar) bar.classList.add("menu")
@@ -3654,7 +3761,7 @@ function plusMenu(btn) {
   }
   plusClose = close
   scrim.onclick = close
-  $$("[data-in]", m).forEach(b => b.onclick = () => { close(); $("#" + b.dataset.in).click() })
+  $$("[data-in]", m).forEach(b => b.onclick = () => { close(); if (b.dataset.in === "photo") seriesCam(); else $("#" + b.dataset.in).click() })
   let y0 = null
   m.addEventListener("touchstart", e => { y0 = e.touches[0].clientY }, { passive: true })
   m.addEventListener("touchmove", e => { if (y0 != null && e.touches[0].clientY - y0 > 36) { y0 = null; close() } }, { passive: true })
