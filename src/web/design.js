@@ -10,10 +10,9 @@ window.DS = (function () {
   const escA = s => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")
   const store = { get(k) { try { return localStorage.getItem("ds." + k) } catch (e) { return null } }, set(k, v) { try { localStorage.setItem("ds." + k, v) } catch (e) {} } }
 
-  // ── 55. Вибрация: iPhone (iOS 18+) даёт лёгкий отклик на переключатель — нажимаем невидимый; Android — vibrate
+  // ── 55. Вибрация: iPhone (iOS 18+) даёт лёгкий отклик на переключатель — нажимаем невидимый
   let hl = null
   DS.buzz = function () {
-    try { if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.isActive)) navigator.vibrate(8) } catch (e) {}
     try {
       if (!hl) { hl = document.createElement("label"); hl.setAttribute("aria-hidden", "true"); hl.style.cssText = "position:fixed;left:-200px;top:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none"
         const i = document.createElement("input"); i.type = "checkbox"; i.setAttribute("switch", ""); i.tabIndex = -1; hl.append(i); document.body.append(hl) }
