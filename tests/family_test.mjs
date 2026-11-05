@@ -148,6 +148,16 @@ await kp.evaluate(() => { window.SpeechRecognition = window.webkitSpeechRecognit
 await kp.click(".kmic"); await kp.waitForTimeout(4500)
 const kv2 = await kp.evaluate(() => ({ said: window.__said.length, last: $$(".kmsg.u").pop().textContent, on: !!$(".kmic.on") }))
 check(kv2.said === 2 && /звёзд/.test(kv2.last) && !kv2.on, "голос без onend: фраза ушла после паузы, микрофон выключился", kv2)
+// Claude перегружен: один раз — спрашиваем ещё раз сами; два раза — понятная ошибка, и она не уходит в историю
+globalThis.__famFail = 1
+await kp.fill("#kc-t", "Расскажи сказку"); await kp.click(".ksend"); await kp.waitForTimeout(3500)
+check(await kp.evaluate(() => /зубов/.test($$(".kmsg.a").pop().textContent)), "Claude перегружен один раз — Изи всё равно ответил")
+globalThis.__famFail = 2
+await kp.fill("#kc-t", "Ты меня слышишь?"); await kp.click(".ksend"); await kp.waitForTimeout(3500)
+const ke = await kp.evaluate(() => ({ t: $$(".kmsg.a").pop().textContent, err: D.kchat[D.kchat.length - 1].err }))
+await kp.fill("#kc-t", "А сейчас?"); await kp.click(".ksend"); await kp.waitForTimeout(800)
+const hist = (globalThis.__famAsk.body.messages || []).map(m => m.content).join(" | ")
+check(/не получилось/.test(ke.t) && /Overload/.test(ke.t) && ke.err && !/не получилось/.test(hist) && /зубов/.test(await kp.evaluate(() => $$(".kmsg.a").pop().textContent)), "ошибка Claude видна с причиной и не попадает в историю", { ke, hist })
 await kp.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await kp.waitForTimeout(300)
 let lim = null; for (let i = 0; i < 31; i++) lim = sheet.post(JSON.stringify({ family: { op: "ask", code: await kp.evaluate(() => D.fam.code), id: kidId, messages: [{ role: "user", content: "привет" }] } }))
 check(!lim.ok && lim.error === "limit", "лимит 30 сообщений в день", lim)

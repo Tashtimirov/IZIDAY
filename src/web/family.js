@@ -435,7 +435,7 @@ function kidIzi() {
   const draw = () => {
     const l = chat.slice(-30)
     box.innerHTML = (l.length ? "" : `<div class="kmsg a">${esc(kidTipText())}</div><div class="kquick">${["Что мне сделать сейчас?", "Как быстрее накопить на мечту?", "Придумай мне цель на неделю"].map(q => `<button data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>`) +
-      l.map(x => `<div class="kmsg ${x.role === "user" ? "u" : "a"}">${esc(x.content)}</div>`).join("") + (busyK ? `<div class="kmsg a kdots"><i></i><i></i><i></i></div>` : "")
+      l.map(x => `<div class="kmsg ${x.role === "user" ? "u" : "a"}">${esc(x.content)}${x.why ? `<small class="kwhy2">${esc(x.why)}</small>` : ""}</div>`).join("") + (busyK ? `<div class="kmsg a kdots"><i></i><i></i><i></i></div>` : "")
     $$("[data-q]", box).forEach(b => b.onclick = () => send(b.dataset.q))
     box.scrollTop = box.scrollHeight
   }
@@ -466,10 +466,15 @@ function kidIzi() {
     text = String(text || "").trim(); if (!text || busyK) return
     const voiceNow = byVoice; byVoice = false
     chat.push({ role: "user", content: text.slice(0, 500), at: Date.now() }); inp.value = ""; busyK = true; draw()
-    const r = await post(D.fam.url, { op: "ask", code: D.fam.code, id: D.fam.id, ctx: kidCtx(), messages: chat.slice(-12).map(x => ({ role: x.role, content: x.content })) })
+    // в историю для Claude — только настоящий разговор, без наших «не получилось»
+    const ask = () => post(D.fam.url, { op: "ask", code: D.fam.code, id: D.fam.id, ctx: kidCtx(), messages: chat.filter(x => !x.err).slice(-12).map(x => ({ role: x.role, content: x.content })) })
+    let r = await ask()
+    // Claude перегружен или упёрся в минутный лимит ключа — подождать и спросить ещё раз
+    if (r && !r.ok && /overload|rate|529|429|занята|долго/i.test(r.error || "")) { await new Promise(z => setTimeout(z, 2500)); r = await ask() }
     busyK = false
-    const ans = r && r.ok && r.text ? r.text : r && r.error === "nokey" ? `Мама или папа ещё не включили для меня разговоры. А пока подсказка: ${kidTipText()}` : r && r.error === "limit" ? "На сегодня мы наболтались! Завтра продолжим. А пока можно пройти урок или отметить дела." : "Ой, связь пропала. Попробуй ещё раз чуть позже."
-    chat.push({ role: "assistant", content: ans, at: Date.now() })
+    const err = !(r && r.ok && r.text)
+    const ans = !err ? r.text : r && r.error === "nokey" ? `Мама или папа ещё не включили для меня разговоры. А пока подсказка: ${kidTipText()}` : r && r.error === "limit" ? "На сегодня мы наболтались! Завтра продолжим. А пока можно пройти урок или отметить дела." : "Ой, не получилось ответить. Спроси ещё раз, пожалуйста."
+    chat.push(Object.assign({ role: "assistant", content: ans, at: Date.now() }, err ? { err: true, why: String((r && r.error) || "нет ответа").slice(0, 120) } : {}))
     while (chat.length > 60) chat.shift()
     save(false); draw()
     if (voiceNow) say(ans)

@@ -192,3 +192,4 @@ body.kidm .sheet .btn { border-radius: 20px; font-weight: 800; background: #F1ED
 body.kidm .sheet .btn.primary { background: linear-gradient(135deg, #8B6CFF, #5B3FE0); color: #fff; box-shadow: 0 10px 22px -12px rgba(91,63,224,.8); }
 body.kidm .sheet input, body.kidm .sheet textarea { background: #fff; color: #2A2350; border: 2px solid #E2DBFF; border-radius: 18px; font-weight: 700; }
 body.kidm .sheet input:focus { border-color: #8B6CFF; outline: none; }
+.kwhy2 { display: block; margin-top: 4px; font-size: 12px; font-weight: 600; color: #A19BC7; }
