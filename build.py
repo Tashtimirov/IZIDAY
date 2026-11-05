@@ -18,7 +18,7 @@ if not sec_path.exists():
 sec = json.loads(sec_path.read_text())
 
 def fill(text):
-    return text.replace("__SHEET_SECRET__", sec["sheet_secret"]).replace("__SHEET_HOOK__", sec["sheet_hook"]).replace("__CARD_SKIP__", sec.get("card_skip", "")).replace("__WEB_APP__", sec.get("web_app", "")).replace('"__ROUTES__"', json.dumps(sec.get("routes", []), ensure_ascii=False))
+    return text.replace("__SHEET_SECRET__", sec["sheet_secret"]).replace("__SHEET_HOOK__", sec["sheet_hook"]).replace("__CARD_SKIP__", sec.get("card_skip", "")).replace("__WEB_APP__", sec.get("web_app", "")).replace('"__ROUTES__"', json.dumps([{k: v for k, v in r.items() if k != "token"} for r in sec.get("routes", [])], ensure_ascii=False))   # ключ рутины в файл не вшивается: он только в свойствах скрипта таблицы
 
 shutil.rmtree(DIST, ignore_errors=True)
 DIST.mkdir()

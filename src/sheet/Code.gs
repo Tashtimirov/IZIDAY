@@ -22,8 +22,10 @@ const LISTS = {
            row: x => [new Date(x.date), num_(x.ml)] },
   workouts: { name: "Тренировки", head: ["Дата", "Тренировка", "Минуты", "Ккал", "ID"], formats: [DT, "", "0", "0"],
            row: x => [new Date(x.date), txt_(x.title), num_(x.minutes), num_(x.kcal)] },
-  memory: { name: "Память помощника", head: ["Дата", "Что", "Текст", "ID"], formats: [DT, ""],
-           row: x => [new Date(x.date), x.kind === "chat" ? "разговор" : "факт", txt_(x.text)] },
+  memory: { name: "Память помощника", update: true, head: ["Дата", "Что", "Текст", "ID"], formats: [DT, ""],   // зашифрованное приложением — только пометка, сам шифр в _hub
+           row: x => [new Date(x.date), x.kind === "chat" ? "разговор" : x.kind === "vault" ? "сейф" : "факт", x.sealed || x.kind === "vault" ? "🔒 зашифровано" : txt_(x.text)] },
+  log:   { name: "Журнал", update: true, head: ["Дата", "Что сделал помощник", "ID"], formats: [DT, ""],
+           row: x => [new Date(x.date), x.sealed ? "🔒 зашифровано" : txt_(x.text)] },
   rems:  { name: "Напоминания", update: true, head: ["Создано", "Напоминание", "Срок", "Выполнено", "ID"], formats: [DT, "", "", DT],
            row: x => [new Date(x.date), txt_(x.title), txt_(String(x.due || "").replace("T", " ")), x.done ? (x.doneAt ? new Date(x.doneAt) : "✓") : ""] },
 };
@@ -168,9 +170,13 @@ function advice() { ensureSheets_(); writeAdvice_(); }
 // Виджет присылает снимок того, что видит только iPhone (календарь, напоминания, часы), и выполняет
 // очередь команд приложения (создать или перенести событие, отметить напоминание). Каждая запись хранит
 // s — время, когда таблица её приняла: клиент получает только записи новее своего прошлого запроса.
-const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90, goals: 0 },   // сколько дней хранить (0 — всё); rems — напоминания IZIDAY; budgets, recur, habits, hlog, weight — лимиты, регулярные платежи, привычки, вес; shop — покупки, kids — дела детей, fast — голодание
+const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90, goals: 0, log: 90 },   // сколько дней хранить (0 — всё); rems — напоминания IZIDAY; budgets, recur, habits, hlog, weight — лимиты, регулярные платежи, привычки, вес; shop — покупки, kids — дела детей, fast — голодание
   tomb: 90, chunk: 45000, opsKeep: 3 };
 const ROUTE_URL = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/;
+
+function routeToken_(url) {
+  try { const r = JSON.parse(PropertiesService.getScriptProperties().getProperty("ROUTES") || "[]").find(z => z && z.url === url); return r ? String(r.token || "") : ""; } catch (e) { return ""; }
+}
 
 function hub_(h) {
   if (h.push) { try { return { ok: true, push: push_(h.push, h.from) }; } catch (e) { return { ok: true, push: { error: String(e.message || e) } }; } }
@@ -218,10 +224,13 @@ function hub_(h) {
   // дорога до встреч (её считает пуш «Пора выезжать»): виджет пишет «выехать в …»
   if (h.from === "widget") out.travel = Object.values(hubGet_("push_travel") || {}).filter(x => x.min && x.start > now).map(x => ({ start: x.start, t: x.t, min: x.min, buf: PUSH.buffer }));
   // 4. Задача в Claude Code (браузер не может обратиться к API рутин напрямую)
+  // Ключ рутины живёт только в свойствах скрипта (ROUTES = [{ name, url, token }]), телефон присылает адрес рутины
   if (h.fire && ROUTE_URL.test(h.fire.url || "")) {
-    try {
+    const token = routeToken_(h.fire.url) || h.fire.token || "";
+    if (!token) out.fire = { error: "нет ключа рутины в свойствах скрипта (ROUTES)" };
+    else try {
       const res = UrlFetchApp.fetch(h.fire.url, { method: "post", contentType: "application/json", muteHttpExceptions: true,
-        headers: { Authorization: "Bearer " + h.fire.token, "anthropic-version": "2023-06-01", "anthropic-beta": "experimental-cc-routine-2026-04-01" },
+        headers: { Authorization: "Bearer " + token, "anthropic-version": "2023-06-01", "anthropic-beta": "experimental-cc-routine-2026-04-01" },
         payload: JSON.stringify({ text: String(h.fire.text || "").slice(0, 60000) }) });
       const j = JSON.parse(res.getContentText() || "{}");
       out.fire = j.claude_code_session_url ? { ok: true, session_url: j.claude_code_session_url }

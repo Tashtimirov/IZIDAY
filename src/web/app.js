@@ -206,6 +206,7 @@ function sync() {
   state.p = (async () => {
     $("#sync").classList.add("spin")
     try {
+      if (document.readyState === "loading") await new Promise(r => document.addEventListener("DOMContentLoaded", r, { once: true }))   // mem.js (шифрование памяти) подключается после app.js
       do {
         state.again = false
         const started = Date.now(), lists = {}
@@ -1224,7 +1225,7 @@ async function runTool(name, x) {
       const r = routes().find(z => z.name === x.route)
       if (!r) return { error: `нет маршрута «${x.route}»` }
       try {
-        const res = await hubPost({ fire: { url: r.url, token: r.token, text: x.task } }, 45000)
+        const res = await hubPost({ fire: { url: r.url, text: x.task } }, 45000)   // ключ рутины — в свойствах скрипта таблицы
         if (res.fire && res.fire.session_url) { chatLinks.push(res.fire.session_url); return { ok: true, session_url: res.fire.session_url } }
         return { error: (res.fire && res.fire.error) || "таблица не запустила задачу (обновите скрипт таблицы)" }
       } catch (e) { return { error: String(e.message || e) } }
@@ -1337,8 +1338,8 @@ async function autoPlan() {
 }
 
 // ── Память помощника: факты о человеке и сводки прошлых разговоров (лист «Память помощника» в таблице) ──
-const memFacts = () => live(D.memory).filter(m => m.kind === "fact").sort((a, b) => a.date - b.date)
-const memChats = () => live(D.memory).filter(m => m.kind === "chat").sort((a, b) => a.date - b.date)
+const memFacts = () => live(D.memory).filter(m => m.kind === "fact" && typeof m.text === "string").sort((a, b) => a.date - b.date)
+const memChats = () => live(D.memory).filter(m => m.kind === "chat" && typeof m.text === "string").sort((a, b) => a.date - b.date)
 const GAP = 3 * 3600e3   // пауза дольше трёх часов — новый разговор
 function memoryBlock() {
   const f = memFacts().slice(-120), c = memChats().slice(-15)
@@ -1533,7 +1534,7 @@ async function chatSend(text, opts = {}) {
     toast("⏹ Остановлено — поправьте и отправьте")
     return
   }
-  D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice() })
+  D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice(), mem: window.memUsed ? memUsed() : undefined })
   if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
   D.chat.filter(m => m.thumb).slice(0, -12).forEach(m => { delete m.thumb })   // миниатюры только у последних фото — память телефона
   save(false)
@@ -2075,7 +2076,7 @@ function chatItems() {
     const isLast = i === arr.length - 1 && askWait
     const gi = D.chat.length - arr.length + i
     const edit = m.role === "user" && !m.local && !m.thumb && !m.prompt && i >= arr.length - 6 ? `<button class="ed" data-edit="${gi}" aria-label="Изменить">✎</button>` : ""
-    return `<div class="m ${m.role}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? "🎤 " : ""}${linkify(m.text)}${(m.links || []).length ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>` : ""}` +
+    return `<div class="m ${m.role}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? "🎤 " : ""}${linkify(m.text)}${(m.links || []).length ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>` : ""}` + (window.memLine ? memLine(m) : "") +
       `${m.opts && m.opts.length && isLast ? `<div class="opts">${m.opts.map(o => `<button data-opt="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}<span class="tm">${hm(new Date(m.at || Date.now()))}</span></div>`
   }).join("") + (chatBusy && !askWait ? `<div class="typing"><i></i><i></i><i></i>${chatStatus ? `<span class="st">${esc(chatStatus)}</span>` : ""}</div>` : "") + (last < 0 ? "" : "")
 }
