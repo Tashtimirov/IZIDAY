@@ -17,6 +17,7 @@ window.DS = (function () {
       if (!hl) { hl = document.createElement("label"); hl.setAttribute("aria-hidden", "true"); hl.style.cssText = "position:fixed;left:-200px;top:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none"
         const i = document.createElement("input"); i.type = "checkbox"; i.setAttribute("switch", ""); i.tabIndex = -1; hl.append(i); document.body.append(hl) }
       hl.click()
+      if (/Android/i.test(navigator.userAgent) && navigator.vibrate) navigator.vibrate(8)   // Android: обычная лёгкая вибрация
     } catch (e) {}
   }
   const BUZZ = ".check, .day, #tabs button, .seg button, .chip, .tgl, .opt, .ds-ex button, .ds-say, .rg, .btn.primary, .dot"
@@ -185,7 +186,8 @@ window.DS = (function () {
   }
 
   // ── 60. Крупный текст: «Как в iPhone» берёт размер из настроек iPhone (Экран и яркость → Размер текста)
-  const TS = [["auto", "Как в iPhone"], ["1", "Обычный"], ["1.15", "Крупнее"], ["1.3", "Ещё крупнее"]]
+  const PH = /Android/i.test(navigator.userAgent) ? "телефоне" : "iPhone"
+  const TS = [["auto", `Как в ${PH}`], ["1", "Обычный"], ["1.15", "Крупнее"], ["1.3", "Ещё крупнее"]]
   function iphoneScale() {
     if (!(window.CSS && CSS.supports && CSS.supports("font", "-apple-system-body"))) return 1
     const p = document.createElement("span"); p.style.cssText = "font:-apple-system-body;position:absolute;visibility:hidden"; p.textContent = "A"
@@ -201,7 +203,7 @@ window.DS = (function () {
   function tsCard() {
     const cur = store.get("ts") || "auto", now = Math.round(DS.textScale() * 100)
     return `<div class="card ds-ts" data-ds="ts"><h2>Размер текста</h2><div class="seg">${TS.map(([k, l]) => `<button class="${k === cur ? "on" : ""}" data-ds-ts="${k}">${l}</button>`).join("")}</div>
-      <div class="muted small" style="margin-top:8px">«Как в iPhone» — как в Настройках iPhone → Экран и яркость → Размер текста. Сейчас ${now}%.</div></div>`
+      <div class="muted small" style="margin-top:8px">${PH === "iPhone" ? "«Как в iPhone» — как в Настройках iPhone → Экран и яркость → Размер текста." : "«Как в телефоне» — как в настройках Chrome и телефона (размер шрифта)."} Сейчас ${now}%.</div></div>`
   }
   document.addEventListener("click", e => {
     const b = e.target.closest && e.target.closest("[data-ds-ts]")

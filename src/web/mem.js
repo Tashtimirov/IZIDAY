@@ -12,6 +12,7 @@
 // Журнал Изи: список log (90 дней) — что помощник сделал сам; изменения записей в приложении можно отменить.
 (function () {
 "use strict"
+const PW = /Android/i.test(navigator.userAgent) ? "менеджере паролей Google" : "«Паролях» iPhone"
 const SB = crypto.subtle, te = new TextEncoder(), td = new TextDecoder()
 const rnd = n => crypto.getRandomValues(new Uint8Array(n))
 const b64 = buf => { const a = new Uint8Array(buf); let s = ""; for (let i = 0; i < a.length; i += 0x8000) s += String.fromCharCode.apply(null, a.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") }
@@ -315,7 +316,7 @@ memoryBlock = function () {
 ${take.length ? take.map(line).join("\n") : "- пока пусто"}
 ${all.length > take.length ? `Это не всё: всего ${all.length} фактов. Сферы: ${SPH.map(s => s[1]).join(", ")}. Люди: ${ppl.slice(0, 40).join(", ") || "—"}. Нужна подробность о человеке или сфере — recall.\n` : ""}${sec && !secretOpen() ? `Сокровенное: ${sec} ${plural(sec, "запись", "записи", "записей")} закрыты Face ID (психология, конфликты, мнения о людях). Если без них не ответить — вызови open_secret, иначе отвечай без них.\n` : ""}${lockedN ? `Ещё ${lockedN} фактов зашифрованы и откроются на этом телефоне после Face ID.\n` : ""}Прошлые разговоры, кратко (подробности — search_chats):
 ${c.length ? c.map(m => `- ${d(m.date)}: ${m.text}`).join("\n") : "- пока нет"}
-Правила памяти: пароли, коды, PIN, номера карт, счетов и паспортов не запоминай никогда, даже если просят, — скажи, что их лучше хранить в «Паролях» iPhone. Психологию, ссоры и конфликты, мнения о конкретных людях, интимное и диагнозы запоминай с secret: true — они шифруются. Мнения о людях записывай как наблюдения пользователя, а не ярлыки.`
+Правила памяти: пароли, коды, PIN, номера карт, счетов и паспортов не запоминай никогда, даже если просят, — скажи, что их лучше хранить в ${PW}. Психологию, ссоры и конфликты, мнения о конкретных людях, интимное и диагнозы запоминай с secret: true — они шифруются. Мнения о людях записывай как наблюдения пользователя, а не ярлыки.`
 }
 
 // ───────────── Инструменты ─────────────
@@ -344,7 +345,7 @@ runTool = async function (name, x) {
     const t = String(x.text || "").trim()
     if (!t) return { error: "пустой факт" }
     const why = sensitive(t)
-    if (why) { journal("mem", `Отказался запомнить ${why}`); return { error: `Это похоже на ${why}. Такое не запоминаю даже в зашифрованном виде — посоветуй сохранить в «Паролях» iPhone (там под Face ID).` } }
+    if (why) { journal("mem", `Отказался запомнить ${why}`); return { error: `Это похоже на ${why}. Такое не запоминаю даже в зашифрованном виде — посоветуй сохранить в ${PW} (там под защитой блокировки экрана).` } }
     const dup = allFacts().find(f => f.text.toLowerCase() === t.toLowerCase())
     if (dup) return { ok: true, id: dup.id, note: "уже помню" }
     const sphere = SPH_IDS.includes(x.sphere) ? x.sphere : "me", person = String(x.person || "").trim().slice(0, 60) || undefined
@@ -594,7 +595,7 @@ function openSecurity() {
       ${row(`data-a="mac"`, ic("phone", "var(--blue,#0A84FF)", 22), "Открыть на Mac или новом телефоне", "по Face ID / Touch ID через iCloud или кодом восстановления")}</div>
     <div class="mm-card"><div class="mm-h">Советы</div>
       <div class="mm-row">${ic("shield", "var(--orange,#FF9F0A)", 22)}<span class="grow"><span class="t">Двухэтапная защита Google</span><span class="s">таблица — главное хранилище, включите вход с подтверждением</span></span></div>
-      <div class="mm-row">${ic("shield", "var(--orange,#FF9F0A)", 22)}<span class="grow"><span class="t">Код-пароль iPhone из 6 цифр и больше</span><span class="s">сейф защищён не сильнее, чем сам телефон</span></span></div></div></div>`)
+      <div class="mm-row">${ic("shield", "var(--orange,#FF9F0A)", 22)}<span class="grow"><span class="t">${/Android/i.test(navigator.userAgent) ? "Блокировка экрана: PIN из 6 цифр или отпечаток" : "Код-пароль iPhone из 6 цифр и больше"}</span><span class="s">сейф защищён не сильнее, чем сам телефон</span></span></div></div></div>`)
   s.el.addEventListener("click", e => {
     const b = e.target.closest("[data-a],[data-ttl]"); if (!b) return
     if (b.dataset.ttl != null) { D.vaultTtl = +b.dataset.ttl; save(false); if (secretOpen()) arm(); s.el.querySelectorAll("[data-ttl]").forEach(x => x.classList.toggle("on", x === b)); return }

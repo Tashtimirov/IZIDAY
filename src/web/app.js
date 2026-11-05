@@ -7,6 +7,11 @@
 
 const core = window.CORE
 const STORE = "myday.web"
+// Android (Chrome): своя установка, кнопка «Назад», свои пути в настройках. IS_IOS — iPhone и iPad
+const IS_DROID = /Android/i.test(navigator.userAgent)
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+const PHONE = IS_DROID ? "телефон" : "iPhone"
+const MIC_HELP = IS_DROID ? "Нет доступа к микрофону: Настройки телефона → Приложения → Chrome (или IZIDAY) → Разрешения → Микрофон" : "Нет доступа к микрофону: Настройки → Safari → Микрофон (и Siri и Диктовка включены)"
 
 // ───────────── Мелочи ─────────────
 const $ = (s, el = document) => el.querySelector(s)
@@ -1404,7 +1409,7 @@ function agentSystem() {
   const now = new Date(), c = core.CONFIG
   const cats = t => c.categories[t].map(x => x[0]).join(", ")
   const cals = c.calendars || []
-  return `Ты — личный ассистент в приложении «Мой день» на iPhone. Тебя зовут ${iziName()}; ${iziG("о себе говори в мужском роде («я записал», «я понял»)", "ты девушка, о себе говори в женском роде («я записала», «я поняла»)")}. Пользователь часто говорит голосом по-русски; речь распознаётся с ошибками («падал», «падлу» = «падел»), восстанавливай смысл.
+  return `Ты — личный ассистент в приложении «Мой день» на ${IS_DROID ? "Android-телефоне" : "iPhone"}. Тебя зовут ${iziName()}; ${iziG("о себе говори в мужском роде («я записал», «я понял»)", "ты девушка, о себе говори в женском роде («я записала», «я поняла»)")}. Пользователь часто говорит голосом по-русски; речь распознаётся с ошибками («падал», «падлу» = «падел»), восстанавливай смысл.
 Сейчас ${iso(now).replace("T", " ")}, ${DAY_NAMES[now.getDay()].toLowerCase()}. Используй местное время без смещения, формат YYYY-MM-DDTHH:MM.
 
 Как работать:
@@ -1548,7 +1553,7 @@ function chatSystem() {
 - Узнал о пользователе что-то устойчивое (люди, предпочтения, цели, планы, договорённости) — запомни через remember, не спрашивая разрешения и не объявляя об этом. Попросят забыть — forget.
 - Голосовые сообщения распознаются с ошибками: восстанавливай смысл по контексту и памяти; уточняй, только если цена ошибки высока.
 - Перед ответом подумай, что человек на самом деле хочет и что ему пригодится дальше; можно одним предложением предложить следующий шаг.
-- Ты ведёшь день пользователя: по календарю, здоровью, еде, воде и целям. Подсказки-уведомления на iPhone ставишь через plan_day (утром план составляется сам). Попросят «напоминай/подсказывай/веди меня» — обнови план.
+- Ты ведёшь день пользователя: по календарю, здоровью, еде, воде и целям. Подсказки-уведомления на телефон ставишь через plan_day (утром план составляется сам). Попросят «напоминай/подсказывай/веди меня» — обнови план.
 - Напоминания контролируешь ты: невыполненное в срок — спрашиваешь, сделал ли, напоминаешь снова, предлагаешь перенести и выясняешь причину (уведомления «Выполнил?» приходят от IZIDAY). Если пользователь пишет, почему не сделал — посочувствуй коротко, перенеси через update_reminder на реальное время по календарю и запомни повторяющуюся причину.
 - Учись: если пользователь поправил тебя, сказал «не так», «не надо», «лучше…», или видно его привычку — запомни это как предпочтение через remember («Предпочитает…», «Не любит…») и дальше делай так.
 ${r.length ? `- Интернета у тебя нет, а у Claude Code есть. Вопрос, где нужны свежие данные из сети (лучшие кафе и места рядом, отзывы и рейтинги, цены, расписания, новости, что купить), не отклоняй и не проси назвать варианты: сразу передай через claude_code (про места рядом — с near_me: true) и скажи одной строкой, что узнаёшь и итог придёт сюда. Просить «передай в Claude Code» пользователь не должен.
@@ -1779,7 +1784,7 @@ function micStart(auto) {
     r.onerror = e => {
       if (e.error === "no-speech" || e.error === "aborted") return
       if (first && auto && e.error === "not-allowed") { voiceReset(); return micPrompt() }
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") { voiceReset(); toast("Нет доступа к микрофону: Настройки → Safari → Микрофон (и Siri и Диктовка включены)"); if (inp) inp.focus(); return }
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") { voiceReset(); toast(MIC_HELP); if (inp) inp.focus(); return }
       v.err = e.error   // сеть, занят микрофон и т. п. — не перезапускаем по кругу, отправляем услышанное
       toast(`Микрофон: ${({ network: "нет сети для распознавания", "audio-capture": "микрофон занят другим приложением", "language-not-supported": "русский язык недоступен" })[e.error] || e.error}`)
     }
@@ -1823,8 +1828,8 @@ let sttOffUntil = 0   // Groq не ответил или упёрлись в м�
 function sttFail(e) {
   const st = e && e.status
   sttOffUntil = Date.now() + (st === 401 ? 3600e3 : 60e3)
-  toast(st === 401 ? "Ключ Groq не подошёл — пока распознаёт iPhone. Проверьте ключ в «Настройках» → «Помощник»"
-    : st === 429 ? "Groq: лимит на минуту — минуту распознаёт iPhone" : "Точное распознавание не ответило — пока распознаёт iPhone")
+  toast(st === 401 ? `Ключ Groq не подошёл — пока распознаёт ${PHONE}. Проверьте ключ в «Настройках» → «Помощник»`
+    : st === 429 ? `Groq: лимит на минуту — минуту распознаёт ${PHONE}` : `Точное распознавание не ответило — пока распознаёт ${PHONE}`)
 }
 function micWhisper(auto) {
   const inp = $("#chat-in")
@@ -1849,7 +1854,7 @@ function micWhisper(auto) {
   }).catch(e => {
     if (voice !== v) return
     voiceReset()
-    if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) { if (auto) return micPrompt(); toast("Нет доступа к микрофону: Настройки → Safari → Микрофон"); return }
+    if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) { if (auto) return micPrompt(); toast(MIC_HELP); return }
     sttOffUntil = Date.now() + 60e3; micStart(auto)   // запись не пошла — распознаёт Safari
   })
 }
@@ -2428,7 +2433,9 @@ const standalone = () => window.navigator.standalone === true || matchMedia("(di
 function renderMore() {
   const c = D.conn
   let html = ""
-  if (!standalone()) html += `<div class="banner"><b>Поставьте на экран «Домой»</b>Нажмите «Поделиться» ⎋ внизу Safari → «На экран «Домой»». Приложение будет открываться отдельно и мгновенно.</div>`
+  if (!standalone()) html += IS_DROID
+    ? `<div class="banner"><b>Установите приложение</b>${INSTALL.ev ? "Нажмите кнопку — IZIDAY появится среди приложений и будет открываться отдельно и мгновенно." : "В Chrome нажмите ⋮ справа вверху → «Установить приложение» (или «Добавить на главный экран»). IZIDAY будет открываться отдельно и мгновенно."}${INSTALL.ev ? `<div class="btns" style="margin-top:10px"><button class="btn primary" data-do="install">Установить IZIDAY</button></div>` : ""}</div>`
+    : `<div class="banner"><b>Поставьте на экран «Домой»</b>Нажмите «Поделиться» ⎋ внизу Safari → «На экран «Домой»». Приложение будет открываться отдельно и мгновенно.</div>`
   const z = IZI()
   html += iziCard()
   if (c && c.friend) html += FRIEND.card()
@@ -2657,7 +2664,7 @@ function bindChatBar(v) {
 }
 
 const DO = {
-  talk: () => talkOpen(), "izi-voice": () => voicePicker(), stt: () => window.STT && STT.sheetOpen(),
+  install: () => installApp(), talk: () => talkOpen(), "izi-voice": () => voicePicker(), stt: () => window.STT && STT.sheetOpen(),
   event: () => eventForm(), reminder: () => reminderForm(), food: () => foodMenu(), workout: () => workoutForm(), photo: () => photoPrompt(),
   expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
   "push-on": () => pushEnable(),
@@ -3421,9 +3428,9 @@ async function pushSub() {
 }
 async function pushEnable() {
   if (!D.conn) return toast("Сначала подключите приложение")
-  if (!pushAble()) return ui.info("Уведомления", standalone() ? "Этот телефон не умеет получать уведомления от сайтов: нужна iOS 16.4 или новее." : "Сначала поставьте IZIDAY на экран «Домой» (Поделиться → На экран «Домой») и откройте оттуда — уведомления работают только так.")
+  if (!pushAble()) return ui.info("Уведомления", IS_DROID ? "Этот браузер не умеет уведомления от сайтов. Откройте IZIDAY в Google Chrome и установите приложение (⋮ → «Установить приложение»)." : standalone() ? "Этот телефон не умеет получать уведомления от сайтов: нужна iOS 16.4 или новее." : "Сначала поставьте IZIDAY на экран «Домой» (Поделиться → На экран «Домой») и откройте оттуда — уведомления работают только так.")
   const perm = await Notification.requestPermission()
-  if (perm !== "granted") return ui.info("Уведомления выключены", "Разрешите их: Настройки → Уведомления → IZIDAY.")
+  if (perm !== "granted") return ui.info("Уведомления выключены", IS_DROID ? "Разрешите их: Настройки телефона → Приложения → IZIDAY (или Chrome) → Уведомления." : "Разрешите их: Настройки → Уведомления → IZIDAY.")
   try {
     await pushConn()
     const key = ((await hubPost({ push: { action: "key" } })).push || {}).key
@@ -3613,9 +3620,10 @@ async function seriesCam() {
     el.classList.remove("show"); setTimeout(() => el.remove(), 320)
     if (keep && shots.length) for (const url of shots) attStage({ type: "image", media_type: "image/jpeg", data: url.split(",")[1], thumb: await shrinkData(url, 360) }, "📷 Фото")
   }
+  el.addEventListener("izi-back", () => close(true))   // «Назад» на Android: снятые кадры не теряются
   try { await start() } catch (e) {
     camOn = false; el.remove()
-    const s = sheet(`<h3>Камера недоступна</h3><div class="msg">Разрешите камеру для сайта: Настройки → Safari → Камера → «Разрешить». Пока можно снять системной камерой — по одному кадру.</div>
+    const s = sheet(`<h3>Камера недоступна</h3><div class="msg">${IS_DROID ? "Разрешите камеру: Настройки телефона → Приложения → Chrome (или IZIDAY) → Разрешения → Камера." : "Разрешите камеру для сайта: Настройки → Safari → Камера → «Разрешить»."} Пока можно снять системной камерой — по одному кадру.</div>
       <div class="btns"><button class="btn gold">Системная камера</button></div>`)
     $(".btn", s.el).onclick = () => { s.close(); $("#photo").click() }
     return
@@ -3833,12 +3841,47 @@ function plusMenu(btn) {
   m.addEventListener("touchmove", e => { if (y0 != null && e.touches[0].clientY - y0 > 36) { y0 = null; close() } }, { passive: true })
 }
 
+// ───────────── Android: установка и кнопка «Назад» ─────────────
+// Chrome сам предлагает установить приложение — запоминаем это предложение и показываем свою кнопку
+const INSTALL = { ev: null }
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); INSTALL.ev = e; if (tab === "more") render() })
+addEventListener("appinstalled", () => { INSTALL.ev = null; toast("IZIDAY установлен — откройте его со значка"); if (tab === "more") render() })
+async function installApp() {
+  const e = INSTALL.ev
+  if (!e) return ui.info("Установить приложение", "В Chrome нажмите ⋮ справа вверху → «Установить приложение» (или «Добавить на главный экран»).")
+  INSTALL.ev = null
+  try { e.prompt(); await e.userChoice } catch (err) {}
+  render()
+}
+// «Назад» на Android: закрывает окно, разговор или панель, потом ведёт на «Сегодня», и только потом выходит
+if (IS_DROID) {
+  let armed = false
+  const guard = () => { if (armed) return; try { history.pushState({ izi: 1 }, ""); armed = true } catch (e) {} }
+  const back = () => {
+    const sc = document.querySelector(".scam")
+    if (sc) { sc.dispatchEvent(new CustomEvent("izi-back")); return true }
+    if (stack.length) { stack[stack.length - 1].close(); return true }
+    if (TALK) { talkClose(); return true }
+    if (side) { sideClose(); return true }
+    if (tab !== "today") { setTab("today"); return true }
+    return false
+  }
+  addEventListener("popstate", () => {
+    armed = false
+    if (back()) return guard()
+    toast("Нажмите «Назад» ещё раз, чтобы выйти")   // защиты больше нет — следующее «Назад» закроет приложение
+  })
+  // после любого касания защита снова на месте (например, человек передумал выходить и открыл окно)
+  addEventListener("pointerdown", guard, true)
+  setTimeout(guard, 400)   // после разбора ссылки (#chat и т. п.), чтобы «Назад» не повторял её
+}
+
 // ───────────── Старт ─────────────
 document.querySelectorAll("[data-ico]").forEach(i => i.innerHTML = ICO[i.dataset.ico])
 // Настоящая высота экрана: в приложении со значка iOS отдаёт в CSS высоту без строки состояния, и внизу оставалась пустая полоса
 function fitHeight() {
   let h = window.innerHeight
-  if ((navigator.standalone || matchMedia("(display-mode: standalone)").matches) && Math.min(screen.width, screen.height) < 600) {   // только iPhone: на iPad окно бывает уже экрана (Split View)
+  if (IS_IOS && (navigator.standalone || matchMedia("(display-mode: standalone)").matches) && Math.min(screen.width, screen.height) < 600) {   // Android считает в screen и системные полосы — там высота окна верная   // только iPhone: на iPad окно бывает уже экрана (Split View)
     const land = matchMedia("(orientation: landscape)").matches
     h = Math.max(h, land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height))
   }
@@ -5671,7 +5714,7 @@ function talkListen(first, keep) {
     }
     r.onerror = e => {
       if (TALK !== t || t.n !== my) return
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") { talkState("pause", "Нет доступа к микрофону", "Настройки → Safari → Микрофон"); return }
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") { talkState("pause", "Нет доступа к микрофону", IS_DROID ? "Настройки → Приложения → Chrome → Разрешения → Микрофон" : "Настройки → Safari → Микрофон"); return }
     }
     r.onend = () => {   // Safari сам закрывает распознавание на паузе — копим услышанное и слушаем дальше
       if (TALK !== t || t.n !== my || t.rec !== r) return
@@ -5742,7 +5785,7 @@ function talkListenW(first, keep) {
     }).catch(e => {
       if (!live()) return
       t.rec = null
-      if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) return talkState("pause", "Нет доступа к микрофону", "Настройки → Safari → Микрофон")
+      if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) return talkState("pause", "Нет доступа к микрофону", IS_DROID ? "Настройки → Приложения → Chrome → Разрешения → Микрофон" : "Настройки → Safari → Микрофон")
       sttOffUntil = Date.now() + 60e3; talkListen(first, t.done)
     })
   }
@@ -5831,7 +5874,7 @@ function iziCard() {
     ${Object.entries(IZI_MODES).map(([k, [t, s]]) => `<button class="set mode-row" data-izi-mode="${k}"><span><b>${t}</b><small>${s}</small></span>${x.mode === k ? `<i class="ck">${ICO.check}</i>` : "<i></i>"}</button>`).join("")}
     <div class="izi-sub">Голос</div>
     ${tg("speak", "Читать ответы вслух", "выключено — Изи отвечает текстом, а вы можете говорить голосом")}
-    <button class="set voice-row" data-do="izi-voice"><span><b>${esc(voiceLabel(v))}</b><small>${canTalk ? "голос iPhone · нажмите, чтобы выбрать и послушать" : "в этом браузере нет голоса"}</small></span><i class="chev">${ICO.chev}</i></button>
+    <button class="set voice-row" data-do="izi-voice"><span><b>${esc(voiceLabel(v))}</b><small>${canTalk ? (IS_DROID ? "голос телефона" : "голос iPhone") + " · нажмите, чтобы выбрать и послушать" : "в этом браузере нет голоса"}</small></span><i class="chev">${ICO.chev}</i></button>
     <div class="set col"><span>Темп речи</span><div class="seg izi-rate">${IZI_RATES.map(([r, t]) => `<button data-izi-rate="${r}" class="${Math.abs((x.rate || 1) - r) < .01 ? "on" : ""}">${t}</button>`).join("")}</div></div>
     ${window.STT ? `<div class="izi-sub">Распознавание речи</div>${STT.row()}` : ""}
     <div class="izi-sub">Чему учится и как помогает</div>
@@ -5843,13 +5886,13 @@ function iziCard() {
 }
 function voicePicker() {
   const vs = ttsVoices(), z = IZX(), cur = iziVoice()
-  if (!vs.length) return ui.info("Голосов пока нет", "Русские голоса появятся, когда iPhone их загрузит: Настройки → Универсальный доступ → Устный контент → Голоса → Русский.")
+  if (!vs.length) return ui.info("Голосов пока нет", IS_DROID ? "Русские голоса появятся, когда телефон их загрузит: Настройки → Специальные возможности → Синтез речи → Синтезатор Google → Установить голосовые данные → Русский." : "Русские голоса появятся, когда iPhone их загрузит: Настройки → Универсальный доступ → Устный контент → Голоса → Русский.")
   const mine = vs.filter(v => voiceSex(v) === z.g), other = vs.filter(v => voiceSex(v) !== z.g)
   const row = v => `<button class="opt vrow ${cur && v.voiceURI === cur.voiceURI ? "on" : ""}" data-v="${esc(v.voiceURI)}"><span>${esc(voiceLabel(v))}</span><small>${voiceSex(v) === "f" ? "женский" : voiceSex(v) === "m" ? "мужской" : ""}</small></button>`
   const s = sheet(`<h3>Голос ${esc(iziName())}</h3>
     ${mine.length ? `<div class="izi-sub">${z.g === "f" ? "Женские" : "Мужские"}</div>${mine.map(row).join("")}` : ""}
     ${other.length ? `<div class="izi-sub">${mine.length ? "Другие" : "Голоса"}</div>${other.map(row).join("")}` : ""}
-    <div class="muted small" style="margin-top:10px">Нажмите — ${esc(iziName())} скажет фразу этим голосом. Живее звучат улучшенные голоса: Настройки iPhone → Универсальный доступ → Устный контент → Голоса → Русский${z.g === "m" ? " (мужской — «Юрий»)" : " («Милена», «Катя»)"}.</div>`, { onClose: () => { ttsStop(); if (tab === "more") render() } })
+    <div class="muted small" style="margin-top:10px">Нажмите — ${esc(iziName())} скажет фразу этим голосом. ${IS_DROID ? "Голоса берутся из «Синтезатора речи Google»: Настройки → Специальные возможности → Синтез речи." : `Живее звучат улучшенные голоса: Настройки iPhone → Универсальный доступ → Устный контент → Голоса → Русский${z.g === "m" ? " (мужской — «Юрий»)" : " («Милена», «Катя»)"}.`}</div>`, { onClose: () => { ttsStop(); if (tab === "more") render() } })
   $$(".vrow", s.el).forEach(b => b.onclick = () => {
     iziSet("voice", b.dataset.v); $$(".vrow", s.el).forEach(x => x.classList.toggle("on", x === b))
     speak(`Привет! Я ${iziName()}. ${iziG("Готов", "Готова")} поговорить, когда удобно.`, { force: true })
