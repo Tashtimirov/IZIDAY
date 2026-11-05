@@ -3297,7 +3297,7 @@ function silkFrame(t) {
     if (!w || !h) continue
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h }
     const k = c.dataset.k
-    if (k === "comet") silkComet(c, T, d); else silkLines(c, T, d, k === "orb" && voice && PTT.holding)
+    if (k === "comet") silkComet(c, T, d); else if (k === "orb") silkOrb(c, T, d, voice && PTT.holding); else silkLines(c, T, d, false)
   }
   const tm = $("#silk .tm"); if (tm && voice && voice.t0) { const sec = Math.floor((Date.now() - voice.t0) / 1000); tm.textContent = Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0") }
 }
@@ -3316,6 +3316,36 @@ function silkLines(c, T, d, active) {
     g.addColorStop(0, c0); g.addColorStop(.25, col); g.addColorStop(.75, col); g.addColorStop(1, c0)   // концы растворяются
     x.strokeStyle = g; x.lineWidth = 1.8 * d; x.lineCap = "round"; x.lineJoin = "round"; x.stroke()
   })
+}
+// Кнопка «Помощник» — как иконка приложения: стеклянный шар, внутри две светящиеся волны с растворяющимися концами
+function silkOrb(c, T, d, active) {
+  const x = c.getContext("2d"), W = c.width, H = c.height, a = active ? SILK.lv : 0
+  x.clearRect(0, 0, W, H)
+  const cx = W / 2, cy = H / 2, R = W * .42
+  const b = x.createRadialGradient(cx - R * .3, cy - R * .35, R * .1, cx, cy, R)
+  b.addColorStop(0, "rgba(255,255,255,.32)"); b.addColorStop(1, "rgba(255,255,255,.08)")
+  x.fillStyle = b; x.beginPath(); x.arc(cx, cy, R, 0, 7); x.fill()
+  x.save(); x.beginPath(); x.arc(cx, cy, R * .98, 0, 7); x.clip(); x.globalCompositeOperation = "lighter"
+  const sp = active ? 2 + a * 1.5 : .9, len = R * 1.85
+  ;[["140,205,255", .95, .04, .32, 2.1, .035, .18, 1.25], ["150,255,220", 1, -.03, .42, 0, .045, .22, 1]].forEach(([rgb, al, dy, am, ph, lw, gw, k]) => {
+    const amp = R * am * (1 + a * .5), g = x.createLinearGradient(cx - len / 2, 0, cx + len / 2, 0)
+    g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(.28, `rgba(${rgb},${al})`); g.addColorStop(.72, `rgba(${rgb},${al})`); g.addColorStop(1, `rgba(${rgb},0)`)
+    x.beginPath()
+    for (let i = 0; i <= 80; i++) {
+      const u = i / 80, env = Math.pow(Math.sin(Math.PI * u), 1.5), px = cx - len / 2 + u * len
+      const py = cy + dy * R + amp * env * Math.sin(u * Math.PI * 2.3 + ph + T * sp * k)
+      i ? x.lineTo(px, py) : x.moveTo(px, py)
+    }
+    x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = g; x.lineWidth = Math.max(1.2 * d, R * lw)
+    x.shadowColor = `rgba(${rgb},1)`; x.shadowBlur = R * gw; x.stroke(); x.shadowBlur = 0
+  })
+  x.globalCompositeOperation = "source-over"; x.restore()
+  const rim = x.createLinearGradient(cx - R, cy - R, cx + R, cy + R)
+  rim.addColorStop(0, "rgba(255,255,255,.8)"); rim.addColorStop(.5, "rgba(255,255,255,.12)"); rim.addColorStop(1, "rgba(255,255,255,.5)")
+  x.strokeStyle = rim; x.lineWidth = Math.max(d, R * .025); x.beginPath(); x.arc(cx, cy, R, 0, 7); x.stroke()
+  const hl = x.createRadialGradient(cx - R * .38, cy - R * .5, 0, cx - R * .38, cy - R * .5, R * .45)
+  hl.addColorStop(0, "rgba(255,255,255,.5)"); hl.addColorStop(1, "rgba(255,255,255,0)")
+  x.fillStyle = hl; x.beginPath(); x.ellipse(cx - R * .38, cy - R * .5, R * .4, R * .24, -.6, 0, 7); x.fill()
 }
 // Полоса записи: две волны плывут медленно, как на кнопке; пока говорите — чуть шире размах, но не быстрее.
 // Без точки: только волны, концы растворяются. Всё свечение помещается внутри полосы

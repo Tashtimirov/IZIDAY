@@ -809,3 +809,6 @@ body.kb .plus-menu { bottom: calc(var(--kb) + 56px); }
 .sh.wa { background: #25D366; } .sh.tg { background: #2AABEE; } .sh.ln { background: #06C755; } .sh.cp { flex: none; width: 50px; background: var(--track); color: var(--text); display: grid; place-items: center; }
 .cg-it b { -webkit-hyphens: auto; hyphens: auto; word-break: normal; overflow-wrap: anywhere; }
 .cg.n7 .cg-it.road { font-size: 0; } .cg.n7 .cg-it.road .tdi { display: none; }
+
+/* Кнопка «Помощник» в цветах иконки приложения: зелёный в голубой, мягкий блик */
+#tabs #fab .orb, #tabs #fab.rec .orb { padding: 0; background: radial-gradient(circle at 25% 15%, rgba(255,255,255,.22), rgba(255,255,255,0) 70%), linear-gradient(45deg, #0b8f5c, #18b98a 55%, #1f8fff); }
