@@ -3457,13 +3457,16 @@ function silkFrame(t) {
   const live = [...SILK.cv].filter(c => c.isConnected); SILK.cv = new Set(live)
   if (!live.length) return
   SILK.raf = requestAnimationFrame(silkFrame)
-  if (t - SILK.last < 32) return   // ~30 кадров в секунду — плавно и бережно к батарее
-  SILK.last = t
+  // Каждый кадр экрана, но не чаще 60 в секунду. Раньше пропускали кадры до 32 мс, и из-за округления времени
+  // кадры шли то через 33, то через 50 мс — волна заметно дёргалась. Плавность считается по прошедшему времени
+  const dt = t - SILK.last
+  if (dt < 12) return
+  SILK.last = t; SILK.f = Math.min(4, dt / 33.3)   // доля «старого» кадра 30 в секунду: скорость затухания не зависит от частоты
   const T = t / 1000
   const syl = .6 + .4 * Math.sin(T * 1.1) * Math.sin(T * .5)
   const target = voice ? (.18 + .82 * syl) * Math.max(.2, SILK.en) : 0
-  SILK.lv += (target - SILK.lv) * (target > SILK.lv ? .06 : .03)
-  SILK.en *= .985
+  SILK.lv += (target - SILK.lv) * silkK(target > SILK.lv ? .06 : .03)
+  SILK.en *= Math.pow(.985, SILK.f)
   const d = Math.min(2, devicePixelRatio || 1)
   for (const c of live) {
     const w = Math.round(c.clientWidth * d), h = Math.round(c.clientHeight * d)
@@ -3474,6 +3477,7 @@ function silkFrame(t) {
   }
   const tm = $("#silk .tm"); if (tm && voice && voice.t0) { const sec = Math.floor((Date.now() - voice.t0) / 1000); tm.textContent = Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0") }
 }
+const silkK = k => 1 - Math.pow(1 - k, SILK.f || 1)
 function silkLines(c, T, d, active) {
   const x = c.getContext("2d"), W = c.width, H = c.height, a = active ? SILK.lv : 0
   x.clearRect(0, 0, W, H)
@@ -3492,7 +3496,32 @@ function silkLines(c, T, d, active) {
 }
 // Кнопка «Помощник» — как иконка приложения: одна цветная сфера, волны прямо в ней (без внутреннего шара и обводки).
 // Край сферы тает наружу в ноль, концы волн растворяются, без светящихся точек
+// Сфера и маска края не меняются от кадра к кадру — рисуем их один раз и потом только копируем (для кнопки: дёшево и ровно)
+const SPH = new Map()
 function iziSphere(x, W, H, R, edge, P, waves, o = {}) {
+  if (o.cache) {
+    const key = [W, H, R, edge, P[0], o.alpha || 1].join("|")
+    let s = SPH.get(key)
+    if (!s) {
+      if (SPH.size > 24) SPH.clear()
+      const mk = () => { const c = document.createElement("canvas"); c.width = W; c.height = H; return c }
+      const bgC = mk(), mC = mk()
+      iziSphereBg(bgC.getContext("2d"), W, H, R, P, o)
+      const m = mC.getContext("2d"), fm = m.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, edge); fm.addColorStop(0, "#000"); fm.addColorStop(R / edge, "#000"); fm.addColorStop(1, "rgba(0,0,0,0)"); m.fillStyle = fm; m.fillRect(0, 0, W, H)
+      SPH.set(key, s = { bg: bgC, m: mC })
+    }
+    x.drawImage(s.bg, 0, 0)
+    x.globalCompositeOperation = o.mode || "lighter"; waves(); x.globalCompositeOperation = "destination-in"
+    x.drawImage(s.m, 0, 0); x.globalCompositeOperation = "source-over"
+    return
+  }
+  iziSphereBg(x, W, H, R, P, o)
+  const cx = W / 2, cy = H / 2
+  x.globalAlpha = 1; x.globalCompositeOperation = o.mode || "lighter"; waves(); x.globalCompositeOperation = "destination-in"
+  const fm = x.createRadialGradient(cx, cy, 0, cx, cy, edge); fm.addColorStop(0, "#000"); fm.addColorStop(R / edge, "#000"); fm.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = fm; x.fillRect(0, 0, W, H)
+  x.globalCompositeOperation = "source-over"
+}
+function iziSphereBg(x, W, H, R, P, o) {
   const cx = W / 2, cy = H / 2
   x.globalAlpha = o.alpha || 1
   const bg = x.createLinearGradient(cx - R, cy + R, cx + R, cy - R); bg.addColorStop(0, P[2][0]); bg.addColorStop(.55, P[2][1]); bg.addColorStop(1, P[2][2]); x.fillStyle = bg; x.fillRect(0, 0, W, H)
@@ -3500,9 +3529,7 @@ function iziSphere(x, W, H, R, edge, P, waves, o = {}) {
   lt.addColorStop(0, "rgba(255,255,255,.3)"); lt.addColorStop(.5, "rgba(255,255,255,.06)"); lt.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = lt; x.fillRect(0, 0, W, H)
   const sd = x.createRadialGradient(cx - R * .15, cy - R * .2, R * .6, cx, cy, R * 1.05)                  // и мягкая тень к краю
   sd.addColorStop(0, "rgba(0,40,50,0)"); sd.addColorStop(1, "rgba(0,40,60,.22)"); x.fillStyle = sd; x.fillRect(0, 0, W, H)
-  x.globalAlpha = 1; x.globalCompositeOperation = o.mode || "lighter"; waves(); x.globalCompositeOperation = "destination-in"
-  const fm = x.createRadialGradient(cx, cy, 0, cx, cy, edge); fm.addColorStop(0, "#000"); fm.addColorStop(R / edge, "#000"); fm.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = fm; x.fillRect(0, 0, W, H)
-  x.globalCompositeOperation = "source-over"
+  x.globalAlpha = 1
 }
 function silkOrb(c, T, d, active) {
   const x = c.getContext("2d"), W = c.width, H = c.height, a = active ? SILK.lv : 0
@@ -3519,10 +3546,13 @@ function silkOrb(c, T, d, active) {
         const py = cy + dy * R + amp * env * Math.sin(u * Math.PI * 2.3 + ph + T * sp * k)
         i ? x.lineTo(px, py) : x.moveTo(px, py)
       }
-      x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = g; x.lineWidth = Math.max(1.2 * d, R * lw)
-      x.shadowColor = `rgba(${rgb},1)`; x.shadowBlur = R * gw; x.stroke(); x.shadowBlur = 0
+      // свечение — широкая бледная линия под основной (размытие тени на iPhone дорогое и рвало кадры)
+      x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = g
+      const lw0 = Math.max(1.2 * d, R * lw)
+      for (const [w, al] of [[1.5, .025], [1.1, .035], [.75, .05], [.45, .07], [.2, .1]]) { x.globalAlpha = al; x.lineWidth = lw0 + R * gw * w; x.stroke() }
+      x.globalAlpha = 1; x.lineWidth = lw0; x.stroke()
     })
-  })
+  }, { cache: true })
 }
 // Полоса записи: две волны плывут медленно, как на кнопке; пока говорите — чуть шире размах, но не быстрее.
 // Без точки: только волны, концы растворяются. Всё свечение помещается внутри полосы
@@ -5350,8 +5380,8 @@ function silkTalk(c, T, d) {
   const syl = .55 + .45 * Math.sin(T * 2.3) * Math.sin(T * .9 + 1)
   const ti = st === "say" ? (.35 + .65 * syl) * Math.max(.4, SILK.ie) : st === "think" ? .12 + .08 * Math.sin(T * 1.6) : 0
   const ty = st === "listen" ? (.12 + .88 * syl) * Math.max(.12, SILK.ye) : 0
-  SILK.il += (ti - SILK.il) * (ti > SILK.il ? .07 : .035); SILK.yl += (ty - SILK.yl) * (ty > SILK.yl ? .07 : .035)
-  SILK.ie *= .975; SILK.ye *= .975
+  SILK.il += (ti - SILK.il) * silkK(ti > SILK.il ? .07 : .035); SILK.yl += (ty - SILK.yl) * silkK(ty > SILK.yl ? .07 : .035)
+  SILK.ie *= Math.pow(.975, SILK.f); SILK.ye *= Math.pow(.975, SILK.f)
   x.clearRect(0, 0, W, H)
   const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .34
   // одна сфера в цветах Изи, без стеклянной оболочки; край тает наружу и дышит с голосом

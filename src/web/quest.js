@@ -254,15 +254,14 @@ let orbCur = 1
 const orbLv = c => +(c && c.dataset.lv) || orbCur
 const mix = (a, b, t) => a.split(",").map((v, i) => Math.round(+v + (+b.split(",")[i] - v) * t)).join(",")
 function orbGlow(c, d) {
-  const lv = orbLv(c); if (lv <= 1) { if (c.style.filter) c.style.filter = ""; return }
+  const lv = orbLv(c); if (lv <= 1) return
   const k = (lv - 1) / 9, P = iziCol(), x = c.getContext("2d"), W = c.width, H = c.height, R = W * .41
   const tint = mix(mix(P[3], P[4], k), "255,246,220", Math.max(0, k - .5))
   x.save(); x.globalCompositeOperation = "lighter"
   const g = x.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, R)
-  g.addColorStop(0, `rgba(${tint},${(.1 + .32 * k).toFixed(3)})`); g.addColorStop(.6, `rgba(${tint},${(.04 + .14 * k).toFixed(3)})`); g.addColorStop(1, `rgba(${tint},0)`)
+  g.addColorStop(0, `rgba(${tint},${(.12 + .38 * k).toFixed(3)})`); g.addColorStop(.6, `rgba(${tint},${(.05 + .17 * k).toFixed(3)})`); g.addColorStop(1, `rgba(${tint},0)`)
   x.fillStyle = g; x.fillRect(0, 0, W, H); x.restore()
-  const f = `saturate(${(1 + .05 * (lv - 1)).toFixed(2)}) brightness(${(1 + .02 * (lv - 1)).toFixed(2)})`
-  if (c.style.filter !== f) c.style.filter = f
+  // яркость — прямо в рисунке, без CSS-фильтра: фильтр на живом холсте пересчитывался каждый кадр и волна дёргалась
 }
 function orbPathHTML(st) {
   if (typeof silkCanvas !== "function") return ""

@@ -886,8 +886,10 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 .mn-tot .btn.primary { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .mn-tot .btn.teal { background: var(--track); color: var(--text); }
 /* Кнопка «Помощник» в цветах иконки приложения: зелёный в голубой, мягкий блик */
-#tabs #fab .orb, #tabs #fab.rec .orb { padding: 0; background: none; border-radius: 0; overflow: visible; box-shadow: none;
-  filter: drop-shadow(0 7px 10px color-mix(in srgb, var(--izi2, #18b98a) 45%, transparent)); }   /* фон шара рисует canvas, край растворяется */
+#tabs #fab .orb, #tabs #fab.rec .orb { padding: 0; background: none; border-radius: 0; overflow: visible; box-shadow: none; }
+#tabs #fab .orb::before { content: ""; position: absolute; left: 18%; right: 18%; top: 34%; bottom: -6%; border-radius: 50%; z-index: -1; pointer-events: none;
+  background: color-mix(in srgb, var(--izi2, #18b98a) 50%, transparent); filter: blur(7px); }   /* фон шара рисует canvas, край растворяется; тень — неподвижная, без фильтра */
+#tabs #fab .orb canvas { transform: translateZ(0); }   /* свой слой: стекло меню не пересчитывается от каждого кадра волны */
 #silk { background: linear-gradient(110deg, var(--izi1, #0A9F6E), var(--izi2, #16B57E) 50%, var(--izi3, #0A84FF)); box-shadow: 0 12px 28px -10px color-mix(in srgb, var(--izi1, #0A9F6E) 80%, transparent); }
 .set .izi-c { display: flex; gap: 8px; }
 .set .izi-c button { width: 28px; height: 28px; border-radius: 50%; border: 0; padding: 0; box-shadow: 0 2px 6px rgba(0, 0, 0, .15); transition: transform .2s; }
