@@ -126,7 +126,7 @@ const STEPS = () => [
 function stepsHTML() {
   const o = O()
   if (!auto() || !o.intro || o.steps) return ""
-  const st = STEPS(), n = st.filter(s => s[3]()).length, pts = !!window.GAMI
+  const st = STEPS(), n = st.filter(s => s[3]()).length, pts = !!window.GAMI && !GAMI.off()
   if (n === st.length) { o.steps = "done"; save(false); setTimeout(() => toast(kid() ? "Ура! Ты освоился" : "Первые шаги пройдены"), 400); return "" }
   return `<div class="card ob-steps" id="ob-steps"><div class="ob-st-h">${orb(42, "margin:0;flex:none")}<div><b>Первые шаги с ${nm()}</b><span>${n} из ${st.length}${pts ? " · за каждый шаг баллы" : ""}</span></div></div>
     <div class="ob-bar"><i style="width:${Math.round(n / st.length * 100)}%"></i></div>
