@@ -78,13 +78,21 @@ function put(list, item) {
 }
 let flushT = null
 const flushSoon = () => { clearTimeout(flushT); flushT = setTimeout(() => push(true), 700) }
+// Запрос к таблице семьи. Safari на iPhone иногда рвёт первый запрос («Load failed»), а таблица
+// бывает занята синхронизацией (скрипт отвечает страницей ошибки, а не данными) — пробуем до 3 раз
 async function post(url, q, secret) {
-  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 25000)
-  try {
-    const r = await fetch(url, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, credentials: "omit", cache: "no-store", signal: ctl.signal,
-      body: JSON.stringify(Object.assign(secret ? { secret } : {}, { family: q })) })
-    return await r.json()
-  } catch (e) { return { ok: false, error: "нет связи" } } finally { clearTimeout(t) }
+  let last = "нет связи"
+  for (let i = 0; i < 3; i++) {
+    if (i) await new Promise(r => setTimeout(r, 1500 * i))
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 60000)
+    try {
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, credentials: "omit", cache: "no-store", signal: ctl.signal,
+        body: JSON.stringify(Object.assign(secret ? { secret } : {}, { family: q })) })
+      const txt = await r.text()
+      try { return JSON.parse(txt) } catch (e) { last = r.ok ? "таблица занята" : "таблица ответила ошибкой " + r.status }
+    } catch (e) { last = e && e.name === "AbortError" ? "таблица долго не отвечает" : "нет связи" } finally { clearTimeout(t) }
+  }
+  return { ok: false, error: last, net: true }
 }
 // Баллы взрослого из игры (gami.js) по дням за 40 дней — для семейного счёта
 function myPts() {
@@ -612,7 +620,7 @@ async function famNew() {
   const name = await ui.ask("Название семьи", "", "Наша семья") || "Семья"
   toast("Создаю семью…")
   const r = await post(D.conn.hook, { op: "new", name }, D.conn.secret)
-  if (!r || !r.ok || !r.family) return ui.info("Семья пока не создаётся", r && r.error && r.error !== "нет связи" ? `Таблица ответила: ${r.error}` : r && r.ok ? "В таблице ещё старая версия скрипта — после её обновления семья заработает." : "Нет связи с таблицей. Попробуйте позже.")
+  if (!r || !r.ok || !r.family) return ui.info("Семья пока не создаётся", r && r.net ? `Не дозвался до таблицы (${r.error}), хотя пробовал трижды. Проверьте интернет и нажмите ещё раз.` : r && r.error ? `Таблица ответила: ${r.error}` : r && r.ok ? "В таблице ещё старая версия скрипта — после её обновления семья заработает." : "Нет связи с таблицей. Попробуйте позже.")
   D.fam = { url: D.conn.hook, code: r.family.code, id: uid("m"), role: "adult", name: me, owner: true, data: r.family, at: 0, out: {}, seen: {}, me: { color: COLORS[0], owner: true } }
   save(false); await push(true); await shareKey(true); render()
 }
