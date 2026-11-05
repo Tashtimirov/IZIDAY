@@ -1516,7 +1516,7 @@ async function chatSend(text, opts = {}) {
   text = String(text || "").trim()
   if (!text) return
   // ответ на вопрос помощника (ask_user или подтверждение)
-  if (askWait) { const w = askWait; askWait = null; D.chat.push({ role: "user", text, at: Date.now(), voice: !!opts.voice, local: true }); save(false); renderChat(); w(text); return }
+  if (askWait) { const w = askWait; askWait = null; setBusyUI(); D.chat.push({ role: "user", text, at: Date.now(), voice: !!opts.voice, local: true }); save(false); renderChat(); w(text); return }
   if (chatBusy) { toast(`${iziName()} ещё отвечает…`); return }
   memorize()
   if (!aiKey()) { setTab("more"); return ui.info("Нужен ключ Claude", "Здесь откроется «Ключ Claude» → «Подключить»: три шага, около двух минут. Если вы в семье, где включён общий ключ, он подключится сам.") }
@@ -1560,14 +1560,18 @@ async function chatSend(text, opts = {}) {
   if (tab === "chat") renderChat()
   else toast(`${iziName()} ${iziG("ответил", "ответила")}`)
 }
-function setBusyUI(on) {
+// Кнопка справа от поля: есть текст — ➤; Изи пишет или говорит ответ — рабочий «стоп»; иначе (закончил или ждёт ответа на вопрос) — микрофон «ответить голосом»
+function setBusyUI() {
   const b = $(".chat-bar .send"); if (!b) return
-  b.classList.toggle("stop", on); b.parentNode.classList.toggle("busy", on); b.innerHTML = on ? ICO.stop : ICO.send; b.setAttribute("aria-label", on ? "Остановить" : "Отправить")
+  const inp = $("#chat-in"), st = inp && inp.value.trim() ? "send" : chatBusy && !askWait ? "stop" : "mic"
+  b.classList.toggle("stop", st === "stop"); b.classList.toggle("mic-on", st === "mic"); b.parentNode.classList.toggle("busy", st !== "send")
+  b.innerHTML = st === "stop" ? ICO.stop : st === "mic" ? ICO.mic : ICO.send
+  b.setAttribute("aria-label", st === "stop" ? "Остановить ответ" : st === "mic" ? "Ответить голосом" : "Отправить")
 }
 function chatStop() {
   if (!chatStopCtl) return
   chatStopCtl.abort()
-  if (askWait) { const w = askWait; askWait = null; w("") }   // помощник ждал ответа на вопрос — отменяем
+  if (askWait) { const w = askWait; askWait = null; setBusyUI(); w("") }   // помощник ждал ответа на вопрос — отменяем
 }
 // ✎ у своего сообщения: текст обратно в строку ввода, это сообщение и всё после него убираются
 function chatEdit(idx) {
@@ -1589,6 +1593,7 @@ function chatAsk(question, options) {
     talkHear(question, options)
     askWait = a => res(a)
     if (tab === "chat") renderChat(); else setTab("chat")
+    setBusyUI()
   })
 }
 async function chatConfirm(question) {
@@ -1708,7 +1713,7 @@ function voiceReset() {
 // Прокручивается только середина (main), шапка и нижнее меню стоят на месте
 const scrollView = end => { const m = $("#view"); if (m) m.scrollTop = end ? m.scrollHeight : 0 }
 const grow = el => { el.style.height = "auto"; el.style.height = Math.min(120, el.scrollHeight) + "px"
-  const bar = el.closest && el.closest(".chat-bar"); if (bar) bar.classList.toggle("typed", !!el.value.trim()) }   // есть текст — вместо волны стрелка «отправить»
+  const bar = el.closest && el.closest(".chat-bar"); if (bar) { bar.classList.toggle("typed", !!el.value.trim()); setBusyUI() } }   // есть текст — стрелка «отправить», нет — микрофон или стоп
 
 // ───────────── Формы ─────────────
 function moneyForm(type, entry) {
@@ -2386,8 +2391,8 @@ function bind() {
   if (inp) {
     inp.oninput = () => grow(inp)
     inp.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (voice) return voiceSendNow(); const t = inp.value; inp.value = ""; grow(inp); voiceSent(); chatSend(t) } }
-    $(".chat-bar .send", v).onclick = () => { if (voice) return voiceSendNow(); if (chatBusy && !askWait && !inp.value.trim()) return chatStop(); const t = inp.value; inp.value = ""; grow(inp); voiceSent(); chatSend(t) }
-    if (chatBusy && !askWait) setBusyUI(true)
+    $(".chat-bar .send", v).onclick = () => { if (voice) return voiceSendNow(); if (!inp.value.trim()) return chatBusy && !askWait ? chatStop() : micStart(); const t = inp.value; inp.value = ""; grow(inp); voiceSent(); chatSend(t) }
+    setBusyUI()
     // тронули текст во время записи — не отправлять по паузе: можно поправить и нажать ➤
     inp.addEventListener("focus", () => { if (voice) { const t = inp.value, r = rec; voiceReset(); try { r && r.stop() } catch (e) {} inp.value = t; grow(inp); toast("✎ Поправьте и нажмите ➤") } })
     if (voice) { inp.placeholder = "Слушаю… ➤ — отправить сразу"; if (voice.text) { inp.value = voice.text; grow(inp) } }
