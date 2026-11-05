@@ -35,6 +35,7 @@ export async function boot2({ root, time, lists = () => ({}), events = () => [],
   page.on("console", m => { if (m.type() === "error") errors.push(m.text()) })
   await page.clock.setFixedTime(time)
   await page.route("https://script.google.com/**", r => r.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(sheet.post(r.request().postData())) }))
+  await page.route("https://open.er-api.com/**", r => r.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify({ rates: { THB: 1, USD: 0.0283, RUB: 2.33 } }) }))   // курс валют
   await page.route("https://api.open-meteo.com/**", r => {
     const t0 = bkk(0, 0), time = [], temp = [], pp = [], pr = []
     for (let i = 0; i < 72; i++) { const d = new Date(+t0 + i * 3600e3); time.push(iso(d)); const hh = i % 24; temp.push(hh < 6 ? 26 : hh < 15 ? 31 : 28); pp.push(hh >= 16 && hh <= 18 ? 85 : 10); pr.push(hh >= 16 && hh <= 18 ? 6 : 0) }
