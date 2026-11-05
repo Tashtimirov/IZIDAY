@@ -65,6 +65,25 @@ const buy = await page.evaluate(async () => {
 // первая покупка ещё и открывает ачивку «Заслужил» (+25)
 check(buy.b[0] === buy.a[0] - 100 + 25 && buy.b[1] === buy.a[1] + 25 && buy.b[2] >= buy.a[2], "награда: −100 со счёта, заработанное не уменьшилось (+25 за ачивку «Заслужил»)", buy)
 
+// награда по SMART: совет цены по темпу, «слишком легко» и «слишком высоко для срока»
+const sm = await page.evaluate(() => { const st = GAMI.stats(), p = GAMI.pace(st), wk = dayKey(addDays(new Date(), 7))
+  return { p, rec: GAMI.smartOf(0, wk, st).rec, low: GAMI.smartOf(60, wk, st).v, high: GAMI.smartOf(20000, wk, st).v, ok: GAMI.smartOf(GAMI.smartOf(0, wk, st).rec, wk, st).v } })
+check(sm.p > 0 && sm.rec === Math.max(50, Math.round(sm.p * 0.7 * 7 / 50) * 50), "совет цены: 70% темпа × дни до срока", sm)
+check(sm.low === "low" && sm.high === "high" && sm.ok === "ok", "подсказка: низко, высоко, в самый раз", sm)
+await page.evaluate(() => GAMI.openGame("rew")); await page.waitForTimeout(100)
+await page.evaluate(() => $('[data-g="rew-add"]').click()); await page.waitForTimeout(350)
+await page.fill("#rw-t", "Массаж"); await page.fill("#rw-c", "20000"); await page.dispatchEvent("#rw-c", "input"); await page.waitForTimeout(100)
+check(await page.evaluate(() => $("#rw-h").classList.contains("high") && !!$("#rw-h [data-rec]")), "форма: слишком высоко — кнопка «Поставить …»")
+await page.evaluate(() => { const t = $("#gtoast"); if (t) t.classList.remove("show"); $(".sheet:last-child").scrollTop = 400 }); await page.waitForTimeout(300); await page.screenshot({ path: `${SHOTS}gm-smart-high.png` })
+await page.evaluate(() => $("#rw-h [data-rec]").click()); await page.waitForTimeout(100)
+check(await page.evaluate(() => $("#rw-h").classList.contains("ok")), "после совета — «в самый раз»")
+await shot(page, `${SHOTS}gm-smart.png`)
+await page.evaluate(() => $('#layer [data-a="ok"]').click()); await page.waitForTimeout(300)
+const rw = await page.evaluate(() => live(D.goals).find(g => g.kind === "reward" && g.title === "Массаж"))
+check(rw && rw.due && rw.cost < 20000, "награда сохранена со сроком и честной ценой", rw)
+const iz = await page.evaluate(() => runTool("add_reward", { title: "Кофе", cost: 5000, due: dayKey(addDays(new Date(), 1)) }))
+check(iz.verdict === "high" && iz.recommended < 5000, "Изи: add_reward подсказывает, что цена высока для срока", iz)
+
 // заморозка: пропущенный вчера день не рвёт серию
 const fr = await page.evaluate(() => {
   const y = dayKey(addDays(new Date(), -1))

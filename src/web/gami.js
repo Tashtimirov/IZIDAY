@@ -428,9 +428,10 @@ function rewPage(st) {
   let html = `<div class="gbal"><span class="ic">${svgI("star", 24, 2.2)}</span><div class="grow"><b>На счету ${num(st.balance)}</b><span>Потратили — ранг остаётся: он считается по всем заработанным баллам.</span></div></div>`
   const rs = rewards()
   html += `<div class="card"><h2>Мои награды<button class="act" data-g="rew-add">+ Своя</button></h2>${rs.length ? rs.map(r => { const can = st.balance >= r.cost
-    return `<div class="row grw"><span class="gic rew">${svgI(r.ico || "gift", 20)}</span><div class="grow"><div class="t">${esc(r.title)}</div><div class="s">${can ? (r.note ? esc(r.note) : "можно получить") : `копится · ${num(Math.max(0, st.balance))} из ${num(r.cost)}`}</div>${can ? "" : `<div class="gbar"><i style="width:${Math.round(pct(st.balance, r.cost) * 100)}%"></i></div>`}</div>
+    const ev = smartOf(r.cost, r.due, st)
+    return `<div class="row grw"><span class="gic rew">${svgI(r.ico || "gift", 20)}</span><div class="grow" data-gedit="${esc(r.id)}"><div class="t">${esc(r.title)}</div><div class="s">${r.due ? `к ${esc(dueLbl(r.due))} · ` : ""}${can ? "можно получить" : `${num(Math.max(0, st.balance))} из ${num(r.cost)}`}${!can && r.due ? ` · <b class="gpace ${ev.late ? "late" : ""}">${ev.late ? `отстаёте: нужно ${num(ev.needPerDay)} в день` : "в темпе"}</b>` : ""}</div>${can ? "" : `<div class="gbar"><i style="width:${Math.round(pct(st.balance, r.cost) * 100)}%"></i></div>`}</div>
       <button class="gbuy ${can ? "" : "off"}" data-gbuy="${esc(r.id)}">${svgI("star", 13, 2.4)} ${num(r.cost)}</button></div>` }).join("")
-    : `<div class="muted small" style="margin-bottom:8px">Назначьте себе награды: за баллы — то, что радует. Например:</div><div class="chips">${REW_IDEAS.map((x, i) => `<button class="chip" data-gidea="${i}">${esc(x[0])} · ${x[1]}</button>`).join("")}</div>`}</div>`
+    : `<div class="muted small" style="margin-bottom:8px">Назначьте себе награду и срок — Изи подскажет честную цену. Например:</div><div class="chips">${REW_IDEAS.map((x, i) => `<button class="chip" data-gidea="${i}">${esc(x[0])} · ${x[1]}</button>`).join("")}</div>`}</div>`
   html += `<div class="card"><h2>Приз за ранг</h2>
     <div class="row grw"><span class="gic health">${svgI("snow", 20)}</span><div class="grow"><div class="t">Заморозка серии</div><div class="s">пропустили день — серия не сгорает · ${maxF} в неделю${st.freezes ? ` · есть ${st.freezes}` : ""}</div></div>
       <button class="gbuy ${st.balance >= FREEZE && wkFreeze < maxF ? "" : "off"}" data-g="freeze">${svgI("star", 13, 2.4)} ${FREEZE}</button></div>
@@ -439,21 +440,79 @@ function rewPage(st) {
   if (sp.length) html += `<div class="card"><h2>Получено</h2>${sp.map(x => `<div class="row"><div class="grow"><div class="t">${esc(x.title)}</div><div class="s">${esc(shortDate(new Date(x.date)))}</div></div><span class="muted">−${num(x.cost)}</span></div>`).join("")}</div>`
   return html
 }
-async function rewAdd(idea) {
-  const title = idea ? idea[0] : await ui.ask("Своя награда", "Что вы себе подарите за баллы?", "", { placeholder: "Например: массаж" })
-  if (!title) return
-  const cost = idea ? idea[1] : Math.round(+String(await ui.ask("Сколько баллов?", "Ориентир: день — около 100 баллов. Мелочь 100–300, вечер 500, покупка 2 000–5 000.", "500", { type: "number" }) || "").replace(/\s/g, ""))
-  if (!cost || cost < 10) return toast("Нужна цена в баллах")
-  const ico = idea ? idea[2] : REW_IC[Math.abs([...title].reduce((s, c) => s + c.charCodeAt(0), 0)) % REW_IC.length]
-  upsert("goals", { id: uid("w"), date: Date.now(), kind: "reward", title: String(title).trim().slice(0, 60), cost, ico })
-  save(); render()
+// ── Награда по SMART: конкретная (что именно), измеримая (цена в баллах), достижимая (по вашему темпу),
+// значимая (зачем), ограниченная сроком (к какой дате). Изи советует цену и говорит, если планка слишком низкая или высокая.
+const REW_KIND = [[/кофе|чай|десерт|морожен|пирож|сладк|снек/i, 150, 2], [/кино|фильм|сериал|игр|вечер|ванн|книг|прогулк/i, 500, 5],
+  [/ресторан|ужин|обед|массаж|спа|spa|салон|бар/i, 1200, 14], [/купить|куплю|нов|ракетк|кроссов|одежд|часы|телефон|наушник|гаджет|вещ/i, 3000, 30],
+  [/поездк|отпуск|путешеств|билет|море|выходные|уикенд/i, 8000, 90]]
+const kindOf = t => (REW_KIND.find(k => k[0].test(t || "")) || [null, 500, 7])
+function pace(st = stats()) {   // средние баллы в день за 14 прошлых дней (без сегодня); новичку — 80
+  const past = st.days.slice(-15, -1), n = past.length
+  const avg = n ? past.reduce((a, x) => a + x.total, 0) / n : 0
+  return Math.round(n >= 3 ? Math.max(30, avg) : Math.max(80, avg))
+}
+const r50 = n => Math.max(50, Math.round(n / 50) * 50)
+const daysTo = due => { const d = due && parseIso(due); return d ? Math.max(1, Math.round((sod(d) - sod(new Date())) / 864e5)) : 0 }
+const dueLbl = due => { const d = parseIso(due); return d ? `${d.getDate()} ${MONTHS_GEN[d.getMonth()]}${d.getFullYear() !== new Date().getFullYear() ? " " + d.getFullYear() : ""}` : "" }
+// Оценка: на награды уходит ~70% заработанного, остальное — на другие награды и заморозки
+function smartOf(cost, due, st = stats(), title = "") {
+  const p = pace(st), share = Math.round(p * 0.7), days = daysTo(due) || kindOf(title)[2]
+  const rec = r50(share * days), need = Math.max(0, cost - st.balance), daysNeed = Math.ceil(need / Math.max(1, share))
+  const needPerDay = Math.ceil(need / Math.max(1, daysTo(due) || days))
+  const late = !!due && need > 0 && needPerDay > p
+  let v = "ok", msg
+  if (!cost) { v = "none"; msg = `Совет Изи: ${num(rec)} баллов — столько вы наберёте за ${days} ${plural(days, "день", "дня", "дней")} в своём темпе (${num(p)} в день).` }
+  else if (cost < rec * 0.5 && need === 0) { v = "low"; msg = `Слишком легко: баллов уже хватает, а срок ${days} ${plural(days, "день", "дня", "дней")}. Награда радует, когда заслужена — поднимите до ${num(rec)}.` }
+  else if (cost < rec * 0.5) { v = "low"; msg = `Планка низковата: за ${days} ${plural(days, "день", "дня", "дней")} вы наберёте около ${num(share * days)}. Поднимите до ${num(rec)}, чтобы было ради чего стараться.` }
+  else if (cost > rec * 1.6) { const fit = addDays(new Date(), daysNeed); v = "high"
+    msg = `Слишком высоко для этого срока: в вашем темпе нужно ${daysNeed} ${plural(daysNeed, "день", "дня", "дней")}. Понизьте до ${num(rec)} или перенесите срок на ${dueLbl(dayKey(fit))}.` }
+  else msg = `В самый раз: в вашем темпе (${num(p)} в день) успеете${due ? " к " + dueLbl(due) : ""}${daysNeed ? ` — нужно около ${daysNeed} ${plural(daysNeed, "дня", "дней", "дней")}` : ""}.`
+  return { v, msg, rec, pace: p, days, daysNeed, needPerDay, late, fit: dayKey(addDays(new Date(), daysNeed)) }
+}
+const DUES = [["Завтра", 1], ["Неделя", 7], ["2 недели", 14], ["Месяц", 30], ["3 месяца", 90]]
+function rewAdd(idea, edit) {
+  const st = stats(), r0 = edit || {}
+  let title = r0.title || (idea ? idea[0] : ""), cost = r0.cost || (idea ? idea[1] : 0), why = r0.why || ""
+  let due = r0.due || (idea || title ? dayKey(addDays(new Date(), kindOf(title)[2])) : "")
+  const s = sheet(`<h3>${edit ? "Награда" : "Своя награда"}</h3><div class="msg">Цель по SMART: что именно, сколько баллов и к какому сроку.</div>
+    <div class="field"><label>Что именно</label><input id="rw-t" value="${esc(title)}" placeholder="Например: массаж в субботу"></div>
+    <div class="field"><label>К какому сроку</label><div class="chips" id="rw-d">${DUES.map(([t, n]) => `<button class="chip" data-n="${n}">${t}</button>`).join("")}</div><input id="rw-due" type="date" value="${esc(due)}" style="margin-top:8px"></div>
+    <div class="field"><label>Цена в баллах</label><input id="rw-c" type="number" inputmode="numeric" value="${cost || ""}" placeholder="Совет Изи ниже"></div>
+    <div class="gsmart" id="rw-h"></div>
+    <div class="field"><label>Зачем мне это (необязательно)</label><input id="rw-w" value="${esc(why)}" placeholder="Например: отдохнуть после сделки"></div>
+    <div class="btns">${edit ? '<button class="btn red" data-a="del">Удалить</button>' : '<button class="btn" data-a="no">Отмена</button>'}<button class="btn primary" data-a="ok">Сохранить</button></div>`)
+  const $t = $("#rw-t", s.el), $c = $("#rw-c", s.el), $d = $("#rw-due", s.el), $h = $("#rw-h", s.el)
+  const upd = () => {
+    title = $t.value.trim(); cost = Math.round(+$c.value || 0); due = $d.value
+    const e = smartOf(cost, due, stats(), title)
+    $$("#rw-d .chip", s.el).forEach(b => b.classList.toggle("on", daysTo(due) === +b.dataset.n))
+    $h.className = "gsmart " + e.v
+    $h.innerHTML = `<b class="orb"></b><div>${esc(e.msg)}${e.v !== "ok" ? `<div class="chips"><button class="chip on" data-rec="${e.rec}">Поставить ${num(e.rec)}</button>${e.v === "high" ? `<button class="chip" data-fit="${e.fit}">Срок ${esc(dueLbl(e.fit))}</button>` : ""}</div>` : ""}</div>`
+    $$("[data-rec]", $h).forEach(b => b.onclick = () => { $c.value = b.dataset.rec; upd() })
+    $$("[data-fit]", $h).forEach(b => b.onclick = () => { $d.value = b.dataset.fit; upd() })
+  }
+  $$("#rw-d .chip", s.el).forEach(b => b.onclick = () => { $d.value = dayKey(addDays(new Date(), +b.dataset.n)); if (!$c.value) $c.value = ""; upd() })
+  $t.oninput = () => { if (!$d.value && $t.value.trim().length > 2) $d.value = dayKey(addDays(new Date(), kindOf($t.value)[2])); upd() }
+  $c.oninput = upd; $d.onchange = upd
+  upd()
+  if (!title) setTimeout(() => $t.focus(), 250)
+  const close = () => s.close()
+  const no = $('[data-a="no"]', s.el); if (no) no.onclick = close
+  const del = $('[data-a="del"]', s.el); if (del) del.onclick = () => { remove("goals", r0.id); save(); close(); render() }
+  $('[data-a="ok"]', s.el).onclick = () => {
+    upd()
+    if (!title) return toast("Напишите, что за награда")
+    if (!cost || cost < 10) cost = smartOf(0, due, stats(), title).rec
+    const ico = r0.ico || (idea && idea[2]) || REW_IC[Math.abs([...title].reduce((a, c) => a + c.charCodeAt(0), 0)) % REW_IC.length]
+    upsert("goals", Object.assign({}, r0.id ? r0 : { id: uid("w"), date: Date.now(), kind: "reward" }, { title: title.slice(0, 60), cost, ico, due: due || null, why: $("#rw-w", s.el).value.trim().slice(0, 120) }))
+    save(); close(); render()
+  }
 }
 async function rewBuy(id) {
   const r = rewards().find(x => x.id === id), st = stats()
   if (!r) return
   if (st.balance < r.cost) return toast(`Не хватает ${num(r.cost - st.balance)} баллов`)
-  const a = await ui.confirm(r.title, `<div class="msg">Списать ${num(r.cost)} баллов? Ранг не изменится. Награду можно взять снова, когда накопите.</div>`, ["Удалить награду", "Отмена", "Получить"])
-  if (a === "Удалить награду") { remove("goals", r.id); save(); return render() }
+  const a = await ui.confirm(r.title, `<div class="msg">Списать ${num(r.cost)} баллов? Ранг не изменится. Награду можно взять снова, когда накопите.</div>`, ["Отмена", "Получить"])
   if (a !== "Получить") return
   upsert("goals", { id: uid("s"), date: Date.now(), kind: "spend", title: r.title, cost: r.cost, reward: r.id })
   save(); render()
@@ -606,13 +665,13 @@ function summary() {
   return { rank: st.rank, level: st.lv, of: RANKS.length, points_total: st.earned, balance: st.balance, next_rank: st.next ? { name: st.next[0], need: st.next[1] - st.earned } : null,
     streak_days: st.streak, freezes: st.freezes, today: { points: st.today.total, items: st.today.items.map(i => `${i.t} +${i.p}`), clean_day: st.today.clean.ok, left_for_clean_day: st.today.clean.left },
     week: { points: st.weekPts, last_week_same_days: st.lastSpanPts }, achievements: l.filter(a => a.ok).map(a => a.t), nearest: l.filter(a => !a.ok && !a.secret).sort((a, b) => b.p - a.p).slice(0, 3).map(a => `${a.t}: ${a.s} (${num(a.have)} из ${num(a.need)})`),
-    rewards: rewards().map(r => `${r.title} — ${r.cost}`), league: lgOn() && D.league.data ? Object.values(D.league.data.members || {}).map(m => `${m.name}: ${((m.weeks || {})[wkKey(new Date())] || {}).pts || 0}`) : null,
+    rewards: rewards().map(r => `${r.title} — ${r.cost}${r.due ? ", к " + r.due : ""}`), pace_per_day: pace(st), league: lgOn() && D.league.data ? Object.values(D.league.data.members || {}).map(m => `${m.name}: ${((m.weeks || {})[wkKey(new Date())] || {}).pts || 0}`) : null,
     rules: `дело ${PTS.task}, главное из трёх ${PTS.top}, привычка ${PTS.habit} (×1,5 с 5 дней серии, ×2 с 21), цели воды/шагов/белка ${PTS.health}, тренировка ${PTS.workout}, итоги дня ${PTS.note}, цель месяца ${PTS.month}; потолок ${CAP} в день; чистый день ×2` }
 }
 const TOOLS = [
   { name: "get_progress", description: "Баллы, ранг, серия, ачивки, награды и лига друзей пользователя (игра IZIDAY). Вызывай, когда спрашивают про баллы, ранг, награды, соревнование, или чтобы похвалить за день.", input_schema: { type: "object", properties: {} } },
-  { name: "add_reward", description: "Добавить свою награду, которую пользователь купит за баллы (кофе, вечер кино, покупка). Ориентир цены: день — около 100 баллов; мелочь 100–300, вечер 500, покупка 2000–5000.",
-    input_schema: { type: "object", properties: { title: { type: "string" }, cost: { type: "number" } }, required: ["title", "cost"] } },
+  { name: "add_reward", description: "Добавить награду, которую пользователь купит за баллы, по SMART: что именно, цена в баллах, срок (due). Без cost — поставит цену по темпу пользователя. Ответ содержит оценку (verdict low/high/ok, recommended) — если цена слишком низкая или высокая для срока, скажи об этом и предложи recommended или другой срок.",
+    input_schema: { type: "object", properties: { title: { type: "string" }, cost: { type: "number" }, due: { type: "string", description: "YYYY-MM-DD — к какому сроку" }, why: { type: "string" } }, required: ["title"] } },
 ]
 function wrapIzi() {
   TOOLS.forEach(t => { if (!AGENT_TOOLS.some(x => x.name === t.name)) AGENT_TOOLS.push(t) })
@@ -620,14 +679,17 @@ function wrapIzi() {
   const run0 = runTool
   runTool = async function (name, x) {
     if (name === "get_progress") return summary()
-    if (name === "add_reward") { const cost = Math.round(+x.cost || 0); if (!x.title || cost < 10) return { error: "нужны title и cost" }
-      upsert("goals", { id: uid("w"), date: Date.now(), kind: "reward", title: String(x.title).trim().slice(0, 60), cost, ico: REW_IC[cost % REW_IC.length] }); save(); return { ok: true, balance: stats().balance } }
+    if (name === "add_reward") { if (!x.title) return { error: "нужен title" }
+      const st = stats(), due = /^\d{4}-\d\d-\d\d$/.test(x.due || "") ? x.due : dayKey(addDays(new Date(), kindOf(x.title)[2]))
+      const cost = Math.round(+x.cost || 0) >= 10 ? Math.round(+x.cost) : smartOf(0, due, st, x.title).rec, e = smartOf(cost, due, st, x.title)
+      upsert("goals", { id: uid("w"), date: Date.now(), kind: "reward", title: String(x.title).trim().slice(0, 60), cost, due, why: String(x.why || "").slice(0, 120), ico: REW_IC[cost % REW_IC.length] }); save()
+      return { ok: true, cost, due, balance: st.balance, pace_per_day: e.pace, verdict: e.v, recommended: e.rec, advice: e.msg } }
     return run0.apply(this, arguments)
   }
   const sys0 = agentSystem
   agentSystem = function () {
     return sys0.apply(this, arguments) + `
-- Игра IZIDAY: за дела, привычки, нормы воды и шагов, итоги дня начисляются баллы, из них растёт ранг (10 рангов), есть ачивки, свои награды за баллы и лига друзей. Подробности — get_progress. Когда пользователь закрыл дело или день, можно коротко сказать, сколько баллов это дало и сколько до следующего ранга, без пафоса. Награду за баллы добавляй через add_reward.
+- Игра IZIDAY: за дела, привычки, нормы воды и шагов, итоги дня начисляются баллы, из них растёт ранг (10 рангов), есть ачивки, свои награды за баллы и лига друзей. Подробности — get_progress. Когда пользователь закрыл дело или день, можно коротко сказать, сколько баллов это дало и сколько до следующего ранга, без пафоса. Награду за баллы добавляй через add_reward по SMART: уточни, что именно и к какому сроку; если пользователь назвал цену слишком низкую или высокую для своего темпа — мягко предложи recommended или другой срок.
 - Предлагая новую привычку: не больше трёх вариантов, под реальный день и данные пользователя, каждая — маленькая и конкретная (что и когда). Новые привычки первые 3 дня дают двойные баллы. Если серия привычки рвётся и привычек много, предлагай упростить, а не добавлять.`
   }
 }
@@ -666,6 +728,7 @@ function bindGame(v) {
   $$("[data-gseg]", v).forEach(b => b.onclick = () => { gSeg = b.dataset.gseg; render(); if (gSeg === "lg") lgPush(false) })
   $$("[data-gcat]", v).forEach(b => b.onclick = () => { achCat = b.dataset.gcat; render() })
   $$("[data-gbuy]", v).forEach(b => b.onclick = () => rewBuy(b.dataset.gbuy))
+  $$("[data-gedit]", v).forEach(b => b.onclick = () => { const r = rewards().find(x => x.id === b.dataset.gedit); if (r) rewAdd(null, r) })
   $$("[data-gidea]", v).forEach(b => b.onclick = () => rewAdd(REW_IDEAS[+b.dataset.gidea]))
   $$("[data-gtheme]", v).forEach(b => b.onclick = () => { D.gamiTheme = b.dataset.gtheme; save(false); applyTheme(); render() })
   $$("[data-gach]", v).forEach(b => b.onclick = () => { const a = achList(stats()).find(x => x.key === b.dataset.gach); if (!a) return
@@ -685,6 +748,6 @@ function init() {
   if (pendingJoin) setTimeout(lgJoin, 900)
   else if (D.gamiRankPending) setTimeout(() => { if (!stack.length) showPending() }, 1500)
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && D.gamiRankPending) setTimeout(() => { if (!stack.length) showPending() }, 900) })
-  window.GAMI = { stats, achList, summary, join: lgJoin, openGame, tick, RANKS, PTS }
+  window.GAMI = { stats, achList, summary, smartOf, pace, join: lgJoin, openGame, tick, RANKS, PTS }
 }
 })()
