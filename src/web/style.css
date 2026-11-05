@@ -1123,4 +1123,4 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
   -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .scam-flip svg { width: 100%; height: 100%; display: block; }
 @media (prefers-reduced-motion: reduce) { .scam, .att-th, .scam-th { transition: none; animation: none; } }
-.chat-bar .att-tray .att-card { background: color-mix(in srgb, var(--card) 96%, transparent); }   /* у поля своё стекло — второе размытие внутри не работает, поэтому почти без прозрачности */
+.chat-bar .att-tray .att-card { background: var(--card); }   /* у поля своё стекло — второе размытие внутри не работает, поэтому почти без прозрачности */
