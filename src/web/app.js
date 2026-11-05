@@ -2105,7 +2105,7 @@ function renderToday() {
   const onDay = d => v.events.filter(e => e.s < addDays(d, 1) && e.e > d).sort((a, b) => (b.all_day ? 1 : 0) - (a.all_day ? 1 : 0) || a.s - b.s)
   const dayEvs = onDay(selDay)
   const nSel = dayEvs.length
-  if (isToday) html += todayTop(v, now)
+  // Порядок «Сегодня»: календарь → события дня → напоминания → привычки → всё остальное (сводка дня, кольца, игра…)
   html += `<div class="card daycard"><div class="dayhead"><div><div class="dh-t">${isToday ? "Сегодня" : esc(core.cap(dayName(selDay)))}, ${selDay.getDate()} ${MONTHS_GEN[selDay.getMonth()]}</div>
     <div class="dh-n">${nSel ? `${nSel} ${plural(nSel, "событие", "события", "событий")}` : "Нет событий"}</div></div><button class="act" data-do="event">+ Событие</button></div>`
   const useTl = selDay >= t0
@@ -2140,9 +2140,10 @@ function renderToday() {
     <div class="s">напомню рядом: ${esc(p.query)} · ${(p.points || []).length} ${plural((p.points || []).length, "точка", "точки", "точек")}</div></div></div>`).join("")
   html += `</div>`
 
+  if (isToday) html += habitsCard(selDay)
+  if (isToday) html += todayTop(v, now)
   html += kidsCard(selDay)
   if (isToday && shopOpen().length) html += shopCard()
-  if (isToday) html += habitsCard(selDay)
   if (isToday) html += choresToday()
   if (isToday && pomoNow()) html += pomoCard()
   if (isToday) html += goalsCard()
