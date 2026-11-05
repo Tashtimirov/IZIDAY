@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Значки веб-приложения из варианта «Восход» (logo_variants.py): icon-180/192/512.png.
+"""Значки веб-приложения: шар Изи на зелёном (вариант А, 2026-11-05): icon-180/192/512.png.
+Исходник 1024px — tools/icon-orb-1024.png, нарисован tools/icon_orb.html (draw("a") в Chromium).
 Квадрат без скруглений — iPhone скругляет сам."""
-import pathlib, subprocess, sys, tempfile
+import pathlib
 from PIL import Image
 HERE = pathlib.Path(__file__).resolve().parent.parent
-with tempfile.TemporaryDirectory() as t:
-    subprocess.run([sys.executable, str(HERE / "tools/logo_variants.py"), t], check=True, stdout=subprocess.DEVNULL)
-    im = Image.open(pathlib.Path(t) / "A-sunrise.png").convert("RGB")
+im = Image.open(HERE / "tools/icon-orb-1024.png").convert("RGB")
 for n in (180, 192, 512):
     im.resize((n, n), Image.LANCZOS).save(HERE / f"icon-{n}.png", optimize=True)

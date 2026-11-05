@@ -1,0 +1,55 @@
+<body style="margin:0;background:#fff">
+<canvas id=c width=1024 height=1024></canvas>
+<script>
+const c=document.getElementById("c"),x=c.getContext("2d"),W=1024
+function bg(){ const g=x.createLinearGradient(0,W,W,0); g.addColorStop(0,"#0b8f5c"); g.addColorStop(.55,"#18b98a"); g.addColorStop(1,"#1f8fff"); x.fillStyle=g; x.fillRect(0,0,W,W)
+ const s=x.createRadialGradient(W*.25,W*.15,0,W*.25,W*.15,W*.8); s.addColorStop(0,"rgba(255,255,255,.22)"); s.addColorStop(1,"rgba(255,255,255,0)"); x.fillStyle=s; x.fillRect(0,0,W,W) }
+function wave(cx,cy,len,amp,col,ph,lw,glow,k=2.3){ x.beginPath(); for(let i=0;i<=200;i++){const u=i/200,env=Math.pow(Math.sin(Math.PI*u),1.5),px=cx-len/2+u*len,py=cy+amp*env*Math.sin(u*Math.PI*k+ph); i?x.lineTo(px,py):x.moveTo(px,py)}
+ x.lineCap="round";x.lineJoin="round";x.strokeStyle=col;x.lineWidth=lw;x.shadowColor=col;x.shadowBlur=glow;x.stroke();x.shadowBlur=0 }
+function orb(cx,cy,R,dark){ const b=x.createRadialGradient(cx-R*.3,cy-R*.35,R*.1,cx,cy,R); b.addColorStop(0,dark?"rgba(160,255,225,.2)":"rgba(255,255,255,.32)"); b.addColorStop(1,dark?"rgba(20,90,130,.3)":"rgba(255,255,255,.08)"); x.fillStyle=b;x.beginPath();x.arc(cx,cy,R,0,7);x.fill()
+ x.save();x.beginPath();x.arc(cx,cy,R*.98,0,7);x.clip();x.globalCompositeOperation="lighter"
+ wave(cx,cy+R*.04,R*1.75,R*.32,"rgba(140,205,255,.95)",2.1,R*.035,R*.18); wave(cx,cy-R*.03,R*1.75,R*.42,"rgba(150,255,220,1)",0,R*.045,R*.22)
+ x.globalCompositeOperation="source-over";x.restore()
+ const rim=x.createLinearGradient(cx-R,cy-R,cx+R,cy+R); rim.addColorStop(0,"rgba(255,255,255,.8)"); rim.addColorStop(.5,"rgba(255,255,255,.12)"); rim.addColorStop(1,"rgba(255,255,255,.5)"); x.strokeStyle=rim;x.lineWidth=R*.025;x.beginPath();x.arc(cx,cy,R,0,7);x.stroke()
+ const hl=x.createRadialGradient(cx-R*.38,cy-R*.5,0,cx-R*.38,cy-R*.5,R*.45); hl.addColorStop(0,"rgba(255,255,255,.55)"); hl.addColorStop(1,"rgba(255,255,255,0)"); x.fillStyle=hl;x.beginPath();x.ellipse(cx-R*.38,cy-R*.5,R*.4,R*.24,-.6,0,7);x.fill() }
+const V={
+ a(){ bg(); orb(W/2,W/2,W*.33,false) },
+ b(){ bg(); wave(W/2,W/2,W*.72,W*.17,"rgba(255,255,255,.6)",2.2,W*.03,W*.03); wave(W/2,W/2,W*.72,W*.22,"rgba(255,255,255,1)",0,W*.042,W*.04) },
+ c(){ const g=x.createRadialGradient(W/2,W*.42,0,W/2,W/2,W*.75); g.addColorStop(0,"#123a3a"); g.addColorStop(1,"#03100d"); x.fillStyle=g;x.fillRect(0,0,W,W); orb(W/2,W/2,W*.36,true) },
+ d(){ bg(); const cx=W/2,cy=W*.56,R=W*.2; const s=x.createRadialGradient(cx,cy,0,cx,cy,R*1.9); s.addColorStop(0,"rgba(255,255,255,.95)"); s.addColorStop(.5,"rgba(255,255,255,.95)"); s.addColorStop(.52,"rgba(255,255,255,.25)"); s.addColorStop(1,"rgba(255,255,255,0)");
+   x.save();x.beginPath();x.rect(0,0,W,cy);x.clip();x.fillStyle=s;x.beginPath();x.arc(cx,cy,R*1.9,0,7);x.fill();x.restore()
+   wave(cx,cy+W*.02,W*.7,W*.07,"rgba(255,255,255,1)",0,W*.036,W*.03,3); wave(cx,cy+W*.13,W*.5,W*.05,"rgba(220,255,240,.7)",2,W*.03,W*.02,3) }
+}
+
+function orbShell(cx,cy,R){ const b=x.createRadialGradient(cx-R*.3,cy-R*.35,R*.1,cx,cy,R); b.addColorStop(0,"rgba(255,255,255,.32)"); b.addColorStop(1,"rgba(255,255,255,.08)"); x.fillStyle=b;x.beginPath();x.arc(cx,cy,R,0,7);x.fill() }
+function orbGlass(cx,cy,R){ const rim=x.createLinearGradient(cx-R,cy-R,cx+R,cy+R); rim.addColorStop(0,"rgba(255,255,255,.8)"); rim.addColorStop(.5,"rgba(255,255,255,.12)"); rim.addColorStop(1,"rgba(255,255,255,.5)"); x.strokeStyle=rim;x.lineWidth=R*.025;x.beginPath();x.arc(cx,cy,R,0,7);x.stroke()
+ const hl=x.createRadialGradient(cx-R*.38,cy-R*.5,0,cx-R*.38,cy-R*.5,R*.45); hl.addColorStop(0,"rgba(255,255,255,.5)"); hl.addColorStop(1,"rgba(255,255,255,0)"); x.fillStyle=hl;x.beginPath();x.ellipse(cx-R*.38,cy-R*.5,R*.4,R*.24,-.6,0,7);x.fill() }
+function glowText(t,cx,cy,size,weight,ls){ x.font=`${weight} ${size}px "Inter Display", Inter, sans-serif`; x.textAlign="center"; x.textBaseline="middle"; if(ls) x.letterSpacing=ls+"px"
+ x.fillStyle="#fff"; x.shadowColor="rgba(160,255,225,1)"; x.shadowBlur=size*.35; x.fillText(t,cx,cy); x.shadowBlur=size*.12; x.fillText(t,cx,cy); x.shadowBlur=0; x.letterSpacing="0px" }
+function inside(cx,cy,R,f){ x.save();x.beginPath();x.arc(cx,cy,R*.98,0,7);x.clip();x.globalCompositeOperation="lighter";f();x.globalCompositeOperation="source-over";x.restore() }
+Object.assign(V,{
+ e(){ bg(); const cx=W/2,cy=W/2,R=W*.33; orbShell(cx,cy,R)
+   inside(cx,cy,R,()=>{ wave(cx,cy+R*.42,R*1.7,R*.14,"rgba(140,205,255,.9)",2.1,R*.025,R*.12); wave(cx,cy+R*.4,R*1.7,R*.18,"rgba(150,255,220,1)",0,R*.03,R*.14) })
+   glowText("IZI",cx,cy-R*.05,R*.62,700,R*.06); orbGlass(cx,cy,R) },
+ f(){ bg(); const cx=W/2,cy=W/2,R=W*.33; orbShell(cx,cy,R)
+   inside(cx,cy,R,()=>{ wave(cx,cy+R*.05,R*1.75,R*.36,"rgba(140,205,255,.55)",2.1,R*.03,R*.14); wave(cx,cy-R*.02,R*1.75,R*.44,"rgba(150,255,220,.6)",0,R*.035,R*.16) })
+   glowText("Изи",cx,cy,R*.56,600); orbGlass(cx,cy,R) },
+ g(){ bg(); const cx=W/2,cy=W/2,R=W*.33; orbShell(cx,cy,R)
+   inside(cx,cy,R,()=>{ const a=R*.5,top=cy-R*.38,bot=cy+R*.38
+     const zz=(col,lw,gl,o)=>{ x.beginPath(); for(let i=0;i<=60;i++){const u=i/60,px=cx-a+u*2*a,py=top+o+R*.06*Math.sin(u*Math.PI*2); i?x.lineTo(px,py):x.moveTo(px,py)}
+       x.lineTo(cx-a,bot+o); for(let i=0;i<=60;i++){const u=i/60,px=cx-a+u*2*a,py=bot+o+R*.06*Math.sin(u*Math.PI*2+Math.PI); x.lineTo(px,py)}
+       x.lineCap="round";x.lineJoin="round";x.strokeStyle=col;x.lineWidth=lw;x.shadowColor=col;x.shadowBlur=gl;x.stroke();x.shadowBlur=0 }
+     zz("rgba(140,205,255,.85)",R*.05,R*.2,R*.05); zz("rgba(170,255,225,1)",R*.075,R*.25,0) })
+   orbGlass(cx,cy,R) },
+ h(){ bg(); const cx=W/2,cy=W/2,R=W*.33; orbShell(cx,cy,R)
+   inside(cx,cy,R,()=>{ wave(cx,cy+R*.5,R*1.5,R*.09,"rgba(140,205,255,.9)",2.1,R*.022,R*.12); wave(cx,cy+R*.48,R*1.5,R*.12,"rgba(150,255,220,1)",0,R*.028,R*.14) })
+   const lw=R*.13, top=cy-R*.12, bot=cy+R*.3, zx=R*.22, gap=R*.2
+   x.strokeStyle="#fff"; x.lineCap="round"; x.lineJoin="round"; x.lineWidth=lw; x.shadowColor="rgba(160,255,225,1)"; x.shadowBlur=R*.18
+   x.beginPath(); for(const sx of [-1,1]){ const px=cx+sx*(zx+gap+lw/2); x.moveTo(px,top); x.lineTo(px,bot) }
+   x.moveTo(cx-zx,top); x.lineTo(cx+zx,top); x.lineTo(cx-zx,bot); x.lineTo(cx+zx,bot); x.stroke(); x.shadowBlur=0
+   for(const sx of [-1,1]){ const px=cx+sx*(zx+gap+lw/2),py=top-R*.27,r=R*.09, g=x.createRadialGradient(px,py,0,px,py,r*2.4); g.addColorStop(0,"#fff"); g.addColorStop(.35,"rgba(200,255,240,.95)"); g.addColorStop(1,"rgba(90,220,255,0)"); x.fillStyle=g;x.beginPath();x.arc(px,py,r*2.4,0,7);x.fill() }
+   orbGlass(cx,cy,R) }
+})
+
+window.draw=k=>{x.clearRect(0,0,W,W);V[k]()}
+</script>
