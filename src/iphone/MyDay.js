@@ -1392,7 +1392,9 @@ function healthNum(v) {
   return isFinite(n) ? n : null
 }
 const HEALTH_KEYS = { steps: ["steps", "шаги"], active: ["active", "активные", "калории"], exercise: ["exercise", "упражнения", "тренировка"],
-  stand: ["stand", "стоя"], hr: ["hr", "пульс"], sleep: ["sleep", "сон"], distance: ["distance", "дистанция", "км"] }
+  stand: ["stand", "стоя"], hr: ["hr", "пульс"], rhr: ["rhr", "пульс покоя", "покой"], sleep: ["sleep", "сон"], distance: ["distance", "дистанция", "км"] }
+// Время отхода ко сну и подъёма: «23:40» или дата из Здоровья — храним как «HH:MM»
+const HEALTH_TIMES = { bed: ["bed", "отбой", "лёг", "лег"], wake: ["wake", "подъём", "подъем", "встал"] }
 function parseHealth(param) {
   let p = param
   if (typeof p === "string") { try { p = JSON.parse(p) } catch (e) { return null } }
@@ -1409,6 +1411,12 @@ function parseHealth(param) {
     const v = k ? (low[k] === "" ? 0 : healthNum(low[k])) : null   // пусто — за сегодня данных нет
     if (v !== null) out[key] = v
     else if (k) bad.push(`${k} = «${String(JSON.stringify(low[k])).slice(0, 40)}»`)
+  }
+  for (const [key, names] of Object.entries(HEALTH_TIMES)) {
+    const k = names.find(n => n in low); if (!k) continue
+    const raw = Array.isArray(low[k]) ? low[k][key === "bed" ? 0 : low[k].length - 1] : low[k]
+    const m = String(raw == null ? "" : raw).match(/(\d{1,2})[:.](\d{2})(?!.*\d{1,2}[:.]\d{2})/)
+    if (m && +m[1] < 24) out[key] = `${m[1].padStart(2, "0")}:${m[2]}`
   }
   if (bad.length) Object.defineProperty(out, "bad", { value: bad })   // для сообщения в Быстрых командах, в файл не пишется
   return Object.keys(out).length > 2 ? out : null

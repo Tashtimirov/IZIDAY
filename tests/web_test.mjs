@@ -116,7 +116,7 @@ await page.screenshot({ path: SHOTS + "2-money.png", fullPage: true })
 // 4. помощник: записать расход инструментом
 claudeQueue.push({ content: [{ type: "tool_use", id: "tu1", name: "add_money", input: { type: "expense", amount: 300, method: "cash", category: "Транспорт", comment: "такси" } }], stop_reason: "tool_use" },
   { content: [{ type: "text", text: "Записал −300 ฿ на такси наличными." }], stop_reason: "end_turn" })
-await page.click('[data-tab="chat"]')
+await page.evaluate(() => setTab("chat"))   // «Изи» ещё раз на экране чата открывает голосовой разговор
 await page.fill("#chat-in", "потратил 300 на такси наличными")
 await page.click(".chat-bar .send")
 await page.waitForSelector("text=Записал −300", { timeout: 5000 }).catch(() => {})
@@ -185,7 +185,7 @@ check(liveW().length === before + 1, "отказ — стакан не доба�
 // помощник удаляет лишнюю воду по id
 const wids = await page.evaluate(() => runTool("get_health", {}).then(r => r.water.map(w => w.id)))
 check(wids.length >= 2, "get_health отдаёт id записей воды", wids)
-await page.click('[data-tab="chat"]')
+await page.evaluate(() => setTab("chat"))   // «Изи» ещё раз на экране чата открывает голосовой разговор
 const del = page.evaluate(ids => runTool("delete_record", { kind: "water", ids }), wids.slice(1))
 await page.waitForSelector('[data-opt="Да"]', { timeout: 5000 }).catch(() => {})
 await page.click('[data-opt="Да"]')
@@ -248,7 +248,7 @@ const ms = await page.evaluate(() => runTool("mail_search", { query: "аренд
 check(ms.threads && ms.threads.length === 1 && ms.threads[0].id === "T1" && /Аренда/.test(ms.threads[0].subject), "mail_search находит письмо", ms)
 const mr = await page.evaluate(() => runTool("mail_read", { id: "T1" }))
 check(mr.messages && /25 000 THB/.test(mr.messages[0].body), "mail_read читает письмо", mr)
-await page.click('[data-tab="chat"]')
+await page.evaluate(() => setTab("chat"))   // «Изи» ещё раз на экране чата открывает голосовой разговор
 let sendP = page.evaluate(() => runTool("mail_send", { to: "rent@condo.th", subject: "Оплата", body: "Оплачу завтра." }))
 await page.waitForSelector('[data-opt="Нет"]', { timeout: 5000 }).catch(() => {})
 check((await page.textContent("#chat-list")).includes("Кому: rent@condo.th"), "перед отправкой видно, кому и что")
@@ -275,7 +275,7 @@ if (pageAhead) check((hubState().lists.nudges || []).some(n => /Стакан в�
 check(claudeSeen.at(-1).body.tools.some(t => t.name === "plan_day") && /Ты ведёшь день пользователя/.test(claudeSeen.at(-1).body.system), "помощник умеет вести день и учиться на поправках")
 
 // «Стоп»: ответ прерывается, вопрос возвращается в строку ввода
-await page.click('[data-tab="chat"]')
+await page.evaluate(() => setTab("chat"))   // «Изи» ещё раз на экране чата открывает голосовой разговор
 await page.route("https://api.anthropic.com/v1/messages", async route => { await new Promise(r => setTimeout(r, 3000)); route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify({ content: [{ type: "text", text: "Поздний ответ" }], stop_reason: "end_turn" }) }).catch(() => {}) })
 await page.fill("#chat-in", "сколько я потратил на кафе в октябре")
 await page.click(".chat-bar .send")
@@ -450,7 +450,7 @@ await page.click('[data-tab="health"]')
 const hh = await page.textContent("#view")
 check(hh.includes("Вчера") && hh.includes("Том ям вчера") && hh.includes("Расходы за день") && hh.includes("12 345") && !hh.includes("+ Стакан"), "«Здоровье» листается на вчера, без кнопок добавления", hh.slice(0, 600))
 await page.click('[data-hday="1"]')
-check((await page.textContent("#view")).includes("+ Стакан"), "› возвращает на сегодня")
+await page.waitForTimeout(300); const hb = await page.textContent("#view"); check(hb.includes("Готовность сегодня") && hb.includes("Сегодня"), "› возвращает на сегодня", hb.slice(0, 300))
 const rp = await page.evaluate(() => ["week", "month", "year"].map(k => { const st = periodStats(k, addDays(new Date(), -1)); return { k, exp: st.exp, w: st.workouts.length, steps: st.stepsDays, html: periodReportHTML(st).length } }))
 check(rp.every(r => r.exp >= 777 && r.w >= 1 && r.steps >= 1 && r.html > 1000), "отчёты за неделю, месяц и год считают расходы, тренировки и шаги", rp)
 await page.click('[data-report="week"]'); await page.waitForTimeout(300)
