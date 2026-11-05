@@ -1,6 +1,6 @@
 // Приложение открывается мгновенно и без сети: оболочка (страница, код, значки) берётся из кэша,
 // а в фоне проверяется новая версия. Запросы к таблице и к Claude идут мимо кэша.
-const CACHE = "myday-dbe07915e7"
+const CACHE = "myday-7f17fd9b5d"
 const SHELL = ["./", "index.html", "style.css", "core.js", "app.js", "gami.js", "gami.css", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"]
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())) })
 self.addEventListener("activate", e => {
