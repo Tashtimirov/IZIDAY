@@ -112,7 +112,7 @@ export function sheetScript() {
         cal.log.push(["cut", url.split("/").pop(), JSON.parse(o.payload).recurrence[0]])
         return { getResponseCode: () => 200, getContentText: () => "{}" }
       }
-      if (/api\.anthropic\.com/.test(url)) { const b = JSON.parse(o.payload); globalThis.__famAsk = { key: o.headers["x-api-key"], body: b }; return { getContentText: () => JSON.stringify({ content: [{ type: "text", text: "Привет! Давай начнём с зубов — это быстро." }] }) } }
+      if (/api\.anthropic\.com/.test(url) && !/routines/.test(url)) { const b = JSON.parse(o.payload); globalThis.__famAsk = { key: o.headers["x-api-key"], body: b }; return { getContentText: () => JSON.stringify({ content: [{ type: "text", text: "Привет! Давай начнём с зубов — это быстро." }] }) } }
       if (/push\.example/.test(url)) { pushes.push({ url, headers: o.headers }); return { getResponseCode: () => /gone/.test(url) ? 410 : 201, getContentText: () => "" } }
       return { getContentText: () => JSON.stringify({ claude_code_session_url: "https://claude.ai/code/session_test" }) } } },
     GmailApp: mail.api,
