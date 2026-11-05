@@ -148,3 +148,7 @@
 .gsmart.ok { background: rgba(10, 159, 110, .12); } .gsmart.low { background: var(--g-gold-bg); } .gsmart.high { background: rgba(255, 55, 95, .10); }
 .gpace { font-weight: 700; color: var(--g-a); } .gpace.late { color: #FF375F; }
 .grw [data-gedit] { cursor: pointer; }
+
+/* Настройки → Режим игры */
+.goff .seg { grid-template-columns: 1fr 1fr; margin: 0; min-width: 160px; flex: none; }
+.goff .seg button { padding: 7px 14px; text-align: center; }
