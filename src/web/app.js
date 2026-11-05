@@ -1281,7 +1281,7 @@ async function runTool(name, x) {
             text += `\n\nГде сейчас пользователь (${here.src}): ${addr ? addr + ", " : ""}координаты ${(+here.lat).toFixed(4)}, ${(+here.lng).toFixed(4)}. Ищи рядом с этим местом.`
           }
         }
-        const res = await hubPost({ fire: { id, title, route: r.name, url: r.url, text }   // ключ рутины — в свойствах скрипта таблицы }, 45000)
+        const res = await hubPost({ fire: { id, title, route: r.name, url: r.url, text } }, 45000)   // ключ рутины — в свойствах скрипта таблицы
         if (res.fire && res.fire.session_url) {
           ccSet({ id: res.fire.id || id, title, route: r.name, url: res.fire.session_url, at: Date.now(), state: "run" })
           if (res.fire.id) chatCC.push(res.fire.id); else chatLinks.push(res.fire.session_url)   // старый скрипт таблицы итог не вернёт — только ссылка
