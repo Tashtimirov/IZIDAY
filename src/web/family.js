@@ -702,6 +702,7 @@ async function join() {
 }
 // Вход по ссылке вручную (из тура новичка после «Ребёнок» и из «У меня есть ссылка»)
 window.famJoin = async function () {
+  if (famOn()) return
   const v = await ui.ask("Ссылка-приглашение", "Вставь ссылку, которую прислали мама или папа.", "", { placeholder: "https://…#fam=…", ok: "Войти" })
   if (!v) return
   const m = v.match(/fam=([A-Za-z0-9+/=_-]+)/); if (!m) return toast("Это не ссылка на семью")
@@ -770,7 +771,7 @@ function init() {
   if (typeof D === "undefined" || typeof render !== "function") return
   wrap()
   render()
-  window.addEventListener("izi:who", e => { const w = e && e.detail; if (w === "kid" && !famOn()) setTimeout(() => window.famJoin(), 300); render() })
+  window.addEventListener("izi:who", () => render())   // ссылку для входа ребёнка спрашивает сам тур (onb.js → window.famJoin)
   setTimeout(() => push(false), 1500)
   setInterval(() => { if (document.visibilityState === "visible") push(false) }, 60e3)
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") push(Date.now() - ((D.fam && D.fam.at) || 0) > 20e3) })
