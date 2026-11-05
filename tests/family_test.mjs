@@ -138,11 +138,16 @@ await kp.screenshot({ path: SHOTS + "fm-kid-chat.png" })
 // голос: ребёнок нажимает микрофон, говорит — Изи отвечает вслух
 await kp.evaluate(() => {
   window.__said = []; window.speak = t => window.__said.push(t)
-  window.SpeechRecognition = window.webkitSpeechRecognition = class { start() { setTimeout(() => { this.onresult({ results: [[{ transcript: "Как накопить на велосипед?" }]] }); this.onend() }, 50) } stop() {} }
+  window.SpeechRecognition = window.webkitSpeechRecognition = class { start() { setTimeout(() => { this.onresult({ results: [[{ transcript: "Как накопить на велосипед?" }]] }); this.onend() }, 50) } stop() {} abort() {} }
 })
 await kp.click(".kmic"); await kp.waitForTimeout(900)
 const kv = await kp.evaluate(() => ({ said: window.__said.length, last: $$(".kmsg.u").pop().textContent }))
 check(kv.said === 1 && /велосипед/.test(kv.last), "голос: Изи услышал ребёнка и ответил вслух", kv)
+// Safari не прислал onend (так бывает на iPad) — страница не виснет: через паузу фраза уходит сама
+await kp.evaluate(() => { window.SpeechRecognition = window.webkitSpeechRecognition = class { start() { setTimeout(() => this.onresult({ results: [[{ transcript: "Сколько у меня звёзд?" }]] }), 50) } stop() {} abort() {} } })
+await kp.click(".kmic"); await kp.waitForTimeout(4500)
+const kv2 = await kp.evaluate(() => ({ said: window.__said.length, last: $$(".kmsg.u").pop().textContent, on: !!$(".kmic.on") }))
+check(kv2.said === 2 && /звёзд/.test(kv2.last) && !kv2.on, "голос без onend: фраза ушла после паузы, микрофон выключился", kv2)
 await kp.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await kp.waitForTimeout(300)
 let lim = null; for (let i = 0; i < 31; i++) lim = sheet.post(JSON.stringify({ family: { op: "ask", code: await kp.evaluate(() => D.fam.code), id: kidId, messages: [{ role: "user", content: "привет" }] } }))
 check(!lim.ok && lim.error === "limit", "лимит 30 сообщений в день", lim)

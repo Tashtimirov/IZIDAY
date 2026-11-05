@@ -430,6 +430,7 @@ function kidIzi() {
   const s = sheet(`<div class="ksheet kchat"><div class="kchat-h">${orb(44)}<b>${esc(iziName())}</b></div><div class="kmsgs"></div>
     <div class="kin"><button class="kmic" aria-label="Сказать голосом">${MIC_SVG}</button><input id="kc-t" placeholder="Скажи или напиши ${esc(iziName())}…" enterkeyhint="send"><button class="ksend" aria-label="Отправить">${ic("chev", 22, "#fff", 3)}</button></div></div>`)
   s.el.classList.add("kid-sheet", "kfull")
+  try { if (typeof ttsUnlock === "function") ttsUnlock() } catch (e) {}
   const box = $(".kmsgs", s.el), inp = $("#kc-t", s.el)
   const draw = () => {
     const l = chat.slice(-30)
@@ -440,19 +441,26 @@ function kidIzi() {
   }
   let byVoice = false, recK = null
   const say = t => { try { if (typeof speak === "function") speak(t, { force: true }) } catch (e) {} }
-  // Голос: ребёнок говорит — Изи слушает до паузы, отправляет и отвечает вслух
+  // Голос: ребёнок говорит — Изи слушает до паузы, отправляет и отвечает вслух.
+  // Как у взрослых: Safari слушает непрерывно, конец фразы — 2,2 с тишины. Синтез речи здесь не трогаем:
+  // на iPhone/iPad «говорить» и «слушать» в одно касание вешают страницу — синтез будится при открытии окна.
   const listen = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition, mic = $(".kmic", s.el)
-    if (recK) { try { recK.stop() } catch (e) {} return }
+    if (recK) return recK.finish()
     if (!SR) { inp.focus(); return toast("Нажми микрофон на клавиатуре и говори") }
-    try { if (typeof ttsStop === "function") ttsStop(); if (typeof ttsUnlock === "function") ttsUnlock() } catch (e) {}
-    const r = new SR(); r.lang = "ru-RU"; r.interimResults = true; r.continuous = false
-    let txt = ""
-    r.onresult = e => { txt = [...e.results].map(x => x[0].transcript).join(" ").trim(); inp.value = txt }
-    r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") toast("Разреши микрофон в настройках Safari") }
-    r.onend = () => { recK = null; mic.classList.remove("on"); inp.placeholder = `Скажи или напиши ${iziName()}…`; if (txt) { byVoice = true; send(txt) } }
-    recK = r; mic.classList.add("on"); inp.placeholder = "Слушаю…"
-    try { r.start() } catch (e) { recK = null; mic.classList.remove("on") }
+    try { if (typeof TTS !== "undefined" && TTS.speaking && typeof ttsStop === "function") ttsStop() } catch (e) {}
+    const r = new SR(); r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
+    let txt = "", t = null, done = false
+    const stopNow = () => { clearTimeout(t); try { r.stop() } catch (e) {} ; t = setTimeout(end, 1500) }   // Safari не прислал onend — закончим сами
+    const end = () => { if (done) return; done = true; clearTimeout(t); try { r.abort() } catch (e) {}
+      recK = null; mic.classList.remove("on"); inp.placeholder = `Скажи или напиши ${iziName()}…`; if (txt) { byVoice = true; send(txt) } }
+    r.onresult = e => { const a = []; for (let i = 0; i < e.results.length; i++) a.push(e.results[i][0].transcript)
+      txt = a.join(" ").replace(/\s+/g, " ").trim(); inp.value = txt; clearTimeout(t); t = setTimeout(stopNow, 2200) }
+    r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") toast("Разреши микрофон в настройках Safari"); if (e.error !== "no-speech") end() }
+    r.onend = end
+    recK = { finish: stopNow }; mic.classList.add("on"); inp.placeholder = "Слушаю… нажми ещё раз — отправить"
+    t = setTimeout(stopNow, 8000)   // ничего не сказал — выключаемся
+    try { r.start() } catch (err) { end() }
   }
   const send = async text => {
     text = String(text || "").trim(); if (!text || busyK) return
