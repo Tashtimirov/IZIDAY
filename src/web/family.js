@@ -419,11 +419,12 @@ function kidCtx() {
   const t = todayTasks(meId()).map(x => { const st = (logOf(meId(), x.id) || {}).st; return `${x.title} — ${st === "ok" ? "сделано" : st === "wait" ? "ждёт проверки" : "не сделано"}` }).join("; ")
   return `Сегодня ${fullDate(new Date())}. Дела: ${t || "нет"}. Звёзд всего: ${kidStars(meId())}. Копилки: Трачу ${j.spend}, Коплю ${j.save}, Делюсь ${j.share} ${core.CONFIG.currency || "฿"}. ${m ? `Главная мечта: ${m.title}${m.price ? `, стоит ${m.price}` : ""}.` : ""} Банка желаний: ${kidDreams(meId()).filter(d => !d.main && !d.done).map(d => d.title).join(", ") || "пусто"}. ${les ? `Следующий урок: ${les.t}.` : ""} Семейная цель: ${(famGoals().find(x => !x.done) || {}).title || "нет"}.`
 }
+const MIC_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>'
 function kidIzi() {
   const chat = D.kchat || (D.kchat = [])
   let busyK = false
   const s = sheet(`<div class="ksheet kchat"><div class="kchat-h">${orb(44)}<b>${esc(iziName())}</b></div><div class="kmsgs"></div>
-    <div class="kin"><input id="kc-t" placeholder="Напиши ${esc(iziName())}…" enterkeyhint="send"><button class="ksend" aria-label="Отправить">${ic("chev", 22, "#fff", 3)}</button></div></div>`)
+    <div class="kin"><button class="kmic" aria-label="Сказать голосом">${MIC_SVG}</button><input id="kc-t" placeholder="Скажи или напиши ${esc(iziName())}…" enterkeyhint="send"><button class="ksend" aria-label="Отправить">${ic("chev", 22, "#fff", 3)}</button></div></div>`)
   s.el.classList.add("kid-sheet", "kfull")
   const box = $(".kmsgs", s.el), inp = $("#kc-t", s.el)
   const draw = () => {
@@ -433,8 +434,25 @@ function kidIzi() {
     $$("[data-q]", box).forEach(b => b.onclick = () => send(b.dataset.q))
     box.scrollTop = box.scrollHeight
   }
+  let byVoice = false, recK = null
+  const say = t => { try { if (typeof speak === "function") speak(t, { force: true }) } catch (e) {} }
+  // Голос: ребёнок говорит — Изи слушает до паузы, отправляет и отвечает вслух
+  const listen = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition, mic = $(".kmic", s.el)
+    if (recK) { try { recK.stop() } catch (e) {} return }
+    if (!SR) { inp.focus(); return toast("Нажми микрофон на клавиатуре и говори") }
+    try { if (typeof ttsStop === "function") ttsStop(); if (typeof ttsUnlock === "function") ttsUnlock() } catch (e) {}
+    const r = new SR(); r.lang = "ru-RU"; r.interimResults = true; r.continuous = false
+    let txt = ""
+    r.onresult = e => { txt = [...e.results].map(x => x[0].transcript).join(" ").trim(); inp.value = txt }
+    r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") toast("Разреши микрофон в настройках Safari") }
+    r.onend = () => { recK = null; mic.classList.remove("on"); inp.placeholder = `Скажи или напиши ${iziName()}…`; if (txt) { byVoice = true; send(txt) } }
+    recK = r; mic.classList.add("on"); inp.placeholder = "Слушаю…"
+    try { r.start() } catch (e) { recK = null; mic.classList.remove("on") }
+  }
   const send = async text => {
     text = String(text || "").trim(); if (!text || busyK) return
+    const voiceNow = byVoice; byVoice = false
     chat.push({ role: "user", content: text.slice(0, 500), at: Date.now() }); inp.value = ""; busyK = true; draw()
     const r = await post(D.fam.url, { op: "ask", code: D.fam.code, id: D.fam.id, ctx: kidCtx(), messages: chat.slice(-12).map(x => ({ role: x.role, content: x.content })) })
     busyK = false
@@ -442,7 +460,9 @@ function kidIzi() {
     chat.push({ role: "assistant", content: ans, at: Date.now() })
     while (chat.length > 60) chat.shift()
     save(false); draw()
+    if (voiceNow) say(ans)
   }
+  $(".kmic", s.el).onclick = listen
   $(".ksend", s.el).onclick = () => send(inp.value)
   inp.onkeydown = e => { if (e.key === "Enter") send(inp.value) }
   draw()

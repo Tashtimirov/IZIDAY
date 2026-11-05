@@ -76,6 +76,12 @@ const zid = await kp.evaluate(() => FAM.put && D.fam.data.tasks.find(t => t.titl
 let ks = await kp.evaluate(() => ({ stars: FAM.kidStars(D.fam.id), wait: $$(".kcb.wait").length, ok: $$(".kcb.ok").length }))
 check(ks.stars === 10 && ks.wait === 1 && ks.ok === 2, "без проверки — сразу звёзды, «Читать» ждёт взрослого", ks)
 await kp.screenshot({ path: SHOTS + "fm-kid-day.png", fullPage: true })
+// iPad лёжа: у ребёнка нет бокового меню взрослых — слева не должно быть пустой полосы
+await kp.setViewportSize({ width: 1180, height: 820 }); await kp.waitForTimeout(400)
+const ip = await kp.evaluate(() => ({ pad: parseFloat(getComputedStyle(document.body).paddingLeft), kd: Math.round($(".kd").getBoundingClientRect().left), nav: Math.round($("#knav").getBoundingClientRect().left), navR: Math.round(innerWidth - $("#knav").getBoundingClientRect().right) }))
+check(ip.pad === 0 && ip.kd === 0 && Math.abs(ip.nav - ip.navR) < 2, "iPad: детский режим на всю ширину, меню по центру", ip)
+await kp.screenshot({ path: SHOTS + "fm-kid-ipad.png" })
+await kp.setViewportSize({ width: 390, height: 844 }); await kp.waitForTimeout(300)
 // урок «Три копилки»
 await kp.evaluate(() => { const l = FAM.LESSONS.find(x => x.id === "g1"); FAM.lesson(l) }); await kp.waitForTimeout(400)
 await kp.click('.klesson [data-a="next"]'); await kp.waitForTimeout(150)
@@ -115,6 +121,14 @@ const ka = globalThis.__famAsk || {}
 check(await kp.evaluate(() => /зубов/.test($$(".kmsg.a").pop().textContent) && !JSON.stringify(D).includes("sk-test")), "Изи ответил ребёнку; ключа на телефоне ребёнка нет")
 check(ka.key === "sk-test" && /Миша, 9 лет/.test(ka.body.system) && /Покормить кота — не сделано/.test(ka.body.system) && !ka.body.tools, "запрос ушёл с ключом родителя и детскими правилами из таблицы", ka.body && ka.body.system)
 await kp.screenshot({ path: SHOTS + "fm-kid-chat.png" })
+// голос: ребёнок нажимает микрофон, говорит — Изи отвечает вслух
+await kp.evaluate(() => {
+  window.__said = []; window.speak = t => window.__said.push(t)
+  window.SpeechRecognition = window.webkitSpeechRecognition = class { start() { setTimeout(() => { this.onresult({ results: [[{ transcript: "Как накопить на велосипед?" }]] }); this.onend() }, 50) } stop() {} }
+})
+await kp.click(".kmic"); await kp.waitForTimeout(900)
+const kv = await kp.evaluate(() => ({ said: window.__said.length, last: $$(".kmsg.u").pop().textContent }))
+check(kv.said === 1 && /велосипед/.test(kv.last), "голос: Изи услышал ребёнка и ответил вслух", kv)
 await kp.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await kp.waitForTimeout(300)
 let lim = null; for (let i = 0; i < 31; i++) lim = sheet.post(JSON.stringify({ family: { op: "ask", code: await kp.evaluate(() => D.fam.code), id: kidId, messages: [{ role: "user", content: "привет" }] } }))
 check(!lim.ok && lim.error === "limit", "лимит 30 сообщений в день", lim)
