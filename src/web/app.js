@@ -1639,7 +1639,7 @@ async function chatSend(text, opts = {}) {
   chatStopCtl = null
   chatBusy = false
   setBusyUI(false)
-  if (stopped && TALK) { const i = D.chat.lastIndexOf(item); if (i >= 0) D.chat.splice(i); save(false); return talkListen() }
+  if (stopped && TALK) { const i = D.chat.lastIndexOf(item); if (i >= 0) D.chat.splice(i); save(false); return talkAborted() }
   if (stopped) {   // «Стоп»: вопрос возвращается в строку ввода — поправить и отправить заново
     const i = D.chat.lastIndexOf(item)
     if (i >= 0) D.chat.splice(i)
@@ -5289,7 +5289,7 @@ function iziStyle() {
   out.push(`Люди и сообщения: помочь написать кому-то (жене, родителям, другу, клиенту) — draft_message, в нужном тоне и с учётом того, что знаешь о человеке; в ответе черновик не повторяй. После встречи пользователь рассказывает, что договорились — сам создай дела и напоминания со сроками и запомни договорённости о человеке через remember.`)
   out.push(`«Напомни, когда придёт зарплата / буду с Олей / приду в офис» — remind_when (по доходу, человеку или событию календаря); «когда буду рядом с местом» — remind_near. Фото договора — стороны, суммы и сроки, предложи напоминания; меню или этикетка — ккал и БЖУ; дневник или задание ребёнка — что и к какому сроку.`)
   out.push(z.learn ? "Самообучение включено: замечай, что работает с этим человеком (какие советы он принимает, что раздражает, как ему удобнее), и сохраняй выводы через remember как предпочтения." : "Самообучение выключено: сам выводы и предпочтения не запоминай — только факты, которые просят запомнить.")
-  if (TALK) out.push(`Сейчас живой голосовой разговор: твой ответ сразу читается вслух голосом ${z.g === "f" ? "девушки" : "мужчины"}. Отвечай как в разговоре: 1–3 коротких предложения, без списков, Markdown, ссылок, эмодзи и сокращений («мин», «ч», «руб»); суммы и время — словами, как их говорят. Длинное (список, письмо, план) — коротко скажи суть и что подробности в чате. Варианты выбора называй голосом. Тебя могут перебить — это нормально.`)
+  if (TALK) out.push(`Сейчас живой голосовой разговор: твой ответ сразу читается вслух голосом ${z.g === "f" ? "девушки" : "мужчины"}. Отвечай как в разговоре: 1–3 коротких предложения, без списков, Markdown, ссылок, эмодзи и сокращений («мин», «ч», «руб»); суммы и время — словами, как их говорят. Длинное (список, письмо, план) — коротко скажи суть и что подробности в чате. Варианты выбора называй голосом. Тебя могут перебить — это нормально. Речь человека распознаётся кусками и с паузами: никогда не говори «вы прервались», «вас перебили», «вы не договорили». Если фраза похожа на оборванную — ответь на то, что уже понятно, или коротко скажи «слушаю, продолжайте».`)
   return "\n" + out.filter(Boolean).map(s => "- " + s).join("\n")
 }
 
@@ -5346,7 +5346,6 @@ function ttsUnlock() { try { const u = new SpeechSynthesisUtterance(" "); u.volu
 // Шар со стеклом и двумя волнами: голубая — голос Изи, мятная — ваш. Нажать на шар, пока Изи говорит, — перебить;
 // пока слушает — отправить сразу; на паузе — продолжить. Закончить — смахнуть вниз.
 var TALK = null
-var TALK_SILENCE = 1300
 function talkOpen(o = {}) {
   if (TALK) { if (TALK.pin && !o.pin) talkPin(false); return }
   if (!aiKey()) { setTab("more"); return ui.info("Нужен ключ Claude", "Подключите приложение кодом из виджета: в Scriptable меню → 📱 Приложение «Мой день» → «Подключить приложение».") }
@@ -5431,51 +5430,107 @@ function talkTap() {
   if (t.state === "listen") return talkSendNow()                  // сказали всё — отправить сразу
   if (t.state === "pause") return talkListen()
 }
-function talkPause() { const t = TALK; if (!t) return; ttsStop(); clearTimeout(t.timer); const r = t.rec; t.rec = null; try { r && r.abort() } catch (e) {}; talkState("pause", null, "Нажмите на шар, чтобы продолжить") }
-function talkListen(first) {
+function talkPause() { const t = TALK; if (!t) return; ttsStop(); clearTimeout(t.timer); clearTimeout(t.idle); t.n++; const r = t.rec; t.rec = null; try { r && r.abort() } catch (e) {}; talkState("pause", null, "Нажмите на шар, чтобы продолжить") }
+// Дослушивать: Изи ждёт, пока человек договорит. Пауза для отправки — 2,6 с; если фраза повисла
+// на «и», «что», «потому что», «э», «ну»… — ждём 4,5 с. Safari сам рвёт распознавание на паузах —
+// услышанное не отправляем, а копим и слушаем дальше. Если отправили, а человек продолжил говорить
+// в первые секунды, — ответ отменяется, Изи слушает дальше и потом отвечает на всю мысль сразу.
+var TALK_HANG = /(^|\s)(и|а|но|или|что|чтобы|потому|потому что|так как|если|когда|как|где|куда|который|которая|которое|которые|это|то есть|в|во|на|с|со|к|ко|у|о|об|по|для|из|от|до|за|про|при|без|под|над|ну|вот|э+|эм+|м+|ммм|короче|типа|значит|слушай|смотри|кстати|ещё|еще|также|тоже|потом|затем|then)$/i
+var TALK_SILENCE = 2600, TALK_SILENCE_HANG = 4500, TALK_RESUME_MS = 6000
+function talkWait(text) {
+  const s = String(text || "").trim().toLowerCase().replace(/[.,!?…;:]+$/, "")
+  if (!s) return TALK_SILENCE
+  if (TALK_HANG.test(s)) return TALK_SILENCE_HANG
+  return s.split(/\s+/).length <= 2 ? TALK_SILENCE + 600 : TALK_SILENCE   // одно-два слова — скорее всего начало мысли
+}
+const talkNorm = s => String(s || "").toLowerCase().replace(/[^a-zа-яё0-9\s]/gi, " ").replace(/\s+/g, " ").trim()
+// Эхо: микрофон подхватил хвост голоса Изи — это не слова человека
+function talkEcho(heard, said) {
+  const h = talkNorm(heard), z = talkNorm(said)
+  return !!h && !!z && h.split(" ").length <= 8 && z.includes(h)
+}
+function talkListen(first, keep) {
   const t = TALK; if (!t) return
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
   if (!SR) { talkState("pause", "Распознавание речи недоступно в этом браузере", ""); return }
-  clearTimeout(t.timer); t.heard = ""
+  clearTimeout(t.timer); clearTimeout(t.idle)
+  t.done = String(keep || "").trim(); t.heard = t.done; t.sent = ""
   const prev = t.rec; t.rec = null; try { prev && prev.abort() } catch (e) {}
-  talkState("listen", null, first ? "Говорите — я слушаю" : "")
+  talkState("listen", null, t.done || (first ? "Говорите — я слушаю" : ""))
   const my = ++t.n
-  const r = new SR(); r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
-  r.onresult = e => {
+  const arm = () => { clearTimeout(t.timer); if (t.heard) t.timer = setTimeout(() => talkSendNow(), talkWait(t.heard)) }
+  if (t.done) arm()
+  const start = () => {
     if (TALK !== t || t.n !== my) return
-    let s = ""; for (let i = 0; i < e.results.length; i++) s += e.results[i][0].transcript
-    t.heard = s.trim(); SILK.ye = Math.min(1.3, SILK.ye + .5)
-    talkState("listen", null, t.heard)
-    clearTimeout(t.timer); t.timer = setTimeout(() => talkSendNow(), TALK_SILENCE)
+    const r = new SR(); r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
+    let cur = ""
+    r.onresult = e => {
+      if (TALK !== t || t.n !== my || t.rec !== r) return
+      let s = ""; for (let i = 0; i < e.results.length; i++) s += e.results[i][0].transcript
+      s = s.trim()
+      if (!t.done && t.said && talkEcho(s, t.said) && Date.now() - t.saidAt < 2500) return   // своё эхо — пропускаем
+      cur = s
+      const all = [t.done, cur].filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
+      if (t.state === "think") {   // отправили, а человек ещё говорит — значит не договорил
+        if (t.canResume && talkNorm(all).length > talkNorm(t.sent).length + 2 && Date.now() - t.sentAt < TALK_RESUME_MS) return talkResume(all)
+        return
+      }
+      if (t.state !== "listen") return
+      t.heard = all; SILK.ye = Math.min(1.3, SILK.ye + .5)
+      talkState("listen", null, t.heard)
+      arm()
+    }
+    r.onerror = e => {
+      if (TALK !== t || t.n !== my) return
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") { talkState("pause", "Нет доступа к микрофону", "Настройки → Safari → Микрофон"); return }
+    }
+    r.onend = () => {   // Safari сам закрывает распознавание на паузе — копим услышанное и слушаем дальше
+      if (TALK !== t || t.n !== my || t.rec !== r) return
+      t.rec = null
+      if (t.state === "listen") { t.done = t.heard; cur = ""; setTimeout(start, 120) }
+      else if (t.state === "think" && t.canResume && Date.now() - t.sentAt < TALK_RESUME_MS) { t.done = t.sent; setTimeout(start, 120) }
+    }
+    try { r.start(); t.rec = r } catch (e) { setTimeout(start, 500) }
   }
-  r.onerror = e => {
-    if (TALK !== t || t.n !== my) return
-    if (e.error === "not-allowed" || e.error === "service-not-allowed") { talkState("pause", "Нет доступа к микрофону", "Настройки → Safari → Микрофон"); return }
-  }
-  r.onend = () => {   // Safari сам закрывает распознавание — слушаем дальше, пока не отправили
-    if (TALK !== t || t.n !== my || t.state !== "listen") return
-    if (t.heard) return talkSendNow()
-    setTimeout(() => { if (TALK === t && t.n === my && t.state === "listen") talkListen() }, 250)
-  }
-  try { r.start(); t.rec = r } catch (e) { setTimeout(() => { if (TALK === t && t.n === my) talkListen() }, 500) }
+  // после голоса Изи — короткая пауза, чтобы микрофон не поймал её последний звук
+  if (t.said && Date.now() - t.saidAt < 600) setTimeout(start, 350); else start()
   // 20 секунд тишины — пауза, чтобы микрофон не висел впустую
-  t.timer = setTimeout(() => { if (TALK === t && t.n === my && !t.heard) talkPause() }, 20000)
+  t.idle = setTimeout(() => { if (TALK === t && t.n === my && t.state === "listen" && !t.heard) talkPause() }, 20000)
 }
 function talkSendNow() {
   const t = TALK; if (!t || t.state !== "listen") return
   const text = t.heard.trim()
-  clearTimeout(t.timer); t.n++
-  const r = t.rec; t.rec = null; try { r && r.stop() } catch (e) {}
+  clearTimeout(t.timer); clearTimeout(t.idle)
   if (!text) return talkListen()
+  // микрофон не выключаем: если человек продолжит говорить в первые секунды — дослушаем
+  t.sent = text; t.sentAt = Date.now(); t.resumed = false; t.canResume = !askWait   // ответ на вопрос Изи не отменяем
   talkState("think", "·  ·  ·", text)
   chatSend(text, { voice: true })
 }
+// Человек продолжил говорить после отправки — отменить ответ и слушать дальше с уже сказанным
+function talkResume(all) {
+  const t = TALK; if (!t || t.state !== "think") return
+  t.resumed = true
+  const my = t.n, r = t.rec
+  t.state = "listen"; chatStop()
+  if (TALK !== t) return
+  // chatSend сам уберёт отменённый вопрос; продолжаем ту же запись, не перезапуская микрофон
+  t.heard = all; t.sent = ""
+  talkState("listen", null, all)
+  clearTimeout(t.timer); t.timer = setTimeout(() => talkSendNow(), talkWait(all))
+  if (!r || t.n !== my) talkListen(false, all)
+}
+// Отменённый ответ в живом разговоре: если человек продолжил — уже слушаем, иначе слушать заново
+function talkAborted() { const t = TALK; if (!t) return; if (t.resumed) { t.resumed = false; return } talkListen() }
 // Ответ или вопрос Изи пришёл в чат — прочитать вслух, потом снова слушать
 function talkHear(text, opts) {
   const t = TALK; if (!t) return
+  clearTimeout(t.timer); clearTimeout(t.idle)
+  const r = t.rec; t.rec = null; t.n++; try { r && r.abort() } catch (e) {}   // Safari: микрофон и голос вместе не работают
   const say = String(text || "") + (opts && opts.length ? " " + (opts.length === 2 ? `${opts[0]} или ${opts[1]}?` : opts.slice(0, 4).join(", ") + "?") : "")
+  t.said = say; t.saidAt = Date.now() + 6e4
   talkState("say", sentences(say)[0] || "", "")
-  speak(say, { onSentence: s => { if (TALK === t) talkState("say", s, null) }, onEnd: () => { if (TALK === t && t.state === "say") talkListen() } })
+  speak(say, { onSentence: s => { if (TALK === t) talkState("say", s, null) }, onEnd: () => { if (TALK === t && t.state === "say") { t.saidAt = Date.now(); talkListen() } } })
 }
 // Шар разговора: стекло, две волны с растворяющимися концами и внешнее кольцо, которое тает наружу.
 // Темп медленный; кто говорит — у того волна дрожит, размах чуть больше
