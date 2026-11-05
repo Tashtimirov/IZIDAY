@@ -659,7 +659,7 @@ async function scanFile(f) {
 let chatAtt = null
 function attStage(att, label) {
   chatAtt = { att, label }
-  if (tab !== "chat") setTab("chat"); else attTray()
+  if (!chatOn()) setTab("chat"); else attTray()
 }
 function attCaption(c, text, voice) {   // что увидит Изи и что останется в ленте
   const a = c.att
@@ -1432,7 +1432,7 @@ async function autoPlan() {
     const msgs = [{ role: "user", content: `[${hm(now)}] Спланируй мне сегодняшний день подсказками.` }]
     const tools = chatTools().filter(t => /^(get_|plan_day|list_places|read_sheet|mail_search|search_chats)/.test(t.name))
     const r = await agentTurn(msgs, sys, tools)
-    if (D.planDay === dayKey(now) && r) { D.chat.push({ role: "assistant", text: `🗓 ${r}`, at: Date.now() }); save(false); if (tab === "chat") renderChat() }
+    if (D.planDay === dayKey(now) && r) { D.chat.push({ role: "assistant", text: `🗓 ${r}`, at: Date.now() }); save(false); if (chatOn()) renderChat() }
   } catch (e) {} finally { planBusy = false }
 }
 
@@ -1566,7 +1566,7 @@ function setStatus(s) {
   chatStatus = s; chatStatusAt = Date.now()
   const el = $(".typing .st")
   if (el) el.textContent = s
-  else if (tab === "chat" && chatBusy && !askWait) renderChat()
+  else if (chatOn() && chatBusy && !askWait) renderChat()
 }
 setInterval(() => {   // долгое ожидание — показать, сколько уже идёт
   const el = $(".typing .st")
@@ -1625,7 +1625,7 @@ async function chatSend(text, opts = {}) {
   chatCC = []
   chatDraft = null
   save(false)
-  if (tab === "chat") renderChat(); else if (!talkPinned()) setTab("chat")
+  if (chatOn()) renderChat(); else if (!talkPinned()) setTab("chat")
   let reply
   const ctx = chatContext()
   if (opts.attach && ctx.length) {   // само вложение уходит только в этот запрос; в истории остаются миниатюра и ответ помощника
@@ -1643,7 +1643,7 @@ async function chatSend(text, opts = {}) {
   if (stopped) {   // «Стоп»: вопрос возвращается в строку ввода — поправить и отправить заново
     const i = D.chat.lastIndexOf(item)
     if (i >= 0) D.chat.splice(i)
-    save(false); if (tab === "chat") renderChat()
+    save(false); if (chatOn()) renderChat()
     const inp = $("#chat-in"); if (inp && !opts.attach && !opts.label) { inp.value = text; grow(inp); inp.focus() }
     if (staged) { chatAtt = staged; attTray(); if (inp) { inp.value = opts.caption || ""; grow(inp) } }   // вложение и подпись — обратно над полем
     toast("⏹ Остановлено — поправьте и отправьте")
@@ -1656,7 +1656,7 @@ async function chatSend(text, opts = {}) {
   D.chat.filter(m => m.thumb).slice(0, -12).forEach(m => { delete m.thumb })   // миниатюры только у последних фото — память телефона
   save(false)
   sync()
-  if (tab === "chat") renderChat()
+  if (chatOn()) renderChat()
   else if (talkPinned()) render()   // разговор закреплён: остаёмся на своей вкладке, она сразу показывает, что сделал Изи
   else toast(`${iziName()} ${iziG("ответил", "ответила")}`)
 }
@@ -1693,7 +1693,7 @@ function chatAsk(question, options) {
     save(false)
     talkHear(question, options)
     askWait = a => res(a)
-    if (tab === "chat") renderChat(); else if (!talkPinned()) setTab("chat")
+    if (chatOn()) renderChat(); else if (!talkPinned()) setTab("chat")
     setBusyUI()
   })
 }
@@ -1812,7 +1812,7 @@ function voiceReset() {
   const inp = $("#chat-in"); if (inp) inp.placeholder = "Напишите или скажите…"
 }
 // Прокручивается только середина (main), шапка и нижнее меню стоят на месте
-const scrollView = end => { const m = $("#view"); if (m) m.scrollTop = end ? m.scrollHeight : 0 }
+const scrollView = end => { const sl = side && end && $("#side .chat-list"); if (sl) { sl.scrollTop = sl.scrollHeight; return } const m = $("#view"); if (m) m.scrollTop = end ? m.scrollHeight : 0 }
 const grow = el => { el.style.height = "auto"; el.style.height = Math.min(120, el.scrollHeight) + "px"
   const bar = el.closest && el.closest(".chat-bar"); if (bar) { bar.classList.toggle("typed", !!el.value.trim()); setBusyUI() } }   // есть текст — стрелка «отправить», нет — микрофон или стоп
 
@@ -2037,9 +2037,17 @@ async function addMenu() {
 
 // ───────────── Экраны ─────────────
 let tab = "today", selDay = sod(new Date()), monthKey = null, hiddenAt = 0
+// iPad лёжа: чат Изи открывается панелью справа, а слева остаётся текущий раздел (side = панель открыта)
+let side = false, sideFrom = "today"
+const sideOK = () => innerWidth >= 1024 && !(typeof kidMode === "function" && kidMode())
+const chatOn = () => tab === "chat" || side
 function setTab(t) {
+  if (t === "chat" && sideOK()) { const was = tab === "chat"; side = true; if (was) return setTab(sideFrom); sideOpen(); return }
+  if (t !== "chat") sideFrom = t
   tab = t
+  document.body.dataset.scr = t
   $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t || t === "cal" && b.dataset.tab === "today"))
+  $("#fab").classList.toggle("side-on", side)
   $("#gear").classList.toggle("on", t === "more")
   document.body.classList.toggle("chat", t === "chat")
   if (plusClose) plusClose()
@@ -2062,7 +2070,37 @@ function render() {
   stripInit(keep)
   if (tab === "more") pushCard()
   renderTop()
+  if (side) sideOpen(true)
 }
+// Панель чата справа: строится один раз (иначе сбросится набранный текст), дальше обновляется только лента сообщений
+function sideOpen(quiet) {
+  const el = $("#side")
+  if (!el) return
+  document.body.classList.add("side")
+  $("#fab").classList.add("side-on")
+  if (!$("#chat-in", el)) {
+    el.innerHTML = `<div class="side-h"><b class="mini-orb"></b><b class="grow">${esc(iziName())}</b><button class="side-x" aria-label="Закрыть чат">${ICO.chev}</button></div>` + renderChatHTML()
+    el.hidden = false
+    $(".side-x", el).onclick = sideClose
+    $$("[data-brief]", el).forEach(b => b.onclick = () => brief(b.dataset.brief))
+    $$("[data-do]", el).forEach(b => { if (DO[b.dataset.do]) b.onclick = () => DO[b.dataset.do]() })
+    bindChatBar(el)
+    requestAnimationFrame(() => el.classList.add("show"))
+    scrollView(true)
+    if (!quiet) setTimeout(() => { const i = $("#chat-in", el); if (i && matchMedia("(pointer: fine)").matches) i.focus() }, 60)
+  }
+}
+function sideClose() {
+  const el = $("#side")
+  side = false
+  document.body.classList.remove("side"); $("#fab").classList.remove("side-on")
+  if (el) { el.classList.remove("show"); el.innerHTML = ""; el.hidden = true }
+}
+// Повернули iPad: лёжа чат уходит в панель, стоя — панель становится обычной вкладкой чата
+addEventListener("resize", () => {
+  if (side && !sideOK()) { sideClose(); setTab("chat") }
+  else if (tab === "chat" && sideOK()) setTab("chat")
+})
 const TITLES = { cal: "Календарь", plans: "Планы", chat: "Помощник", money: "Деньги", health: "Здоровье", more: "Настройки" }
 function renderTop() {
   const v = iphone()
@@ -2489,6 +2527,9 @@ function bind() {
   if (tab === "today") bindToday(v)
   if (tab === "cal") bindCal(v)
   if (tab === "money") bindMoney(v)
+  bindChatBar(v)
+}
+function bindChatBar(v) {
   const inp = $("#chat-in", v)
   if (inp) {
     inp.oninput = () => grow(inp)
@@ -3616,7 +3657,7 @@ document.querySelectorAll("[data-ico]").forEach(i => i.innerHTML = ICO[i.dataset
 // Настоящая высота экрана: в приложении со значка iOS отдаёт в CSS высоту без строки состояния, и внизу оставалась пустая полоса
 function fitHeight() {
   let h = window.innerHeight
-  if (navigator.standalone || matchMedia("(display-mode: standalone)").matches) {
+  if ((navigator.standalone || matchMedia("(display-mode: standalone)").matches) && Math.min(screen.width, screen.height) < 600) {   // только iPhone: на iPad окно бывает уже экрана (Split View)
     const land = matchMedia("(orientation: landscape)").matches
     h = Math.max(h, land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height))
   }
@@ -3682,7 +3723,7 @@ function holdToTalk(btn, onTap) {
   btn.addEventListener("contextmenu", e => e.preventDefault())
   btn.onclick = () => { if (long) { long = false; return } onTap() }
 }
-holdToTalk($("#fab"), () => tab === "chat" ? talkOpen() : setTab("chat"))
+holdToTalk($("#fab"), () => chatOn() ? talkOpen() : setTab("chat"))
 // Подсказка над кнопкой, пока держат «Изи»: «вверх — закрепить»; тянется за пальцем. null — убрать
 function pinHint(up) {
   let h = $("#pin-hint")
@@ -3710,7 +3751,7 @@ function pttPin() {
   const el = $("#silk")
   silkCanvas($("canvas", el), "comet")
   $(".x", el).onclick = e => { e.stopPropagation(); voiceCancel() }
-  $(".tx", el).onclick = e => { e.stopPropagation(); const i = $("#chat-in"); if (voice && i && tab === "chat") i.focus() }
+  $(".tx", el).onclick = e => { e.stopPropagation(); const i = $("#chat-in"); if (voice && i && chatOn()) i.focus() }
   el.onclick = () => { if (voice && !PTT.holding) voiceSendNow() }
   let sx = null
   el.addEventListener("pointerdown", e => { sx = e.clientX })
@@ -4730,7 +4771,7 @@ const LAYER_C = { me: "#0A9F6E", olya: "#AF52DE", kids: "#FF9F0A" }
 const TZS = [["Europe/Moscow", "Москва", "Мск"], ["Asia/Yekaterinburg", "Уфа", "Уфа"], ["Asia/Dubai", "Дубай", "Дуб"], ["Europe/London", "Лондон", "Лон"], ["America/New_York", "Нью-Йорк", "НЙ"]]
 function calS() {
   const c = D.cal = D.cal || {}
-  for (const [k, v] of Object.entries({ view: "3", tz: "Europe/Moscow", tzOn: 0, map: {}, names: {}, layers: {} })) if (c[k] == null) c[k] = v
+  for (const [k, v] of Object.entries({ view: innerWidth >= 700 ? "7" : "3", tz: "Europe/Moscow", tzOn: 0, map: {}, names: {}, layers: {} })) if (c[k] == null) c[k] = v
   for (const k of ["me", "olya", "kids"]) if (c.layers[k] == null) c.layers[k] = 1
   return c
 }
@@ -5373,7 +5414,7 @@ function talkClose() {
   t.el.classList.remove("on"); t.el.classList.add("off")
   document.body.classList.remove("talk-pin")
   setTimeout(() => t.el.remove(), 380)
-  if (tab === "chat") renderChat()
+  if (chatOn()) renderChat()
 }
 function talkState(s, izi, you) {
   const t = TALK; if (!t) return
@@ -5534,10 +5575,10 @@ function ccIn(list) {
     const text = `Готово: «${j.title}».\n${j.text}`
     D.chat.push({ role: "assistant", at: Date.now(), text, ccDone: j.id })
     if (!chatBusy && !askWait) talkHear(text)
-    if (tab !== "chat") toast(`${iziName()}: готово «${j.title}»`)
+    if (!chatOn()) toast(`${iziName()}: готово «${j.title}»`)
   }
-  if (said && tab === "chat") renderChat()
-  else if (tab === "chat") ccRefresh()
+  if (said && chatOn()) renderChat()
+  else if (chatOn()) ccRefresh()
 }
 // Долго молчит — сказать один раз и дать ссылку на сессию
 function ccLate() {
@@ -5547,7 +5588,7 @@ function ccLate() {
     j.late = 1
     D.chat.push({ role: "assistant", at: now, text: `Задача «${j.title}» идёт уже ${Math.round((now - j.at) / 3600e3)} ч и пока без итога. Возможно, сессия ждёт ответа или застряла — загляните в неё.`, ccDone: j.id })
     save(false)
-    if (tab === "chat") renderChat()
+    if (chatOn()) renderChat()
   }
 }
 function ccStatus(j) {
@@ -5575,7 +5616,7 @@ function proState() { const p = Object.assign({ day: "", n: 0, seen: {} }, (D.iz
 function proSay(p, key, msg) {
   p.seen[key] = 1; p.n++; iziSet("ps", p)
   D.chat.push(Object.assign({ role: "assistant", at: Date.now(), pro: true }, msg)); save(false)
-  if (tab === "chat") renderChat(); else toast(`${iziName()}: ${String(msg.text).slice(0, 60)}`)
+  if (chatOn()) renderChat(); else toast(`${iziName()}: ${String(msg.text).slice(0, 60)}`)
 }
 function iziProactive() {
   if (!aiKey() || chatBusy || askWait || TALK || voice || !IZX().first) return
@@ -5635,7 +5676,7 @@ function iziWhenCheck() {
     D.chat.push({ role: "assistant", text: `Напоминаю, ${why}: ${w.text}`, at: Date.now() })
     toast(`${iziName()}: ${w.text}`)
   }
-  save(false); if (tab === "chat") renderChat()
+  save(false); if (chatOn()) renderChat()
 }
 
 // ── Черновик сообщения человеку: карточка с «WhatsApp», «Telegram», «Скопировать», «Мягче», «Короче» ──
