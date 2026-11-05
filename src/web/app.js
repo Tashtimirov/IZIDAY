@@ -5273,7 +5273,7 @@ Object.assign(DO, {
 // ═════════════ Изи: характер, голос и живой разговор ═════════════
 // Настройки помощника (только на телефоне, в D.izi): имя, пол, характер, голос, скорость речи,
 // советы по целям, психология, самообучение. Голос — системный голос iPhone под пол помощника.
-function IZX() { return Object.assign({ mode: "friend", rate: 1, goals: true, psy: true, learn: true, first: true, voice: "" }, D.izi || {}, { g: IZI().g }) }
+function IZX() { return Object.assign({ mode: "friend", rate: 1, goals: true, psy: true, learn: true, first: true, voice: "", speak: false }, D.izi || {}, { g: IZI().g }) }
 function iziSet(k, val) { D.izi = Object.assign({}, D.izi, { [k]: val }); save(false) }
 var IZI_MODES = { friend: ["Друг", "тепло, с юмором, поддерживает"], coach: ["Строгий тренер", "прямо, без поблажек, держит планку"], brief: ["Кратко и по делу", "минимум слов, только суть"] }
 var IZI_RATES = [[.9, "Спокойно"], [1, "Обычно"], [1.12, "Быстрее"]]
@@ -5318,8 +5318,9 @@ function sayable(t) {
 // Разбить на предложения: iPhone обрывает длинные фразы, а подпись на экране меняется по предложению
 function sentences(t) { return (sayable(t).match(/[^.!?…\n]+[.!?…]*["»)]?\s*|\n+/g) || []).map(s => s.trim()).filter(s => s.length > 1) }
 var TTS = { keep: [], token: 0 }
-function speak(text, { onSentence, onEnd } = {}) {
+function speak(text, { onSentence, onEnd, force } = {}) {
   ttsStop()
+  if (!force && !IZX().speak) { if (onEnd) setTimeout(onEnd, 0); return }   // «Читать ответы вслух» выключено — Изи отвечает текстом
   const S = window.speechSynthesis, parts = sentences(text)
   if (!S || !parts.length) { if (onEnd) setTimeout(onEnd, 0); return }
   const my = ++TTS.token, z = IZX(), v = iziVoice()
@@ -5578,6 +5579,7 @@ function iziCard() {
     <div class="izi-sub">Характер</div>
     ${Object.entries(IZI_MODES).map(([k, [t, s]]) => `<button class="set mode-row" data-izi-mode="${k}"><span><b>${t}</b><small>${s}</small></span>${x.mode === k ? `<i class="ck">${ICO.check}</i>` : "<i></i>"}</button>`).join("")}
     <div class="izi-sub">Голос</div>
+    ${tg("speak", "Читать ответы вслух", "выключено — Изи отвечает текстом, а вы можете говорить голосом")}
     <button class="set voice-row" data-do="izi-voice"><span><b>${esc(voiceLabel(v))}</b><small>${canTalk ? "голос iPhone · нажмите, чтобы выбрать и послушать" : "в этом браузере нет голоса"}</small></span><i class="chev">${ICO.chev}</i></button>
     <div class="set col"><span>Темп речи</span><div class="seg izi-rate">${IZI_RATES.map(([r, t]) => `<button data-izi-rate="${r}" class="${Math.abs((x.rate || 1) - r) < .01 ? "on" : ""}">${t}</button>`).join("")}</div></div>
     <div class="izi-sub">Чему учится и как помогает</div>
@@ -5598,13 +5600,13 @@ function voicePicker() {
     <div class="muted small" style="margin-top:10px">Нажмите — ${esc(iziName())} скажет фразу этим голосом. Живее звучат улучшенные голоса: Настройки iPhone → Универсальный доступ → Устный контент → Голоса → Русский${z.g === "m" ? " (мужской — «Юрий»)" : " («Милена», «Катя»)"}.</div>`, { onClose: () => { ttsStop(); if (tab === "more") render() } })
   $$(".vrow", s.el).forEach(b => b.onclick = () => {
     iziSet("voice", b.dataset.v); $$(".vrow", s.el).forEach(x => x.classList.toggle("on", x === b))
-    speak(`Привет! Я ${iziName()}. ${iziG("Готов", "Готова")} поговорить, когда удобно.`)
+    speak(`Привет! Я ${iziName()}. ${iziG("Готов", "Готова")} поговорить, когда удобно.`, { force: true })
   })
 }
 function bindIzi(v) {
   $$("[data-izi-mode]", v).forEach(b => b.onclick = () => { iziSet("mode", b.dataset.iziMode); render(); toast(`Характер: ${IZI_MODES[b.dataset.iziMode][0].toLowerCase()}`) })
   $$("[data-izi-tg]", v).forEach(b => b.onclick = () => { const k = b.dataset.iziTg, on = !IZX()[k]; iziSet(k, on); const i = $(".tgl", b); i.classList.toggle("on", on); i.setAttribute("aria-checked", on) })
-  $$("[data-izi-rate]", v).forEach(b => b.onclick = () => { iziSet("rate", +b.dataset.iziRate); $$("[data-izi-rate]", v).forEach(x => x.classList.toggle("on", x === b)); speak(`Так ${iziG("я буду", "я буду")} говорить.`) })
+  $$("[data-izi-rate]", v).forEach(b => b.onclick = () => { iziSet("rate", +b.dataset.iziRate); $$("[data-izi-rate]", v).forEach(x => x.classList.toggle("on", x === b)); speak(`Так ${iziG("я буду", "я буду")} говорить.`, { force: true }) })
   $$(".talk-btn .mini-orb, .chat-tools .mini-orb", v).forEach(o => { if (!o.firstChild) { const c = document.createElement("canvas"); o.append(c); silkCanvas(c, "orb") } })
 }
 
