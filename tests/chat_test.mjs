@@ -12,6 +12,8 @@ const keys = { "myday.anthropic.key": "k", "myday.routes": JSON.stringify([
 const sent = []; let n = 0
 class Request { constructor(u) { this.url = u } async loadJSON() {
   sent.push({ url: this.url, headers: this.headers, body: JSON.parse(this.body) })
+  const b = JSON.parse(this.body)
+  if (b.hub && b.hub.fire) return { ok: true, fire: { ok: true, session_url: "https://claude.ai/code/session_1" } }   // задачу отправляет таблица своим ключом
   if (/routines/.test(this.url)) return { type: "routine_fire", claude_code_session_id: "s1", claude_code_session_url: "https://claude.ai/code/session_1" }
   n++
   if (n === 1) return { content: [{ type: "tool_use", id: "t1", name: "claude_code", input: { route: "Личное", task: "Подобрать отель в Пхукете" } }], stop_reason: "tool_use" }
@@ -31,8 +33,9 @@ check(/claude_code/.test(app.chatSystem()) && /друг/.test(app.chatSystem()) 
 
 const hist = []
 const r = await app.chatReply(hist, { role: "user", text: "Найди мне отель на выходные", at: Date.now() })
-const fire = sent.find(s => /routines/.test(s.url))
-check(fire && fire.url.includes("trig_1") && fire.headers.Authorization === "Bearer sk-ant-oat01-x" && fire.body.text === "Подобрать отель в Пхукете", "задача уходит в нужный маршрут с токеном")
+const fire = sent.find(s => s.body.hub && s.body.hub.fire)
+check(fire && fire.body.hub.fire.url.includes("trig_1") && !JSON.stringify(fire.body).includes("sk-ant") && fire.body.hub.fire.text === "Подобрать отель в Пхукете" && !sent.some(s => /routines/.test(s.url)),
+  "задача уходит через таблицу в нужный маршрут, без ключа в запросе")
 check(r.text === "Передал в «Личное»." && r.links[0] === "https://claude.ai/code/session_1", "ответ со ссылкой на сессию")
 check(JSON.parse(files["/d/my-day/chat.json"]).length === 2, "переписка сохраняется")
 

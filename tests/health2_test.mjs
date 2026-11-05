@@ -74,6 +74,7 @@ check(await page.evaluate(() => shopOpen().some(s => /Омега/.test(s.title))
 await page.click('[data-mood="4"]'); await page.waitForTimeout(700)
 check(await page.evaluate(() => live(D.goals).filter(g => g.kind === "mood" && g.day === dayKey(new Date())).length) === 1, "настроение записано")
 // дневник: открытая запись, потом закрыть паролем → в данных только шифр
+await page.evaluate(() => { window.vault = undefined })   // здесь проверяем временный пароль дневника; общий сейф (mem.js) — в mem_test
 await page.click('[data-hl="diary"]'); await page.waitForTimeout(500)
 await page.fill("#dy-t", "Хороший день. Падел вечером, спал нормально.")
 await page.click('.sheet:last-child [data-a="ok"]'); await page.waitForTimeout(900)

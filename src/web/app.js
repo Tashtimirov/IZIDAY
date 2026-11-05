@@ -243,6 +243,7 @@ function sync() {
   state.p = (async () => {
     $("#sync").classList.add("spin")
     try {
+      if (document.readyState === "loading" && ["memory", "log"].some(k => (D[k] || []).some(x => (x.u || 0) > D.sync.pushedAt - 60000))) await new Promise(r => document.addEventListener("DOMContentLoaded", r, { once: true }))   // mem.js (шифрование памяти) подключается после app.js
       do {
         state.again = false
         const started = Date.now(), lists = {}
@@ -1319,7 +1320,7 @@ async function runTool(name, x) {
             text += `\n\nГде сейчас пользователь (${here.src}): ${addr ? addr + ", " : ""}координаты ${(+here.lat).toFixed(4)}, ${(+here.lng).toFixed(4)}. Ищи рядом с этим местом.`
           }
         }
-        const res = await hubPost({ fire: { id, title, route: r.name, url: r.url, token: r.token, text } }, 45000)
+        const res = await hubPost({ fire: { id, title, route: r.name, url: r.url, text } }, 45000)   // ключ рутины — в свойствах скрипта таблицы
         if (res.fire && res.fire.session_url) {
           ccSet({ id: res.fire.id || id, title, route: r.name, url: res.fire.session_url, at: Date.now(), state: "run" })
           if (res.fire.id) chatCC.push(res.fire.id); else chatLinks.push(res.fire.session_url)   // старый скрипт таблицы итог не вернёт — только ссылка
@@ -1436,8 +1437,8 @@ async function autoPlan() {
 }
 
 // ── Память помощника: факты о человеке и сводки прошлых разговоров (лист «Память помощника» в таблице) ──
-const memFacts = () => live(D.memory).filter(m => m.kind === "fact").sort((a, b) => a.date - b.date)
-const memChats = () => live(D.memory).filter(m => m.kind === "chat").sort((a, b) => a.date - b.date)
+const memFacts = () => live(D.memory).filter(m => m.kind === "fact" && typeof m.text === "string").sort((a, b) => a.date - b.date)
+const memChats = () => live(D.memory).filter(m => m.kind === "chat" && typeof m.text === "string").sort((a, b) => a.date - b.date)
 const GAP = 3 * 3600e3   // пауза дольше трёх часов — новый разговор
 function memoryBlock() {
   const f = memFacts().slice(-120), c = memChats().slice(-15)
@@ -1647,7 +1648,7 @@ async function chatSend(text, opts = {}) {
     toast("⏹ Остановлено — поправьте и отправьте")
     return
   }
-  D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice(), cc: chatCC.length ? chatCC.slice() : undefined, draft: chatDraft || undefined })
+  D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice(), cc: chatCC.length ? chatCC.slice() : undefined, draft: chatDraft || undefined, mem: window.memUsed ? memUsed() : undefined })
   chatDraft = null
   talkHear(reply)
   if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
@@ -2197,7 +2198,7 @@ function chatItems() {
     const isLast = i === arr.length - 1 && askWait
     const gi = D.chat.length - arr.length + i
     const edit = m.role === "user" && !m.local && !m.thumb && !m.prompt && i >= arr.length - 6 ? `<button class="ed" data-edit="${gi}" aria-label="Изменить">${ICO.pen}</button>` : ""
-    return `<div class="m ${m.role}" data-i="${gi}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? ei("micl") : ""}${deEmo1(linkify(m.text))}${draftHTML(m)}${m.pro && m.opts && m.opts.length && i === arr.length - 1 ? `<div class="opts">${m.opts.map(o => `<button data-pro="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}${(m.links || []).length && !m.ccDone ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${ei("link")}Сессия Claude Code</a>`).join("")}</div>` : ""}${ccCards(m)}` +
+    return `<div class="m ${m.role}" data-i="${gi}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? ei("micl") : ""}${deEmo1(linkify(m.text))}${draftHTML(m)}${m.pro && m.opts && m.opts.length && i === arr.length - 1 ? `<div class="opts">${m.opts.map(o => `<button data-pro="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}${(m.links || []).length && !m.ccDone ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${ei("link")}Сессия Claude Code</a>`).join("")}</div>` : ""}${ccCards(m)}` + (window.memLine ? memLine(m) : "") +
       `${m.opts && m.opts.length && isLast ? `<div class="opts">${m.opts.map(o => `<button data-opt="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}<span class="tm">${hm(new Date(m.at || Date.now()))}</span></div>`
   }).join("") + (chatBusy && !askWait ? `<div class="typing"><i></i><i></i><i></i>${chatStatus ? `<span class="st">${esc(chatStatus)}</span>` : ""}</div>` : "") + (last < 0 ? "" : "")
 }

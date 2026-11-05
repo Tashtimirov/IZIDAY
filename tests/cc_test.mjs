@@ -18,7 +18,8 @@ await page.route("https://api.anthropic.com/v1/messages", r => {
     : { content: [{ type: "text", text: "Передал в Claude Code. Итог пришлю сюда, как только сессия закончит." }], stop_reason: "end_turn" }
   return r.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(body) })
 })
-await page.evaluate(() => { D.conn.routes = [{ name: "Личное", hint: "личные задачи", url: "https://api.anthropic.com/v1/claude_code/routines/trig_x/fire", token: "t" }]; save(false); setTab("chat") })
+sheet.props.ROUTES = JSON.stringify([{ name: "Личное", url: "https://api.anthropic.com/v1/claude_code/routines/trig_x/fire", token: "t" }])   // ключ рутины — в свойствах скрипта
+await page.evaluate(() => { D.conn.routes = [{ name: "Личное", hint: "личные задачи", url: "https://api.anthropic.com/v1/claude_code/routines/trig_x/fire" }]; save(false); setTab("chat") })
 await page.waitForTimeout(300)
 await page.evaluate(() => chatSend("Подбери мне отель на Пхукете на 12–15 ноября, до 4000 бат, у Каты"))
 await page.waitForTimeout(1200)

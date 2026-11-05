@@ -570,7 +570,7 @@ async function webAppSetupCode() {
     defaultEventMinutes: CONFIG.defaultEventMinutes, defaultReminderHour: CONFIG.defaultReminderHour, health: CONFIG.health, briefs: CONFIG.briefs,
     categories: CONFIG.categories, calendars: CONFIG.calendars.map(c => ({ calendar: c.calendar, list: c.list, hint: c.hint || "" })) }
   const data = { v: 1, hook: sheetHookOf(st), secret: await sheetSecretOf(st), key: OPENAI ? "" : (getAIKey() || ""),
-    routes: CONFIG.assistantChat ? loadRoutes() : [], sheetUrl: sheetUrlOf(st) || "", run: RUN, cfg }
+    routes: CONFIG.assistantChat ? loadRoutes().map(({ token, ...r }) => r) : [], sheetUrl: sheetUrlOf(st) || "", run: RUN, cfg }
   return Data.fromString(JSON.stringify(data)).toBase64String()
 }
 
@@ -3859,9 +3859,31 @@ function loadRoutes() {
   return Array.isArray(CONFIG.routes) ? CONFIG.routes : []   // встроенные при сборке (только личная версия)
 }
 function saveRoutes(list) { Keychain.set(ROUTES_KEY, JSON.stringify(list)) }
+// Старые сборки вшивали ключ рутины в этот файл и в Связку ключей: убираем оттуда, теперь он только в свойствах скрипта таблицы
+function scrubRouteTokens() {
+  try {
+    const tok = /("token":\s*)"sk-ant-[^"]*"/g
+    if (Keychain.contains(ROUTES_KEY) && /sk-ant-/.test(Keychain.get(ROUTES_KEY))) saveRoutes(JSON.parse(Keychain.get(ROUTES_KEY)).map(({ token, ...r }) => r))
+    if (!(CONFIG.routes || []).some(r => r && r.token)) return
+    CONFIG.routes = CONFIG.routes.map(({ token, ...r }) => r)
+    const fm = module.filename.includes("/Mobile Documents/") ? FileManager.iCloud() : FileManager.local()
+    const code = fm.readString(module.filename)
+    if (tok.test(code)) fm.writeString(module.filename, code.replace(tok, '$1""'))
+  } catch (e) {}
+}
 const ROUTE_URL = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/
 
 async function fireRoute(route, text) {
+  // Ключ рутины хранится только в свойствах скрипта таблицы: задачу отправляет таблица
+  const st = await loadSettings()
+  if (sheetHookOf(st)) {
+    let r
+    try { r = await hubPost(st, { since: Date.now(), fire: { url: route.url, text: String(text || "").slice(0, 60000) } }, 45) } catch (e) { return { error: `нет связи: ${e}` } }
+    const f = (r && r.fire) || { error: (r && r.error) || "таблица не ответила" }
+    if (f.session_url) CHAT_SESSIONS.push(f.session_url)
+    return f
+  }
+  if (!route.token) return { error: "нет ключа рутины: подключите таблицу" }
   const req = new Request(route.url)
   req.method = "POST"
   req.timeoutInterval = 30
@@ -4486,6 +4508,7 @@ if (SHORTCUT_PARAM && !config.runsInWidget && quickText(SHORTCUT_PARAM)) {
     await autoSyncSheet()
     await scheduleAgenda()
     await selfUpdate()                       // новая версия виджета — сама, без ручной загрузки
+    scrubRouteTokens()
   })(), left())
 } else {
   // Сначала окно, потом всё остальное: раньше перед открытием ждали выгрузку в таблицу (до 30 с)
@@ -4503,5 +4526,6 @@ if (SHORTCUT_PARAM && !config.runsInWidget && quickText(SHORTCUT_PARAM)) {
   await scheduleBriefs()
   await scheduleAgenda()
   await selfUpdate()
+  scrubRouteTokens()
 }
 Script.complete()
