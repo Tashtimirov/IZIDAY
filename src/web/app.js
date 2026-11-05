@@ -131,6 +131,10 @@ function applyCfg() {
   if (Array.isArray(cfg.calendars)) c.calendars = cfg.calendars
 }
 const H = () => Object.assign({ waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30, weight: 80, kcalGoal: 2000, proteinGoal: 0 }, core.CONFIG.health || {})
+// Имя и пол помощника — меняются в настройках; по умолчанию «Изи», мужской род
+const IZI = () => { const z = D.izi || {}; return { name: String(z.name || "").trim() || "Изи", g: z.g === "f" ? "f" : "m" } }
+const iziName = () => IZI().name
+const iziG = (m, f) => IZI().g === "f" ? f : m
 const proteinGoal = () => H().proteinGoal || Math.round((H().weight || 80) * 1.6)   // по умолчанию 1,6 г на кг веса
 const live = list => list.filter(x => x && !x.deleted)
 function upsert(key, rec) {
@@ -1211,7 +1215,7 @@ function agentSystem() {
   const now = new Date(), c = core.CONFIG
   const cats = t => c.categories[t].map(x => x[0]).join(", ")
   const cals = c.calendars || []
-  return `Ты — личный ассистент в приложении «Мой день» на iPhone. Пользователь часто говорит голосом по-русски; речь распознаётся с ошибками («падал», «падлу» = «падел»), восстанавливай смысл.
+  return `Ты — личный ассистент в приложении «Мой день» на iPhone. Тебя зовут ${iziName()}; ${iziG("о себе говори в мужском роде («я записал», «я понял»)", "ты девушка, о себе говори в женском роде («я записала», «я поняла»)")}. Пользователь часто говорит голосом по-русски; речь распознаётся с ошибками («падал», «падлу» = «падел»), восстанавливай смысл.
 Сейчас ${iso(now).replace("T", " ")}, ${DAY_NAMES[now.getDay()].toLowerCase()}. Используй местное время без смещения, формат YYYY-MM-DDTHH:MM.
 
 Как работать:
@@ -1443,7 +1447,7 @@ async function chatSend(text, opts = {}) {
   if (!text) return
   // ответ на вопрос помощника (ask_user или подтверждение)
   if (askWait) { const w = askWait; askWait = null; D.chat.push({ role: "user", text, at: Date.now(), voice: !!opts.voice, local: true }); save(false); renderChat(); w(text); return }
-  if (chatBusy) { toast("Помощник ещё отвечает…"); return }
+  if (chatBusy) { toast(`${iziName()} ещё отвечает…`); return }
   memorize()
   if (!aiKey()) { setTab("more"); return ui.info("Нужен ключ Claude", "Подключите приложение кодом из виджета: в Scriptable меню → 📱 Приложение «Мой день» → «Подключить приложение».") }
   const item = { role: "user", text: opts.label || text, prompt: opts.label ? text : undefined, at: Date.now(), voice: !!opts.voice, thumb: opts.attach && opts.attach.thumb || undefined }
@@ -1479,7 +1483,7 @@ async function chatSend(text, opts = {}) {
   save(false)
   sync()
   if (tab === "chat") renderChat()
-  else toast("💬 Помощник ответил")
+  else toast(`${iziName()} ${iziG("ответил", "ответила")}`)
 }
 function setBusyUI(on) {
   const b = $(".chat-bar .send"); if (!b) return
@@ -1866,7 +1870,8 @@ const TITLES = { cal: "Календарь", plans: "Планы", chat: "Помо
 function renderTop() {
   const v = iphone()
   if (tab === "today") { const d = new Date(); $("#top-title").innerHTML = `${esc(core.cap(WDF[d.getDay()]))}<span class="dt">${d.getDate()} ${MONTHS_GEN[d.getMonth()]}</span>` }
-  else $("#top-title").textContent = TITLES[tab]
+  else $("#top-title").textContent = tab === "chat" ? iziName() : TITLES[tab]
+  const fl = $("#fab span"); if (fl && fl.textContent !== iziName()) { fl.textContent = iziName(); $("#fab").setAttribute("aria-label", `${iziName()}: нажмите — чат, держите — голосовая команда`) }
   let sub = ""
   if (!D.conn) sub = "Не подключено к виджету"
   else if (D.sync.error) sub = `⚠️ ${D.sync.error}`
@@ -1992,7 +1997,7 @@ function renderChatHTML() {
 }
 const linkify = s => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`)
 function chatItems() {
-  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я ваш помощник: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Нажмите на волну справа и скажите — или держите её, как рацию. Например: «завтра в 10 встреча с Олей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
+  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я — ${esc(iziName())}, ${iziG("ваш помощник", "ваша помощница")}: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Нажмите на волну справа и скажите — или держите её, как рацию. Например: «завтра в 10 встреча с Олей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
   const last = D.chat.length - 1
   return D.chat.slice(-60).map((m, i, arr) => {
     const isLast = i === arr.length - 1 && askWait
@@ -2124,6 +2129,11 @@ function renderMore() {
   const c = D.conn
   let html = ""
   if (!standalone()) html += `<div class="banner"><b>Поставьте на экран «Домой»</b>Нажмите «Поделиться» ⎋ внизу Safari → «На экран «Домой»». Приложение будет открываться отдельно и мгновенно.</div>`
+  const z = IZI()
+  html += `<div class="card"><h2>Помощник</h2>
+    <div class="set"><span>Имя</span><input type="text" data-izi="name" value="${esc(z.name)}" maxlength="20" autocomplete="off" style="text-align:right"></div>
+    <div class="set"><span>Пол</span><div class="seg izi-g"><i style="--i:${z.g === "f" ? 1 : 0}"></i><button data-izi-g="m" class="${z.g === "m" ? "on" : ""}">Мужской</button><button data-izi-g="f" class="${z.g === "f" ? "on" : ""}">Женский</button></div></div>
+    <div class="muted small">Имя видно на центральной кнопке и в чате. От пола зависят окончания в ответах: «${esc(z.name)} ${z.g === "f" ? "записала" : "записал"}».</div></div>`
   html += `<div class="card"><h2>Связь с виджетом</h2>`
   if (c) html += `<div class="set"><span>Таблица</span><span class="ok">✓ ${esc((c.hook.match(/\/s\/(.{8})/) || [, "подключена"])[1])}</span></div>
       <div class="set"><span>Последний обмен</span><span>${esc(ago(D.sync.at))}</span></div>
@@ -2276,6 +2286,12 @@ function bind() {
     if (w === "other") { const t = await ui.ask("💧 Сколько выпили?", "В миллилитрах", "", { type: "number" }); if (t && +t) addWater(Math.round(+t)) }
     else addWater(+w)
   })
+  $$("[data-izi]", v).forEach(inp => inp.onchange = () => {
+    D.izi = Object.assign({}, D.izi, { name: inp.value.trim().slice(0, 20) }); save(false); render(); toast("Сохранено") })
+  $$("[data-izi-g]", v).forEach(b => b.onclick = () => {
+    D.izi = Object.assign({}, D.izi, { g: b.dataset.iziG }); save(false)
+    const sg = b.parentNode; sg.querySelector("i").style.setProperty("--i", b.dataset.iziG === "f" ? 1 : 0); $$("button", sg).forEach(x => x.classList.toggle("on", x === b))
+    setTimeout(render, 400); toast(iziG("Мужской род", "Женский род")) })
   $$("[data-set]", v).forEach(inp => inp.onchange = () => {
     const n = Math.round(+inp.value)
     if (!(n > 0)) { inp.value = H()[inp.dataset.set]; return }
@@ -3057,7 +3073,7 @@ function searchAll(q) {
   for (const h of live(D.habits)) if (has(h.title)) out.push({ g: "Привычки", t: `${h.emoji || ""} ${h.title}`, s: h.bad ? "бросаю" : `${habitStreak(h)} дн. подряд` })
   for (const m of D.chat.concat(D.chatArchive || []).filter(m => m.text && !m.local).sort((a, b) => (b.at || 0) - (a.at || 0))) if (has(m.text)) {
     const i = m.text.toLowerCase().indexOf(s), cut = m.text.slice(Math.max(0, i - 40), i + 80)
-    out.push({ g: "Чат", t: (m.role === "user" ? "Вы: " : "Помощник: ") + (i > 40 ? "…" : "") + cut, s: m.at ? `${dayName(new Date(m.at))}, ${hm(new Date(m.at))}` : "" })
+    out.push({ g: "Чат", t: (m.role === "user" ? "Вы: " : iziName() + ": ") + (i > 40 ? "…" : "") + cut, s: m.at ? `${dayName(new Date(m.at))}, ${hm(new Date(m.at))}` : "" })
   }
   return out
 }
