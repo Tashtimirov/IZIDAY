@@ -934,6 +934,7 @@ async function runTool(name, x) {
         debts: debts().map(d => ({ title: d.title, dir: d.dir, amount: d.amount, due: d.due || undefined, note: debtLine(d).s })),
         capital: accts().length ? { total: cap.total, accounts: accts().map(a => ({ title: a.title, amount: a.amount, currency: a.cur || baseCur() })) } : undefined,
         fx: fxLine(), learned_categories: catRules().length,
+        income_plan: { saved_by_user: !!aplan(), items: planItems().map(z => ({ item: z.title || ENV(z.k).t, percent: z.pct, ...(envJar(z.k) ? { accumulated: envJar(z.k).saved || 0 } : {}) })) },
         items: t.items.slice(-60).map(e => ({ id: e.id, date: iso(new Date(e.date)), type: e.type, amount: e.amount, method: e.method, category: e.category, comment: e.comment })),
         budgets: live(D.budgets).filter(b => b.limit > 0).map(b => { const s = budgetState(b.category, key); return { category: b.category, limit: b.limit, spent: s.spent, left: s.left } }),
         recurring: live(D.recur).map(r => ({ id: r.id, title: r.title, amount: r.amount, day: r.day, category: r.category, paid: recurPaid(r, key), due: dayKey(recurDue(r, monthStart(key))) })) }
@@ -1271,6 +1272,7 @@ ${cals.length ? `- Календари по словам пользователя
 - «Этот платёж не вноси / он по работе» про платёж, которого ещё нет в расходах (придёт по карте позже) — сразу skip_card_payment, не проси пользователя напомнить потом.
 - Любой вопрос о платеже или переводе (особенно «что это за платёж?» или когда ты сам спрашиваешь о непонятной трате): всегда называй дату и точное время платежа и место, где был пользователь в тот момент, — where_was_i по времени платежа: адрес и ссылка на Google Карты (ссылкой целиком). Если точка далека по времени — так и скажи. Платежи по карте — лист «Карта» (read_sheet), остальные — get_money.
 - Почта Gmail пользователя: mail_search → mail_read, ответы mail_reply, новые письма mail_send, черновики mail_draft, разбор mail_modify. Про письма отвечай по сути: от кого, что хотят, срок, что сделать; длинные — пересказывай. Найдёшь в письме встречу, срок оплаты или задачу — предложи событие или напоминание. Пиши письма сам, от первого лица пользователя, коротко и по-деловому; отправка — только когда пользователь попросил отправить или ответить (подтверждение приложение покажет само).
+- Раскладка дохода — по плану в процентах (get_money.income_plan): статьи выбирает пользователь в «Деньги → Как раскладываю доход», проценты предлагаешь ты — платежи и копилки по факту, подушка 10% пока нет 6 месяцев расходов, инвестиции около 10%, благотворительность от 3%, на жизнь — остаток, но не меньше обычных трат. Пришёл доход — предложи разложить по плану и коротко назови суммы.
 - Деньги 2.0: «сколько можно потратить» — get_money.can_spend_today (после платежей и копилок). Копилки — add_jar и jar_deposit; долги и кредиты — add_debt. Сумма в рублях или долларах — add_money с currency (пересчитается по курсу). Общая с женой трата — shared=true. Итоги по деньгам за неделю — в тоне, который выбрал пользователь: ${{ praise: "похвали (тепло, с юмором)", roast: "пожури (по-дружески строго)", dry: "сухо, только цифры" }[MNY().tone]}.
 - Лимиты расходов по категориям — set_budget; при записи расхода, если инструмент вернул budget.warn, коротко скажи, сколько осталось. Регулярные платежи (аренда, подписки) — add_recurring и pay_recurring; список и лимиты — в get_money.
 - Привычки (зарядка, чтение; «бросаю пить/курить») — mark_habit; «сегодня не пил» для привычки «бросаю» — done=false. Вес («вешу 78,5») — log_weight. Серии и вес — в get_health.
@@ -3539,7 +3541,7 @@ const fxLine = () => { const b = baseCur(), o = ["USD", "RUB", "THB"].filter(c =
 const mnyView = list => { const v = MNY().view; return v === "mine" ? list.filter(e => !e.shared) : v === "shared" ? list.filter(e => e.shared) : list }
 
 // — 2. Копилки
-const jars = () => gk("jar").filter(j => j.title).sort((a, b) => (a.due || "9").localeCompare(b.due || "9") || a.date - b.date)
+const jars = () => gk("jar").filter(j => j.title && !j.env).sort((a, b) => (a.due || "9").localeCompare(b.due || "9") || a.date - b.date)
 const jarDep = (j, key = core.monthKey(new Date())) => +((j.dep || {})[key]) || 0
 const jarMonthsLeft = (j, key = core.monthKey(new Date())) => j.due ? Math.max(1, mIdx(j.due) - mIdx(key)) : 12
 // план на месяц: сколько не хватало на начало месяца, делённое на оставшиеся месяцы
@@ -3549,6 +3551,7 @@ function jarPlan(j, key = core.monthKey(new Date())) {
 }
 function jarState(j, now = new Date()) {
   const key = core.monthKey(now), plan = jarPlan(j, key), dep = jarDep(j, key), saved = +j.saved || 0
+  if (!(j.target > 0)) return { plan: 0, dep, need: 0, late: 0, cls: "", p: 0, txt: `накоплено ${num(saved)}${dep ? ` · в ${MONTHS_PREP[now.getMonth()]} +${num(dep)}` : ""}` }
   const total = j.due ? Math.max(1, mIdx(j.due) - mIdx(j.start || key)) : 12, m0 = Math.max(1, ((j.target - (+j.s0 || 0)) / total))
   const expected = (+j.s0 || 0) + m0 * Math.max(0, mIdx(key) - mIdx(j.start || key)), behind = expected - (saved - dep)
   const late = behind > m0 * 0.6 ? Math.max(1, Math.round(behind / m0)) : 0
@@ -3579,7 +3582,7 @@ function canSpend(now = new Date()) {
   const spentToday = live(D.money).filter(e => e.type === "expense" && sameDay(e.date, now)).reduce((s, e) => s + e.amount, 0)
   const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(), daysLeft = last - now.getDate() + 1
   if (!t.income) return null
-  const jarsM = jarsMonth(key), pool = t.income - (t.expense - spentToday) - bills - jarsM
+  const jarsM = planMonth(key), pool = t.income - (t.expense - spentToday) - bills - jarsM
   return { today: Math.max(0, Math.round(pool / daysLeft - spentToday)), perDay: Math.round(pool / daysLeft), left: Math.round(pool - spentToday), bills, jars: jarsM, last, daysLeft, spentToday }
 }
 // число для виджета: пишется в goals, только когда изменилось
@@ -3590,23 +3593,147 @@ function spendPublish() {
   upsert("goals", { id: "spend", date: Date.now(), kind: "spend", day, today: v, perDay: cs ? cs.perDay : null, cur: core.CONFIG.currency })
 }
 
-// — 3. Распределение дохода: свежий доход без раскладки — карточка «Пришло … — разложим?»
+// — 3. Распределение дохода по плану: человек выбирает статьи из списка, Изи предлагает проценты; пришёл доход — раскладка по процентам.
+// План — goals {id "aplan", kind "aplan", items [{k, title, pct, why}]}; статьи-конверты — копилки без цели {env: k} (кроме «Платежи», «На жизнь», «Копилки на цели»)
+const ENVS = [
+  { k: "bills", t: "Обязательные платежи", ico: "bill", c: "#FF9F0A", d: "аренда, школа, связь — по регулярным платежам" },
+  { k: "goals", t: "Копилки на цели", ico: "jar", c: "#12C28A", d: "делится между копилками по их плану" },
+  { k: "cushion", t: "Подушка безопасности", ico: "star", c: "#0A84FF", d: "запас на 6 месяцев расходов" },
+  { k: "invest", t: "Инвестиции", ico: "trend", c: "#5E5CE6", d: "долгосрочно, на капитал" },
+  { k: "debt", t: "Гасить долги досрочно", ico: "hand", c: "#FF375F", d: "сверх обязательного платежа" },
+  { k: "charity", t: "Благотворительность", ico: "people", c: "#FF6482", d: "" },
+  { k: "edu", t: "Обучение", ico: "brief", c: "#30B0C7", d: "курсы, книги, свои и детей" },
+  { k: "health", t: "Здоровье", ico: "drop", c: "#34C759", d: "врачи, анализы, спорт" },
+  { k: "kids", t: "Дети", ico: "kid", c: "#FFB340", d: "кружки, одежда, игрушки" },
+  { k: "parents", t: "Помощь родителям", ico: "home", c: "#AC8E68", d: "" },
+  { k: "gifts", t: "Подарки и праздники", ico: "spark", c: "#BF5AF2", d: "" },
+  { k: "fun", t: "Отдых и хобби", ico: "sun", c: "#64D2FF", d: "" },
+  { k: "life", t: "На жизнь", ico: "wallet", c: "#8E8E93", d: "еда, транспорт, кафе — всё, что осталось" },
+]
+const ENV = k => ENVS.find(e => e.k === k) || { k, t: k, ico: "wallet", c: "#8E8E93", d: "" }
+const ENV_STD = { invest: 10, charity: 3, edu: 4, health: 3, kids: 5, parents: 5, gifts: 3, fun: 5 }   // привычные доли, если нечего посчитать
+const FLEX = ["fun", "gifts", "invest", "edu", "cushion", "debt", "parents", "kids", "health", "charity"]   // что ужать первым, если на жизнь не хватает
+const aplan = () => { const g = D.goals.find(x => x.id === "aplan" && !x.deleted); return g && Array.isArray(g.items) && g.items.length ? g : null }
+const CUSH_RE = /подушк|резерв|запас/i
+const envJar = k => gk("jar").find(j => j.env === k) || (k === "cushion" ? jars().find(j => CUSH_RE.test(j.title)) : null)
+const planHas = k => planItems().some(z => z.k === k && z.pct > 0)
+// копилки на цели (без подушки, если подушка — отдельная статья)
+const goalJars = (cush = planHas("cushion")) => jars().filter(j => (+j.saved || 0) < j.target && !(cush && j === envJar("cushion")))
+// обычный месячный доход: среднее за 3 последних месяца с доходом
+function incomeBase(now = new Date()) {
+  const ks = [0, 1, 2, 3].map(i => mKeyOf(mIdx(core.monthKey(now)) - i)), v = ks.map(k => core.monthTotals(live(D.money), k).income).filter(x => x > 0)
+  return v.length ? Math.round(sumBy(v, x => x) / v.length) : 0
+}
+// обычные траты на жизнь в месяц (без регулярных платежей): среднее за прошлые месяцы, а если истории мало — темп этого месяца
+function spendVar(now = new Date()) {
+  const rt = new Set(live(D.recur).map(r => r.title)), cur = core.monthKey(now)
+  const varOf = k => core.monthTotals(live(D.money), k).items.filter(e => e.type === "expense" && !rt.has(e.comment))
+  const past = [1, 2, 3].map(i => varOf(mKeyOf(mIdx(cur) - i))).filter(l => l.length >= 5)
+  if (past.length >= 2) return Math.round(sumBy(past, l => sumBy(l)) / past.length)
+  const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(), passed = Math.max(3, now.getDate())
+  return Math.round(sumBy(varOf(cur)) / passed * days)
+}
+// Предложить проценты под выбранные статьи
+function planSuggest(keys, now = new Date()) {
+  const I = incomeBase(now) || 1, pc = n => Math.max(0, Math.ceil(n / I * 100))
+  const billsM = sumBy(live(D.recur).filter(r => r.type !== "income")), vs = spendVar(now), spend = billsM + vs
+  const lifeNeed = vs ? Math.max(15, pc(vs)) : 35   // на жизнь — сколько обычно уходит помимо платежей
+  const items = []
+  for (const k of keys.filter(k => k !== "life")) {
+    let pct = ENV_STD[k] || 5, why = "обычная доля"
+    if (k === "bills") { pct = pc(billsM); why = billsM ? `${num(billsM)} в месяц: ${live(D.recur).filter(r => r.type !== "income").slice(0, 3).map(r => r.title.toLowerCase()).join(", ")}` : "добавьте регулярные платежи" }
+    if (k === "goals") { const need = sumBy(goalJars(keys.includes("cushion")), j => jarPlan(j)); pct = need ? pc(need) : 10; why = need ? `${num(need)} в месяц, чтобы копилки успели к сроку` : "копилок пока нет — 10%" }
+    if (k === "cushion") { const goal = 6 * spend, have = envJar("cushion") ? +envJar("cushion").saved || 0 : 0
+      const mo = spend ? Math.floor(have / spend) : 0
+      pct = have >= goal && goal ? 0 : mo >= 3 ? 5 : 10; why = goal ? (pct ? `есть ${mo} мес. из 6 — ${pct === 10 ? "сначала подушка" : "добираем"}` : "6 месяцев уже есть — можно не откладывать") : "10%, пока подушки нет" }
+    if (k === "debt") { const l = debts().filter(d => d.dir === "loan" && d.pay > 0); const x = sumBy(l, loanExtra); pct = x ? pc(x) : 0; why = x ? `+${num(x)} в месяц к кредиту — закроете раньше` : "кредитов нет" }
+    if (k === "invest") why = "10% — привычная доля для капитала"
+    if (k === "charity") why = "3% — можно больше"
+    items.push({ k, pct, why })
+  }
+  // на жизнь должно хватать: ужимаем гибкие статьи, пока не хватит
+  let rest = 100 - sumBy(items, z => z.pct)
+  // не хватает на жизнь: гибкие статьи уступают пропорционально, но не больше половины своей доли
+  let short = false
+  if (rest < lifeNeed) {
+    const fl = items.filter(z => FLEX.includes(z.k) && z.pct > 1), give = z => Math.floor(z.pct / 2), A = sumBy(fl, give), take = Math.min(lifeNeed - rest, A)
+    for (const z of fl) { const c = A ? Math.round(give(z) * take / A) : 0; if (c > 0) { z.pct -= c; rest += c; z.why = (z.why ? z.why + " · " : "") + `было ${z.pct + c}%, ужал ради жизни` } }
+    short = rest < lifeNeed
+  }
+  items.push({ k: "life", pct: Math.max(0, 100 - sumBy(items, z => z.pct)), why: (vs ? `обычно уходит ≈ ${num(vs)} в месяц помимо платежей` : "всё, что осталось") + (short ? " — остаётся меньше обычного: уменьшите копилки или срок" : "") })
+  return items.map(z => Object.assign(z, { title: ENV(z.k).t }))
+}
+const planDefault = () => planSuggest(["bills", ...(jars().length ? ["goals"] : []), "cushion", "life"])
+const planItems = () => (aplan() || { items: planDefault() }).items
+// Свежий доход без раскладки — суммы по статьям
 function allocPending(now = new Date()) {
   const key = core.monthKey(now)
   const inc = live(D.money).filter(e => e.type === "income" && e.amount >= 3000 && core.monthKey(new Date(e.date)) === key && now - e.date < 10 * 864e5 && e.date <= +now
     && !D.goals.some(a => a.id === "al:" + e.id)).sort((a, b) => b.date - a.date)[0]
   if (!inc) return null
-  const bills = live(D.recur).filter(r => r.type !== "income" && !recurPaid(r)), billSum = sumBy(bills)
-  let js = jars().filter(j => (+j.saved || 0) < j.target).map(j => ({ j, x: jarState(j, now).need })).filter(z => z.x > 0)
-  const room = Math.max(0, inc.amount - billSum), want = sumBy(js, z => z.x)
-  if (want > room) js = js.map(z => ({ j: z.j, x: Math.floor(z.x * room / want / 100) * 100 })).filter(z => z.x > 0)
-  const jarSum = sumBy(js, z => z.x), life = inc.amount - billSum - jarSum
+  const rows = planItems().map(z => ({ k: z.k, title: z.title || ENV(z.k).t, pct: z.pct, x: Math.round(inc.amount * z.pct / 100 / 10) * 10 }))
+  const fix = inc.amount - sumBy(rows, r => r.x), life = rows.find(r => r.k === "life"); if (life) life.x += fix
+  // копилки на цели: делим по нужде каждой
+  const g = rows.find(r => r.k === "goals")
+  let js = []
+  if (g && g.x > 0) { const l = goalJars().map(j => ({ j, need: Math.max(jarState(j, now).need, 1) })), tot = sumBy(l, z => z.need)
+    js = l.map(z => ({ j: z.j, x: Math.floor(g.x * z.need / tot / 10) * 10 })); if (js.length) js[0].x += g.x - sumBy(js, z => z.x) }
   const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate() + 1
-  return { inc, bills, billSum, js, jarSum, life, perDay: Math.max(0, Math.round(life / days)) }
+  return { inc, rows, js, perDay: Math.max(0, Math.round((life ? life.x : 0) / days)), planned: !!aplan(), jarSum: sumBy(rows.filter(r => r.k !== "bills" && r.k !== "life"), r => r.x) }
+}
+function envDeposit(k, x) {
+  let j = envJar(k)
+  if (!j) j = upsert("goals", { id: uid("j"), date: Date.now(), kind: "jar", env: k, title: ENV(k).t, target: 0, saved: 0, s0: 0, start: core.monthKey(new Date()), dep: {} })
+  return jarDeposit(j, x)
 }
 function allocApply(a, skip) {
-  if (!skip) for (const z of a.js) jarDeposit(z.j, z.x)
+  if (!skip) for (const r of a.rows) {
+    if (r.k === "bills" || r.k === "life" || !(r.x > 0)) continue
+    if (r.k === "goals") { if (a.js.length) for (const z of a.js) jarDeposit(z.j, z.x); else envDeposit("goals", r.x) }
+    else envDeposit(r.k, r.x)
+  }
   upsert("goals", { id: "al:" + a.inc.id, date: Date.now(), kind: "alloc", inc: a.inc.id, skip: !!skip, jars: skip ? 0 : a.jarSum })
+}
+// сколько этот месяц уходит в статьи плана (кроме платежей и жизни): доля от дохода или уже отложенное
+function planMonth(key = core.monthKey(new Date())) {
+  const p = aplan()
+  if (!p) return jarsMonth(key)
+  const inc = core.monthTotals(live(D.money), key).income
+  return sumBy(p.items.filter(z => z.k !== "bills" && z.k !== "life"), z => Math.max(inc * z.pct / 100, z.k === "goals" ? sumBy(goalJars(), j => jarDep(j, key)) : envJar(z.k) ? jarDep(envJar(z.k), key) : 0))
+}
+const planBar = items => `<div class="pl-bar">${items.filter(z => z.pct > 0).map(z => `<i style="flex:${z.pct};background:${ENV(z.k).c}" title="${esc(ENV(z.k).t)}"></i>`).join("")}</div>`
+function planCard(anim) {
+  const p = aplan(), items = planItems()
+  return `<div class="card mn-in" ${anim()}><h2>Как раскладываю доход<button class="act" data-do="plan-edit">${p ? "Изменить" : "Настроить"}</button></h2>${planBar(items)}
+    ${items.map(z => { const j = envJar(z.k), dep = j ? jarDep(j) : 0
+      return `<div class="row pl-row" ${j ? `data-jar="${esc(j.id)}"` : ""}><span class="pl-ic" style="background:${ENV(z.k).c}">${tdIco(ENV(z.k).ico, 15)}</span><div class="grow"><div class="t">${esc(z.title || ENV(z.k).t)}</div>
+        ${j ? `<div class="s">накоплено ${esc(core.money(j.saved || 0))}${dep ? ` · в ${MONTHS_PREP[new Date().getMonth()]} +${num(dep)}` : ""}</div>` : ""}</div><div class="amt">${z.pct}%</div></div>` }).join("")}
+    ${p ? "" : `<div class="muted small" style="margin-top:6px">Это предложение по умолчанию. Нажмите «Настроить», выберите свои статьи — Изи подберёт проценты.</div>`}</div>`
+}
+function planForm() {
+  const cur = aplan()
+  let items = cur ? cur.items.map(z => Object.assign({}, z)) : planDefault()
+  const s = sheet(`<h3>Как раскладывать доход</h3><div class="msg">Выберите статьи — Изи предложит проценты под ваши платежи, копилки и обычные траты. Любой процент можно поправить, «На жизнь» пересчитается сам.</div>
+    <div class="field"><div class="chips" id="pl-ch">${ENVS.filter(e => e.k !== "life").map(e => `<button class="chip" data-k="${e.k}">${tdIco(e.ico, 14)} ${esc(e.t)}</button>`).join("")}</div></div>
+    <div id="pl-bar"></div><div id="pl-l"></div>
+    <div class="btns" style="margin-top:12px"><button class="btn" data-a="opt">Предложить оптимально</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
+  const lifeFix = () => { const l = items.find(z => z.k === "life"); l.pct = Math.max(0, 100 - sumBy(items.filter(z => z.k !== "life"), z => z.pct)) }
+  const paint = () => {
+    $$("#pl-ch .chip", s.el).forEach(b => b.classList.toggle("on", items.some(z => z.k === b.dataset.k)))
+    $("#pl-bar", s.el).innerHTML = planBar(items)
+    const over = sumBy(items.filter(z => z.k !== "life"), z => z.pct) > 100
+    $("#pl-l", s.el).innerHTML = items.map(z => `<div class="row pl-row"><span class="pl-ic" style="background:${ENV(z.k).c}">${tdIco(ENV(z.k).ico, 15)}</span><div class="grow"><div class="t">${esc(ENV(z.k).t)}</div>${z.why ? `<div class="s">${esc(z.why)}</div>` : ""}</div>
+      ${z.k === "life" ? `<b class="pl-life ${over ? "exp" : ""}">${z.pct}%</b>` : `<div class="pl-pct"><input type="number" inputmode="numeric" data-p="${z.k}" value="${z.pct}"><span>%</span></div>`}</div>`).join("") + (over ? `<div class="small exp">Больше 100% — уменьшите что-нибудь</div>` : "")
+    $$("[data-p]", s.el).forEach(i => i.oninput = () => { const z = items.find(x => x.k === i.dataset.p); z.pct = Math.max(0, Math.round(+i.value || 0)); z.why = "ваш процент"; lifeFix()
+      $("#pl-bar", s.el).innerHTML = planBar(items); const lb = $(".pl-life", s.el); lb.textContent = items.find(x => x.k === "life").pct + "%" })
+  }
+  $$("#pl-ch .chip", s.el).forEach(b => b.onclick = () => { const k = b.dataset.k, keys = items.map(z => z.k)
+    const next = keys.includes(k) ? keys.filter(x => x !== k) : [...keys.filter(x => x !== "life"), k, "life"]
+    items = planSuggest(ENVS.map(e => e.k).filter(x => next.includes(x))); if (navigator.vibrate) navigator.vibrate(8); paint() })
+  $('[data-a="opt"]', s.el).onclick = () => { items = planSuggest(ENVS.map(e => e.k).filter(x => items.some(z => z.k === x))); paint(); toast("Предложил под ваши цифры") }
+  $('[data-a="ok"]', s.el).onclick = () => { lifeFix(); if (sumBy(items.filter(z => z.k !== "life"), z => z.pct) > 100) return toast("Больше 100%")
+    upsert("goals", { id: "aplan", date: Date.now(), kind: "aplan", items: items.map(z => ({ k: z.k, title: ENV(z.k).t, pct: z.pct, why: z.why || "" })) }); s.close(); render(); toast("План сохранён") }
+  paint()
 }
 
 // — 5. Капитал: счета, наличные, вклады, имущество, долги; по месяцам
@@ -3614,7 +3741,7 @@ const ACCT_T = { cash: ["Наличные", "cash"], bank: ["Счёт или к�
 const accts = () => gk("acct").filter(a => a.title).sort((a, b) => Object.keys(ACCT_T).indexOf(a.type) - Object.keys(ACCT_T).indexOf(b.type) || a.date - b.date)
 const debts = () => gk("debt").filter(d => d.title && d.amount > 0).sort((a, b) => (a.due || "9").localeCompare(b.due || "9"))
 function capital() {
-  const assets = sumBy(accts(), a => fx(+a.amount || 0, a.cur || baseCur())), jarSum = sumBy(jars(), j => +j.saved || 0)
+  const assets = sumBy(accts(), a => fx(+a.amount || 0, a.cur || baseCur())), jarSum = sumBy(gk("jar"), j => +j.saved || 0)
   const owe = sumBy(debts().filter(d => d.dir !== "in")), lent = sumBy(debts().filter(d => d.dir === "in"))
   return { assets, jarSum, owe, lent, total: Math.round(assets + lent - owe) }
 }
@@ -3764,10 +3891,10 @@ function renderMoney() {
   }
   // 3. Пришёл доход — разложим?
   const al = isCur && allocPending(now)
-  if (al) html += `<div class="card mn-alloc mn-in mn-swipe" ${anim()} data-swipe="alloc"><h2>Пришло ${esc(core.money(al.inc.amount))} — разложим?</h2>
-    ${al.bills.length ? `<div class="row"><div class="grow"><div class="t">Платежи месяца</div><div class="s">${esc(al.bills.slice(0, 4).map(r => r.title.toLowerCase()).join(", "))}</div></div><div class="amt">${num(al.billSum)}</div></div>` : ""}
-    ${al.js.length ? `<div class="row"><div class="grow"><div class="t">Копилки</div><div class="s">${esc(al.js.map(z => `${z.j.title} ${num(z.x)}`).join(" · "))}</div></div><div class="amt">${num(al.jarSum)}</div></div>` : ""}
-    <div class="row"><div class="grow"><div class="t">На жизнь</div><div class="s">≈ ${num(al.perDay)} ${esc(core.CONFIG.currency)} в день</div></div><div class="amt inc">${num(al.life)}</div></div>
+  if (al) html += `<div class="card mn-alloc mn-in mn-swipe" ${anim()} data-swipe="alloc"><h2>Пришло ${esc(core.money(al.inc.amount))} — разложим?<button class="act" data-do="plan-edit">План</button></h2>${planBar(al.rows)}
+    ${al.rows.filter(r => r.x > 0).map(r => { const sub = r.k === "bills" ? live(D.recur).filter(x => x.type !== "income").slice(0, 4).map(x => x.title.toLowerCase()).join(", ") : r.k === "goals" && al.js.length ? al.js.map(z => `${z.j.title} ${num(z.x)}`).join(" · ") : r.k === "life" ? `≈ ${num(al.perDay)} ${core.CONFIG.currency} в день` : ENV(r.k).d
+      return `<div class="row pl-row"><span class="pl-ic" style="background:${ENV(r.k).c}">${tdIco(ENV(r.k).ico, 15)}</span><div class="grow"><div class="t">${esc(r.title)} <span class="muted small">${r.pct}%</span></div>${sub ? `<div class="s">${esc(sub)}</div>` : ""}</div><div class="amt ${r.k === "life" ? "inc" : ""}">${num(r.x)}</div></div>` }).join("")}
+    ${al.planned ? "" : `<div class="muted small" style="margin-top:4px">Изи предложил по вашим платежам и копилкам. Свои статьи — благотворительность, инвестиции, обучение — в «План».</div>`}
     <button class="btn primary wide" data-do="mn-alloc">Разложить так</button><button class="btn ghost wide" data-do="mn-alloc-no">Не сейчас</button></div>`
   // 8. Все / Мои / Общие
   const vi = ["all", "mine", "shared"].indexOf(mn.view)
@@ -3793,6 +3920,7 @@ function renderMoney() {
     return `<button class="mn-jar ${st.cls}" data-jar="${esc(j.id)}"><div class="top"><span>${tdIco("jar", 17)}<b>${esc(j.title)}</b>${j.shared ? `<em class="sh">${tdIco("people", 12)}</em>` : ""}</span><span class="am">${num(j.saved || 0)} / ${esc(core.money(j.target))}</span></div>
       <div class="bar"><i style="--w:${Math.round(st.p * 100)}%"></i></div><div class="s">${esc(st.txt)}</div></button>`
   }).join("") : `<div class="empty">Отпуск, подушка на полгода, новая машина: копилка со сроком сама посчитает, сколько откладывать в месяц и успеваете ли вы.</div>`) + `</div>`
+  if (isCur && mn.view === "all") html += planCard(anim)
   // Лимиты по категориям
   const cats = Object.entries(t.cats.expense)
   for (const b of live(D.budgets)) if (b.limit > 0 && !cats.some(c => c[0] === b.category)) cats.push([b.category, 0])
@@ -3878,9 +4006,9 @@ function mnDismiss(k) {
   D.mnyOff = D.mnyOff || {}; D.mnyOff[k] = 1; save(false)
 }
 Object.assign(DO, {
-  "mn-alloc": () => { const a = allocPending(); if (!a) return; allocApply(a); if (navigator.vibrate) navigator.vibrate(12); render(); toast(a.jarSum ? `В копилки ${core.money(a.jarSum)} · на жизнь ≈ ${core.money(a.perDay)} в день` : "Разложено") },
+  "mn-alloc": () => { const a = allocPending(); if (!a) return; allocApply(a); if (navigator.vibrate) navigator.vibrate(12); render(); toast(a.jarSum ? `Отложено ${core.money(a.jarSum)} · на жизнь ≈ ${core.money(a.perDay)} в день` : "Разложено") },
   "mn-alloc-no": () => { const c = $(".mn-alloc"); if (c) c.classList.add("gone"); mnDismiss("alloc"); setTimeout(render, 250) },
-  "jar-add": () => jarForm(), "acct-add": () => acctForm(), "debt-add": () => debtForm(),
+  "jar-add": () => jarForm(), "plan-edit": () => planForm(), "acct-add": () => acctForm(), "debt-add": () => debtForm(),
   "mn-debts": () => { const el = $("#mn-debts"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }) },
   "mn-rules": () => rulesSheet(), "mn-family": () => familyForm(),
   "mn-why": () => { const cs = canSpend(); if (!cs) return

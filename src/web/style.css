@@ -874,3 +874,12 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 @media (prefers-reduced-motion: reduce) { .mn-in, .mn-jar .bar i, .mn-hero:before { animation: none; } }
 .row.mn-sub { flex-wrap: wrap; row-gap: 8px; }
 .row.mn-sub:not(.kept) .grow { flex-basis: 100%; }
+.pl-bar { display: flex; gap: 3px; height: 12px; border-radius: 6px; overflow: hidden; margin: 2px 0 6px; }
+.pl-bar i { display: block; min-width: 4px; border-radius: 3px; transition: flex .45s cubic-bezier(.2, .9, .25, 1); }
+.pl-row { gap: 11px; }
+.pl-ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; flex: none; }
+.pl-pct { display: flex; align-items: center; gap: 3px; flex: none; }
+.pl-pct input { width: 58px; text-align: right; padding: 7px 8px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pl-pct span, .pl-life { font-weight: 700; color: var(--sub); }
+.pl-life { min-width: 48px; text-align: right; color: var(--text); font-size: 16px; }
+#pl-ch .chip { font-size: 13px; }

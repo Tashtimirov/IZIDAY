@@ -56,7 +56,7 @@ check(/Сегодня можно потратить/.test(t) && (await page.text
   "большое число и ≈ $ / ₽", await page.textContent(".mn-hero"))
 check(await page.evaluate(() => { const g = D.goals.find(x => x.id === "spend"); return g && g.today === canSpend().today && g.day === "2026-11-05" }), "число для виджета записано в goals")
 // 3. распределение
-check(/Пришло 150 000 ฿ — разложим\?/.test(t) && /Платежи месяца/.test(t) && /аренда, интернет, школа/.test(t) && /На жизнь/.test(t), "карточка «Пришло — разложим?»", t.match(/Пришло.{0,200}/))
+check(/Пришло 150 000 ฿ — разложим\?/.test(t) && /Обязательные платежи \d+%/.test(t) && /Подушка безопасности/.test(t) && /Изи предложил/.test(t) && /аренда, интернет, школа/.test(t) && /На жизнь/.test(t), "карточка «Пришло — разложим?»", t.match(/Пришло.{0,200}/))
 check(/Отпуск в Японии/.test(t) && /Подушка на 6 месяцев/.test(t) && /отстаёте на \d месяц/.test(t) && /успеваете/.test(t), "копилки: план и «отстаёте»", t.match(/Копилки.{0,300}/))
 // 5. капитал, 9. долги, 6. подписки
 check(/Капитал/.test(t) && await page.$$eval(".cap-g .tile", x => x.length) >= 5 && await page.$(".cap-ch") && /\$28 000/.test(t), "капитал: плитки, график, вклад в долларах")
@@ -78,7 +78,22 @@ check(w2 !== w1 && w3 !== w2 && /Неделя: −/.test(w3) && await page.evalu
 await page.click('[data-tone="praise"]')
 // распределить
 const before = await page.evaluate(() => D.goals.filter(g => g.kind === "jar").map(j => j.saved))
+// план раскладки: выбрать статьи — Изи предлагает проценты
+await page.click('.mn-alloc [data-do="plan-edit"]'); await page.waitForTimeout(400)
+await page.click('#pl-ch [data-k="charity"]'); await page.click('#pl-ch [data-k="invest"]'); await page.waitForTimeout(200)
+const pl = await page.evaluate(() => [...document.querySelectorAll("#pl-l .pl-row")].map(r => r.textContent.replace(/\s+/g, " ").trim()))
+const pv = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll("[data-p]")].map(i => [i.dataset.p, +i.value])))
+const lifeP = await page.evaluate(() => +document.querySelector(".pl-life").textContent.replace(/\D/g, ""))
+check(pv.bills === 30 && pv.charity >= 1 && pv.invest >= 5 && pv.goals > 0 && pv.cushion >= 5 && lifeP + Object.values(pv).reduce((a, b) => a + b, 0) === 100, "предложены проценты под платежи, копилки, подушку, инвестиции, благотворительность", { pv, lifeP, pl })
+await page.screenshot({ path: SHOTS + "money-plan.png" })
+await page.fill('[data-p="charity"]', "5"); await page.dispatchEvent('[data-p="charity"]', "input"); await page.waitForTimeout(100)
+check(+(await page.textContent(".pl-life")).replace(/\D/g, "") === lifeP - (5 - pv.charity), "поправил процент — «На жизнь» пересчиталось")
+await page.click('.sheet:last-child [data-a="ok"]'); await page.waitForTimeout(400)
+t = await txt()
+check(/Благотворительность 5%/.test(t) && /Инвестиции \d+%/.test(t) && /Как раскладываю доход/.test(t), "раскладка дохода по сохранённому плану", t.match(/Пришло.{0,400}/))
+await page.waitForTimeout(2600); await page.evaluate(() => { document.querySelector("#tabs").style.visibility = "hidden"; document.querySelector("#fab") && (document.querySelector("#fab").style.visibility = "hidden") }); await page.locator(".mn-alloc").screenshot({ path: SHOTS + "money-alloc.png" }); await page.evaluate(() => { document.querySelector("#tabs").style.visibility = ""; document.querySelector("#fab") && (document.querySelector("#fab").style.visibility = "") })
 await page.click('[data-do="mn-alloc"]'); await page.waitForTimeout(500)
+check(await page.evaluate(() => aplan().items.filter(z => !["bills", "life", "goals"].includes(z.k)).every(z => envJar(z.k) && jarDep(envJar(z.k)) === Math.round(150000 * z.pct / 100 / 10) * 10) && envJar("cushion").title === "Подушка на 6 месяцев" && !gk("jar").some(j => j.env === "cushion")), "конверты получили доли, подушка — в свою копилку", await page.evaluate(() => gk("jar").map(j => [j.title, j.saved])))
 const after = await page.evaluate(() => D.goals.filter(g => g.kind === "jar" && !g.deleted).map(j => ({ s: j.saved, d: j.dep })))
 check(after[0].s > before[0] && after[1].s > before[1] && !/разложим\?/.test(await txt()) && await page.evaluate(() => D.goals.some(g => g.id === "al:i1")), "«Разложить так» — деньги в копилках, карточка ушла", after)
 check(/в ноябре отложено/.test(await txt()), "после раскладки копилки «в ноябре отложено»")
