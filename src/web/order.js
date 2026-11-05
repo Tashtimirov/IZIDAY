@@ -93,7 +93,11 @@ window.BLOCKS = (function () {
     clearTimeout(h.p); el.classList.remove("bk-press")
     v.classList.remove("anim"); v.classList.add("bk-on", "bk-done")
     const r = el.getBoundingClientRect()
-    drag = { el, v, x0: h.x, y0: h.y, x: h.x, y: h.y, cx0: r.left + r.width / 2, cy0: r.top + r.height / 2, tx: 0, ty: 0, z: zoomOf(el), raf: 0, cool: 0, touch: h.touch }
+    drag = { el, v, x0: h.x, y0: h.y, x: h.x, y: h.y, cx0: r.left + r.width / 2, cy0: r.top + r.height / 2, tx: 0, ty: 0, z: zoomOf(el), raf: 0, cool: 0, touch: h.touch, dirty: 0 }
+    // края для автопрокрутки — один раз, чтобы в каждом кадре не пересчитывать раскладку
+    const vr = v.getBoundingClientRect(), tabs = document.getElementById("tabs"), topEl = document.getElementById("top")
+    drag.bottom = Math.min(vr.bottom, innerHeight, tabs ? tabs.getBoundingClientRect().top : innerHeight)
+    drag.top = Math.max(vr.top, topEl ? topEl.getBoundingClientRect().bottom : 0)
     el.classList.add("bk-lift")
     snapshot()
     drag.keys0 = drag.list.map(b => b.dataset.bk).join("|")
@@ -105,22 +109,21 @@ window.BLOCKS = (function () {
   function snapshot() {
     const { v } = drag, st = v.scrollTop
     drag.list = blocks(v)
-    drag.rects = new Map(drag.list.map(el => {
-      const tr = el.style.transform
-      el.style.transform = ""
-      const r = el.getBoundingClientRect()
-      el.style.transform = tr
-      return [el, { l: r.left, t: r.top + st, w: r.width, h: r.height }]
-    }))
+    // один пересчёт раскладки на все блоки: сдвиг снимаем только у блока в руке (у остальных он уже снят)
+    const el0 = drag.el, tr = el0.style.transform
+    el0.style.transform = ""
+    drag.rects = new Map(drag.list.map(el => { const r = el.getBoundingClientRect(); return [el, { l: r.left, t: r.top + st, w: r.width, h: r.height }] }))
+    el0.style.transform = tr
+    const me = drag.rects.get(drag.el)
+    drag.lcx = me.l + me.w / 2; drag.lcy = me.t + me.h / 2   // центр блока в раскладке (без сдвига), в координатах содержимого
   }
   function follow() {
     const d = drag, el = d.el
     // центр блока держим под пальцем: смещение = путь пальца − сдвиг самого блока в раскладке
-    el.style.transform = ""
-    const r = el.getBoundingClientRect()
-    d.tx = (d.cx0 + (d.x - d.x0) - (r.left + r.width / 2)) / d.z
-    d.ty = (d.cy0 + (d.y - d.y0) - (r.top + r.height / 2)) / d.z
-    el.style.transform = `translate(${Math.round(d.tx * 10) / 10}px, ${Math.round(d.ty * 10) / 10}px)`
+    // без чтения раскладки в каждом кадре: место блока известно из снимка, меняется только прокрутка
+    d.tx = (d.cx0 + (d.x - d.x0) - d.lcx) / d.z
+    d.ty = (d.cy0 + (d.y - d.y0) - (d.lcy - d.v.scrollTop)) / d.z
+    el.style.transform = `translate3d(${Math.round(d.tx * 10) / 10}px, ${Math.round(d.ty * 10) / 10}px, 0)`
   }
   function move(x, y) {
     const d = drag
@@ -155,22 +158,23 @@ window.BLOCKS = (function () {
       b.style.transform = `translate(${dx}px, ${dy}px)`
     }
     void d.v.offsetWidth
-    for (const b of others) { b.style.transition = reduce() ? "none" : "transform .32s cubic-bezier(.2,.8,.2,1)"; b.style.transform = "" }
+    // как на iPhone: мягкая «пружина» без отскока — быстро трогается и долго, плавно доезжает
+    for (const b of others) { b.style.transition = reduce() ? "none" : "transform .42s cubic-bezier(.22,1,.36,1)"; b.style.transform = "" }
     follow()
-    d.cool = 1; setTimeout(() => { if (drag === d) { d.cool = 0; move(d.x, d.y) } }, 120)
+    d.cool = 1; setTimeout(() => { if (drag === d) { d.cool = 0; d.dirty = 1 } }, 120)
     try { if (window.DS && DS.buzz) DS.buzz() } catch (e) {}
   }
   // у края экрана — листаем сами
   function tickLoop() {
     const d = drag
     if (!d) return
-    const vr = d.v.getBoundingClientRect(), tabs = document.getElementById("tabs")
-    const bottom = Math.min(vr.bottom, innerHeight, tabs ? tabs.getBoundingClientRect().top : innerHeight)
-    const top = Math.max(vr.top, (document.getElementById("top") || d.v).getBoundingClientRect().bottom || 0)
+    const top = d.top, bottom = d.bottom
     let sp = 0
     if (d.y < top + 70) sp = -Math.min(18, (top + 70 - d.y) / 3)
     else if (d.y > bottom - 80) sp = Math.min(18, (d.y - bottom + 80) / 3)
-    if (sp) { const s0 = d.v.scrollTop; d.v.scrollTop += sp; if (d.v.scrollTop !== s0) move(d.x, d.y) }
+    if (sp) { const s0 = d.v.scrollTop; d.v.scrollTop += sp; if (d.v.scrollTop !== s0) d.dirty = 1 }
+    // движения пальца копятся и применяются раз в кадр экрана (60/120 Гц) — без лишней работы между кадрами
+    if (d.dirty) { d.dirty = 0; move(d.x, d.y) }
     d.raf = requestAnimationFrame(tickLoop)
   }
   function drop() {
@@ -179,18 +183,20 @@ window.BLOCKS = (function () {
     drag = null
     cancelAnimationFrame(d.raf)
     const el = d.el
-    el.style.transition = reduce() ? "none" : "transform .34s cubic-bezier(.3,1.25,.4,1), scale .34s cubic-bezier(.3,1.25,.4,1), box-shadow .34s"
+    el.style.transition = reduce() ? "none" : "transform .46s cubic-bezier(.22,1.12,.36,1), scale .46s cubic-bezier(.22,1.12,.36,1), box-shadow .46s"
     el.style.transform = ""
     el.classList.remove("bk-lift")
     eatClick = 1; clearTimeout(drop.t); drop.t = setTimeout(() => { eatClick = 0 }, 500)
     const keys = blocks(d.v).map(b => b.dataset.bk), S = store(), old = Array.isArray(S[scope()]) ? S[scope()] : null
     const next = old ? merge(old, keys) : keys
-    if (keys.join("|") !== d.keys0) { S[scope()] = next; save(false); hint(true) }
+    const moved = keys.join("|") !== d.keys0
+    if (moved) S[scope()] = next
     setTimeout(() => {
       for (const b of d.list) { b.style.transition = ""; if (b !== drag?.el) b.style.transform = "" }
       d.v.classList.remove("bk-on")
+      if (moved) { save(false); hint(true) }   // запись на телефон — после того как блок сел на место, чтобы не мешать анимации
       if (pendingRender) { pendingRender = false; render() }
-    }, 360)
+    }, 480)
   }
   function end() { if (drag) drop(); else cancelHold() }
 
@@ -198,7 +204,7 @@ window.BLOCKS = (function () {
   document.addEventListener("touchstart", e => { if (e.touches.length > 1) return end(); const t = e.touches[0]; start(e, t.clientX, t.clientY, true) }, { passive: true })
   document.getElementById("view").addEventListener("touchmove", e => {
     const t = e.touches[0]
-    if (drag) { e.preventDefault(); move(t.clientX, t.clientY); return }
+    if (drag) { e.preventDefault(); drag.x = t.clientX; drag.y = t.clientY; drag.dirty = 1; return }
     if (hold && Math.hypot(t.clientX - hold.x0, t.clientY - hold.y0) > SLOP) cancelHold()
   }, { passive: false })
   document.addEventListener("touchend", end, { passive: true })
@@ -207,7 +213,7 @@ window.BLOCKS = (function () {
   document.addEventListener("pointerdown", e => { if (e.pointerType === "mouse" && e.button === 0) start(e, e.clientX, e.clientY, false) })
   document.addEventListener("pointermove", e => {
     if (e.pointerType !== "mouse") return
-    if (drag && !drag.touch) { e.preventDefault(); move(e.clientX, e.clientY) }
+    if (drag && !drag.touch) { e.preventDefault(); drag.x = e.clientX; drag.y = e.clientY; drag.dirty = 1 }
     else if (hold && !hold.touch && Math.hypot(e.clientX - hold.x0, e.clientY - hold.y0) > SLOP) cancelHold()
   })
   document.addEventListener("pointerup", e => { if (e.pointerType === "mouse") end() })
