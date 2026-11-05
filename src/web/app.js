@@ -651,8 +651,47 @@ async function scanFile(f) {
   } else throw new Error("Можно фото, видео или PDF")
   const label = att.type === "document" ? `📄 ${att.name}` : att.video ? "🎬 Видео" : "📷 Фото"
   delete att.video
-  chatSend(SCAN_PROMPT, { label, attach: att })
+  attStage(att, label)
 }
+// Вложение не уходит сразу: над полем появляется карточка, можно добавить подпись текстом или голосом («это мой обед»)
+// и отправить вместе. «Отправить» на карточке — без подписи. Смахнуть карточку — убрать вложение
+let chatAtt = null
+function attStage(att, label) {
+  chatAtt = { att, label }
+  if (tab !== "chat") setTab("chat"); else attTray()
+  if (navigator.vibrate) navigator.vibrate(8)
+}
+function attCaption(c, text, voice) {   // что увидит Изи и что останется в ленте
+  const a = c.att
+  return {
+    prompt: SCAN_PROMPT + (text ? `\nПодпись пользователя к вложению${voice ? " (сказал голосом)" : ""}: «${text}». Она главнее того, что видно: из неё понятно, что это и что с этим сделать.` : ""),
+    show: !text ? c.label : a.thumb ? text : `${c.label}\n${text}`,
+  }
+}
+function attTray() {
+  const t = $("#att-tray"); if (!t) return
+  const bar = t.closest(".chat-bar"), inp = $("#chat-in")
+  if (bar) bar.classList.toggle("has-att", !!chatAtt)
+  if (inp && !voice) inp.placeholder = chatAtt ? "Добавьте подпись…" : "Напишите или скажите…"
+  if (!chatAtt) { t.classList.remove("show"); setTimeout(() => { if (!chatAtt) t.innerHTML = "" }, 260); return }
+  const a = chatAtt.att, doc = a.type === "document", kind = doc ? "Файл" : /Видео/.test(chatAtt.label) ? "Видео" : "Фото"
+  t.innerHTML = `<div class="att-card">${a.thumb ? `<img src="${esc(a.thumb)}" alt="">` : `<span class="att-doc">${ICO.doc}</span>`}
+    <div class="att-t"><b>${esc(doc ? a.name : kind)}</b><small>Добавьте подпись или отправьте так</small></div>
+    <button class="att-go" aria-label="Отправить без подписи">${ICO.send}</button></div>`
+  requestAnimationFrame(() => t.classList.add("show"))
+  const card = $(".att-card", t)
+  $(".att-go", t).onclick = () => { const i = $("#chat-in"), v = i ? i.value : ""; if (i) { i.value = ""; grow(i) } chatSend(v) }
+  // смахнуть вниз или в сторону — убрать
+  let x0 = null, y0 = null, dx = 0, dy = 0
+  card.addEventListener("touchstart", e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = dy = 0; card.style.transition = "none" }, { passive: true })
+  card.addEventListener("touchmove", e => { if (x0 == null) return; dx = e.touches[0].clientX - x0; dy = Math.max(0, e.touches[0].clientY - y0)
+    card.style.transform = `translate(${dx}px, ${dy}px)`; card.style.opacity = String(1 - Math.min(.7, (Math.abs(dx) + dy) / 220)) }, { passive: true })
+  card.addEventListener("touchend", () => { card.style.transition = ""
+    if (Math.abs(dx) > 70 || dy > 40) { card.style.transform = `translate(${dx * 2}px, ${dy * 2 + 40}px)`; card.style.opacity = "0"; attDrop() }
+    else { card.style.transform = ""; card.style.opacity = "" }
+    x0 = null })
+}
+function attDrop() { chatAtt = null; attTray(); toast("Вложение убрано") }
 function videoFrame(f) {
   return new Promise((res, rej) => {
     const u = URL.createObjectURL(f), v = document.createElement("video")
@@ -1332,7 +1371,7 @@ function agentSystem() {
 - Напоминания живут в IZIDAY, а не в Напоминаниях iPhone: create_reminder сохраняет их в приложении, уведомление в срок и контроль «Выполнил?» — от IZIDAY. Повторяющиеся (каждый день, по будням) — через repeat. В Напоминания iPhone ничего не вноси.
 ${cals.length ? `- Календари по словам пользователя: ${cals.map(x => `«${x.calendar}» (список напоминаний «${x.list}»)`).join(", ")}.${cals.filter(x => x.hint).map(x => ` ${x.hint} — «${x.calendar}».`).join("")} Если календарь не назван, не указывай его.
 ` : ""}- Деньги — ${c.currencyIn}. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.
-- Фото или файл от пользователя — сначала пойми, что это, и действуй:
+- Фото или файл от пользователя — сначала пойми, что это, и действуй. Если к вложению есть подпись («это мой обед», «оплатить до пятницы», «это для Оли») — исходи из неё: она важнее догадок по картинке.
   • Еда или блюдо: что это, порция, ккал и БЖУ одной строкой; спроси ask_user «Записать в еду?» [Да, Нет] и при «Да» — add_food.
   • Счёт, инвойс, квитанция к оплате (коммуналка, интернет, аренда, штраф и т. п.): от кого, за что, сумма с валютой, срок оплаты (если есть — и сколько дней осталось), номер счёта/реквизиты кратко. Если есть срок или его можно понять — спроси ask_user «Напомнить об оплате?» [За день до срока, В день срока, Не нужно] и создай create_reminder «Оплатить <от кого> — <сумма>» на 10:00 нужного дня. Счёт ещё не оплачен — расход не записывай.
   • Чек из магазина, кафе или ресторана: где и когда, позиции списком «название — цена» (переведи на русский, оригинал в скобках, если неясно), скидки и сервисный сбор, итог. Затем ask_user «Записать расход <итог>?» [Наличные, Карта / перевод, Не записывать] и add_money с подходящей категорией и коротким комментарием (магазин, 2–3 главных позиции). Дата — из чека, если не сегодня.
@@ -1481,9 +1520,12 @@ const BRIEFS = {
 }
 function chatContext() {
   const out = []
-  for (const m of D.chat.slice(-40)) {
+  const msgs = D.chat.slice(-40), cur = msgs[msgs.length - 1]
+  for (const m of msgs) {
     let content = m.prompt || m.text
     if (!content || m.local) continue
+    // старое вложение: самого файла в запросе уже нет — иначе Изи думает, что его прислали снова, и просит повторить
+    if (m !== cur && m.prompt && m.prompt.startsWith(SCAN_PROMPT)) content = `(Раньше прислал вложение «${m.text}» — оно уже разобрано в ответе ниже; файла здесь больше нет, повторно не проси.)`
     if (m.role === "user") { const d = new Date(m.at || Date.now()); content = `[${d.getDate()} ${MON_GEN[d.getMonth()].slice(0, 3)} ${hm(d)}] ${content}` }
     const last = out[out.length - 1]
     if (last && last.role === m.role) last.content += "\n\n" + content
@@ -1549,12 +1591,19 @@ async function agentTurn(messages, system, tools) {
 let chatBusy = false, chatLinks = [], chatCC = [], askWait = null
 async function chatSend(text, opts = {}) {
   text = String(text || "").trim()
-  if (!text) return
+  if (!text && !(chatAtt && !opts.attach && !askWait)) return
   // ответ на вопрос помощника (ask_user или подтверждение)
   if (askWait) { const w = askWait; askWait = null; setBusyUI(); D.chat.push({ role: "user", text, at: Date.now(), voice: !!opts.voice, local: true }); save(false); renderChat(); w(text); return }
   if (chatBusy) { toast(`${iziName()} ещё отвечает…`); return }
   memorize()
   if (!aiKey()) { setTab("more"); return ui.info("Нужен ключ Claude", "Здесь откроется «Ключ Claude» → «Подключить»: три шага, около двух минут. Если вы в семье, где включён общий ключ, он подключится сам.") }
+  let staged = null
+  if (chatAtt && !opts.attach) {   // фото или файл ждали подписи — уходят вместе с этим сообщением
+    staged = chatAtt; chatAtt = null; attTray()
+    const c = attCaption(staged, text, opts.voice)
+    opts = Object.assign({}, opts, { attach: staged.att, label: c.show, caption: text })
+    text = c.prompt
+  }
   const item = { role: "user", text: opts.label || text, prompt: opts.label ? text : undefined, at: Date.now(), voice: !!opts.voice, thumb: opts.attach && opts.attach.thumb || undefined }
   D.chat.push(item)
   chatBusy = true
@@ -1582,6 +1631,7 @@ async function chatSend(text, opts = {}) {
     if (i >= 0) D.chat.splice(i)
     save(false); if (tab === "chat") renderChat()
     const inp = $("#chat-in"); if (inp && !opts.attach && !opts.label) { inp.value = text; grow(inp); inp.focus() }
+    if (staged) { chatAtt = staged; attTray(); if (inp) { inp.value = opts.caption || ""; grow(inp) } }   // вложение и подпись — обратно над полем
     toast("⏹ Остановлено — поправьте и отправьте")
     return
   }
@@ -2124,7 +2174,7 @@ function stripInit(keep) {
 function renderChatHTML() {
   return `<div class="chat-tools"><button data-do="talk" class="tk-chip"><b class="mini-orb"></b>Поговорить</button><button data-brief="morning">${ei("sun")}Утренняя сводка</button><button data-brief="evening">${ei("moon")}Вечерняя</button><button data-do="memory">${ei("brain")}Память</button><button data-do="chat-clear">${ei("eraser")}Очистить</button></div>
     <div class="chat-list" id="chat-list">${chatItems()}</div>
-    <div class="chat-bar"><button class="cam plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
+    <div class="chat-bar"><div class="att-tray" id="att-tray"></div><button class="cam plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
     <button class="send" aria-label="Отправить">${ICO.send}</button></div>`
 }
 const linkify = s => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`)
@@ -2434,6 +2484,7 @@ function bind() {
     // голос — одна кнопка: большая «Изи» внизу (держать — как рация, ещё раз нажать — разговор); справа только ➤, когда есть текст
     $(".chat-bar .cam", v).onclick = e => plusMenu(e.currentTarget)
     grow(inp)
+    attTray()
     bindChatList()
   }
 }

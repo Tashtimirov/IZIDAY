@@ -197,21 +197,34 @@ claudeQueue.push({ content: [{ type: "text", text: "Это чек 7-Eleven: ит
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQEAP2uD/H+Ug1hAAAAAElFTkSuQmCC", "base64")
 let n0 = claudeSeen.length
 await page.setInputFiles("#photo-lib", { name: "check.png", mimeType: "image/png", buffer: PNG })
+await page.waitForSelector("#att-tray.show .att-card", { timeout: 5000 }).catch(() => {})
+check(claudeSeen.length === n0 && await page.isVisible("#att-tray .att-card img"), "фото не ушло сразу: над полем карточка с миниатюрой — ждёт подписи")
+await page.fill("#chat-in", "это чек из 7-Eleven, наличными"); await page.click(".chat-bar .send")
 await page.waitForSelector("text=Это чек 7-Eleven", { timeout: 8000 }).catch(() => {})
 let sent = claudeSeen[n0] && claudeSeen[n0].body.messages.at(-1).content
 check(Array.isArray(sent) && sent[0].type === "image" && sent[0].source.media_type === "image/jpeg" && /вложение/.test(sent[1].text), "фото ушло Claude картинкой", sent && sent.map(c => c.type))
+check(/Подпись пользователя к вложению: «это чек из 7-Eleven, наличными»/.test(sent[1].text) && (await page.textContent("#chat-list")).includes("это чек из 7-Eleven, наличными") && !(await page.$("#att-tray.show")), "подпись ушла вместе с фото и видна в чате, карточка убрана", [sent[1].text, await page.isVisible("#att-tray .att-card")])
 check(/Чек из магазина/.test(claudeSeen[n0].body.system) && /Счёт, инвойс/.test(claudeSeen[n0].body.system), "правила для еды, счёта и чека в подсказке")
 check(await page.isVisible("#chat-list img.att"), "в чате видна миниатюра фото")
-check(!(await page.textContent("#chat-list")).includes("📷") && await page.isVisible("#chat-list .ei-cam"), "у фото в чате иконка камеры, не смайлик")
+check(!(await page.textContent("#chat-list")).includes("📷"), "у фото в чате нет смайлика — миниатюра и подпись")
 check(await page.isVisible(".chat-bar .cam"), "в строке чата есть кнопка 📷")
 await page.screenshot({ path: SHOTS + "7-chat-photo.png" })
 claudeQueue.push({ content: [{ type: "text", text: "Счёт за интернет на 899 ฿." }], stop_reason: "end_turn" })
 n0 = claudeSeen.length
 await page.setInputFiles("#doc", { name: "bill.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%fake\n") })
+await page.waitForSelector("#att-tray.show .att-go", { timeout: 5000 }).catch(() => {})
+await page.click("#att-tray .att-go")   // без подписи
 await page.waitForSelector("text=Счёт за интернет", { timeout: 8000 }).catch(() => {})
 sent = claudeSeen[n0] && claudeSeen[n0].body.messages.at(-1).content
 check(Array.isArray(sent) && sent[0].type === "document" && sent[0].source.media_type === "application/pdf", "PDF ушёл Claude документом", sent && sent.map(c => c.type))
 check((await page.textContent("#chat-list")).includes("bill.pdf") && await page.isVisible("#chat-list .ei-doc"), "в чате подпись файла с иконкой документа")
+// после вложений обычный вопрос: старое фото не выдаётся за новое («вложение не дошло»)
+claudeQueue.push({ content: [{ type: "text", text: "Кафе рядом: …" }], stop_reason: "end_turn" })
+n0 = claudeSeen.length
+await page.evaluate(() => chatSend("какие кафе рядом лучшие", { voice: true }))
+await page.waitForSelector("text=Кафе рядом", { timeout: 8000 }).catch(() => {})
+{ const ms = claudeSeen[n0] && claudeSeen[n0].body.messages, all = JSON.stringify(ms || [])
+  check(ms && !all.includes("Разбери это вложение") && all.includes("уже разобрано") && typeof ms.at(-1).content === "string", "старые вложения в истории помечены как разобранные, новый вопрос без вложения", all.slice(-300)) }
 check(!/[☀🌙🧠🧹]/u.test(await page.textContent(".chat-tools")) && (await page.$$(".chat-tools .ei")).length === 4, "кнопки чата — с иконками, без смайликов")
 check(!JSON.stringify(claudeSeen.at(-1).body.messages.slice(0, -1)).includes('"type":"image"'), "старое фото не отправляется повторно")
 
