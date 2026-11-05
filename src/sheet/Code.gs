@@ -212,6 +212,8 @@ function hub_(h) {
   ops = ops.filter(o => o.state === "new" || o.doneAt > now - HUB.opsKeep * 864e5);
   if (JSON.stringify(ops) !== before) hubSet_("ops", ops);
   out.ops = h.from === "widget" ? ops.filter(o => o.state === "new") : ops.filter(o => o.state === "new" || o.doneAt >= since);
+  // дорога до встреч (её считает пуш «Пора выезжать»): виджет пишет «выехать в …»
+  if (h.from === "widget") out.travel = Object.values(hubGet_("push_travel") || {}).filter(x => x.min && x.start > now).map(x => ({ start: x.start, t: x.t, min: x.min, buf: PUSH.buffer }));
   // 4. Задача в Claude Code (браузер не может обратиться к API рутин напрямую)
   if (h.fire && ROUTE_URL.test(h.fire.url || "")) {
     try {
@@ -962,7 +964,7 @@ function pushTick() {
         let tr = travel[key];
         if (!tr || now - tr.at > (start - now < 3600e3 ? 10 : 25) * 60e3) {   // ближе к выезду — пересчитываем чаще (пробки)
           const r = route_({ from: here, to: loc, mode: "driving" });
-          tr = travel[key] = r.error ? { at: now, error: r.error } : { at: now, min: r.minutes_in_traffic || r.minutes, base: r.minutes, km: r.km };
+          tr = travel[key] = r.error ? { at: now, error: r.error } : { at: now, min: r.minutes_in_traffic || r.minutes, base: r.minutes, km: r.km, t: e.getTitle(), start };
         }
         if (!tr.min || tr.min < 4) continue;   // уже на месте или рядом
         const leave = start - (tr.min + PUSH.buffer) * 60e3;

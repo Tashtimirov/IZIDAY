@@ -160,6 +160,19 @@ function chipColor(calTitle) {
   return CHIP_COLORS[h % CHIP_COLORS.length]
 }
 
+C.pill = dynA("#767680", 0.12, "#767680", 0.24)   // серая «таблетка» времени
+// Стекло: фон виджета — размытый кусок обоев, карточки и ячейки полупрозрачные
+const GLASS_C = {
+  card: dynA("#FFFFFF", 0.55, "#FFFFFF", 0.09), cell: dynA("#FFFFFF", 0.55, "#FFFFFF", 0.09),
+  btnBg: dynA("#FFFFFF", 0.62, "#FFFFFF", 0.13), pill: dynA("#767680", 0.14, "#FFFFFF", 0.12),
+  sub: dynA("#3C3C43", 0.62, "#EBEBF5", 0.62),
+}
+const SOLID_C = Object.fromEntries(Object.keys(GLASS_C).map(k => [k, C[k]]))
+// Цвета колец (светлая, тёмная тема): еда, вода, движение
+const RING = { food: ["#FF9500", "#FF9F0A"], water: ["#32ADE6", "#64D2FF"], move: ["#FF2D55", "#FF375F"], acc: ["#0A9F6E", "#30D158"] }
+const isDark = () => { try { return Device.isUsingDarkAppearance() } catch (e) { return false } }
+const ringColor = c => new Color(isDark() ? c[1] : c[0])
+
 const RUN = URLScheme.forRunningScript()
 const WRUN = `${RUN}?from=widget`   // запуск из виджета: после операции — обратно на экран «Домой»
 // Веб-приложение «Мой день»: кнопки виджета открывают его вместо Scriptable (быстрее), иначе — этот скрипт
@@ -532,6 +545,7 @@ async function hubSync(timeout = 12) {
       const merged = mergeSynced(withIds(await loadJSON(file), HUB_FILES[key][1]), got.map(x => { const y = Object.assign({}, x); delete y.s; return y }))
       saveJSON(file, days ? keepDays(merged, days) : merged)
     }
+    if (Array.isArray(res.travel)) saveJSON("travel.json", res.travel)   // «выехать в …» в виджете
     const done = []
     HUB_RUN = true
     try {
@@ -871,8 +885,8 @@ function stripLines(items) {
   return [{ text: names[0], lines: 3 }, { text: `+${names.length - 1}`, lines: 1, more: true }]
 }
 
-function weekStrip(parent, days, events, weather, H = 64) {
-  const GAP = 5, today = new Date()
+function weekStrip(parent, days, events, weather, H = 54) {
+  const GAP = 4, today = new Date()
   const W = Math.floor((contentWidth() - GAP * 6) / 7)
   const LETTERS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
   const row = parent.addStack()
@@ -883,30 +897,42 @@ function weekStrip(parent, days, events, weather, H = 64) {
     const cell = row.addStack()
     cell.layoutVertically()
     cell.size = new Size(W, H)
-    cell.cornerRadius = 13
-    cell.setPadding(5, 2, 5, 2)
+    cell.cornerRadius = 12
+    cell.setPadding(4, 2, 4, 2)
     cell.backgroundColor = isToday ? C.todayBg : C.cell
     cell.url = calshowURL(day)
-    const txt = (s, font, color) => {
-      const line = cell.addStack()
-      line.addSpacer()
-      const t = line.addText(s); t.font = font; t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.6
-      t.centerAlignText()
-      line.addSpacer()
+    const line = () => { const l = cell.addStack(); l.centerAlignContent(); l.addSpacer(); return l }
+    const txt = (l, s, font, color) => { const t = l.addText(s); t.font = font; t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.6; return t }
+    // день недели; у дней со встречами — точка рядом
+    const top = line()
+    txt(top, LETTERS[day.getDay()].toUpperCase(), Font.semiboldSystemFont(9.5), isToday ? C.todayFg : weekend ? C.weekend : C.sub)
+    if (!isToday && itemsForDay(day, events).length) {
+      top.addSpacer(2)
+      const dot = top.addStack(); dot.size = new Size(4, 4); dot.cornerRadius = 2; dot.backgroundColor = C.gold
     }
-    // как в приложении: день недели, число, а под ним — погода (вместо названий событий)
-    txt(LETTERS[day.getDay()].toUpperCase(), Font.semiboldSystemFont(10), isToday ? C.todayFg : weekend ? C.weekend : C.sub)
-    cell.addSpacer(1)
-    txt(String(day.getDate()), Font.boldRoundedSystemFont(H > 56 ? 19 : 16), isToday ? C.todayFg : C.text)
+    top.addSpacer()
+    cell.addSpacer()
+    const mid = line(); txt(mid, String(day.getDate()), Font.boldRoundedSystemFont(H > 50 ? 17 : 15), isToday ? C.todayFg : C.text); mid.addSpacer()
     cell.addSpacer()
     const wx = weather && weather[dayKey(day)]
-    txt(wx ? `${wxIcon(wx.code)} ${Math.round(wx.t)}°` : itemsForDay(day, events).length ? "•" : "", Font.semiboldRoundedSystemFont(10), isToday ? C.todayFg : C.sub)
+    const bot = line()
+    if (wx) {
+      const sym = wxSym(wx.code)
+      symbol(bot, sym, isToday ? C.todayFg : sym === "sun.max.fill" ? new Color(RING.food[isDark() ? 1 : 0]) : C.sub, 9)
+      bot.addSpacer(2)
+      txt(bot, `${Math.round(wx.t)}°`, Font.semiboldRoundedSystemFont(9.5), isToday ? C.todayFg : C.sub)
+    } else txt(bot, " ", Font.systemFont(9.5), C.sub)
+    bot.addSpacer()
   })
 }
 
 // ── Погода на неделю: Open-Meteo (без ключа), по месту iPhone; кэш на 2 часа ──
 function wxIcon(c) {
   return c === 0 ? "☀️" : c <= 2 ? "🌤" : c === 3 ? "☁️" : c <= 48 ? "🌫" : c <= 67 ? "🌧" : c <= 77 ? "❄️" : c <= 82 ? "🌦" : "⛈"
+}
+function wxSym(c) {
+  return c === 0 ? "sun.max.fill" : c <= 2 ? "cloud.sun.fill" : c === 3 ? "cloud.fill" : c <= 48 ? "cloud.fog.fill" : c <= 57 ? "cloud.drizzle.fill"
+    : c <= 67 ? "cloud.rain.fill" : c <= 77 ? "snowflake" : c <= 82 ? "cloud.heavyrain.fill" : "cloud.bolt.rain.fill"
 }
 async function weatherWeek() {
   let cache = null
@@ -931,16 +957,16 @@ function cardBox(parent, title, count, url) {
   const box = parent.addStack()
   box.layoutVertically()
   box.backgroundColor = C.card
-  box.cornerRadius = 16
-  box.setPadding(9, 12, 10, 12)
+  box.cornerRadius = 14
+  box.setPadding(8, 11, 9, 11)
   if (url) box.url = url
   const h = box.addStack()
   h.centerAlignContent()
   const t = h.addText(title)
-  t.font = Font.boldSystemFont(14); t.textColor = C.text
+  t.font = Font.boldSystemFont(13.5); t.textColor = C.text
   h.addSpacer()
   if (count) { const c = h.addText(String(count)); c.font = Font.semiboldRoundedSystemFont(12); c.textColor = C.sub }
-  box.addSpacer(6)
+  box.addSpacer(5)
   const inner = box.addStack()
   inner.layoutVertically()
   const fill = box.addStack(); fill.addSpacer()   // растянуть карточку на всю ширину
@@ -948,9 +974,38 @@ function cardBox(parent, title, count, url) {
 }
 
 // Под строкой дней — события только сегодняшнего дня, каждое в одну строку: название и время справа
+// «через 25 мин», «через 1 ч 20», «через 3 ч»; идёт — «идёт · до 17:00»; другой день — «завтра 10:00»
+function untilText(e, now = new Date()) {
+  if (e.isAllDay) return sameDay(e.startDate, now) || e.startDate <= now ? "весь день" : dayLabel(e.startDate)
+  if (e.startDate <= now) return `идёт · до ${TIME.string(e.endDate)}`
+  if (!sameDay(e.startDate, now)) return `${dayLabel(e.startDate)} ${TIME.string(e.startDate)}`
+  const m = Math.max(1, Math.round((e.startDate - now) / 60e3)), h = Math.floor(m / 60), r = m % 60
+  return h ? `через ${h} ч${r && h < 3 ? " " + r : ""}` : `через ${m} мин`
+}
+
+// Дорога до встречи: таблица считает её для пуша «Пора выезжать» и отдаёт виджету при обмене (travel.json)
+let TRAVEL
+function travelFor(e) {
+  if (!e || e.isAllDay || !TRAVEL || !TRAVEL.length) return null
+  const t = e.startDate.getTime()
+  const x = TRAVEL.find(x => x.start === t && (!x.t || stripEmoji(x.t) === stripEmoji(e.title || ""))) || TRAVEL.find(x => x.start === t)
+  if (!x || !x.min || x.min < 4) return null
+  const leave = new Date(t - (x.min + (x.buf || 10)) * 60e3)
+  return leave > new Date(Date.now() - 30 * 60e3) ? { leave, min: x.min } : null
+}
+
+function hintLine(parent, tr) {
+  const h = parent.addStack(); h.centerAlignContent()
+  const col = new Color(RING.food[isDark() ? 1 : 0])
+  symbol(h, "car.fill", col, 10); h.addSpacer(3)
+  const t = h.addText(`выехать в ${TIME.string(tr.leave)} · ${tr.min} мин в пути`)
+  t.font = Font.semiboldSystemFont(10.5); t.textColor = col; t.lineLimit = 1; t.minimumScaleFactor = 0.8
+}
+
+// Под строкой дней — события сегодняшнего дня: прошедшие бледнее, у ближайшего — сколько осталось и когда выезжать
 function todayList(parent, events, n) {
   const now = new Date()
-  const dayEvs = d => events.filter(e => e.endDate > now && e.endDate > d && e.startDate < new Date(d.getTime() + 864e5))
+  const dayEvs = (d, withPast) => events.filter(e => (withPast || e.endDate > now) && e.endDate > d && e.startDate < new Date(d.getTime() + 864e5))
     .sort((a, b) => (a.isAllDay ? 0 : a.startDate) - (b.isAllDay ? 0 : b.startDate))
   let evs = dayEvs(startOfDay(now)), later = null
   // сегодня всё прошло — полными названиями события ближайшего дня: в узкой ячейке строки дней их не прочитать
@@ -966,31 +1021,44 @@ function todayList(parent, events, n) {
     h.font = Font.boldSystemFont(10); h.textColor = C.gold
     parent.addSpacer(6)
     n = Math.max(1, n - 1)
+  } else {
+    // прошедшие сегодня — бледными, если хватает места (последние перед ближайшим)
+    const past = dayEvs(startOfDay(now), true).filter(e => e.endDate <= now && !e.isAllDay)
+    const room = Math.max(0, n - evs.length)
+    if (room) evs = past.slice(-room).concat(evs)
   }
+  const next = evs.find(e => e.endDate > now && !e.isAllDay)
   const shown = evs.length > n ? n - 1 : n
   evs.slice(0, shown).forEach((e, i) => {
     if (i) parent.addSpacer(6)
+    const done = e.endDate <= now, isNext = e === next && !later
     const s = parent.addStack()
     s.centerAlignContent()
     s.url = calshowURL(e.startDate < now ? now : e.startDate)
-    const color = chipColor(e.calendar ? e.calendar.title : "")
+    const color = new Color(chipColor(e.calendar ? e.calendar.title : ""), done ? 0.35 : 1)
+    const tr = isNext ? travelFor(e) : null
     const bar = s.addStack()
-    bar.size = new Size(4, 18)
-    bar.cornerRadius = 2
-    bar.backgroundColor = new Color(color)
+    bar.size = new Size(3.5, tr ? 30 : 18)
+    bar.cornerRadius = 1.75
+    bar.backgroundColor = color
     s.addSpacer(8)
-    const t = s.addText(stripEmoji(e.title || "Без названия"))
-    t.font = Font.semiboldSystemFont(13.5); t.textColor = C.text; t.lineLimit = 1
+    const mid = s.addStack(); mid.layoutVertically()
+    const t = mid.addText(stripEmoji(e.title || "Без названия"))
+    t.font = Font.mediumSystemFont(13.5); t.textColor = C.text; t.lineLimit = 1
+    if (done) t.textOpacity = 0.4
+    if (tr) { mid.addSpacer(1); hintLine(mid, tr) }
     s.addSpacer(6)
     s.addSpacer()
     const pill = s.addStack()
-    pill.setPadding(2, 7, 2, 7)
+    pill.setPadding(3, 7, 3, 7)
     pill.cornerRadius = 8
-    pill.backgroundColor = dynA("#767680", 0.12, "#767680", 0.24)   // серая «таблетка» времени, как в приложении
-    const when = e.isAllDay || !sameDay(e.startDate, now) && e.startDate < now ? "весь день"
-      : e.startDate <= now ? `идёт · до ${TIME.string(e.endDate)}` : `${TIME.string(e.startDate)}–${TIME.string(e.endDate)}`
+    pill.backgroundColor = isNext ? C.todayBg : C.pill
+    const when = isNext && e.startDate > now ? untilText(e, now)
+      : e.isAllDay || !sameDay(e.startDate, now) && e.startDate < now ? "весь день"
+      : e.startDate <= now && !done ? `идёт · до ${TIME.string(e.endDate)}` : `${TIME.string(e.startDate)}–${TIME.string(e.endDate)}`
     const wt = pill.addText(when)
-    wt.font = Font.semiboldRoundedSystemFont(11); wt.textColor = C.text; wt.lineLimit = 1
+    wt.font = Font.semiboldRoundedSystemFont(11); wt.textColor = isNext ? C.todayFg : C.text; wt.lineLimit = 1
+    if (done) wt.textOpacity = 0.45
   })
   if (evs.length > shown) {
     parent.addSpacer(6)
@@ -1020,6 +1088,40 @@ function goldDivider(parent) {
 }
 
 // ───────────── Элементы виджета ─────────────
+// Кольца прогресса, как в «Активности»: parts — [{ frac, color: [светлая, тёмная] }] от внешнего к внутреннему
+function ringsImage(parts, size, lw, gap = 2.5) {
+  const dark = isDark(), dc = new DrawContext()
+  dc.size = new Size(size, size); dc.opaque = false; dc.respectScreenScale = true
+  const c0 = size / 2
+  parts.forEach((p, i) => {
+    const r = c0 - lw / 2 - i * (lw + gap)
+    if (r <= lw / 2) return
+    dc.setLineWidth(lw)
+    dc.setStrokeColor(new Color(dark ? "#FFFFFF" : "#787880", dark ? 0.14 : 0.18))
+    dc.strokeEllipse(new Rect(c0 - r, c0 - r, 2 * r, 2 * r))
+    const f = Math.max(0, Math.min(1, p.frac || 0))
+    if (!f) return
+    const col = new Color(dark ? p.color[1] : p.color[0])
+    const pt = a => new Point(c0 + r * Math.sin(a), c0 - r * Math.cos(a))
+    const path = new Path(), n = Math.max(2, Math.ceil(f * 96))
+    path.move(pt(0))
+    for (let k = 1; k <= n; k++) path.addLine(pt(2 * Math.PI * f * k / n))
+    dc.addPath(path); dc.setStrokeColor(col); dc.setLineWidth(lw); dc.strokePath()
+    dc.setFillColor(col)
+    for (const a of [0, 2 * Math.PI * f]) { const q = pt(a); dc.fillEllipse(new Rect(q.x - lw / 2, q.y - lw / 2, lw, lw)) }
+  })
+  return dc.getImage()
+}
+// Кольцо со значком внутри (значок — SF Symbol поверх картинки кольца)
+function ringStack(parent, frac, color, sym, size = 26, lw = 3.5) {
+  const s = parent.addStack()
+  s.size = new Size(size, size)
+  try { s.backgroundImage = ringsImage([{ frac, color }], size, lw) } catch (e) {}
+  s.centerAlignContent()
+  s.addSpacer(); symbol(s, sym, ringColor(color), Math.round(size * 0.4)); s.addSpacer()
+  return s
+}
+
 function symbol(stack, name, color, size) {
   const sym = SFSymbol.named(name)
   if (!sym) return false
@@ -1074,12 +1176,15 @@ function empty(parent, text) {
   t.textColor = C.sub
 }
 
-function baseWidget() {
+function baseWidget(bg) {
   const w = new ListWidget()
-  const g = new LinearGradient()
-  g.colors = [C.bgTop, C.bgBottom]
-  g.locations = [0, 1]
-  w.backgroundGradient = g
+  if (bg) w.backgroundImage = bg
+  else {
+    const g = new LinearGradient()
+    g.colors = [C.bgTop, C.bgBottom]
+    g.locations = [0, 1]
+    w.backgroundGradient = g
+  }
   w.setPadding(12, 12, 12, 12)
   w.url = HOME_URL
   w.refreshAfterDate = new Date(Date.now() + 5 * 60 * 1000)   // чаще обновляться: прошедшие события и выполненные дела уходят быстрее
@@ -1113,30 +1218,38 @@ function trackerLink(now = new Date()) {
 }
 // [личное ▲]
 
-function dateHeader(parent, size, withButtons) {
+function dateHeader(parent, size, withButtons, wx) {
   const h = parent.addStack()
   h.centerAlignContent()
   // день недели и дата без сокращений, в две строки: «Пятница» / «23 октября»
-  const now = new Date(), big = size === "large" ? 19 : 16
+  const now = new Date(), big = size === "large" ? 19 : 17
   const d = h.addStack()
   d.layoutVertically()
   // как в приложении: день недели крупно и жирно, дата — зелёным
   const t = d.addText(cap(WEEKDAY.string(now)))
-  t.font = Font.heavySystemFont(big + 3)
+  t.font = Font.heavySystemFont(big + 2)
   t.textColor = C.text
   t.lineLimit = 1
   t.minimumScaleFactor = 0.7
-  const dt = d.addText(DATE_LONG.string(now))
-  dt.font = Font.semiboldSystemFont(big - 3)
+  const dl = d.addStack(); dl.centerAlignContent()
+  const dt = dl.addText(DATE_LONG.string(now))
+  dt.font = Font.semiboldSystemFont(big - 4)
   dt.textColor = C.gold
   dt.lineLimit = 1
   dt.minimumScaleFactor = 0.8
+  if (wx) {   // погода сегодня: значок и температура
+    dl.addSpacer(7)
+    const sym = wxSym(wx.code)
+    symbol(dl, sym, sym === "sun.max.fill" ? ringColor(RING.food) : C.sub, big - 6)
+    dl.addSpacer(3)
+    const tt = dl.addText(`${Math.round(wx.t)}°`); tt.font = Font.semiboldRoundedSystemFont(big - 4); tt.textColor = C.sub
+  }
   h.addSpacer()
   if (!withButtons) return
   const buttons = headerButtons()
-  const bs = buttons.length <= 3 ? (size === "large" ? 36 : 32) : size === "large" ? (buttons.length > 5 ? 26 : 28) : buttons.length > 5 ? 22 : 24   // «Воскресенье» и кнопки должны уместиться в ширину
+  const bs = buttons.length <= 3 ? (size === "large" ? 32 : 30) : size === "large" ? (buttons.length > 5 ? 26 : 28) : buttons.length > 5 ? 22 : 24   // «Воскресенье» и кнопки должны уместиться в ширину
   buttons.forEach(([icon, fallback, action], i) => {
-    if (i) h.addSpacer(buttons.length > 5 ? 5 : buttons.length <= 3 ? 9 : 6)
+    if (i) h.addSpacer(buttons.length > 5 ? 5 : buttons.length <= 3 ? 7 : 6)
     const color = C.btnFg
     const b = h.addStack()
     b.size = new Size(bs, bs)
@@ -1147,7 +1260,7 @@ function dateHeader(parent, size, withButtons) {
     if (action === "tracker") url = trackerLink()   // [личное]
     b.url = url
     b.addSpacer()
-    if (!symbol(b, icon, color, Math.round(bs * 0.5))) {
+    if (!symbol(b, icon, color, Math.round(bs * 0.47))) {
       const ft = b.addText(fallback)
       ft.font = Font.boldSystemFont(Math.round(bs * 0.5))
       ft.textColor = color
@@ -1180,6 +1293,7 @@ function addReminders(parent, rems, n, size) {
 }
 
 // Крупный список напоминаний: кружок, название, время справа; просроченные — терракотовые
+// Крупный список напоминаний: пустой кружок, название, срок справа; просроченные — красные
 function reminderPanel(parent, rems, n, bare) {
   const box = parent.addStack()
   box.layoutVertically()
@@ -1194,28 +1308,24 @@ function reminderPanel(parent, rems, n, bare) {
     if (rems.length) { const c = h.addText(String(rems.length)); c.font = Font.heavyRoundedSystemFont(12); c.textColor = C.gold }
     box.addSpacer(6)
   }
-  if (!rems.length) { empty(box, "Всё сделано 🎉"); return }
+  if (!rems.length) { empty(box, "Всё сделано"); return }
   rems.slice(0, n).forEach((r, i) => {
-    if (i) box.addSpacer(5)
+    if (i) box.addSpacer(6)
     const late = isOverdue(r)
     const s = box.addStack()
     s.centerAlignContent()
     s.url = reminderURL(r)
-    const col = late ? new Color(BRAND.terracotta) : C.gold
-    if (!symbol(s, "circle", col, 15)) { const o = s.addText("○"); o.font = Font.systemFont(14); o.textColor = col }
+    if (!symbol(s, "circle", late ? C.overdue : C.sub, 15)) { const o = s.addText("○"); o.font = Font.systemFont(14); o.textColor = C.sub }
     s.addSpacer(8)
     const tt = s.addText(r.title || "Без названия")
-    tt.font = Font.mediumSystemFont(13.5); tt.textColor = C.text; tt.lineLimit = 1
+    tt.font = Font.systemFont(13.5); tt.textColor = C.text; tt.lineLimit = 1
     s.addSpacer(6)
     s.addSpacer()
     const when = reminderTime(r)
     if (when) {
-      const pill = s.addStack()
-      pill.setPadding(2, 7, 2, 7)
-      pill.cornerRadius = 8
-      pill.backgroundColor = late ? dynA("#FF3B30", 0.12, "#FF453A", 0.2) : C.soft
-      const wt = pill.addText(when)
-      wt.font = Font.boldRoundedSystemFont(11); wt.textColor = col; wt.lineLimit = 1
+      const wt = s.addText(when)
+      wt.font = Font.semiboldRoundedSystemFont(11.5); wt.lineLimit = 1
+      wt.textColor = late ? C.overdue : r.dueDateIncludesTime ? new Color(RING.food[isDark() ? 1 : 0]) : C.gold
     }
   })
 }
@@ -1455,7 +1565,7 @@ function actLines(act) {
   if (act.stand != null) l.push(`🧍 ${nf(act.stand)} ч с разминкой`)
   if (act.hr != null) l.push(`❤️ пульс в покое ${nf(act.hr)}`)
   if (act.sleep != null) l.push(`😴 сон ${String(Math.round(act.sleep * 10) / 10).replace(".", ",")} ч`)
-  l.push(`обновлено в ${TIME.string(new Date(act.updated))}`)
+  if (act.updated) l.push(`обновлено в ${TIME.string(new Date(act.updated))}`)
   return l.join("\n")
 }
 async function healthMenu() {
@@ -1537,66 +1647,76 @@ function waterGap(d, now = new Date()) {
 function healthStrip(parent, d, entries) {
   const s = parent.addStack()
   s.centerAlignContent()
-  const part = (icon, text, color, action) => {
-    const p = s.addStack()
-    p.centerAlignContent()
-    p.url = (action === "food" || action === "health") && STATS_URL ? STATS_URL : actURL(action)   // калории и активность — в таблицу
-    symbol(p, icon, color, 12)
-    p.addSpacer(4)
-    const t = p.addText(text)
-    t.font = Font.semiboldRoundedSystemFont(12); t.textColor = C.text; t.lineLimit = 1; t.minimumScaleFactor = 0.7
+  const a = d.act, H = CONFIG.health
+  const tile = (ring, value, unit, url) => {
+    const p = s.addStack(); p.centerAlignContent(); p.url = url
+    ring(p)
+    p.addSpacer(6)
+    const v = p.addStack(); v.layoutVertically()
+    const t = v.addText(value); t.font = Font.boldRoundedSystemFont(12.5); t.textColor = C.text; t.lineLimit = 1; t.minimumScaleFactor = 0.7
+    const u = v.addText(unit); u.font = Font.mediumSystemFont(9.5); u.textColor = C.sub; u.lineLimit = 1
   }
-  const a = d.act
-  // калории одной частью: съедено / сожжено (часы + тренировки со слов)
-  part("flame.fill", `${nf(d.kcal)} / ${a && a.active != null ? nf(a.active) : "—"}${entries ? "" : " ккал"}`, C.gold, "food")
+  tile(p => ringStack(p, d.kcal / (H.kcalGoal || 2000), RING.food, "fork.knife"), nf(d.kcal), "ккал", STATS_URL || actURL("food"))
   s.addSpacer()
   const gap = waterGap(d)
-  // давно не пили — вода подсвечивается и пишет, сколько часов без воды; нажатие добавляет стакан
-  if (gap) part("drop.fill", `${gap} ч без воды`, C.overdue, "water")
-  else part("drop.fill", `${liters(d.water)} / ${liters(CONFIG.health.waterGoal)}`, C.notes, "water")
+  // давно не пили — подпись пишет, сколько часов без воды; нажатие добавляет стакан
+  tile(p => ringStack(p, d.water / H.waterGoal, RING.water, "drop.fill"), liters(d.water), gap ? `${gap} ч без воды` : `из ${liters(H.waterGoal).replace(" л", "")}`, actURL("water"))
   s.addSpacer()
-  part(a && a.steps != null ? "figure.walk" : "applewatch", a && a.steps != null ? `${nf(a.steps)} ш.` : "часы", C.expense, "health")
-  if (entries) {   // большой виджет: доходы и расходы за месяц, нажатие — отчёт
-    const t = monthTotals(entries, monthKey(new Date()))
+  tile(p => ringStack(p, a ? (a.active || 0) / H.moveGoal : 0, RING.move, "flame.fill"), a && a.active != null ? nf(a.active) : "—", "движение", STATS_URL || actURL("health"))
+  if (entries) {   // траты за сегодня, нажатие — отчёт
     s.addSpacer()
-    part(CONFIG.currencyIcon, `+${moneyShort(t.income)} −${moneyShort(t.expense)}`, C.income, "report")
+    const spent = entries.filter(e => e.type === "expense" && sameDay(new Date(e.date), new Date())).reduce((x, e) => x + e.amount, 0)
+    tile(p => { const c = p.addStack(); c.size = new Size(26, 26); c.cornerRadius = 13; c.backgroundColor = C.card; c.centerAlignContent(); c.addSpacer(); symbol(c, "creditcard.fill", C.gold, 12); c.addSpacer() },
+      spent ? `−${moneyShort(spent).replace(` ${CONFIG.currency}`, "")}` : "0", `${CONFIG.currency} сегодня`, actURL("report"))
   }
 }
 
 // Средний/маленький виджет с параметром «здоровье»
 function healthPanel(w, d, small) {
-  const W = small ? 130 : Math.floor((contentWidth() - 12) / 2)   // две колонки на всю ширину
-  const big = (parent, value, unit, color) => {
-    const r = parent.addStack(); r.bottomAlignContent()
-    const v = r.addText(value); v.font = Font.boldRoundedSystemFont(small ? 18 : 20); v.textColor = color; v.lineLimit = 1; v.minimumScaleFactor = 0.6
-    r.addSpacer(3)
-    const u = r.addText(unit); u.font = Font.mediumSystemFont(10); u.textColor = C.sub
+  const a = d.act, H = CONFIG.health
+  const parts = [{ frac: d.kcal / (H.kcalGoal || 2000), color: RING.food }, { frac: d.water / H.waterGoal, color: RING.water },
+    { frac: a ? (a.active || 0) / H.moveGoal : 0, color: RING.move }]
+  const cols = w.addStack(); cols.centerAlignContent()
+  const S = small ? 70 : 112
+  const left = cols.addStack(); left.size = new Size(S, S); left.url = STATS_URL || actURL("health")
+  try { left.backgroundImage = ringsImage(parts, S, small ? 8 : 11) } catch (e) {}
+  if (small) {
+    cols.addSpacer(10)
+    const r = cols.addStack(); r.layoutVertically()
+    const v = (col, val, unit) => { const l = r.addStack(); l.bottomAlignContent(); const t = l.addText(val); t.font = Font.boldRoundedSystemFont(13); t.textColor = ringColor(col); l.addSpacer(2); const u = l.addText(unit); u.font = Font.mediumSystemFont(9); u.textColor = C.sub; r.addSpacer(2) }
+    v(RING.food, nf(d.kcal), "ккал"); v(RING.water, liters(d.water).replace(" л", ""), "л"); v(RING.move, a ? nf(a.active || 0) : "—", "движ.")
+    return
   }
-  const line = (parent, text) => { const t = parent.addText(text); t.font = Font.systemFont(11); t.textColor = C.sub; t.lineLimit = 1; t.minimumScaleFactor = 0.7 }
-  const cols = w.addStack(); cols.topAlignContent()
-  const left = cols.addStack(); left.layoutVertically(); left.size = new Size(W, 0); left.url = STATS_URL || actURL("food")
-  sectionHeader(left, "fork.knife", "Еда", C.gold, d.food.length)
-  left.addSpacer(3)
-  big(left, nf(d.kcal), "ккал", C.text)
-  if (!small) line(left, `Б ${nf(d.protein)} · Ж ${nf(d.fat)} · У ${nf(d.carbs)}`)
-  left.addSpacer(6)
-  const wt = left.addStack(); wt.layoutVertically(); wt.url = actURL("water")
-  const wl = wt.addStack(); wl.centerAlignContent(); symbol(wl, "drop.fill", C.notes, 11); wl.addSpacer(4)
-  const wv = wl.addText(`${liters(d.water)} из ${liters(CONFIG.health.waterGoal)}`); wv.font = Font.semiboldRoundedSystemFont(11.5); wv.textColor = C.text
-  wt.addSpacer(3)
-  progressBar(wt, d.water / CONFIG.health.waterGoal, W - 6, C.notes)
-  if (small) return
-  cols.addSpacer(12)
-  const right = cols.addStack(); right.layoutVertically(); right.size = new Size(W, 0); right.url = STATS_URL || actURL("health")
-  sectionHeader(right, "applewatch", "Активность", C.expense)
-  right.addSpacer(3)
-  const a = d.act
-  if (!a) { empty(right, "Нет данных с часов"); return }
-  big(right, nf(a.active || 0), "ккал", C.expense)
-  progressBar(right, (a.active || 0) / CONFIG.health.moveGoal, W - 6, C.expense)
-  right.addSpacer(4)
-  line(right, `👟 ${nf(a.steps || 0)} · 🏃 ${nf(a.exercise || 0)} мин`)
-  line(right, `обновлено в ${TIME.string(new Date(a.updated))}`)
+  cols.addSpacer(14)
+  const right = cols.addStack(); right.layoutVertically(); right.size = new Size(contentWidth() - S - 14 - 8, 0)
+  const row = (sym, col, label, val, of, url) => {
+    const r = right.addStack(); r.centerAlignContent(); r.url = url
+    const ic = r.addStack(); ic.size = new Size(22, 22); ic.cornerRadius = 7; ic.backgroundColor = new Color(isDark() ? col[1] : col[0], 0.16); ic.centerAlignContent()
+    ic.addSpacer(); symbol(ic, sym, ringColor(col), 12); ic.addSpacer()
+    r.addSpacer(7)
+    const l = r.addText(label); l.font = Font.mediumSystemFont(12); l.textColor = C.sub
+    r.addSpacer()
+    const v = r.addText(val); v.font = Font.boldRoundedSystemFont(14); v.textColor = C.text
+    const o = r.addText(of); o.font = Font.mediumSystemFont(11.5); o.textColor = C.sub
+    right.addSpacer(7)
+  }
+  row("fork.knife", RING.food, "Еда", nf(d.kcal), ` / ${nf(H.kcalGoal || 2000)}`, STATS_URL || actURL("food"))
+  row("drop.fill", RING.water, "Вода", liters(d.water), ` / ${liters(H.waterGoal)}`, actURL("water"))
+  row("flame.fill", RING.move, "Движение", a ? nf(a.active || 0) : "—", ` / ${nf(H.moveGoal)}`, STATS_URL || actURL("health"))
+  // тренировки дня (со слов и с часов), шаги и когда пришли данные часов
+  const f = right.addStack(); f.centerAlignContent()
+  const ws = d.workouts || []
+  const small_ = (txt, color) => { const t = f.addText(txt); t.font = Font.mediumSystemFont(10.5); t.textColor = color || C.sub; t.lineLimit = 1; t.minimumScaleFactor = 0.7 }
+  if (ws.length) {
+    symbol(f, "figure.run", C.gold, 11); f.addSpacer(3)
+    const last = ws[ws.length - 1]
+    small_(`${last.title || "Тренировка"}${last.minutes ? ` ${last.minutes} мин` : ""}${ws.length > 1 ? ` +${ws.length - 1}` : ""}`, C.text)
+    f.addSpacer(5)
+  }
+  if (a && a.steps != null) { symbol(f, "figure.walk", C.sub, 10); f.addSpacer(2); small_(nf(a.steps)) }
+  const upd = a && a.updated ? new Date(a.updated) : null
+  if (upd && !isNaN(upd)) { f.addSpacer(4); small_(`· ${TIME.string(upd)}`) }
+  else if (!a) small_("Нет данных с часов")
 }
 
 // ───────────── Сборка виджета по размеру ─────────────
@@ -1610,6 +1730,7 @@ async function buildWidget(family, param) {
   const weekEvents = calendar.filter(e => e.startDate < weekEnd && e.endDate > days[0])
   const weekMode = /нед|week/i.test(param || "")
   const healthMode = /здоров|еда|health/i.test(param || "")
+  if (!lock) { try { TRAVEL = await loadJSON("travel.json") } catch (e) { TRAVEL = [] } }
 
   // Экран блокировки
   if (family === "accessoryInline") {
@@ -1640,35 +1761,75 @@ async function buildWidget(family, param) {
     return w
   }
 
-  const w = baseWidget()
+  const bg = await glassFor(family, param)
+  Object.assign(C, bg ? GLASS_C : SOLID_C)
+  const w = baseWidget(bg)
+  const weather = family === "medium" && (weekMode || healthMode || /дела|списки|list/i.test(param || "")) ? null : await weatherWeek()
+  const wxToday = weather && weather[dayKey(new Date())]
 
   if (family === "small" && healthMode) {
-    dateHeader(w, "small", false)
-    w.addSpacer(8)
+    dateHeader(w, "small", false, wxToday)
+    w.addSpacer(10)
     healthPanel(w, health, true)
     w.addSpacer()
     return w
   }
 
   if (family === "medium" && healthMode) {
-    dateHeader(w, "medium", true)
-    w.addSpacer(8)
+    w.setPadding(14, 16, 14, 16)
+    w.addSpacer()
     healthPanel(w, health, false)
     w.addSpacer()
     return w
   }
 
   if (family === "small") {
-    dateHeader(w, "small", false)
-    w.addSpacer(8)
-    sectionHeader(w, "calendar", "Встречи", C.events, events.length)
+    // число и день недели, погода; ближайшая встреча целиком; внизу кольца и число напоминаний
+    const now = new Date()
+    const top = w.addStack(); top.topAlignContent()
+    const dd = top.addStack(); dd.layoutVertically()
+    const wd = dd.addText(WEEKDAY.string(now).toUpperCase()); wd.font = Font.boldSystemFont(10.5); wd.textColor = C.overdue; wd.lineLimit = 1; wd.minimumScaleFactor = 0.7
+    const num = dd.addText(String(now.getDate())); num.font = Font.lightSystemFont(32); num.textColor = C.text
+    top.addSpacer()
+    if (wxToday) {
+      const wx = top.addStack(); wx.layoutVertically()
+      const sym = wxSym(wxToday.code)
+      const l1 = wx.addStack(); l1.addSpacer(); symbol(l1, sym, sym === "sun.max.fill" ? ringColor(RING.food) : C.sub, 16)
+      wx.addSpacer(2)
+      const l2 = wx.addStack(); l2.addSpacer(); const tt = l2.addText(`${Math.round(wxToday.t)}°`); tt.font = Font.semiboldRoundedSystemFont(12); tt.textColor = C.text
+    }
     w.addSpacer(4)
-    addEvents(w, events, 2, 12)
-    w.addSpacer(8)
-    sectionHeader(w, "checklist", "Дела", C.rem, rems.length)
-    w.addSpacer(4)
-    addReminders(w, rems, 1, 12)
+    const e = events.find(x => !x.isAllDay) || events[0], r = rems[0]
+    const lab = w.addText(e ? (e.startDate > now ? `Далее · ${untilText(e, now)}` : "Сейчас") : r ? "Напоминание" : "Сегодня")
+    lab.font = Font.semiboldSystemFont(10); lab.textColor = C.sub; lab.lineLimit = 1; lab.minimumScaleFactor = 0.8
+    w.addSpacer(3)
+    const nx = w.addStack(); nx.topAlignContent()
+    const bar = nx.addStack(); bar.size = new Size(3, 30); bar.cornerRadius = 1.5
+    bar.backgroundColor = e ? new Color(chipColor(e.calendar ? e.calendar.title : "")) : C.rem
+    nx.addSpacer(6)
+    const nt = nx.addStack(); nt.layoutVertically()
+    if (e) {
+      nx.url = calshowURL(e.startDate < now ? now : e.startDate)
+      const tm = nt.addText(e.isAllDay ? "весь день" : sameDay(e.startDate, now) ? TIME.string(e.startDate) : `${dayLabel(e.startDate)} ${TIME.string(e.startDate)}`)
+      tm.font = Font.boldRoundedSystemFont(13); tm.textColor = C.text; tm.lineLimit = 1
+    }
+    const ti = nt.addText(e ? stripEmoji(e.title || "Без названия") : r ? r.title : "Свободно")
+    ti.font = Font.mediumSystemFont(12); ti.textColor = C.text; ti.lineLimit = e ? 2 : 3
+    if (!e && r) nx.url = reminderURL(r)
     w.addSpacer()
+    const rr = w.addStack(); rr.centerAlignContent()
+    const H = CONFIG.health, a = health && health.act
+    ringStack(rr, health ? health.kcal / (H.kcalGoal || 2000) : 0, RING.food, "fork.knife", 28, 3.5).url = STATS_URL || actURL("food")
+    rr.addSpacer(5)
+    ringStack(rr, health ? health.water / H.waterGoal : 0, RING.water, "drop.fill", 28, 3.5).url = actURL("water")
+    rr.addSpacer(5)
+    ringStack(rr, a ? (a.active || 0) / H.moveGoal : 0, RING.move, "flame.fill", 28, 3.5).url = STATS_URL || actURL("health")
+    rr.addSpacer()
+    if (rems.length) {
+      const b = rr.addStack(); b.centerAlignContent(); b.setPadding(4, 6, 4, 7); b.cornerRadius = 10; b.backgroundColor = C.card; b.url = REMINDERS_APP
+      symbol(b, "bell.fill", ringColor(RING.food), 10); b.addSpacer(3)
+      const c = b.addText(String(rems.length)); c.font = Font.boldRoundedSystemFont(11.5); c.textColor = C.text
+    }
     return w
   }
 
@@ -1684,17 +1845,29 @@ async function buildWidget(family, param) {
   }
 
   if (family === "medium" && !/дела|списки|list/i.test(param || "")) {
-    // как в приложении: шапка и неделя с погодой; под ней — ближайшее дело
-    const weather = await weatherWeek()
-    dateHeader(w, "medium", true)
+    // как в приложении: шапка и неделя с погодой; под ней — ближайшая встреча (или дело) карточкой
+    dateHeader(w, "medium", true, wxToday)
     w.addSpacer(7)
-    weekStrip(w, days, weekEvents, weather, 54)
-    w.addSpacer(7)
-    const e = events[0], r = rems[0]
-    const line = w.addStack(); line.centerAlignContent()
-    const t = line.addText(e ? `${eventTime(e)} · ${stripEmoji(e.title || "")}` : r ? `☐ ${r.title}` : "Сегодня свободно")
-    t.font = Font.semiboldSystemFont(12.5); t.textColor = e ? C.text : C.sub; t.lineLimit = 1
+    weekStrip(w, days, weekEvents, weather, 46)
     w.addSpacer()
+    const now = new Date(), e = events.find(x => !x.isAllDay && sameDay(x.startDate, now)) || events[0], r = rems[0]
+    const card = w.addStack(); card.centerAlignContent(); card.backgroundColor = C.card; card.cornerRadius = 12; card.setPadding(6, 9, 6, 9)
+    const tr = e ? travelFor(e) : null
+    const bar = card.addStack(); bar.size = new Size(3.5, tr ? 28 : 16); bar.cornerRadius = 1.75
+    bar.backgroundColor = e ? new Color(chipColor(e.calendar ? e.calendar.title : "")) : C.rem
+    card.addSpacer(8)
+    const when = e ? untilText(e, now) : r ? reminderTime(r) : ""
+    const mid = card.addStack(); mid.layoutVertically()
+    mid.size = new Size(Math.max(120, contentWidth() + 6 - 18 - 3.5 - 8 - 6 - (when ? when.length * 6.6 + 14 : 0)), 0)   // место под «через …» справа
+    const t = mid.addText(e ? `${e.isAllDay ? "весь день" : TIME.string(e.startDate)} · ${stripEmoji(e.title || "")}` : r ? r.title : "Сегодня свободно")
+    t.font = Font.semiboldSystemFont(12.5); t.textColor = e || r ? C.text : C.sub; t.lineLimit = 1
+    if (tr) { mid.addSpacer(1); hintLine(mid, tr) }
+    card.addSpacer(6); card.addSpacer()
+    if (when) {
+      const pill = card.addStack(); pill.setPadding(3, 7, 3, 7); pill.cornerRadius = 8; pill.backgroundColor = e ? C.todayBg : C.pill
+      const wt = pill.addText(when); wt.font = Font.semiboldRoundedSystemFont(11); wt.textColor = e ? C.todayFg : C.text; wt.lineLimit = 1
+    }
+    card.url = e ? calshowURL(e.startDate < now ? now : e.startDate) : r ? reminderURL(r) : HOME_URL
     return w
   }
 
@@ -1717,11 +1890,10 @@ async function buildWidget(family, param) {
     return w
   }
 
-  // large и extraLarge — как экран «Сегодня» в приложении: шапка, неделя с погодой, дела на сегодня, напоминания
-  const weather = await weatherWeek()
-  dateHeader(w, "large", true)
+  // large и extraLarge — как экран «Сегодня» в приложении: шапка, неделя с погодой, дела на сегодня, напоминания, кольца
+  dateHeader(w, "large", true, wxToday)
   w.addSpacer(8)
-  weekStrip(w, days, weekEvents, weather)
+  weekStrip(w, days, weekEvents, weather, 50)
   w.addSpacer(8)
   // сегодняшние события и напоминания делят одно место: чем меньше событий, тем больше напоминаний
   const used = todayList(cardBox(w, "Сегодня", 0, HOME_URL), weekEvents, CONFIG.large.today)
@@ -4031,6 +4203,127 @@ async function syncStatus() {
   await info("Синхронизация с Mac", lines.join("\n"))
 }
 
+// ───────────── Стекло: прозрачный фон виджета ─────────────
+// iOS не даёт виджету видеть обои. Поэтому один раз берём снимок пустой страницы экрана «Домой», вырезаем кусок
+// под местом виджета, размываем и кладём фоном. Снимки — отдельно для светлой и тёмной темы (если обои разные).
+// Места виджетов в пикселях снимка, по высоте экрана (известные iPhone); для других — пересчёт от ближайшего
+const GLASS_PHONES = {
+  2796: { w: 1290, small: 510, medium: 1092, large: 1146, left: 99, right: 681, top: 282, middle: 918, bottom: 1554 },   // 14/15 Pro Max, 15/16 Plus
+  2556: { w: 1179, small: 474, medium: 1017, large: 1062, left: 82, right: 622, top: 270, middle: 858, bottom: 1446 },   // 14/15 Pro, 15, 16
+  2778: { w: 1284, small: 510, medium: 1092, large: 1146, left: 96, right: 678, top: 246, middle: 882, bottom: 1518 },   // 12/13 Pro Max, 14 Plus
+  2532: { w: 1170, small: 474, medium: 1014, large: 1062, left: 78, right: 618, top: 231, middle: 819, bottom: 1407 },   // 12/13/14, 12/13 Pro
+  2688: { w: 1242, small: 507, medium: 1080, large: 1137, left: 81, right: 654, top: 228, middle: 858, bottom: 1488 },   // XS Max, 11 Pro Max
+  2436: { w: 1125, small: 465, medium: 987, large: 1035, left: 69, right: 591, top: 213, middle: 783, bottom: 1353 },    // X, XS, 11 Pro
+  1792: { w: 828, small: 338, medium: 720, large: 758, left: 54, right: 436, top: 160, middle: 580, bottom: 1000 },      // XR, 11
+}
+function glassLayout(W, H) {
+  if (GLASS_PHONES[H] && GLASS_PHONES[H].w === W) return GLASS_PHONES[H]
+  // нет в таблице (16 Pro, 16 Pro Max, 17…): берём телефон с близкими пропорциями и пересчитываем. Размытие скрывает неточность
+  const ref = Object.entries(GLASS_PHONES).map(([h, p]) => ({ h: +h, p })).sort((a, b) => Math.abs(a.h / a.p.w - H / W) - Math.abs(b.h / b.p.w - H / W) || Math.abs(a.h - H) - Math.abs(b.h - H))[0]
+  const kx = W / ref.p.w, ky = H / ref.h, out = { w: W }
+  for (const k of ["small", "medium", "large", "left", "right"]) out[k] = Math.round(ref.p[k] * kx)
+  for (const k of ["top", "middle", "bottom"]) out[k] = Math.round(ref.p[k] * ky)
+  return out
+}
+// Прямоугольник виджета на снимке. pos: top|middle|bottom (+ -left|-right у маленького); большой — top|bottom
+function glassRect(L, family, pos) {
+  const [v, hpos] = pos.split("-")
+  const y = family === "large" && v === "bottom" ? L.middle : L[v] || L.top
+  const x = family === "small" && hpos === "right" ? L.right : L.left
+  const w = family === "small" ? L.small : L.medium, h = family === "small" ? L.small : family === "medium" ? L.small : L.large
+  return new Rect(x, y, w, h)
+}
+const LFM = FileManager.local()
+const GLASS_DIR = LFM.joinPath(LFM.documentsDirectory(), "my-day-glass")
+const glassFile = (family, pos, mode) => LFM.joinPath(GLASS_DIR, `${family}-${pos}-${mode}.jpg`)
+
+// Место виджета из параметра («верх», «низ слева»…) или последнее настроенное для этого размера
+function glassPos(family, param, st) {
+  const p = String(param || "").toLowerCase()
+  let v = /верх|top/.test(p) ? "top" : /серед|центр|middle/.test(p) ? "middle" : /низ|bottom/.test(p) ? "bottom" : ""
+  const h = /лев|left/.test(p) ? "left" : /прав|right/.test(p) ? "right" : ""
+  if (!v && !h) return ((st && st.glass) || {})[family] || ""
+  if (!v) v = "top"
+  return family === "small" ? `${v}-${h || "left"}` : v
+}
+async function glassFor(family, param) {
+  if (!/^(small|medium|large|extraLarge)$/.test(family) || /сплошн|solid/i.test(param || "")) return null
+  try {
+    const pos = glassPos(family === "extraLarge" ? "large" : family, param, await loadSettings())
+    if (!pos) return null
+    const fam = family === "extraLarge" ? "large" : family
+    const want = isDark() ? "dark" : "light", other = want === "dark" ? "light" : "dark"
+    for (const m of [want, other]) { const f = glassFile(fam, pos, m); if (LFM.fileExists(f)) return LFM.readImage(f) }
+  } catch (e) {}
+  return null
+}
+
+function cropImage(img, r) {
+  const dc = new DrawContext()
+  dc.size = new Size(r.width, r.height); dc.respectScreenScale = false; dc.opaque = true
+  dc.drawImageAtPoint(img, new Point(-r.x, -r.y))
+  return dc.getImage()
+}
+// Размытие и лёгкая вуаль (белая в светлой теме, тёмная в тёмной): уменьшить в 14 раз и растянуть обратно + blur, где есть
+async function frost(img, dark) {
+  const b64 = Data.fromJPEG(img).toBase64String()
+  const tint = dark ? "rgba(18,18,22,0.42)" : "rgba(255,255,255,0.42)"
+  const wv = new WebView()
+  await wv.loadHTML("<html><body></body></html>")
+  const out = await wv.evaluateJavaScript(`(function(){var im=new Image();im.onload=function(){
+    var W=im.width,H=im.height,c=document.createElement('canvas');c.width=W;c.height=H;var x=c.getContext('2d');
+    var s=document.createElement('canvas');s.width=Math.max(2,Math.round(W/14));s.height=Math.max(2,Math.round(H/14));var sx=s.getContext('2d');
+    sx.imageSmoothingEnabled=true;sx.imageSmoothingQuality='high';sx.drawImage(im,0,0,s.width,s.height);
+    x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';try{x.filter='blur(10px)'}catch(e){}
+    x.drawImage(s,-20,-20,W+40,H+40);x.filter='none';x.fillStyle='${tint}';x.fillRect(0,0,W,H);
+    completion(c.toDataURL('image/jpeg',0.9).split(',')[1])};im.onerror=function(){completion('')};
+    im.src='data:image/jpeg;base64,${b64}'})()`, true)
+  return out ? Image.fromData(Data.fromBase64String(out)) : img
+}
+
+async function glassMenu() {
+  const st = await loadSettings(), set = Object.keys(st.glass || {})
+  const i = await choose("Прозрачный фон виджета",
+    ["📸 Настроить по снимку экрана", ...(set.length ? ["🧱 Вернуть сплошной фон"] : [])],
+    "Виджет станет «стеклянным»: сквозь него видны размытые обои, карточки полупрозрачные.\n\n" +
+    "Сначала сделайте снимок пустой страницы: долго нажмите на экран «Домой», пролистайте вправо до пустой страницы и сделайте снимок экрана. " +
+    "Если в тёмной теме другие обои — потом повторите настройку со снимком в тёмной теме.")
+  if (i === 1) {
+    for (const f of LFM.fileExists(GLASS_DIR) ? LFM.listContents(GLASS_DIR) : []) try { LFM.remove(LFM.joinPath(GLASS_DIR, f)) } catch (e) {}
+    await saveSettings({ glass: {} })
+    return info("Готово", "Виджеты снова со сплошным фоном. Обновятся в течение нескольких минут.")
+  }
+  if (i !== 0) return
+  let img
+  try { img = await Photo.fromLibrary() } catch (e) { return }
+  if (!img) return
+  const W = Math.round(img.size.width * (img.scale || 1)), H = Math.round(img.size.height * (img.scale || 1))
+  let screen = null
+  try { const z = Device.screenSize(), k = Device.screenScale(); screen = [Math.round(Math.min(z.width, z.height) * k), Math.round(Math.max(z.width, z.height) * k)] } catch (e) {}
+  if (screen && (Math.abs(W - screen[0]) > 2 || Math.abs(H - screen[1]) > 2))
+    return info("Это не снимок экрана", `Нужен снимок экрана этого iPhone (${screen[0]}×${screen[1]}), а у фото ${W}×${H}. Сделайте снимок пустой страницы «Домой».`)
+  const m = await choose("Снимок сделан в какой теме?", ["☀️ Светлая", "🌙 Тёмная"])
+  if (m < 0) return
+  const fams = ["small", "medium", "large"]
+  const f = await choose("Какой виджет?", ["Маленький", "Средний", "Большой"])
+  if (f < 0) return
+  const family = fams[f]
+  const POS = family === "small"
+    ? [["Сверху слева", "top-left"], ["Сверху справа", "top-right"], ["В середине слева", "middle-left"], ["В середине справа", "middle-right"], ["Снизу слева", "bottom-left"], ["Снизу справа", "bottom-right"]]
+    : family === "medium" ? [["Сверху", "top"], ["В середине", "middle"], ["Снизу", "bottom"]] : [["Сверху", "top"], ["Снизу", "bottom"]]
+  const p = await choose("Где стоит виджет на экране?", POS.map(x => x[0]))
+  if (p < 0) return
+  const pos = POS[p][1], mode = m === 1 ? "dark" : "light"
+  const L = glassLayout(W, H)
+  const out = await frost(cropImage(img, glassRect(L, family, pos)), mode === "dark")
+  if (!LFM.fileExists(GLASS_DIR)) LFM.createDirectory(GLASS_DIR, true)
+  LFM.writeImage(glassFile(family, pos, mode), out)
+  await saveSettings({ glass: Object.assign({}, st.glass, { [family]: pos }) })
+  await info("Готово",
+    `Стеклянный фон для виджета «${POS[p][0].toLowerCase()}» сохранён. Если таких виджетов несколько, в настройках виджета (долгое нажатие → «Изменить виджет» → Parameter) ` +
+    "напишите место: «верх», «середина», «низ», для маленького — ещё «слева» или «справа». Например: «здоровье низ справа». «сплошной» — без стекла.")
+}
+
 async function preview() {
   const i = await choose("Предпросмотр", ["Маленький", "Средний", "Средний — неделя", "Большой"])
   if (i === 0) await (await buildWidget("small")).presentSmall()
@@ -4062,6 +4355,7 @@ async function menu() {
     ...(CONFIG.trackerUrl ? [["✓ Личный трекер", () => Safari.open(trackerLink())]] : []),   // [личное]
     ["▦ Google Таблица", sheetMenu],
     ["☁️ Синхронизация с Mac", syncStatus],
+    ["🪟 Прозрачный фон виджета", glassMenu],
     ["👀 Предпросмотр виджета", preview],
     ["🏠 Возврат к виджету", homeSettings],
   ]
