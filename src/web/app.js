@@ -812,7 +812,7 @@ function chatTools() {
       route: { type: "string", enum: r.map(x => x.name) },
       task: { type: "string", description: "Полная постановка задачи: что сделать, весь нужный контекст из разговора, что вернуть. Сессия этот чат не видит." },
     }, required: ["route", "task"] } })
-  return list
+  return list.concat(IZI_TOOL_DEFS)
 }
 
 const evOut = e => ({ id: e.id, title: e.title, start: e.start, end: e.end, all_day: !!e.all_day, calendar: e.calendar || "", location: e.location || "",
@@ -820,6 +820,7 @@ const evOut = e => ({ id: e.id, title: e.title, start: e.start, end: e.end, all_
 const QUEUED = "Записано в очередь: виджет внесёт это в iPhone при ближайшем обновлении (обычно в течение 15 минут)."
 
 async function runTool(name, x) {
+  if (IZI_TOOLS[name]) return IZI_TOOLS[name](x)
   const v = iphone()
   switch (name) {
     case "get_events": {
@@ -1494,6 +1495,7 @@ async function chatSend(text, opts = {}) {
   D.chat.push(item)
   chatBusy = true
   chatLinks = []
+  chatDraft = null
   save(false)
   if (tab !== "chat") setTab("chat"); else renderChat()
   let reply
@@ -1518,7 +1520,8 @@ async function chatSend(text, opts = {}) {
     toast("⏹ Остановлено — поправьте и отправьте")
     return
   }
-  D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice() })
+  D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice(), draft: chatDraft || undefined })
+  chatDraft = null
   talkHear(reply)
   if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
   D.chat.filter(m => m.thumb).slice(0, -12).forEach(m => { delete m.thumb })   // миниатюры только у последних фото — память телефона
@@ -2061,7 +2064,7 @@ function chatItems() {
     const isLast = i === arr.length - 1 && askWait
     const gi = D.chat.length - arr.length + i
     const edit = m.role === "user" && !m.local && !m.thumb && !m.prompt && i >= arr.length - 6 ? `<button class="ed" data-edit="${gi}" aria-label="Изменить">✎</button>` : ""
-    return `<div class="m ${m.role}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? "🎤 " : ""}${linkify(m.text)}${(m.links || []).length ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>` : ""}` +
+    return `<div class="m ${m.role}" data-i="${gi}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.voice ? "🎤 " : ""}${linkify(m.text)}${draftHTML(m)}${m.pro && m.opts && m.opts.length && i === arr.length - 1 ? `<div class="opts">${m.opts.map(o => `<button data-pro="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}${(m.links || []).length ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Сессия Claude Code</a>`).join("")}</div>` : ""}` +
       `${m.opts && m.opts.length && isLast ? `<div class="opts">${m.opts.map(o => `<button data-opt="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}<span class="tm">${hm(new Date(m.at || Date.now()))}</span></div>`
   }).join("") + (chatBusy && !askWait ? `<div class="typing"><i></i><i></i><i></i>${chatStatus ? `<span class="st">${esc(chatStatus)}</span>` : ""}</div>` : "") + (last < 0 ? "" : "")
 }
@@ -2075,6 +2078,7 @@ function renderChat() {
 function bindChatList() {
   $$("[data-opt]").forEach(b => b.onclick = () => { b.classList.add("on"); chatSend(b.dataset.opt) })
   $$("[data-edit]").forEach(b => b.onclick = e => { e.stopPropagation(); chatEdit(+b.dataset.edit) })
+  bindIziChat()
 }
 
 function ring(p, color, label, sub) {
@@ -5024,7 +5028,7 @@ Object.assign(DO, {
 // ═════════════ Изи: характер, голос и живой разговор ═════════════
 // Настройки помощника (только на телефоне, в D.izi): имя, пол, характер, голос, скорость речи,
 // советы по целям, психология, самообучение. Голос — системный голос iPhone под пол помощника.
-function IZX() { return Object.assign({ mode: "friend", rate: 1, goals: true, psy: true, learn: true, voice: "" }, D.izi || {}, { g: IZI().g }) }
+function IZX() { return Object.assign({ mode: "friend", rate: 1, goals: true, psy: true, learn: true, first: true, voice: "" }, D.izi || {}, { g: IZI().g }) }
 function iziSet(k, val) { D.izi = Object.assign({}, D.izi, { [k]: val }); save(false) }
 var IZI_MODES = { friend: ["Друг", "тепло, с юмором, поддерживает"], coach: ["Строгий тренер", "прямо, без поблажек, держит планку"], brief: ["Кратко и по делу", "минимум слов, только суть"] }
 var IZI_RATES = [[.9, "Спокойно"], [1, "Обычно"], [1.12, "Быстрее"]]
@@ -5037,6 +5041,8 @@ function iziStyle() {
     brief: "Характер: кратко и по делу — минимум слов, только суть, без вступлений, оценок и эмоций." }[z.mode] || "")
   if (z.goals) out.push(`Цели: ты коуч по целям (подсказки включены пользователем). Когда речь о целях, мечтах, планах, деньгах на цель или застрявшем деле — подскажи, как поставить и достичь: цель конкретная и измеримая, со сроком (SMART); большой цели — веха на месяц и шаг на эту неделю; первый шаг — меньше 15 минут и в календарь; план «если — то» («если вечером устал, то хотя бы 10 минут»); заранее назвать главное препятствие и что делать с ним (WOOP); финансовая цель — сумма, срок и сколько откладывать в месяц (копилка add_jar). Застряло 2 недели — уменьшить шаг, а не ругать себя. Отмечай маленькие победы. Не больше одного совета за ответ и не в каждом сообщении — только к месту.`)
   if (z.psy) out.push(`Психология: опирайся на доказательные подходы (КПТ, мотивационное интервью, теория самодетерминации, привязанность, эмоциональный интеллект). Когда человеку тяжело — сначала услышь и назови чувство, потом спроси, чего он хочет: совета или просто выговориться. Мягко замечай искажения мышления («всё или ничего», катастрофизация, чтение мыслей) и предлагай взгляд шире. В отношениях с женой, детьми, родителями и людьми помогай понять другую сторону и подобрать слова; про токсичных людей — честно про границы. Ты не врач и не ставишь диагнозов. Если звучат мысли о самоповреждении или о том, что жить не хочется, — отнесись серьёзно, будь рядом и мягко предложи сразу связаться с близким человеком и специалистом или экстренной помощью (в Таиланде 1669, психологическая линия 1323).`)
+  out.push(`Люди и сообщения: помочь написать кому-то (жене, родителям, другу, клиенту) — draft_message, в нужном тоне и с учётом того, что знаешь о человеке; в ответе черновик не повторяй. После встречи пользователь рассказывает, что договорились — сам создай дела и напоминания со сроками и запомни договорённости о человеке через remember.`)
+  out.push(`«Напомни, когда придёт зарплата / буду с Олей / приду в офис» — remind_when (по доходу, человеку или событию календаря); «когда буду рядом с местом» — remind_near. Фото договора — стороны, суммы и сроки, предложи напоминания; меню или этикетка — ккал и БЖУ; дневник или задание ребёнка — что и к какому сроку.`)
   out.push(z.learn ? "Самообучение включено: замечай, что работает с этим человеком (какие советы он принимает, что раздражает, как ему удобнее), и сохраняй выводы через remember как предпочтения." : "Самообучение выключено: сам выводы и предпочтения не запоминай — только факты, которые просят запомнить.")
   if (TALK) out.push(`Сейчас живой голосовой разговор: твой ответ сразу читается вслух голосом ${z.g === "f" ? "девушки" : "мужчины"}. Отвечай как в разговоре: 1–3 коротких предложения, без списков, Markdown, ссылок, эмодзи и сокращений («мин», «ч», «руб»); суммы и время — словами, как их говорят. Длинное (список, письмо, план) — коротко скажи суть и что подробности в чате. Варианты выбора называй голосом. Тебя могут перебить — это нормально.`)
   return "\n" + out.filter(Boolean).map(s => "- " + s).join("\n")
@@ -5078,7 +5084,7 @@ function speak(text, { onSentence, onEnd } = {}) {
     if (my !== TTS.token) return
     if (i >= parts.length) { TTS.speaking = false; if (onEnd) onEnd(); return }
     const s = parts[i++], u = new SpeechSynthesisUtterance(s)
-    u.lang = "ru-RU"; if (v) u.voice = v; u.rate = z.rate || 1; u.pitch = 1
+    u.lang = "ru-RU"; try { if (v) u.voice = v } catch (e) {}; u.rate = z.rate || 1; u.pitch = 1
     u.onstart = () => { if (my === TTS.token) { TTS.speaking = true; SILK.ie = 1; if (onSentence) onSentence(s) } }
     u.onboundary = () => { SILK.ie = Math.min(1.3, SILK.ie + .45) }   // каждое слово подталкивает волну Изи
     u.onend = next
@@ -5257,6 +5263,7 @@ function iziCard() {
     <div class="izi-sub">Чему учится и как помогает</div>
     ${tg("goals", "Советы по целям", "как ставить цели и доходить до конца: шаг на неделю, «если — то», копилка")}
     ${tg("psy", "Психология", "сначала слышит, бережно помогает разобраться в чувствах и отношениях")}
+    ${tg("first", "Пишет первым", "свободное окно, подготовка к встрече, «как прошло?», сверка целей в воскресенье — до 3 раз в день")}
     ${tg("learn", "Учиться на мне", "сам замечает, что вам подходит, и запоминает поправки")}
     <div class="btns" style="margin-top:12px"><button class="btn primary talk-btn" data-do="talk"><b class="mini-orb"></b>Поговорить с ${esc(iziName())}</button></div></div>`
 }
@@ -5281,6 +5288,118 @@ function bindIzi(v) {
   $$(".talk-btn .mini-orb, .chat-tools .mini-orb", v).forEach(o => { if (!o.firstChild) { const c = document.createElement("canvas"); o.append(c); silkCanvas(c, "orb") } })
 }
 
+// ── Изи пишет первым: окно в расписании, подготовка к встрече, «как прошло?», сверка целей в воскресенье ──
+// Не чаще 3 раз в день, только пока приложение открыто и Изи свободен. Состояние — D.izi.pro (на телефоне)
+var PRO_MAX = 3
+function proState() { const p = Object.assign({ day: "", n: 0, seen: {} }, (D.izi || {}).ps), dk = iso(new Date()).slice(0, 10); if (p.day !== dk) { p.day = dk; p.n = 0; p.seen = {} } return p }
+function proSay(p, key, msg) {
+  p.seen[key] = 1; p.n++; iziSet("ps", p)
+  D.chat.push(Object.assign({ role: "assistant", at: Date.now(), pro: true }, msg)); save(false)
+  if (tab === "chat") renderChat(); else toast(`${iziName()}: ${String(msg.text).slice(0, 60)}`)
+}
+function iziProactive() {
+  if (!aiKey() || chatBusy || askWait || TALK || voice || !IZX().first) return
+  const p = proState(); if (p.n >= PRO_MAX) return
+  const now = Date.now(), v = iphone(), work = /показ|встреч|созвон|звон|клиент|переговор|собеседов/i
+  const evs = v.events.filter(e => !e.all_day && e.start && e.end).map(e => ({ e, s: +parseIso(e.start), t: +parseIso(e.end) })).filter(x => x.s && x.t).sort((a, b) => a.s - b.s)
+  // 1) за 5–20 минут до встречи — карточка подготовки (через Claude: память о человеке и прошлые встречи)
+  const soon = evs.find(x => x.s - now > 5 * 60e3 && x.s - now < 20 * 60e3 && work.test(x.e.title || ""))
+  if (soon && !p.seen["prep:" + soon.e.id]) {
+    p.seen["prep:" + soon.e.id] = 1; p.n++; iziSet("ps", p)
+    return chatSend(`Через ${Math.round((soon.s - now) / 60e3)} минут «${soon.e.title}»${soon.e.location ? ` (${soon.e.location})` : ""}. Сделай короткую карточку подготовки в 2–4 строки: кто это и что о нём известно (память, прошлые события и переписка), о чём говорили в прошлый раз и что пользователь обещал. Если ничего не известно — одной строкой, что спросить. Ничего не меняй.`, { label: `Перед встречей «${soon.e.title}»` })
+  }
+  // 2) встреча закончилась до часа назад — «Как прошло? Что договорились?», ответ Изи разложит в дела
+  const done = evs.filter(x => now - x.t > 0 && now - x.t < 60 * 60e3 && x.t - x.s >= 25 * 60e3 && work.test(x.e.title || "")).pop()
+  if (done && !p.seen["after:" + done.e.id]) return proSay(p, "after:" + done.e.id, { text: `Как прошло «${done.e.title}»? Что договорились — запишу дела и сроки.` })
+  // 3) свободное окно от часа в ближайшие 2 часа и есть дела без времени — предложить занять
+  const end = new Date(); end.setHours(21, 0, 0, 0)
+  if (now < +end - 60 * 60e3) {
+    let from = now, gap = null
+    for (const x of evs.filter(x => x.t > now)) { if (x.s - from >= 60 * 60e3) { gap = [from, x.s]; break } from = Math.max(from, x.t) }
+    if (!gap && +end - from >= 60 * 60e3) gap = [from, +end]
+    const todo = v.reminders.filter(r => !r.completed && !r.due).map(r => r.title).slice(0, 2)
+    if (gap && gap[0] - now < 2 * 3600e3 && todo.length) {
+      const a = new Date(Math.ceil(gap[0] / 900e3) * 900e3), key = "gap:" + iso(a)
+      if (!p.seen[key] && !Object.keys(p.seen).some(k => k.startsWith("gap:") && Math.abs(+parseIso(k.slice(4)) - +a) < 3 * 3600e3))
+        return proSay(p, key, { text: `С ${hm(a)} до ${hm(new Date(gap[1]))} у вас свободно. Сделаем ${todo.map(t => `«${t}»`).join(" или ")}?`, opts: [...todo, "Ничего"], win: [iso(a), iso(new Date(gap[1]))] })
+    }
+  }
+  // 4) воскресенье вечером — сверка целей недели (если включены советы по целям)
+  const d = new Date(), wk = iso(addDays(sod(d), -((d.getDay() + 6) % 7))).slice(0, 10)
+  if (IZX().goals && d.getDay() === 0 && d.getHours() >= 18 && (D.izi || {}).wk !== wk) {
+    iziSet("wk", wk); p.n++; iziSet("ps", p)
+    return chatSend("Сделай короткую сверку целей недели: посмотри get_goals (и копилки в get_money, вес и привычки в get_health, если они связаны с целями). По каждой активной цели одной-двумя строками: где сейчас и по плану ли, что помешало на этой неделе (если видно по данным), и один конкретный шаг на следующую неделю — со временем, если есть свободное окно в календаре. В конце спроси через ask_user «Принять план на неделю?» [Принять, Обсудить] и при «Принять» поставь шаги в календарь или напоминания.", { label: "Сверка целей недели" })
+  }
+}
+function proPick(m, opt) {
+  m.opts = null; save(false)
+  if (opt === "Ничего") { D.chat.push({ role: "user", text: "Ничего", at: Date.now(), local: true }); save(false); return renderChat() }
+  chatSend(`В свободное окно ${m.win[0].slice(11)}–${m.win[1].slice(11)} сегодня займусь «${opt}». Поставь это в календарь на это время (не дольше окна) и отметь напоминание, если оно было без срока.`, { label: opt })
+}
+
+// ── «Напомни, когда…»: придёт зарплата / буду с человеком / начнётся событие ──
+// Хранится на телефоне в D.izi.when; проверяется при каждом обмене с таблицей
+function iziWhen() { return ((D.izi || {}).when || []).slice() }
+function iziWhenCheck() {
+  const list = iziWhen(); if (!list.length) return
+  const now = Date.now(), v = iphone(), low = s => String(s || "").toLowerCase()
+  const fired = list.filter(w => {
+    if (w.on === "income") return live(D.money).some(e => e.type === "income" && e.date >= w.at && (!w.match || low(e.category + " " + e.comment).includes(low(w.match))))
+    if (w.on === "person" || w.on === "event") return v.events.some(e => { const s = +parseIso(e.start), t = +parseIso(e.end); return s <= now + 10 * 60e3 && t > now && low(e.title + " " + (e.location || "")).includes(low(w.match)) })
+    return false
+  })
+  if (!fired.length) return
+  iziSet("when", list.filter(w => !fired.includes(w)))
+  for (const w of fired) {
+    const why = w.on === "income" ? "пришёл доход" + (w.match ? ` «${w.match}»` : "") : w.on === "person" ? `вы с ${w.match}` : `начинается «${w.match}»`
+    D.chat.push({ role: "assistant", text: `Напоминаю, ${why}: ${w.text}`, at: Date.now() })
+    toast(`${iziName()}: ${w.text}`)
+  }
+  save(false); if (tab === "chat") renderChat()
+}
+
+// ── Черновик сообщения человеку: карточка с «WhatsApp», «Telegram», «Скопировать», «Мягче», «Короче» ──
+function draftHTML(m) {
+  const d = m.draft; if (!d) return ""
+  const t = encodeURIComponent(d.text), ph = String(d.phone || "").replace(/[^\d]/g, "")
+  return `<div class="draft"><div class="dr-to">${esc(d.to ? "Для: " + d.to : "Черновик")}</div><div class="dr-tx">${esc(d.text)}</div>
+    <div class="opts dr-opts"><a class="on" href="https://wa.me/${ph}?text=${t}" target="_blank" rel="noopener">WhatsApp</a><a href="https://t.me/share/url?url=%20&text=${t}" target="_blank" rel="noopener">Telegram</a>
+    <button data-dr="copy">Скопировать</button><button data-dr="soft">Мягче</button><button data-dr="short">Короче</button></div></div>`
+}
+function bindIziChat() {
+  $$("[data-dr]").forEach(b => b.onclick = () => {
+    const m = D.chat[+b.closest(".m").dataset.i]; if (!m || !m.draft) return
+    if (b.dataset.dr === "copy") { try { navigator.clipboard.writeText(m.draft.text); toast("Скопировано") } catch (e) { toast("Не удалось скопировать") } return }
+    chatSend(`Перепиши черновик для ${m.draft.to || "этого человека"} ${b.dataset.dr === "soft" ? "мягче и теплее" : "короче"}: «${m.draft.text}»`, { label: b.dataset.dr === "soft" ? "Мягче" : "Короче" })
+  })
+  $$("[data-pro]").forEach(b => b.onclick = () => { const m = D.chat[+b.closest(".m").dataset.i]; if (m) proPick(m, b.dataset.pro) })
+}
+var IZI_TOOLS = {
+  draft_message(x) {
+    const text = String(x.text || "").trim(); if (!text) return { error: "нужен text" }
+    chatDraft = { to: String(x.to || "").slice(0, 60), text: text.slice(0, 2000), phone: x.phone || "" }
+    return { ok: true, note: "Черновик показан пользователю карточкой с кнопками WhatsApp/Telegram/Скопировать. В ответе текст черновика не повторяй — одна короткая строка." }
+  },
+  remind_when(x) {
+    if (!x.text || !/^(income|person|event)$/.test(x.on)) return { error: "нужны text и on: income | person | event" }
+    if (x.on !== "income" && !x.match) return { error: "для person/event нужен match — имя человека или слово из названия события" }
+    const w = { id: uid("w"), text: String(x.text).slice(0, 200), on: x.on, match: String(x.match || "").slice(0, 60), at: Date.now() }
+    iziSet("when", iziWhen().concat(w).slice(-30))
+    return { ok: true, active: iziWhen().map(w => ({ text: w.text, on: w.on, match: w.match })) }
+  },
+  list_when() { return { active: iziWhen().map(w => ({ id: w.id, text: w.text, on: w.on, match: w.match })) } },
+  cancel_when(x) { const l = iziWhen(); iziSet("when", l.filter(w => w.id !== x.id)); return { ok: l.some(w => w.id === x.id) } },
+}
+var IZI_TOOL_DEFS = [
+  { name: "draft_message", description: "Показать пользователю черновик сообщения человеку (жене, родителям, другу, клиенту) карточкой с кнопками WhatsApp, Telegram, «Скопировать», «Мягче», «Короче». Используй, когда просят помочь написать кому-то. Пиши от первого лица пользователя, в нужном тоне, с учётом того, что знаешь о человеке.",
+    input_schema: { type: "object", properties: { to: { type: "string", description: "кому, как называет пользователь («Оля», «мама», «Михаил»)" }, text: { type: "string" }, phone: { type: "string", description: "номер в международном формате, если известен" } }, required: ["text"] } },
+  { name: "remind_when", description: "Напомнить не по времени, а по событию: on=income — когда придёт доход (match — категория или слово из комментария, например «Зарплата»); on=person — когда пользователь будет с человеком (по событию календаря с его именем, match — имя); on=event — когда начнётся событие со словом match в названии («офис», «Big C»). Место «когда буду рядом» — это remind_near.",
+    input_schema: { type: "object", properties: { text: { type: "string", description: "что напомнить" }, on: { type: "string", enum: ["income", "person", "event"] }, match: { type: "string" } }, required: ["text", "on"] } },
+  { name: "list_when", description: "Список напоминаний «когда…» (по доходу, человеку, событию).", input_schema: { type: "object", properties: {} } },
+  { name: "cancel_when", description: "Отменить напоминание «когда…» по id из list_when.", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+]
+var chatDraft = null
+
 load()
 pushConn()
 setTab("today")
@@ -5291,6 +5410,8 @@ setTimeout(autoPlan, 15000)   // первый раз за день — план 
 window.addEventListener("hashchange", hashAction)
 sync()
 setInterval(() => { if (document.visibilityState === "visible") sync() }, 60000)
+setInterval(() => { if (document.visibilityState === "visible") { iziWhenCheck(); iziProactive() } }, 60000)   // Изи пишет первым и «напомни, когда…»
+setTimeout(() => { iziWhenCheck(); iziProactive() }, 20000)
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") { hiddenAt = Date.now(); return }
   if (hiddenAt && Date.now() - hiddenAt > 30 * 60e3 && !sameDay(selDay, new Date())) { selDay = sod(new Date()); stripCenter = null; stripJump = true }
