@@ -96,7 +96,7 @@ function html(n, parentDir) {
   if (n.backgroundColor) st.push(`background:${css(n.backgroundColor)}`)
   if (n.backgroundImage && n.backgroundImage.svg) st.push(`background:url('data:image/svg+xml;base64,${Buffer.from(n.backgroundImage.svg).toString("base64")}') center/100% 100% no-repeat`)
   if (n.backgroundImage && n.backgroundImage.glass) st.push(`background:${MODE === "light" ? "rgba(255,255,255,.42)" : "rgba(18,18,22,.42)"}`, "backdrop-filter:blur(26px) saturate(170%)", "border-radius:22px", "-webkit-backdrop-filter:blur(26px) saturate(170%)", `box-shadow:inset 0 0 0 .5px ${MODE === "light" ? "rgba(255,255,255,.7)" : "rgba(255,255,255,.14)"}`)
-  else if (n.backgroundGradient && n.backgroundGradient.colors) st.push(`background:linear-gradient(${n.backgroundGradient.colors.map(css).join(",")})`)
+  else if (n.backgroundGradient && n.backgroundGradient.colors) st.push(`background:linear-gradient(${n.backgroundGradient.startPoint ? "135deg," : ""}${n.backgroundGradient.colors.map(css).join(",")})`)
   if (n.cornerRadius) st.push(`border-radius:${n.cornerRadius}px`, "overflow:hidden")
   if (n.borderWidth) st.push(`border:${n.borderWidth}px solid ${css(n.borderColor)}`)
   if (n.size) { if (n.size.width) st.push(`width:${n.size.width}px`, "flex:0 0 auto"); if (n.size.height) st.push(`height:${n.size.height}px`) }

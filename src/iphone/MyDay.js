@@ -1176,13 +1176,16 @@ function empty(parent, text) {
   t.textColor = C.sub
 }
 
-function baseWidget(bg) {
+// «Матовое стекло» без настройки: мягкий цветной градиент под полупрозрачными карточками
+const FROST = [dyn("#E3F1EA", "#122019"), dyn("#F4EFE7", "#151A26"), dyn("#ECE7F5", "#1D1626")]
+function baseWidget(bg, solid) {
   const w = new ListWidget()
   if (bg) w.backgroundImage = bg
   else {
     const g = new LinearGradient()
-    g.colors = [C.bgTop, C.bgBottom]
-    g.locations = [0, 1]
+    g.colors = solid ? [C.bgTop, C.bgBottom] : FROST
+    g.locations = solid ? [0, 1] : [0, 0.55, 1]
+    if (!solid) { g.startPoint = new Point(0, 0); g.endPoint = new Point(1, 1) }
     w.backgroundGradient = g
   }
   w.setPadding(12, 12, 12, 12)
@@ -1771,8 +1774,9 @@ async function buildWidget(family, param) {
   }
 
   const bg = await glassFor(family, param)
-  Object.assign(C, bg ? GLASS_C : SOLID_C)
-  const w = baseWidget(bg)
+  const solid = !bg && /сплошн|solid/i.test(param || "")   // по умолчанию — стекло; «сплошной» в параметре — как раньше
+  Object.assign(C, solid ? SOLID_C : GLASS_C)
+  const w = baseWidget(bg, solid)
   const weather = family === "medium" && (weekMode || healthMode || /дела|списки|list/i.test(param || "")) ? null : await weatherWeek()
   const wxToday = weather && weather[dayKey(new Date())]
 
