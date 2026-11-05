@@ -896,3 +896,67 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 .set .seg.izi-g { margin: 0; flex: none; width: 200px; grid-template-columns: repeat(2, 1fr); }
 .set .seg.izi-g i { width: calc((100% - 6px) / 2); }
 .set .seg.izi-g button { padding: 6px 12px; }
+
+/* ── Изи: настройки помощника ── */
+.izi-card .izi-sub, .sheet .izi-sub { margin: 16px 0 2px; font-size: 13px; font-weight: 600; color: var(--sub); letter-spacing: .01em; }
+.izi-card button.set { width: 100%; border: 0; border-top: .5px solid var(--line); background: none; text-align: left; padding: 11px 0; color: var(--text); }
+.izi-card .izi-sub + button.set { border-top: 0; }
+.izi-card button.set span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.izi-card button.set b { font-weight: 500; font-size: 16px; }
+.izi-card button.set small { color: var(--sub); font-size: 13px; line-height: 1.3; }
+.izi-card .ck { width: 22px; height: 22px; color: var(--accent, #0A9F6E); flex: none; }
+.izi-card .ck svg, .izi-card .chev svg { width: 100%; height: 100%; }
+.izi-card .chev { width: 16px; height: 16px; color: var(--sub); flex: none; opacity: .6; }
+.set .seg.izi-rate { margin: 0; flex: none; }
+.set .seg.izi-rate button { padding: 6px 10px; font-size: 13.5px; }
+.tgl { flex: none; width: 51px; height: 31px; border-radius: 16px; background: rgba(120,120,128,.24); position: relative; transition: background .25s; }
+.tgl::after { content: ""; position: absolute; left: 2px; top: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff;
+  box-shadow: 0 3px 8px rgba(0,0,0,.15), 0 1px 1px rgba(0,0,0,.08); transition: transform .3s cubic-bezier(.3,1.4,.5,1); }
+.tgl.on { background: var(--accent, #0A9F6E); }
+.tgl.on::after { transform: translateX(20px); }
+.mini-orb { display: inline-block; width: 22px; height: 22px; border-radius: 50%; vertical-align: -6px; margin-right: 8px; overflow: hidden;
+  background: radial-gradient(circle at 25% 15%, rgba(255,255,255,.22), rgba(255,255,255,0) 70%), linear-gradient(45deg, #0b8f5c, #18b98a 55%, #1f8fff); }
+.mini-orb canvas { width: 100%; height: 100%; display: block; }
+.talk-btn { display: flex; align-items: center; justify-content: center; width: 100%; }
+.chat-tools .tk-chip { display: inline-flex; align-items: center; font-weight: 600; }
+.chat-tools .tk-chip .mini-orb { width: 20px; height: 20px; margin: -2px 6px -2px -4px; }
+.sheet .vrow { display: flex; justify-content: space-between; align-items: center; }
+.sheet .vrow small { color: var(--sub); font-size: 13px; }
+.sheet .vrow.on { outline: 2px solid var(--accent, #0A9F6E); background: color-mix(in srgb, var(--accent, #0A9F6E) 10%, var(--card)); }
+
+/* ── Живой разговор: стекло на глубоком зелёном, шар с двумя волнами ── */
+#talk { position: fixed; inset: 0; z-index: 60; color: #fff; pointer-events: none; --fade: 1; }
+#talk::before { content: ""; position: absolute; inset: 0; opacity: 0; transition: opacity .38s;
+  background: radial-gradient(70% 45% at 50% 38%, rgba(40,190,160,.35), transparent 70%), radial-gradient(60% 40% at 80% 90%, rgba(30,120,255,.22), transparent 70%),
+    linear-gradient(170deg, #0c4a36 0%, #06261c 55%, #04131a 100%); }
+#talk.on { pointer-events: auto; }
+#talk.on::before { opacity: var(--fade); }
+#talk .tk-sheet { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; padding: calc(10px + env(safe-area-inset-top)) 24px calc(22px + env(safe-area-inset-bottom));
+  transform: translateY(100%); transition: transform .45s cubic-bezier(.2,.9,.25,1); }
+#talk.on .tk-sheet { transform: none; }
+#talk.off .tk-sheet { transform: translateY(100%); transition-duration: .35s; }
+#talk .grab { width: 38px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.35); margin-bottom: 14px; }
+#talk .tk-top { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+#talk .tk-top b { font: 600 17px/1.2 system-ui, -apple-system, sans-serif; letter-spacing: .02em; }
+#talk .tk-st { font-size: 13px; color: rgba(255,255,255,.62); min-height: 17px; transition: color .3s; }
+#talk[data-st="say"] .tk-st { color: #9fd8ff; }
+#talk[data-st="listen"] .tk-st { color: #a6ffe0; }
+#talk .tk-orb { border: 0; background: none; padding: 0; width: min(88vw, 400px); aspect-ratio: 1; margin-top: 2vh; flex: none; }
+#talk .tk-orb canvas { width: 100%; height: 100%; display: block; }
+#talk .tk-cap { flex: 1; width: 100%; max-width: 420px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; min-height: 0; overflow: hidden; }
+#talk .tk-izi { margin: 0; font: 600 23px/1.3 system-ui, -apple-system, sans-serif; letter-spacing: -.01em; text-wrap: balance; animation: tk-in .35s ease; }
+#talk .tk-izi.ph { color: rgba(255,255,255,.5); letter-spacing: .2em; }
+#talk .tk-you { margin: 0; font-size: 16px; line-height: 1.35; color: rgba(255,255,255,.62); text-wrap: balance; }
+#talk[data-st="listen"] .tk-you { color: rgba(220,255,240,.92); }
+@keyframes tk-in { from { opacity: 0; transform: translateY(6px); } }
+#talk .tk-bar { display: flex; gap: 28px; margin: 10px 0 8px; }
+#talk .tk-btn { width: 64px; height: 64px; border-radius: 50%; border: .5px solid rgba(255,255,255,.22); color: #fff; display: grid; place-items: center;
+  background: rgba(255,255,255,.12); -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%); transition: background .25s, transform .15s; }
+#talk .tk-btn svg { width: 26px; height: 26px; }
+#talk .tk-btn.off { background: rgba(255,255,255,.88); color: #0b4a33; }
+#talk .tk-btn:active { transform: scale(.92); }
+#talk .tk-hint { font-size: 12.5px; color: rgba(255,255,255,.45); }
+#talk .tk-izi { transition: opacity .3s; }
+#talk[data-st="listen"] .tk-izi, #talk[data-st="think"] .tk-izi:not(.ph) { opacity: .45; font-size: 19px; }
+.izi-card .set.col { flex-direction: column; align-items: stretch; gap: 8px; }
+.izi-card .set.col .seg.izi-rate { width: 100%; }

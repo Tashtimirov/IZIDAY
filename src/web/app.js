@@ -1400,7 +1400,7 @@ function chatSystem() {
 - Напоминания контролируешь ты: невыполненное в срок — спрашиваешь, сделал ли, напоминаешь снова, предлагаешь перенести и выясняешь причину (уведомления «Выполнил?» приходят от IZIDAY). Если пользователь пишет, почему не сделал — посочувствуй коротко, перенеси через update_reminder на реальное время по календарю и запомни повторяющуюся причину.
 - Учись: если пользователь поправил тебя, сказал «не так», «не надо», «лучше…», или видно его привычку — запомни это как предпочтение через remember («Предпочитает…», «Не любит…») и дальше делай так.
 ${r.length ? `- Сложную задачу, которую не решить здесь за пару сообщений (код, разбор документов, исследование, подготовка текста или плана, многошаговая работа), передай через claude_code. Рабочую — в маршрут нужного рабочего проекта по его описанию; личную, не связанную с работой, — в маршрут для личных задач. Если неясно, что именно нужно, сначала коротко уточни. После передачи скажи одной строкой, куда передал; ссылка на сессию покажется сама.`
-  : "- Передавать задачи в Claude Code пока нельзя: маршруты не подключены (в виджете: меню → 🤖 Задачи в Claude Code, потом подключить приложение заново). Сложную задачу честно назови сложной и предложи подключить."}`
+  : "- Передавать задачи в Claude Code пока нельзя: маршруты не подключены (в виджете: меню → 🤖 Задачи в Claude Code, потом подключить приложение заново). Сложную задачу честно назови сложной и предложи подключить."}` + iziStyle()
 }
 const BRIEFS = {
   morning: { label: "☀️ Утренняя сводка", prompt: "Сделай утреннюю сводку на сегодня. Посмотри события и напоминания на сегодня (и просроченные), " +
@@ -1509,6 +1509,7 @@ async function chatSend(text, opts = {}) {
   chatStopCtl = null
   chatBusy = false
   setBusyUI(false)
+  if (stopped && TALK) { const i = D.chat.lastIndexOf(item); if (i >= 0) D.chat.splice(i); save(false); return talkListen() }
   if (stopped) {   // «Стоп»: вопрос возвращается в строку ввода — поправить и отправить заново
     const i = D.chat.lastIndexOf(item)
     if (i >= 0) D.chat.splice(i)
@@ -1518,6 +1519,7 @@ async function chatSend(text, opts = {}) {
     return
   }
   D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice() })
+  talkHear(reply)
   if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
   D.chat.filter(m => m.thumb).slice(0, -12).forEach(m => { delete m.thumb })   // миниатюры только у последних фото — память телефона
   save(false)
@@ -1551,6 +1553,7 @@ function chatAsk(question, options) {
   return new Promise(res => {
     D.chat.push({ role: "assistant", text: question, at: Date.now(), opts: options, local: true })
     save(false)
+    talkHear(question, options)
     askWait = a => res(a)
     if (tab === "chat") renderChat(); else setTab("chat")
   })
@@ -2045,7 +2048,7 @@ function stripInit(keep) {
 }
 
 function renderChatHTML() {
-  return `<div class="chat-tools"><button data-brief="morning">☀️ Утренняя сводка</button><button data-brief="evening">🌙 Вечерняя</button><button data-do="memory">🧠 Память</button><button data-do="chat-clear">🧹 Очистить</button></div>
+  return `<div class="chat-tools"><button data-do="talk" class="tk-chip"><b class="mini-orb"></b>Поговорить</button><button data-brief="morning">☀️ Утренняя сводка</button><button data-brief="evening">🌙 Вечерняя</button><button data-do="memory">🧠 Память</button><button data-do="chat-clear">🧹 Очистить</button></div>
     <div class="chat-list" id="chat-list">${chatItems()}</div>
     <div class="chat-bar"><button class="cam plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
     <button class="mic wave" aria-label="Нажмите — говорить, держите — как рация"><canvas></canvas></button><button class="send" aria-label="Отправить">${ICO.send}</button></div>`
@@ -2142,10 +2145,7 @@ function renderMore() {
   let html = ""
   if (!standalone()) html += `<div class="banner"><b>Поставьте на экран «Домой»</b>Нажмите «Поделиться» ⎋ внизу Safari → «На экран «Домой»». Приложение будет открываться отдельно и мгновенно.</div>`
   const z = IZI()
-  html += `<div class="card"><h2>Помощник</h2>
-    <div class="set"><span>Имя</span><input type="text" data-izi="name" value="${esc(z.name)}" maxlength="20" autocomplete="off" style="text-align:right"></div>
-    <div class="set"><span>Пол</span><div class="seg izi-g"><i style="--i:${z.g === "f" ? 1 : 0}"></i><button data-izi-g="m" class="${z.g === "m" ? "on" : ""}">Мужской</button><button data-izi-g="f" class="${z.g === "f" ? "on" : ""}">Женский</button></div></div>
-    <div class="muted small">Имя видно на центральной кнопке и в чате. От пола зависят окончания в ответах: «${esc(z.name)} ${z.g === "f" ? "записала" : "записал"}».</div></div>`
+  html += iziCard()
   html += `<div class="card"><h2>Связь с виджетом</h2>`
   if (c) html += `<div class="set"><span>Таблица</span><span class="ok">✓ ${esc((c.hook.match(/\/s\/(.{8})/) || [, "подключена"])[1])}</span></div>
       <div class="set"><span>Последний обмен</span><span>${esc(ago(D.sync.at))}</span></div>
@@ -2298,6 +2298,7 @@ function bind() {
     if (w === "other") { const t = await ui.ask("💧 Сколько выпили?", "В миллилитрах", "", { type: "number" }); if (t && +t) addWater(Math.round(+t)) }
     else addWater(+w)
   })
+  bindIzi(v)
   $$("[data-izi]", v).forEach(inp => inp.onchange = () => {
     D.izi = Object.assign({}, D.izi, { name: inp.value.trim().slice(0, 20) }); save(false); render(); toast("Сохранено") })
   $$("[data-izi-g]", v).forEach(b => b.onclick = () => {
@@ -2361,6 +2362,7 @@ function bind() {
 }
 
 const DO = {
+  talk: () => talkOpen(), "izi-voice": () => voicePicker(),
   event: () => eventForm(), reminder: () => reminderForm(), food: () => foodMenu(), workout: () => workoutForm(), photo: () => photoPrompt(),
   expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
   "push-on": () => pushEnable(),
@@ -3326,7 +3328,7 @@ function silkFrame(t) {
     if (!w || !h) continue
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h }
     const k = c.dataset.k
-    if (k === "comet") silkComet(c, T, d); else if (k === "orb") silkOrb(c, T, d, voice && PTT.holding); else silkLines(c, T, d, false)
+    if (k === "talk") silkTalk(c, T, d); else if (k === "comet") silkComet(c, T, d); else if (k === "orb") silkOrb(c, T, d, voice && PTT.holding); else silkLines(c, T, d, false)
   }
   const tm = $("#silk .tm"); if (tm && voice && voice.t0) { const sec = Math.floor((Date.now() - voice.t0) / 1000); tm.textContent = Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0") }
 }
@@ -3493,7 +3495,7 @@ function holdToTalk(btn, onTap) {
   btn.addEventListener("contextmenu", e => e.preventDefault())
   btn.onclick = () => { if (long) { long = false; return } onTap() }
 }
-holdToTalk($("#fab"), () => setTab("chat"))
+holdToTalk($("#fab"), () => tab === "chat" ? talkOpen() : setTab("chat"))   // Изи ещё раз на экране чата — живой разговор голосом
 // Полоса записи «Шёлк»: сверху текст, ниже волна с яркой точкой, «‹ отмена» и секунды.
 // Нажать на текст — поправить его в поле; на волну или секунды — отправить сразу; смахнуть влево — отмена
 {
@@ -5018,6 +5020,266 @@ Object.assign(DO, {
   event: () => calQuick(), "cal-open": () => { calStart = null; setTab("cal") }, "cal-today": () => { calStart = null; calAnim = "in-f"; render() },
   "cal-set": () => calSettings(), "cal-free": () => freeSheet(), "cal-tpls": () => etplList(), "cal-prot": () => protList(),
 })
+
+// ═════════════ Изи: характер, голос и живой разговор ═════════════
+// Настройки помощника (только на телефоне, в D.izi): имя, пол, характер, голос, скорость речи,
+// советы по целям, психология, самообучение. Голос — системный голос iPhone под пол помощника.
+function IZX() { return Object.assign({ mode: "friend", rate: 1, goals: true, psy: true, learn: true, voice: "" }, D.izi || {}, { g: IZI().g }) }
+function iziSet(k, val) { D.izi = Object.assign({}, D.izi, { [k]: val }); save(false) }
+var IZI_MODES = { friend: ["Друг", "тепло, с юмором, поддерживает"], coach: ["Строгий тренер", "прямо, без поблажек, держит планку"], brief: ["Кратко и по делу", "минимум слов, только суть"] }
+var IZI_RATES = [[.9, "Спокойно"], [1, "Обычно"], [1.12, "Быстрее"]]
+
+// Добавка к системному промпту чата: характер, цели, психология, самообучение и правила живого разговора
+function iziStyle() {
+  const z = IZX(), out = []
+  out.push({ friend: "Характер: друг — тепло, с лёгким юмором, поддерживаешь, но говоришь правду, даже неудобную.",
+    coach: "Характер: строгий тренер — прямо, без поблажек и сюсюканья, держишь планку, требуешь конкретики и сроков, хвалишь только за дело. Не грубишь и не унижаешь.",
+    brief: "Характер: кратко и по делу — минимум слов, только суть, без вступлений, оценок и эмоций." }[z.mode] || "")
+  if (z.goals) out.push(`Цели: ты коуч по целям (подсказки включены пользователем). Когда речь о целях, мечтах, планах, деньгах на цель или застрявшем деле — подскажи, как поставить и достичь: цель конкретная и измеримая, со сроком (SMART); большой цели — веха на месяц и шаг на эту неделю; первый шаг — меньше 15 минут и в календарь; план «если — то» («если вечером устал, то хотя бы 10 минут»); заранее назвать главное препятствие и что делать с ним (WOOP); финансовая цель — сумма, срок и сколько откладывать в месяц (копилка add_jar). Застряло 2 недели — уменьшить шаг, а не ругать себя. Отмечай маленькие победы. Не больше одного совета за ответ и не в каждом сообщении — только к месту.`)
+  if (z.psy) out.push(`Психология: опирайся на доказательные подходы (КПТ, мотивационное интервью, теория самодетерминации, привязанность, эмоциональный интеллект). Когда человеку тяжело — сначала услышь и назови чувство, потом спроси, чего он хочет: совета или просто выговориться. Мягко замечай искажения мышления («всё или ничего», катастрофизация, чтение мыслей) и предлагай взгляд шире. В отношениях с женой, детьми, родителями и людьми помогай понять другую сторону и подобрать слова; про токсичных людей — честно про границы. Ты не врач и не ставишь диагнозов. Если звучат мысли о самоповреждении или о том, что жить не хочется, — отнесись серьёзно, будь рядом и мягко предложи сразу связаться с близким человеком и специалистом или экстренной помощью (в Таиланде 1669, психологическая линия 1323).`)
+  out.push(z.learn ? "Самообучение включено: замечай, что работает с этим человеком (какие советы он принимает, что раздражает, как ему удобнее), и сохраняй выводы через remember как предпочтения." : "Самообучение выключено: сам выводы и предпочтения не запоминай — только факты, которые просят запомнить.")
+  if (TALK) out.push(`Сейчас живой голосовой разговор: твой ответ сразу читается вслух голосом ${z.g === "f" ? "девушки" : "мужчины"}. Отвечай как в разговоре: 1–3 коротких предложения, без списков, Markdown, ссылок, эмодзи и сокращений («мин», «ч», «руб»); суммы и время — словами, как их говорят. Длинное (список, письмо, план) — коротко скажи суть и что подробности в чате. Варианты выбора называй голосом. Тебя могут перебить — это нормально.`)
+  return "\n" + out.filter(Boolean).map(s => "- " + s).join("\n")
+}
+
+// ── Голос: системные русские голоса iPhone ──
+var FEM_V = /milena|милена|katya|катя|alena|ал[её]на|irina|ирина|anna\b|анна|svetlana|светлана|elena|елена|daria|дарья|marina|марина|google русский/i
+var MAL_V = /yuri|юрий|maxim|максим|pavel|павел|dmitr|дмитр|ivan|иван|artem|арт[её]м|aleksandr|александр/i
+function ttsVoices() { try { return window.speechSynthesis ? speechSynthesis.getVoices().filter(v => /^ru/i.test(v.lang)) : [] } catch (e) { return [] } }
+function voiceSex(v) { return FEM_V.test(v.name) ? "f" : MAL_V.test(v.name) ? "m" : "" }
+function voiceQ(v) { return (/premium|enhanced|улучш|siri/i.test(v.name) ? 2 : 0) + (v.localService ? 1 : 0) }
+function voiceLabel(v) { return v ? v.name.replace(/\s*\((enhanced|premium|улучшенн\S*|русский.*)\)/ig, (m, a) => /enh|prem|улучш/i.test(a) ? " · улучшенный" : "").trim() : "Нет русского голоса" }
+function iziVoice() {
+  const vs = ttsVoices(), z = IZX()
+  const set = vs.find(x => x.voiceURI === z.voice); if (set) return set
+  const by = l => l.slice().sort((a, b) => voiceQ(b) - voiceQ(a))[0]
+  return by(vs.filter(x => voiceSex(x) === z.g)) || by(vs.filter(x => !voiceSex(x))) || by(vs) || null
+}
+if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => { if (tab === "more") render() }
+// Текст для чтения вслух: без ссылок, разметки и смайликов, валюта и единицы — словами
+function sayable(t) {
+  return String(t || "").replace(/https?:\/\/\S+/g, "ссылка в чате").replace(/[*_#`>|~]+/g, "")
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}️‍]/gu, "").replace(/^\s*[-•·]\s*/gm, "")
+    .replace(/(\d)\s*฿/g, "$1 бат").replace(/฿\s*(\d[\d\s]*)/g, "$1 бат").replace(/(\d)\s*₽/g, "$1 рублей").replace(/\$\s*(\d[\d\s]*)/g, "$1 долларов")
+    .replace(/(\d)\s*ккал/g, "$1 килокалорий").replace(/(\d)\s*км\b/g, "$1 километров").replace(/(\d)\s*мин\b\.?/g, "$1 минут")
+    .replace(/[ \t]+/g, " ").trim()
+}
+// Разбить на предложения: iPhone обрывает длинные фразы, а подпись на экране меняется по предложению
+function sentences(t) { return (sayable(t).match(/[^.!?…\n]+[.!?…]*["»)]?\s*|\n+/g) || []).map(s => s.trim()).filter(s => s.length > 1) }
+var TTS = { keep: [], token: 0 }
+function speak(text, { onSentence, onEnd } = {}) {
+  ttsStop()
+  const S = window.speechSynthesis, parts = sentences(text)
+  if (!S || !parts.length) { if (onEnd) setTimeout(onEnd, 0); return }
+  const my = ++TTS.token, z = IZX(), v = iziVoice()
+  TTS.keep = []   // ссылки держим, иначе Safari выбрасывает фразу и onend не приходит
+  let i = 0
+  const next = () => {
+    if (my !== TTS.token) return
+    if (i >= parts.length) { TTS.speaking = false; if (onEnd) onEnd(); return }
+    const s = parts[i++], u = new SpeechSynthesisUtterance(s)
+    u.lang = "ru-RU"; if (v) u.voice = v; u.rate = z.rate || 1; u.pitch = 1
+    u.onstart = () => { if (my === TTS.token) { TTS.speaking = true; SILK.ie = 1; if (onSentence) onSentence(s) } }
+    u.onboundary = () => { SILK.ie = Math.min(1.3, SILK.ie + .45) }   // каждое слово подталкивает волну Изи
+    u.onend = next
+    u.onerror = e => { if (e.error === "interrupted" || e.error === "canceled") return; next() }
+    TTS.keep.push(u); S.speak(u)
+  }
+  next()
+}
+function ttsStop() { TTS.token++; TTS.speaking = false; try { window.speechSynthesis && speechSynthesis.cancel() } catch (e) {} }
+// Safari разрешает говорить только после касания — «разбудить» синтез пустой фразой в момент нажатия
+function ttsUnlock() { try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u) } catch (e) {} }
+
+// ── Живой разговор: слушаю → думаю → говорю → снова слушаю ──
+// Шар со стеклом и двумя волнами: голубая — голос Изи, мятная — ваш. Нажать на шар, пока Изи говорит, — перебить;
+// пока слушает — отправить сразу; на паузе — продолжить. Закончить — смахнуть вниз.
+var TALK = null
+var TALK_SILENCE = 1300
+function talkOpen() {
+  if (TALK) return
+  if (!aiKey()) { setTab("more"); return ui.info("Нужен ключ Claude", "Подключите приложение кодом из виджета: в Scriptable меню → 📱 Приложение «Мой день» → «Подключить приложение».") }
+  if (voice) voiceReset()
+  ttsUnlock()
+  const el = document.createElement("div"); el.id = "talk"
+  el.innerHTML = `<div class="tk-sheet"><div class="grab"></div>
+    <div class="tk-top"><b>${esc(iziName())}</b><span class="tk-st"></span></div>
+    <button class="tk-orb" aria-label="Шар: перебить, отправить или продолжить"><canvas></canvas></button>
+    <div class="tk-cap"><p class="tk-izi"></p><p class="tk-you"></p></div>
+    <div class="tk-bar"><button class="tk-btn tk-mic" aria-label="Пауза">${ICO.mic}</button><button class="tk-btn tk-chat" aria-label="Перейти в чат">${ICO.chat}</button></div>
+    <div class="tk-hint">Смахните вниз, чтобы закончить</div></div>`
+  document.body.append(el)
+  TALK = { el, state: "", rec: null, timer: null, heard: "", n: 0 }
+  silkCanvas($("canvas", el), "talk")
+  requestAnimationFrame(() => el.classList.add("on"))
+  $(".tk-orb", el).onclick = () => talkTap()
+  $(".tk-mic", el).onclick = () => TALK.state === "pause" ? talkListen() : talkPause()
+  $(".tk-chat", el).onclick = () => { talkClose(); setTab("chat") }
+  // смахнуть вниз — закончить разговор
+  const sh = $(".tk-sheet", el); let y0 = null, dy = 0
+  el.addEventListener("touchstart", e => { y0 = e.touches[0].clientY; dy = 0 }, { passive: true })
+  el.addEventListener("touchmove", e => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); sh.style.transform = `translateY(${dy}px)`; el.style.setProperty("--fade", String(1 - Math.min(1, dy / 400))) }, { passive: true })
+  el.addEventListener("touchend", () => { if (y0 == null) return; y0 = null; if (dy > 110) talkClose(); else { sh.style.transform = ""; el.style.removeProperty("--fade") } }, { passive: true })
+  // если Изи как раз задал вопрос в чате — прочитать его, иначе сразу слушать
+  const last = D.chat[D.chat.length - 1]
+  if (askWait && last && last.role === "assistant") talkHear(last.text, last.opts)
+  else talkListen(true)
+}
+function talkClose() {
+  const t = TALK; if (!t) return
+  TALK = null
+  ttsStop(); clearTimeout(t.timer)
+  try { t.rec && t.rec.abort() } catch (e) {}
+  t.el.classList.remove("on"); t.el.classList.add("off")
+  setTimeout(() => t.el.remove(), 380)
+  if (tab === "chat") renderChat()
+}
+function talkState(s, izi, you) {
+  const t = TALK; if (!t) return
+  t.state = s; t.el.dataset.st = s
+  $(".tk-st", t.el).textContent = { listen: "Слушаю", think: "Думаю…", say: "Говорит", pause: "Пауза" }[s] || ""
+  if (izi != null) { const p = $(".tk-izi", t.el); p.textContent = izi; p.classList.toggle("ph", !!izi && izi.startsWith("·")) }
+  if (you != null) $(".tk-you", t.el).textContent = you
+  $(".tk-mic", t.el).classList.toggle("off", s === "pause")
+  $(".tk-mic", t.el).setAttribute("aria-label", s === "pause" ? "Продолжить" : "Пауза")
+}
+function talkTap() {
+  const t = TALK; if (!t) return
+  if (t.state === "say") { ttsStop(); return talkListen() }       // перебить
+  if (t.state === "listen") return talkSendNow()                  // сказали всё — отправить сразу
+  if (t.state === "pause") return talkListen()
+}
+function talkPause() { const t = TALK; if (!t) return; ttsStop(); clearTimeout(t.timer); const r = t.rec; t.rec = null; try { r && r.abort() } catch (e) {}; talkState("pause", null, "Нажмите на шар, чтобы продолжить") }
+function talkListen(first) {
+  const t = TALK; if (!t) return
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+  if (!SR) { talkState("pause", "Распознавание речи недоступно в этом браузере", ""); return }
+  clearTimeout(t.timer); t.heard = ""
+  const prev = t.rec; t.rec = null; try { prev && prev.abort() } catch (e) {}
+  talkState("listen", null, first ? "Говорите — я слушаю" : "")
+  const my = ++t.n
+  const r = new SR(); r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
+  r.onresult = e => {
+    if (TALK !== t || t.n !== my) return
+    let s = ""; for (let i = 0; i < e.results.length; i++) s += e.results[i][0].transcript
+    t.heard = s.trim(); SILK.ye = Math.min(1.3, SILK.ye + .5)
+    talkState("listen", null, t.heard)
+    clearTimeout(t.timer); t.timer = setTimeout(() => talkSendNow(), TALK_SILENCE)
+  }
+  r.onerror = e => {
+    if (TALK !== t || t.n !== my) return
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") { talkState("pause", "Нет доступа к микрофону", "Настройки → Safari → Микрофон"); return }
+  }
+  r.onend = () => {   // Safari сам закрывает распознавание — слушаем дальше, пока не отправили
+    if (TALK !== t || t.n !== my || t.state !== "listen") return
+    if (t.heard) return talkSendNow()
+    setTimeout(() => { if (TALK === t && t.n === my && t.state === "listen") talkListen() }, 250)
+  }
+  try { r.start(); t.rec = r } catch (e) { setTimeout(() => { if (TALK === t && t.n === my) talkListen() }, 500) }
+  // 20 секунд тишины — пауза, чтобы микрофон не висел впустую
+  t.timer = setTimeout(() => { if (TALK === t && t.n === my && !t.heard) talkPause() }, 20000)
+}
+function talkSendNow() {
+  const t = TALK; if (!t || t.state !== "listen") return
+  const text = t.heard.trim()
+  clearTimeout(t.timer); t.n++
+  const r = t.rec; t.rec = null; try { r && r.stop() } catch (e) {}
+  if (!text) return talkListen()
+  talkState("think", "·  ·  ·", text)
+  chatSend(text, { voice: true })
+}
+// Ответ или вопрос Изи пришёл в чат — прочитать вслух, потом снова слушать
+function talkHear(text, opts) {
+  const t = TALK; if (!t) return
+  const say = String(text || "") + (opts && opts.length ? " " + (opts.length === 2 ? `${opts[0]} или ${opts[1]}?` : opts.slice(0, 4).join(", ") + "?") : "")
+  talkState("say", sentences(say)[0] || "", "")
+  speak(say, { onSentence: s => { if (TALK === t) talkState("say", s, null) }, onEnd: () => { if (TALK === t && t.state === "say") talkListen() } })
+}
+// Шар разговора: стекло, две волны с растворяющимися концами и внешнее кольцо, которое тает наружу.
+// Темп медленный; кто говорит — у того волна дрожит, размах чуть больше
+function silkTalk(c, T, d) {
+  const x = c.getContext("2d"), W = c.width, H = c.height, st = TALK ? TALK.state : ""
+  const syl = .55 + .45 * Math.sin(T * 2.3) * Math.sin(T * .9 + 1)
+  const ti = st === "say" ? (.35 + .65 * syl) * Math.max(.4, SILK.ie) : st === "think" ? .12 + .08 * Math.sin(T * 1.6) : 0
+  const ty = st === "listen" ? (.12 + .88 * syl) * Math.max(.12, SILK.ye) : 0
+  SILK.il += (ti - SILK.il) * (ti > SILK.il ? .07 : .035); SILK.yl += (ty - SILK.yl) * (ty > SILK.yl ? .07 : .035)
+  SILK.ie *= .975; SILK.ye *= .975
+  x.clearRect(0, 0, W, H)
+  const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .34
+  // внешнее кольцо: свет растворяется наружу, дышит с голосом
+  const halo = R * (1.5 + .12 * Math.max(SILK.il, SILK.yl))
+  const hg = x.createRadialGradient(cx, cy, R * .96, cx, cy, halo)
+  hg.addColorStop(0, `rgba(150,235,225,${.22 + .16 * Math.max(SILK.il, SILK.yl)})`); hg.addColorStop(.3, "rgba(120,200,255,.07)"); hg.addColorStop(1, "rgba(120,200,255,0)")
+  x.fillStyle = hg; x.beginPath(); x.arc(cx, cy, halo, 0, Math.PI * 2); x.moveTo(cx + R * .99, cy); x.arc(cx, cy, R * .99, 0, Math.PI * 2, true); x.fill()   // только снаружи шара
+  // стекло
+  const b = x.createRadialGradient(cx - R * .3, cy - R * .35, R * .1, cx, cy, R)
+  b.addColorStop(0, "rgba(255,255,255,.16)"); b.addColorStop(.7, "rgba(255,255,255,.03)"); b.addColorStop(1, "rgba(255,255,255,.1)")
+  x.fillStyle = b; x.beginPath(); x.arc(cx, cy, R, 0, 7); x.fill()
+  x.save(); x.beginPath(); x.arc(cx, cy, R * .985, 0, 7); x.clip(); x.globalCompositeOperation = "screen"
+  const len = R * 1.9
+  // [цвет, уровень, смещение, базовый размах, фаза, скорость, толщина]
+  ;[["95,185,255", SILK.il, .05, .2, 2.1, .75, .03], ["80,245,190", SILK.yl, -.05, .24, 0, .62, .034]].forEach(([rgb, lv, dy, am, ph, sp, lw]) => {
+    const amp = R * am * (1 + lv * .6), jit = lv * .14
+    const g = x.createLinearGradient(cx - len / 2, 0, cx + len / 2, 0)
+    g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(.3, `rgba(${rgb},${.75 + lv * .25})`); g.addColorStop(.7, `rgba(${rgb},${.75 + lv * .25})`); g.addColorStop(1, `rgba(${rgb},0)`)
+    x.beginPath()
+    for (let i = 0; i <= 120; i++) {
+      const u = i / 120, env = Math.pow(Math.sin(Math.PI * u), 1.5), px = cx - len / 2 + u * len
+      const py = cy + dy * R + amp * env * (Math.sin(u * Math.PI * 2.2 + ph + T * sp) + jit * Math.sin(u * Math.PI * 9 + T * 7.5))
+      i ? x.lineTo(px, py) : x.moveTo(px, py)
+    }
+    x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = g; x.lineWidth = Math.max(1.4 * d, R * lw * (1 + lv * .25))
+    x.shadowColor = `rgba(${rgb},.9)`; x.shadowBlur = R * (.1 + lv * .12); x.stroke(); x.shadowBlur = 0
+  })
+  x.globalCompositeOperation = "source-over"; x.restore()
+  const rim = x.createLinearGradient(cx - R, cy - R, cx + R, cy + R)
+  rim.addColorStop(0, "rgba(255,255,255,.7)"); rim.addColorStop(.5, "rgba(255,255,255,.1)"); rim.addColorStop(1, "rgba(255,255,255,.4)")
+  x.strokeStyle = rim; x.lineWidth = Math.max(d, R * .018); x.beginPath(); x.arc(cx, cy, R, 0, 7); x.stroke()
+  const hl = x.createRadialGradient(cx - R * .38, cy - R * .5, 0, cx - R * .38, cy - R * .5, R * .45)
+  hl.addColorStop(0, "rgba(255,255,255,.3)"); hl.addColorStop(1, "rgba(255,255,255,0)")
+  x.fillStyle = hl; x.beginPath(); x.ellipse(cx - R * .38, cy - R * .5, R * .4, R * .22, -.6, 0, 7); x.fill()
+}
+Object.assign(SILK, { il: 0, yl: 0, ie: 0, ye: 0 })
+
+// ── Настройки помощника ──
+function iziCard() {
+  const z = IZI(), x = IZX(), v = iziVoice(), canTalk = !!window.speechSynthesis
+  const tg = (k, t, s) => `<button class="set tg-row" data-izi-tg="${k}"><span><b>${t}</b><small>${s}</small></span><i class="tgl ${x[k] ? "on" : ""}" role="switch" aria-checked="${!!x[k]}"></i></button>`
+  return `<div class="card izi-card"><h2>Помощник</h2>
+    <div class="set"><span>Имя</span><input type="text" data-izi="name" value="${esc(z.name)}" maxlength="20" autocomplete="off" style="text-align:right"></div>
+    <div class="set"><span>Пол</span><div class="seg izi-g"><i style="--i:${z.g === "f" ? 1 : 0}"></i><button data-izi-g="m" class="${z.g === "m" ? "on" : ""}">Мужской</button><button data-izi-g="f" class="${z.g === "f" ? "on" : ""}">Женский</button></div></div>
+    <div class="muted small">Имя видно на центральной кнопке и в чате. От пола зависят окончания в ответах и голос: «${esc(z.name)} ${z.g === "f" ? "записала" : "записал"}».</div>
+    <div class="izi-sub">Характер</div>
+    ${Object.entries(IZI_MODES).map(([k, [t, s]]) => `<button class="set mode-row" data-izi-mode="${k}"><span><b>${t}</b><small>${s}</small></span>${x.mode === k ? `<i class="ck">${ICO.check}</i>` : "<i></i>"}</button>`).join("")}
+    <div class="izi-sub">Голос</div>
+    <button class="set voice-row" data-do="izi-voice"><span><b>${esc(voiceLabel(v))}</b><small>${canTalk ? "голос iPhone · нажмите, чтобы выбрать и послушать" : "в этом браузере нет голоса"}</small></span><i class="chev">${ICO.chev}</i></button>
+    <div class="set col"><span>Темп речи</span><div class="seg izi-rate">${IZI_RATES.map(([r, t]) => `<button data-izi-rate="${r}" class="${Math.abs((x.rate || 1) - r) < .01 ? "on" : ""}">${t}</button>`).join("")}</div></div>
+    <div class="izi-sub">Чему учится и как помогает</div>
+    ${tg("goals", "Советы по целям", "как ставить цели и доходить до конца: шаг на неделю, «если — то», копилка")}
+    ${tg("psy", "Психология", "сначала слышит, бережно помогает разобраться в чувствах и отношениях")}
+    ${tg("learn", "Учиться на мне", "сам замечает, что вам подходит, и запоминает поправки")}
+    <div class="btns" style="margin-top:12px"><button class="btn primary talk-btn" data-do="talk"><b class="mini-orb"></b>Поговорить с ${esc(iziName())}</button></div></div>`
+}
+function voicePicker() {
+  const vs = ttsVoices(), z = IZX(), cur = iziVoice()
+  if (!vs.length) return ui.info("Голосов пока нет", "Русские голоса появятся, когда iPhone их загрузит: Настройки → Универсальный доступ → Устный контент → Голоса → Русский.")
+  const mine = vs.filter(v => voiceSex(v) === z.g), other = vs.filter(v => voiceSex(v) !== z.g)
+  const row = v => `<button class="opt vrow ${cur && v.voiceURI === cur.voiceURI ? "on" : ""}" data-v="${esc(v.voiceURI)}"><span>${esc(voiceLabel(v))}</span><small>${voiceSex(v) === "f" ? "женский" : voiceSex(v) === "m" ? "мужской" : ""}</small></button>`
+  const s = sheet(`<h3>Голос ${esc(iziName())}</h3>
+    ${mine.length ? `<div class="izi-sub">${z.g === "f" ? "Женские" : "Мужские"}</div>${mine.map(row).join("")}` : ""}
+    ${other.length ? `<div class="izi-sub">${mine.length ? "Другие" : "Голоса"}</div>${other.map(row).join("")}` : ""}
+    <div class="muted small" style="margin-top:10px">Нажмите — ${esc(iziName())} скажет фразу этим голосом. Живее звучат улучшенные голоса: Настройки iPhone → Универсальный доступ → Устный контент → Голоса → Русский${z.g === "m" ? " (мужской — «Юрий»)" : " («Милена», «Катя»)"}.</div>`, { onClose: () => { ttsStop(); if (tab === "more") render() } })
+  $$(".vrow", s.el).forEach(b => b.onclick = () => {
+    iziSet("voice", b.dataset.v); $$(".vrow", s.el).forEach(x => x.classList.toggle("on", x === b))
+    speak(`Привет! Я ${iziName()}. ${iziG("Готов", "Готова")} поговорить, когда удобно.`)
+  })
+}
+function bindIzi(v) {
+  $$("[data-izi-mode]", v).forEach(b => b.onclick = () => { iziSet("mode", b.dataset.iziMode); render(); toast(`Характер: ${IZI_MODES[b.dataset.iziMode][0].toLowerCase()}`) })
+  $$("[data-izi-tg]", v).forEach(b => b.onclick = () => { const k = b.dataset.iziTg, on = !IZX()[k]; iziSet(k, on); const i = $(".tgl", b); i.classList.toggle("on", on); i.setAttribute("aria-checked", on) })
+  $$("[data-izi-rate]", v).forEach(b => b.onclick = () => { iziSet("rate", +b.dataset.iziRate); $$("[data-izi-rate]", v).forEach(x => x.classList.toggle("on", x === b)); speak(`Так ${iziG("я буду", "я буду")} говорить.`) })
+  $$(".talk-btn .mini-orb, .chat-tools .mini-orb", v).forEach(o => { if (!o.firstChild) { const c = document.createElement("canvas"); o.append(c); silkCanvas(c, "orb") } })
+}
 
 load()
 pushConn()
