@@ -120,8 +120,11 @@ function doPost(e) {
   try { body = JSON.parse(e.postData.contents); } catch (err) { return out_({ ok: false, error: "bad json" }); }
   // Лига друзей: без ключа таблицы, только по коду лиги — друзья видят друг у друга лишь баллы, ранг и серию
   if (body.league && !body.secret) return out_(league_(body.league, false));
+  // Семья: без ключа таблицы, по коду семьи — общие дела детей, звёзды, копилки, мечты и семейные цели
+  if (body.family && !body.secret) return out_(family_(body.family, false));
   if (!checkSecret_(body.secret)) return out_({ ok: false, error: "forbidden" });
   if (body.league) return out_(league_(body.league, true));
+  if (body.family) return out_(family_(body.family, true));
 
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -1110,6 +1113,107 @@ function league_(q, owner) {
     }
     if (changed) props.setProperty("lg_" + code, JSON.stringify(lg));
     return { ok: true, league: lg };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ───────────── Семья ─────────────
+// Хранится на скрытом листе «_семья» (строка на семью: код, затем JSON кусками по 45 000 знаков — у свойств скрипта лимит 9 КБ): { code, name, created, members{id:{name,role,age,color,pts{день:баллы}}}, set{kidId:{pocket,wd,split,limit}},
+// tasks[], log[], goals[], money[], dreams[] }. Элементы списков — { id, u (время правки), del? }: кто правил позже, тот и прав.
+function famSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName("_семья");
+  if (!sh) { sh = ss.insertSheet("_семья"); sh.hideSheet(); }
+  return sh;
+}
+function famRow_(sh, code) {
+  const n = sh.getLastRow();
+  if (!n) return 0;
+  const codes = sh.getRange(1, 1, n, 1).getValues();
+  for (let i = 0; i < n; i++) if (String(codes[i][0]) === code) return i + 1;
+  return 0;
+}
+function famLoad_(code) {
+  const sh = famSheet_(), r = famRow_(sh, code);
+  if (!r) return null;
+  const w = Math.max(2, sh.getLastColumn());
+  return sh.getRange(r, 2, 1, w - 1).getValues()[0].map(String).join("");
+}
+function famSave_(code, json) {
+  const sh = famSheet_();
+  const r = famRow_(sh, code) || sh.getLastRow() + 1, parts = [code];
+  for (let i = 0; i < json.length; i += 45000) parts.push(json.slice(i, i + 45000));
+  const w = Math.max(parts.length, sh.getLastColumn());
+  while (parts.length < w) parts.push("");
+  sh.getRange(r, 1, 1, w).setValues([parts]);
+}
+const FAMILY = { max: 10, lists: { tasks: 120, log: 1500, goals: 60, money: 1500, dreams: 200 }, keepDays: 120 };
+function family_(q, owner) {
+  const clean = (v, n) => String(v == null ? "" : v).replace(/[<>]/g, "").slice(0, n || 60);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    if (q.op === "new") {
+      if (!owner) return { ok: false, error: "forbidden" };
+      const code = Utilities.getUuid().replace(/-/g, "").slice(0, 14);
+      const fam = { code, name: clean(q.name, 40) || "Семья", created: Date.now(), members: {}, set: {}, tasks: [], log: [], goals: [], money: [], dreams: [] };
+      famSave_(code, JSON.stringify(fam));
+      return { ok: true, family: fam };
+    }
+    const code = clean(q.code, 20), raw = /^[0-9a-f]{14}$/.test(code) && famLoad_(code);
+    if (!raw) return { ok: false, error: "нет такой семьи" };
+    const fam = JSON.parse(raw), id = clean(q.id, 30), now = Date.now();
+    let changed = false;
+    if (q.op === "put" && id) {
+      const known = !!fam.members[id];
+      if (!known && Object.keys(fam.members).length >= FAMILY.max) return { ok: false, error: "в семье уже " + FAMILY.max + " человек" };
+      const me = q.me || {};
+      const m = fam.members[id] || { joined: now, pts: {} };
+      if (me.name) m.name = clean(me.name, 24);
+      if (["adult", "teen", "kid"].indexOf(me.role) >= 0 && (!known || me.role === m.role || q.byAdult)) m.role = me.role;
+      if (me.age != null) m.age = Math.max(0, Math.min(99, Math.round(+me.age || 0)));
+      if (me.color) m.color = clean(me.color, 9);
+      if (me.owner && !known) m.owner = !!owner;
+      if (me.pts && typeof me.pts === "object") {
+        for (const k in me.pts) if (/^\d{4}-\d\d-\d\d$/.test(k)) m.pts[k] = Math.max(0, Math.round(+me.pts[k] || 0));
+        const keys = Object.keys(m.pts).sort(); while (keys.length > FAMILY.keepDays) delete m.pts[keys.shift()];
+      }
+      if (me.name || !known) m.at = now;
+      fam.members[id] = m;
+      // члены семьи, заведённые взрослым (ребёнок до входа на своём телефоне)
+      for (const x of (q.add || []).slice(0, 5)) {
+        const xid = clean(x.id, 30);
+        if (!xid || fam.members[xid] || Object.keys(fam.members).length >= FAMILY.max) continue;
+        fam.members[xid] = { joined: now, pts: {}, name: clean(x.name, 24) || "Ребёнок", role: ["kid", "teen", "adult"].indexOf(x.role) >= 0 ? x.role : "kid", age: Math.round(+x.age || 0), color: clean(x.color, 9), at: 0 };
+      }
+      if (q.set && typeof q.set === "object") for (const k in q.set) if (fam.members[k]) fam.set[k] = Object.assign(fam.set[k] || {}, q.set[k]);
+      if (q.drop && fam.members[clean(q.drop, 30)] && fam.members[id] && fam.members[id].role === "adult") { delete fam.members[clean(q.drop, 30)]; }
+      for (const L in FAMILY.lists) {
+        const items = q[L];
+        if (!Array.isArray(items) || !items.length) continue;
+        const arr = fam[L] || (fam[L] = []), idx = {};
+        arr.forEach((x, i) => { idx[x.id] = i; });
+        for (const it of items.slice(0, 200)) {
+          if (!it || !it.id) continue;
+          const s = JSON.stringify(it);
+          if (s.length > 2000) continue;
+          const i = idx[it.id];
+          if (i == null) { idx[it.id] = arr.length; arr.push(it); }
+          else if ((+it.u || 0) >= (+arr[i].u || 0)) arr[i] = it;
+        }
+        while (arr.length > FAMILY.lists[L]) arr.shift();
+      }
+      changed = true;
+    }
+    if (q.op === "leave" && id && fam.members[id]) { delete fam.members[id]; changed = true; }
+    if (changed) {
+      let s = JSON.stringify(fam);
+      // не больше ~400 000 знаков на семью: старое в журналах уходит первым
+      while (s.length > 400000 && (fam.log.length > 100 || fam.money.length > 100)) { fam.log.splice(0, 50); fam.money.splice(0, 50); s = JSON.stringify(fam); }
+      famSave_(code, s);
+    }
+    return { ok: true, family: fam };
   } finally {
     lock.releaseLock();
   }
