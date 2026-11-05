@@ -974,3 +974,15 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 .m .dr-opts a { text-decoration: none; }
 .m .dr-opts a { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 16px; padding: 7px 12px; font-size: 14px; }
 .m .dr-opts a.on { background: var(--accent, #0A9F6E); border-color: transparent; color: #fff; font-weight: 600; }
+
+/* ── Иконки вместо смайликов: в кнопках чата, окнах, подсказках и сообщениях ── */
+.ei { display: inline-flex; flex: none; width: 1.12em; height: 1.12em; vertical-align: -.2em; margin-right: .4em; }
+.ei svg { width: 100%; height: 100%; display: block; }
+.chat-tools button { display: inline-flex; align-items: center; }
+.chat-tools button .ei { width: 16px; height: 16px; margin-right: 6px; color: var(--accent); }
+.sheet h3 .ei, .sheet .opt .ei, .banner b .ei, #g-h .ei { color: var(--accent); }
+.sheet .opt .ei { width: 20px; height: 20px; margin-right: 10px; vertical-align: -5px; }
+.row .pin .ei { width: 18px; height: 18px; margin: 0; color: var(--accent); vertical-align: middle; }
+.m .ei { width: 1em; height: 1em; opacity: .85; }
+.m .ed svg { width: 13px; height: 13px; display: block; margin: auto; }
+#toast .ei { width: 17px; height: 17px; vertical-align: -3px; opacity: .9; }

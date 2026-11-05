@@ -210,7 +210,8 @@ await page.setInputFiles("#doc", { name: "bill.pdf", mimeType: "application/pdf"
 await page.waitForSelector("text=Счёт за интернет", { timeout: 8000 }).catch(() => {})
 sent = claudeSeen[n0] && claudeSeen[n0].body.messages.at(-1).content
 check(Array.isArray(sent) && sent[0].type === "document" && sent[0].source.media_type === "application/pdf", "PDF ушёл Claude документом", sent && sent.map(c => c.type))
-check((await page.textContent("#chat-list")).includes("📄 bill.pdf"), "в чате подпись файла")
+check((await page.textContent("#chat-list")).includes("bill.pdf") && await page.isVisible("#chat-list .ei-doc"), "в чате подпись файла с иконкой документа")
+check(!/[☀🌙🧠🧹]/u.test(await page.textContent(".chat-tools")) && (await page.$$(".chat-tools .ei")).length === 4, "кнопки чата — с иконками, без смайликов")
 check(!JSON.stringify(claudeSeen.at(-1).body.messages.slice(0, -1)).includes('"type":"image"'), "старое фото не отправляется повторно")
 
 // помощник: сильная модель с размышлением, память и поиск по прошлым чатам
