@@ -252,9 +252,45 @@ function wrapData() {
   mergeIn = function () { ver++; return merge0.apply(this, arguments) }
 }
 
+// ───────────── Выключатель игры (Настройки → Режим игры) ─────────────
+// D.gamiOff = 1 — игра скрыта целиком: баллы, ранги, ачивки, награды, лига, праздники и плашки «+10», инструменты Изи.
+// Ничего не удаляется: баллы считаются из данных, награды и ачивки лежат в goals — при включении всё возвращается.
+// Хранится только на этом телефоне. Детский режим и семейные баллы (family.js) выключатель не трогает.
+const gOff = () => !!(D && D.gamiOff)
+function syncOff() {
+  const i = PLAN_F.findIndex(f => f[0] === "game")
+  if (gOff() && i >= 0) PLAN_F.splice(i, 1)
+  if (!gOff() && i < 0) PLAN_F.splice(1, 0, ["game", "Мой путь"])
+  if (gOff() && plansF === "game") plansF = "all"
+  for (const t of TOOLS) { const j = AGENT_TOOLS.findIndex(x => x.name === t.name); if (gOff() && j >= 0) AGENT_TOOLS.splice(j, 1); if (!gOff() && j < 0) AGENT_TOOLS.push(t) }
+  applyTheme()
+}
+function setGame(on) {
+  if (on === !gOff()) return
+  if (on) {
+    delete D.gamiOff
+    // за время паузы могли накопиться ранги и ачивки — записываем их тихо, без лавины праздников
+    const st = stats()
+    for (const a of achList(st).filter(a => a.ready)) upsert("goals", { id: uid("a"), date: Date.now(), kind: "ach", key: a.key, day: dayKey(new Date()) })
+    D.gamiSeen = { rank: stats().lv, ach: goalsK("ach").map(a => a.key) }; D.gamiRankPending = 0; D.gamiSettled = dayKey(new Date())
+    lastToday = null; bornAt = Date.now()
+  } else { D.gamiOff = 1; D.gamiRankPending = 0; toastQ.length = 0; const el = document.getElementById("gtoast"); if (el) el.classList.remove("show") }
+  syncOff(); save(); render()
+  toast(on ? "Режим игры включён — прогресс на месте" : "Режим игры выключен. Данные сохранены")
+  if (on) lgPush(true)
+}
+function offCard() {
+  if (D.who === "kid" || (D.fam && D.fam.code && D.fam.role === "kid")) return ""
+  const off = gOff(), fam = !!(D.fam && D.fam.code)
+  return `<div class="card goff"><h2>Режим игры</h2>
+    <div class="set"><span>Баллы и ранги</span><div class="seg"><button data-g="game-on" class="${off ? "" : "on"}">Вкл.</button><button data-g="game-off" class="${off ? "on" : ""}">Выкл.</button></div></div>
+    <div class="muted small">${off ? `Игра выключена: не видно баллов, рангов, ачивок, наград и лиги, нет праздников и плашек «+10», ${esc(typeof iziName === "function" ? iziName() : "Изи")} о них не говорит. Всё сохранено — включите, и прогресс вернётся.`
+      : "Баллы за дела и привычки, ранги, ачивки, свои награды и лига друзей. Можно выключить — ничего не удалится."}${fam ? " Семейные баллы и цели работают в любом случае." : ""}</div></div>`
+}
+
 // ───────────── Отклик: «+10», новый ранг, ачивки ─────────────
 const toastQ = []
-function showPending() { const lv = D.gamiRankPending; if (!lv) return; D.gamiRankPending = 0; save(false); const st = stats(); if (st.lv >= lv) rankUp(st) }
+function showPending() { if (gOff()) return; const lv = D.gamiRankPending; if (!lv) return; D.gamiRankPending = 0; save(false); const st = stats(); if (st.lv >= lv) rankUp(st) }
 let lastToday = null, lastIds = null, lastTop = "", busy = false, bornAt = Date.now()
 function gToast(n, t, big, onTap) {
   let el = document.getElementById("gtoast")
@@ -276,7 +312,7 @@ function settleFreeze(st) {
   return true
 }
 function tick() {
-  if (busy || !D || !D.goals) return
+  if (busy || !D || !D.goals || gOff()) return
   busy = true
   try {
     let st = stats()
@@ -546,7 +582,7 @@ function myWeek(st) {
 }
 let lgBusy = false
 async function lgPush(force) {
-  if (!lgOn() || lgBusy || (!force && Date.now() - (D.league.at || 0) < 20 * 60e3)) return
+  if (gOff() || !lgOn() || lgBusy || (!force && Date.now() - (D.league.at || 0) < 20 * 60e3)) return
   lgBusy = true
   try {
     const st = stats(), w = myWeek(st), L = D.league
@@ -628,6 +664,7 @@ async function lgInvite() {
 async function lgJoin() {
   const code = pendingJoin; pendingJoin = null
   if (!code) return
+  if (gOff()) return toast("Лига — часть режима игры. Включите его в Настройках")
   let x; try { x = JSON.parse(decodeURIComponent(escape(atob(code.replace(/-/g, "+").replace(/_/g, "/"))))) } catch (e) { return toast("Ссылка на лигу повреждена") }
   if (!x || !x.u || !x.c || !/^https:\/\/script\.google\.com\//.test(x.u)) return toast("Ссылка на лигу повреждена")
   if (lgOn() && D.league.code === x.c) { setTab("plans"); return openGame("lg") }
@@ -678,6 +715,7 @@ function wrapIzi() {
   try { Object.assign(TOOL_STATUS, { get_progress: "смотрю баллы", add_reward: "добавляю награду" }) } catch (e) {}
   const run0 = runTool
   runTool = async function (name, x) {
+    if ((name === "get_progress" || name === "add_reward") && gOff()) return { error: "Режим игры выключен пользователем. Включить: Настройки → Режим игры." }
     if (name === "get_progress") return summary()
     if (name === "add_reward") { if (!x.title) return { error: "нужен title" }
       const st = stats(), due = /^\d{4}-\d\d-\d\d$/.test(x.due || "") ? x.due : dayKey(addDays(new Date(), kindOf(x.title)[2]))
@@ -688,6 +726,8 @@ function wrapIzi() {
   }
   const sys0 = agentSystem
   agentSystem = function () {
+    if (gOff()) return sys0.apply(this, arguments) + `
+- Режим игры (баллы, ранги, ачивки, награды, лига) пользователь выключил. Не упоминай баллы, ранги и ачивки. Если спросит про них — скажи, что включить можно в Настройках → «Режим игры», прогресс сохранён.`
     return sys0.apply(this, arguments) + `
 - Игра IZIDAY: за дела, привычки, нормы воды и шагов, итоги дня начисляются баллы, из них растёт ранг (10 рангов), есть ачивки, свои награды за баллы и лига друзей. Подробности — get_progress. Когда пользователь закрыл дело или день, можно коротко сказать, сколько баллов это дало и сколько до следующего ранга, без пафоса. Награду за баллы добавляй через add_reward по SMART: уточни, что именно и к какому сроку; если пользователь назвал цену слишком низкую или высокую для своего темпа — мягко предложи recommended или другой срок.
 - Предлагая новую привычку: не больше трёх вариантов, под реальный день и данные пользователя, каждая — маленькая и конкретная (что и когда). Новые привычки первые 3 дня дают двойные баллы. Если серия привычки рвётся и привычек много, предлагай упростить, а не добавлять.`
@@ -696,26 +736,31 @@ function wrapIzi() {
 
 // ───────────── Встраивание в экраны ─────────────
 function openGame(seg) { if (seg) gSeg = seg; plansF = "game"; if (tab !== "plans") setTab("plans"); else render(); scrollView(false) }
-function applyTheme() { const t = D.gamiTheme && D.gamiTheme !== "base" && THEMES[D.gamiTheme] && stats().lv >= THEMES[D.gamiTheme][3] ? D.gamiTheme : ""; if (t) document.documentElement.dataset.gtheme = t; else delete document.documentElement.dataset.gtheme }
+function applyTheme() { const t = !gOff() && D.gamiTheme && D.gamiTheme !== "base" && THEMES[D.gamiTheme] && stats().lv >= THEMES[D.gamiTheme][3] ? D.gamiTheme : ""; if (t) document.documentElement.dataset.gtheme = t; else delete document.documentElement.dataset.gtheme }
 function wrapScreens() {
   PLAN_F.splice(1, 0, ["game", "Мой путь"])
   const plans0 = renderPlans
   renderPlans = function () {
+    if (gOff() && plansF === "game") plansF = "all"
     const html = plans0.apply(this, arguments)
+    if (gOff()) return html
     if (plansF === "game") { const i = html.indexOf("</div>") + 6; return html.slice(0, i) + gamePage() }
     if (plansF === "all") { const i = html.indexOf("</div>") + 6; return html.slice(0, i) + stripHTML(stats()) + html.slice(i) }
     return html
   }
   const top0 = todayTop
-  todayTop = function () { const st = stats(); return introHTML(st) + stripHTML(st) + top0.apply(this, arguments) + cleanHTML(st) + iziHTML(st) }
+  todayTop = function () { if (gOff()) return top0.apply(this, arguments); const st = stats(); return introHTML(st) + stripHTML(st) + top0.apply(this, arguments) + cleanHTML(st) + iziHTML(st) }
   const render0 = render
+  const more0 = renderMore
+  renderMore = function () { const html = more0.apply(this, arguments), i = html.indexOf('<div class="card"><h2>Связь с виджетом'); return i < 0 ? html + offCard() : html.slice(0, i) + offCard() + html.slice(i) }
   render = function () {
     const out = render0.apply(this, arguments)
-    try { const v = $("#view"); if (tab === "today") badges(v); bindGame(v); setTimeout(tick, 30) } catch (e) { console.error("gami", e) }
+    try { const v = $("#view"); if (tab === "today" && !gOff()) badges(v); bindGame(v); if (!gOff()) setTimeout(tick, 30) } catch (e) { console.error("gami", e) }
     return out
   }
 }
 const GDO = {
+  "game-on": () => setGame(true), "game-off": () => setGame(false),
   path: () => openGame("path"),
   "rew-add": () => rewAdd(), freeze: () => freezeBuy(),
   "lg-new": () => lgNew(), "lg-invite": () => lgInvite(), "lg-ch": () => lgChallenge(), "lg-leave": () => lgLeave(),
@@ -741,13 +786,13 @@ function init() {
   if (typeof D === "undefined" || typeof render !== "function") return
   if (!D.gamiStart) { D.gamiStart = Date.now(); save(false) }
   wrapData(); wrapIzi(); wrapScreens()
-  applyTheme()
+  syncOff()
   render()
   setTimeout(() => lgPush(false), 9000)
   setInterval(() => { if (document.visibilityState === "visible") { lgPush(false); if (tab === "today") tick() } }, 5 * 60e3)
   if (pendingJoin) setTimeout(lgJoin, 900)
   else if (D.gamiRankPending) setTimeout(() => { if (!stack.length) showPending() }, 1500)
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && D.gamiRankPending) setTimeout(() => { if (!stack.length) showPending() }, 900) })
-  window.GAMI = { stats, achList, summary, smartOf, pace, join: lgJoin, openGame, tick, RANKS, PTS }
+  window.GAMI = { off: gOff, set: setGame, stats, achList, summary, smartOf, pace, join: lgJoin, openGame, tick, RANKS, PTS }
 }
 })()
