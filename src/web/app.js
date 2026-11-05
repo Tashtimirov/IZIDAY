@@ -1625,7 +1625,7 @@ async function chatSend(text, opts = {}) {
   chatCC = []
   chatDraft = null
   save(false)
-  if (tab !== "chat") setTab("chat"); else renderChat()
+  if (tab === "chat") renderChat(); else if (!talkPinned()) setTab("chat")
   let reply
   const ctx = chatContext()
   if (opts.attach && ctx.length) {   // само вложение уходит только в этот запрос; в истории остаются миниатюра и ответ помощника
@@ -1657,8 +1657,10 @@ async function chatSend(text, opts = {}) {
   save(false)
   sync()
   if (tab === "chat") renderChat()
+  else if (talkPinned()) render()   // разговор закреплён: остаёмся на своей вкладке, она сразу показывает, что сделал Изи
   else toast(`${iziName()} ${iziG("ответил", "ответила")}`)
 }
+const talkPinned = () => !!(TALK && TALK.pin)
 // Кнопка справа от поля: есть текст — ➤; Изи пишет или говорит ответ — рабочий «стоп»; иначе (закончил или ждёт ответа на вопрос) — микрофон «ответить голосом»
 function setBusyUI() {
   const b = $(".chat-bar .send"); if (!b) return
@@ -1691,7 +1693,7 @@ function chatAsk(question, options) {
     save(false)
     talkHear(question, options)
     askWait = a => res(a)
-    if (tab === "chat") renderChat(); else setTab("chat")
+    if (tab === "chat") renderChat(); else if (!talkPinned()) setTab("chat")
     setBusyUI()
   })
 }
@@ -3614,27 +3616,35 @@ function pttShow(text) {
 }
 // Нажатие — onTap; держите дольше 280 мс — запись, пока держите; отпустили — ушло; увели палец влево — отмена
 function holdToTalk(btn, onTap) {
-  let lp = null, long = false, id = null, x0 = 0
+  let lp = null, long = false, id = null, x0 = 0, y0 = 0, locked = false
   btn.addEventListener("pointerdown", e => {
-    long = false; id = e.pointerId; x0 = e.clientX
+    long = false; locked = false; id = e.pointerId; x0 = e.clientX; y0 = e.clientY
     try { btn.setPointerCapture(e.pointerId) } catch (err) {}
     clearTimeout(lp)
     lp = setTimeout(() => {
-      long = true; PTT.holding = true
+      long = true
       if (navigator.vibrate) navigator.vibrate(15)
+      if (TALK) { locked = true; return talkPin(false) }   // разговор уже закреплён — держать «Изи» = раскрыть его
+      PTT.holding = true
       if (voice) voiceReset()
       micStart(true)
       pttShow("")
+      pinHint(0)
     }, 280)
   })
   btn.addEventListener("pointermove", e => {
-    if (!long || e.pointerId !== id || !voice || e.clientX - x0 > -90) return
-    PTT.holding = false; voiceCancel()
+    if (!long || locked || e.pointerId !== id || !voice) return
+    const up = y0 - e.clientY
+    pinHint(Math.max(0, up))
+    if (up > 70) { locked = true; PTT.holding = false; pinHint(null); return pttPin() }   // смахнули вверх — закрепить разговор
+    if (e.clientX - x0 > -90) return
+    PTT.holding = false; pinHint(null); voiceCancel()
   })
   const up = e => {
     if (e && id !== null && e.pointerId !== id) return
     clearTimeout(lp); id = null
-    if (!long) return
+    pinHint(null)
+    if (!long || locked) return
     PTT.holding = false
     if (voice) { voice.ptt = false; pttShow(voice.text || ""); voiceFinish() } else pttShow(null)
   }
@@ -3642,7 +3652,28 @@ function holdToTalk(btn, onTap) {
   btn.addEventListener("contextmenu", e => e.preventDefault())
   btn.onclick = () => { if (long) { long = false; return } onTap() }
 }
-holdToTalk($("#fab"), () => tab === "chat" ? talkOpen() : setTab("chat"))   // Изи ещё раз на экране чата — живой разговор голосом
+holdToTalk($("#fab"), () => tab === "chat" ? talkOpen() : setTab("chat"))
+// Подсказка над кнопкой, пока держат «Изи»: «вверх — закрепить»; тянется за пальцем. null — убрать
+function pinHint(up) {
+  let h = $("#pin-hint")
+  if (up === null) { if (h) { h.classList.remove("on"); setTimeout(() => { if (!h.classList.contains("on")) h.remove() }, 260) } return }
+  if (!h) {
+    h = document.createElement("div"); h.id = "pin-hint"
+    h.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 14l6-6 6 6"/></svg><span>Вверх — закрепить</span>`
+    document.body.append(h); void h.offsetWidth
+  }
+  h.classList.add("on")
+  const k = Math.min(1, up / 70)
+  h.style.setProperty("--k", k.toFixed(3)); h.style.transform = `translateX(-50%) translateY(${-up * .45}px)`
+}
+// Удержание «Изи» + вверх: запись рации переходит в живой разговор, закреплённый над меню
+function pttPin() {
+  const v = voice, r = rec
+  let say = v ? String(v.text || "").trim() : ""
+  if (v && v.base && say.startsWith(v.base)) say = say.slice(v.base.length).trim()   // то, что уже было в поле чата, не отправляем
+  if (v) { v.sent = true; voiceReset(); try { r && r.stop() } catch (e) {}; const i = $("#chat-in"); if (i) { i.value = v.base || ""; grow(i) } }
+  talkOpen({ pin: true, say })
+}   // Изи ещё раз на экране чата — живой разговор голосом
 // Полоса записи «Шёлк»: сверху текст, ниже волна с яркой точкой, «‹ отмена» и секунды.
 // Нажать на текст — поправить его в поле; на волну или секунды — отправить сразу; смахнуть влево — отмена
 {
@@ -5245,8 +5276,8 @@ function ttsUnlock() { try { const u = new SpeechSynthesisUtterance(" "); u.volu
 // пока слушает — отправить сразу; на паузе — продолжить. Закончить — смахнуть вниз.
 var TALK = null
 var TALK_SILENCE = 1300
-function talkOpen() {
-  if (TALK) return
+function talkOpen(o = {}) {
+  if (TALK) { if (TALK.pin && !o.pin) talkPin(false); return }
   if (!aiKey()) { setTab("more"); return ui.info("Нужен ключ Claude", "Подключите приложение кодом из виджета: в Scriptable меню → 📱 Приложение «Мой день» → «Подключить приложение».") }
   if (voice) voiceReset()
   ttsUnlock()
@@ -5256,23 +5287,53 @@ function talkOpen() {
     <button class="tk-orb" aria-label="Шар: перебить, отправить или продолжить"><canvas></canvas></button>
     <div class="tk-cap"><p class="tk-izi"></p><p class="tk-you"></p></div>
     <div class="tk-bar"><button class="tk-btn tk-mic" aria-label="Пауза">${ICO.mic}</button><button class="tk-btn tk-chat" aria-label="Перейти в чат">${ICO.chat}</button></div>
-    <div class="tk-hint">Смахните вниз, чтобы закончить</div></div>`
+    <div class="tk-hint">Вниз — закончить · вверх — закрепить</div></div>`
   document.body.append(el)
-  TALK = { el, state: "", rec: null, timer: null, heard: "", n: 0 }
+  TALK = { el, state: "", rec: null, timer: null, heard: "", n: 0, pin: false }
+  if (o.pin) talkPin(true, true)
   silkCanvas($("canvas", el), "talk")
   requestAnimationFrame(() => el.classList.add("on"))
   $(".tk-orb", el).onclick = () => talkTap()
   $(".tk-mic", el).onclick = () => TALK.state === "pause" ? talkListen() : talkPause()
-  $(".tk-chat", el).onclick = () => { talkClose(); setTab("chat") }
-  // смахнуть вниз — закончить разговор
+  $(".tk-chat", el).onclick = () => { talkPin(true); setTab("chat") }   // в чат — разговор не прерывается, окно закрепляется над меню
+  $(".tk-cap", el).onclick = () => { if (TALK && TALK.pin) talkPin(false) }
+  // Полный экран: вниз — закончить, вверх — закрепить панелью над меню.
+  // Закреплённая панель: вниз — закончить, вверх — снова на весь экран
   const sh = $(".tk-sheet", el); let y0 = null, dy = 0
-  el.addEventListener("touchstart", e => { y0 = e.touches[0].clientY; dy = 0 }, { passive: true })
-  el.addEventListener("touchmove", e => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); sh.style.transform = `translateY(${dy}px)`; el.style.setProperty("--fade", String(1 - Math.min(1, dy / 400))) }, { passive: true })
-  el.addEventListener("touchend", () => { if (y0 == null) return; y0 = null; if (dy > 110) talkClose(); else { sh.style.transform = ""; el.style.removeProperty("--fade") } }, { passive: true })
-  // если Изи как раз задал вопрос в чате — прочитать его, иначе сразу слушать
+  const back = () => { sh.style.transform = ""; sh.style.opacity = ""; el.style.removeProperty("--fade") }
+  el.addEventListener("touchstart", e => { y0 = e.touches[0].clientY; dy = 0; sh.style.transition = "none" }, { passive: true })
+  el.addEventListener("touchmove", e => {
+    if (y0 == null || !TALK) return
+    dy = e.touches[0].clientY - y0
+    if (TALK.pin) { sh.style.transform = `translateY(${dy > 0 ? dy : dy * .35}px)`; sh.style.opacity = String(dy > 0 ? 1 - Math.min(.7, dy / 120) : 1) }
+    else if (dy > 0) { sh.style.transform = `translateY(${dy}px)`; el.style.setProperty("--fade", String(1 - Math.min(1, dy / 400))) }
+    else { const k = Math.min(1, -dy / 260); sh.style.transform = `translateY(${dy * .5}px) scale(${1 - k * .12})`; el.style.setProperty("--fade", String(1 - k * .6)) }
+  }, { passive: true })
+  el.addEventListener("touchend", () => {
+    if (y0 == null || !TALK) return
+    y0 = null; sh.style.transition = ""
+    const lim = TALK.pin ? 40 : 110
+    if (dy > lim) return talkClose()
+    if (dy < -lim) { back(); return talkPin(!TALK.pin) }
+    back()
+  }, { passive: true })
+  // с удержания «Изи»: услышанное уходит сразу, иначе — если Изи как раз задал вопрос, прочитать его, иначе слушать
   const last = D.chat[D.chat.length - 1]
-  if (askWait && last && last.role === "assistant") talkHear(last.text, last.opts)
+  if (o.say) { talkState("think", "·  ·  ·", o.say); setTimeout(() => chatSend(o.say, { voice: true }), 30) }
+  else if (askWait && last && last.role === "assistant") talkHear(last.text, last.opts)
+  else if (o.pin) { talkState("listen", null, "Говорите — я слушаю"); setTimeout(() => { if (TALK && TALK.state === "listen" && !TALK.rec) talkListen(true) }, 450) }   // микрофон рации успевает освободиться
   else talkListen(true)
+}
+// Закрепить разговор компактной панелью над меню (можно ходить по вкладкам и говорить дальше) или раскрыть обратно
+function talkPin(on, quiet) {
+  const t = TALK; if (!t) return
+  t.pin = !!on
+  t.el.classList.toggle("pin", t.pin)
+  document.body.classList.toggle("talk-pin", t.pin)
+  const sh = $(".tk-sheet", t.el)
+  sh.classList.remove("tk-dock", "tk-grow"); void sh.offsetWidth; sh.classList.add(t.pin ? "tk-dock" : "tk-grow")
+  $(".tk-chat", t.el).setAttribute("aria-label", t.pin ? "Чат" : "Перейти в чат")
+  if (!quiet && navigator.vibrate) navigator.vibrate(10)
 }
 function talkClose() {
   const t = TALK; if (!t) return
@@ -5280,6 +5341,7 @@ function talkClose() {
   ttsStop(); clearTimeout(t.timer)
   try { t.rec && t.rec.abort() } catch (e) {}
   t.el.classList.remove("on"); t.el.classList.add("off")
+  document.body.classList.remove("talk-pin")
   setTimeout(() => t.el.remove(), 380)
   if (tab === "chat") renderChat()
 }
