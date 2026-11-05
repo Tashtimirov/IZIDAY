@@ -17,6 +17,10 @@ const RANKS = [["Новичок", 0, "#D1D1D6", "#8E8E93"], ["Стажёр", 150
   ["Наставник", 7500, "#7DE0EC", "#1E8FA3"], ["Гуру", 12000, "#C9A7FF", "#5B21B6"], ["Легенда", 18000, "#FFE680", "#D49A00"], ["Мудрец", 26000, "#E5E5EA", "#3A3A3C"]]
 const CAP = 250, ACH_PTS = 25, FREEZE = 200, START_MAX = 90
 const PTS = { task: 10, top: 20, habit: 5, health: 10, workout: 15, note: 15, money: 10, chore: 10, month: 50, wish: 30, focus: 10 }
+// Расширения игры (quest.js: задания дня, комбо, боссы, карта пути, шар растёт): items — свои пункты дня (в потолке),
+// post — правка пунктов дня (комбо), extra — призы сверх потолка, sum — данные для Изи, today — карточки на «Сегодня», pages — разделы «Моего пути»
+const GX = { items: [], post: [], extra: [], sum: [], today: [], path: [], pages: {}, segs: [] }
+const gx = (l, ...a) => { for (const f of l) try { f(...a) } catch (e) { console.error("gami+", e) } }
 // Призы за ранг: открываются сами
 const THEMES = { base: ["Изумруд", "#0A9F6E", "#12C28A", 1], ocean: ["Ночной океан", "#0A84FF", "#5AC8FA", 3], sunset: ["Закат", "#FF6B3D", "#FF9F0A", 5], aurora: ["Аврора", "#AF52DE", "#5E5CE6", 7], gold: ["Золото", "#C99A06", "#F0CC60", 9] }
 const PRIZES = [[3, "sparkle", "Тема «Ночной океан»", "для приложения"], [3, "snow", "Вторая заморозка в неделю", "серия не сгорает дважды"], [5, "sparkle", "Тема «Закат»", "тёплые цвета"],
@@ -111,6 +115,8 @@ function dayItems(d) {
   for (const x of live(D.goals)) if (x.done && x.doneAt && sameDay(x.doneAt, d) && ["month", "wish", "dream"].includes(x.kind))
     add(`g:${x.id}`, "goal", (x.kind === "month" ? "Цель месяца: " : "Сбылось: ") + x.title, x.kind === "month" ? PTS.month : PTS.wish, x.doneAt)
   live(D.pomo).filter(p => p.full && p.start && sameDay(p.start, d)).slice(0, 4).forEach(p => add(`f:${p.id}`, "focus", "Фокус: " + (p.title || "25 мин"), PTS.focus, p.end))
+  gx(GX.items, d, k, add, past)
+  gx(GX.post, items, d)
   return items
 }
 // Чистый день: все дела на день и все полезные привычки закрыты (минимум 3 пункта) — баллы за день ×2
@@ -134,7 +140,9 @@ function daySum(d) {
   const items = dayItems(d), base = items.reduce((s, i) => s + i.p, 0), capped = Math.min(CAP, base)
   const clean = dayClean(d, items), bonus = clean.ok ? capped : 0
   const ach = goalsK("ach").filter(a => a.day === k).length * ACH_PTS
-  const r = { k, d, items, base, capped, clean, bonus, ach, total: capped + bonus + ach, ver, at: Date.now() }
+  const extra = []; gx(GX.extra, d, k, x => extra.push(x))
+  const ex = extra.reduce((s, x) => s + x.p, 0)
+  const r = { k, d, items, base, capped, clean, bonus, ach, extra, ex, total: capped + bonus + ach + ex, ver, at: Date.now() }
   memo.set(k, r)
   return r
 }
@@ -332,12 +340,12 @@ function tick() {
       if (nw.length) { seen.ach = seen.ach.concat(nw); save(false); const l = achList(st).filter(a => nw.includes(a.key))
         toastQ.push([`+${ACH_PTS * nw.length}`, `Ачивка: ${l.map(a => a.t).join(", ")}`, () => achSheet(nw)]) }
     }
-    if (toastQ.length) { const [c, t, f] = toastQ.shift(); gToast(c, t, true, f); lastToday = st.today.total; lastIds = new Set(st.today.items.map(i => i.id)); if (toastQ.length) setTimeout(tick, 2800); return }
-    const tt = st.today.total, ids = new Set(st.today.items.map(i => i.id))
+    if (toastQ.length) { const [c, t, f] = toastQ.shift(); gToast(c, t, true, f); lastToday = st.today.total; lastIds = new Set(st.today.items.map(i => i.id).concat(st.today.extra.map(x => x.id))); if (toastQ.length) setTimeout(tick, 2800); return }
+    const tt = st.today.total, ids = new Set(st.today.items.map(i => i.id).concat(st.today.extra.map(x => x.id)))
     if (lastToday != null && tt > lastToday && Date.now() - bornAt > 6000 && !stack.length) {
       const it = st.today.items.filter(i => !lastIds.has(i.id)).sort((a, b) => b.p - a.p)[0]
-      const clean = st.today.clean.ok && !lastTop.includes("clean")
-      gToast(tt - lastToday, clean ? "Чистый день — баллы ×2" : it ? it.t : "ачивка", clean)
+      const clean = st.today.clean.ok && !lastTop.includes("clean"), ex = st.today.extra.find(x => !lastIds.has(x.id))
+      gToast(tt - lastToday, clean ? "Чистый день — баллы ×2" : ex ? ex.t : it ? it.t + (it.mult > 1 ? ` · комбо ×${String(it.mult).replace(".", ",")}` : "") : "ачивка", clean || !!ex)
     }
     lastToday = tt; lastIds = ids; lastTop = st.today.clean.ok ? "clean" : ""
   } finally { busy = false }
@@ -355,6 +363,7 @@ function rankUp(st) {
   const pr = PRIZES.filter(p => p[0] === st.lv)
   celeSheet(`<div class="k">Новый ранг</div><div class="emb">${emblem(st.lv, 150)}</div><h1>${esc(st.rank)}</h1><p>Уровень ${st.lv} из ${RANKS.length} · ${num(st.earned)} баллов</p>
     ${pr.length ? `<div class="gift"><b>${svgI("gift", 17)} Открыто</b>${esc(pr.map((p, i) => i ? p[2][0].toLowerCase() + p[2].slice(1) : p[2]).join(" и "))}</div>` : ""}
+    ${GX.path.length ? `<div class="gift"><b>${svgI("sparkle", 17)} Шар Изи</b>волны в шаре стали ярче</div>` : ""}
     ${D.league && D.league.code ? `<div class="gift"><b>${svgI("users", 17)} Лига</b>Друзья увидят новый ранг в лиге недели</div>` : ""}`)
   lgPush(true)
 }
@@ -418,9 +427,10 @@ function badges(v) {
 let gSeg = "path", achCat = "Все"
 const SEGS = [["path", "Путь"], ["ach", "Ачивки"], ["rew", "Награды"], ["lg", "Лига"]]
 function gamePage() {
-  const st = stats()
-  let html = `<div class="gseg">${SEGS.map(([k, t]) => `<button class="${gSeg === k ? "on" : ""}" data-gseg="${k}">${t}</button>`).join("")}</div>`
-  html += gSeg === "ach" ? achPage(st) : gSeg === "rew" ? rewPage(st) : gSeg === "lg" ? lgPage(st) : pathPage(st)
+  const st = stats(), segs = SEGS.slice(0, 1).concat(GX.segs, SEGS.slice(1))
+  if (!segs.some(x => x[0] === gSeg)) gSeg = "path"
+  let html = `<div class="gseg">${segs.map(([k, t]) => `<button class="${gSeg === k ? "on" : ""}" data-gseg="${k}">${t}</button>`).join("")}</div>`
+  html += GX.pages[gSeg] ? GX.pages[gSeg](st) : gSeg === "ach" ? achPage(st) : gSeg === "rew" ? rewPage(st) : gSeg === "lg" ? lgPage(st) : pathPage(st)
   return html
 }
 function pathPage(st) {
@@ -429,11 +439,12 @@ function pathPage(st) {
     <div class="gxp"><i style="width:${Math.round(rp.p * 100)}%"></i></div><div class="sub"><span>${num(st.earned)}${st.next ? ` / ${num(st.next[1])}` : ""}</span><span>${st.next ? "следующий — " + esc(st.next[0]) : "высший ранг"}</span></div>
     <div class="pills"><span>${svgI("star", 15)} ${num(st.balance)} на счету</span><span>${svgI("flame", 15)} серия ${st.streak} ${plural(st.streak, "день", "дня", "дней")}</span>${st.freezes ? `<span>${svgI("snow", 15)} заморозка ×${st.freezes}</span>` : ""}</div></div>`
   html += `<div class="card"><h2>Лестница рангов</h2><div class="gladder">${RANKS.map((r, i) => `<div class="${i + 1 === st.lv ? "on" : i + 1 > st.lv ? "off" : ""}">${emblem(i + 1, i + 1 === st.lv ? 52 : 40)}<b>${esc(r[0])}</b><small>${num(r[1])}</small></div>`).join("")}</div></div>`
+  html += GX.path.map(f => { try { return f(st) || "" } catch (e) { console.error("gami+", e); return "" } }).join("")
   const it = st.today.items.slice().sort((a, b) => b.at - a.at)
   html += `<div class="card"><h2>Сегодня<span class="muted small" style="font-weight:500;text-transform:none;letter-spacing:0">${coin(st.today.total)}</span></h2>
     ${it.length ? it.slice(0, 12).map(i => `<div class="row"><span class="gic ${i.kind}">${svgI(KIND_IC[i.kind] || "check", 18)}</span><div class="grow"><div class="t">${esc(i.t)}</div>${+sod(i.at) === i.at ? "" : `<div class="s">${hm(new Date(i.at))}</div>`}</div><span class="gp">+${i.p}</span></div>`).join("")
       : '<div class="empty">Пока ни одного балла — отметьте дело или привычку</div>'}
-    ${st.today.base > CAP ? `<div class="muted small" style="margin-top:6px">Потолок ${CAP} в день — дальше баллы не растут.</div>` : ""}${st.today.bonus ? `<div class="row"><span class="gic top">${svgI("bolt", 18)}</span><div class="grow"><div class="t">Чистый день</div></div><span class="gp">+${st.today.bonus}</span></div>` : ""}${st.today.ach ? `<div class="row"><span class="gic goal">${svgI("trophy", 18)}</span><div class="grow"><div class="t">Ачивки</div></div><span class="gp">+${st.today.ach}</span></div>` : ""}</div>`
+    ${st.today.base > CAP ? `<div class="muted small" style="margin-top:6px">Потолок ${CAP} в день — дальше баллы не растут.</div>` : ""}${st.today.bonus ? `<div class="row"><span class="gic top">${svgI("bolt", 18)}</span><div class="grow"><div class="t">Чистый день</div></div><span class="gp">+${st.today.bonus}</span></div>` : ""}${st.today.ach ? `<div class="row"><span class="gic goal">${svgI("trophy", 18)}</span><div class="grow"><div class="t">Ачивки</div></div><span class="gp">+${st.today.ach}</span></div>` : ""}${st.today.extra.map(x => `<div class="row"><span class="gic top">${svgI(x.ic || "trophy", 18)}</span><div class="grow"><div class="t">${esc(x.t)}</div><div class="s">сверх потолка</div></div><span class="gp">+${x.p}</span></div>`).join("")}</div>`
   const wk = [...Array(7)].map((_, i) => { const d = addDays(monday(new Date()), i), x = st.days.find(y => y.k === dayKey(d)); return { d, v: x ? x.total : 0 } })
   const mx = Math.max(60, ...wk.map(x => x.v))
   html += `<div class="card"><h2>Неделя<span class="muted small" style="font-weight:500;text-transform:none;letter-spacing:0">${num(st.weekPts)} баллов</span></h2><div class="gweek">${wk.map(x => `<div class="${sameDay(x.d, new Date()) ? "td" : ""}"><i style="height:${Math.round(x.v / mx * 86) + 4}px;${x.v ? "" : "background:var(--track)"}"></i><b>${x.v || ""}</b>${WD[x.d.getDay()]}</div>`).join("")}</div></div>`
@@ -443,7 +454,7 @@ function pathPage(st) {
   if (th.length > 1) html += `<div class="card"><h2>Оформление</h2><div class="chips">${th.map(([k, t]) => `<button class="chip ${(D.gamiTheme || "base") === k ? "on" : ""}" data-gtheme="${k}"><i class="gdot" style="background:linear-gradient(135deg,${t[1]},${t[2]})"></i>${esc(t[0])}</button>`).join("")}</div></div>`
   return html
 }
-const KIND_IC = { task: "check", top: "star", habit: "flame", health: "drop", day: "moon", money: "wallet", goal: "target", focus: "timer" }
+const KIND_IC = { task: "check", top: "star", habit: "flame", health: "drop", day: "moon", money: "wallet", goal: "target", focus: "timer", quest: "sparkle", boss: "bolt" }
 const RULES = [["check", "task", "Дело", "главное из трёх — 20, «Снова пора» — 10", PTS.task], ["flame", "habit", "Привычка", "×1,5 после 5 дней серии, ×2 после 21; новая — ×2 три дня", PTS.habit],
   ["drop", "health", "Цели здоровья", "вода, шаги, белок; тренировка — 15", PTS.health], ["wallet", "money", "День в бюджете", "все траты разнесены по категориям", PTS.money],
   ["moon", "day", "Итоги дня", "закрыть день вечером", PTS.note], ["target", "goal", "Цель месяца", "сбылось желание или мечта — 30", PTS.month], ["timer", "focus", "Фокус 25 минут", "до 4 в день", PTS.focus],
@@ -697,7 +708,7 @@ async function lgLeave() {
 }
 
 // ───────────── Изи: инструменты и правила ─────────────
-function summary() {
+function summary0() {
   const st = stats(), l = achList(st)
   return { rank: st.rank, level: st.lv, of: RANKS.length, points_total: st.earned, balance: st.balance, next_rank: st.next ? { name: st.next[0], need: st.next[1] - st.earned } : null,
     streak_days: st.streak, freezes: st.freezes, today: { points: st.today.total, items: st.today.items.map(i => `${i.t} +${i.p}`), clean_day: st.today.clean.ok, left_for_clean_day: st.today.clean.left },
@@ -705,6 +716,7 @@ function summary() {
     rewards: rewards().map(r => `${r.title} — ${r.cost}${r.due ? ", к " + r.due : ""}`), pace_per_day: pace(st), league: lgOn() && D.league.data ? Object.values(D.league.data.members || {}).map(m => `${m.name}: ${((m.weeks || {})[wkKey(new Date())] || {}).pts || 0}`) : null,
     rules: `дело ${PTS.task}, главное из трёх ${PTS.top}, привычка ${PTS.habit} (×1,5 с 5 дней серии, ×2 с 21), цели воды/шагов/белка ${PTS.health}, тренировка ${PTS.workout}, итоги дня ${PTS.note}, цель месяца ${PTS.month}; потолок ${CAP} в день; чистый день ×2` }
 }
+function summary() { const out = summary0(); gx(GX.sum, out, stats()); return out }
 const TOOLS = [
   { name: "get_progress", description: "Баллы, ранг, серия, ачивки, награды и лига друзей пользователя (игра IZIDAY). Вызывай, когда спрашивают про баллы, ранг, награды, соревнование, или чтобы похвалить за день.", input_schema: { type: "object", properties: {} } },
   { name: "add_reward", description: "Добавить награду, которую пользователь купит за баллы, по SMART: что именно, цена в баллах, срок (due). Без cost — поставит цену по темпу пользователя. Ответ содержит оценку (verdict low/high/ok, recommended) — если цена слишком низкая или высокая для срока, скажи об этом и предложи recommended или другой срок.",
@@ -749,7 +761,7 @@ function wrapScreens() {
     return html
   }
   const top0 = todayTop
-  todayTop = function () { if (gOff()) return top0.apply(this, arguments); const st = stats(); return introHTML(st) + stripHTML(st) + top0.apply(this, arguments) + cleanHTML(st) + iziHTML(st) }
+  todayTop = function () { if (gOff()) return top0.apply(this, arguments); const st = stats(); return introHTML(st) + stripHTML(st) + top0.apply(this, arguments) + cleanHTML(st) + GX.today.map(f => { try { return f(st) || "" } catch (e) { console.error("gami+", e); return "" } }).join("") + iziHTML(st) }
   const render0 = render
   const more0 = renderMore
   renderMore = function () { const html = more0.apply(this, arguments), i = html.indexOf('<div class="card"><h2>Связь с виджетом'); return i < 0 ? html + offCard() : html.slice(0, i) + offCard() + html.slice(i) }
@@ -793,6 +805,7 @@ function init() {
   if (pendingJoin) setTimeout(lgJoin, 900)
   else if (D.gamiRankPending) setTimeout(() => { if (!stack.length) showPending() }, 1500)
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && D.gamiRankPending) setTimeout(() => { if (!stack.length) showPending() }, 900) })
-  window.GAMI = { off: gOff, set: setGame, stats, achList, summary, smartOf, pace, join: lgJoin, openGame, tick, RANKS, PTS }
+  window.GAMI = { off: gOff, set: setGame, stats, achList, summary, smartOf, pace, join: lgJoin, openGame, tick, RANKS, PTS, CAP, GX, RULES, TOOLS, P, svgI, coin, medal, emblem, celeSheet, gToast, hOn, syncOff,
+    seg: () => gSeg, setSeg: k => { gSeg = k }, bump: () => { ver++ } }
 }
 })()
