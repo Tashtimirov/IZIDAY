@@ -357,6 +357,16 @@ check(ce.ok && sheet.cal.log.some(l => l[0] === "create" && l[2] === "Стома
 await settle()
 const ge2 = await page.evaluate(() => runTool("get_events", { start: iso(new Date()), end: iso(new Date(Date.now() + 2 * 864e5)) }))
 check(ge2.events.some(e => e.title === "Стоматолог"), "новое событие видно после обновления", ge2.events.map(e => e.title))
+const nMade = sheet.cal.log.filter(l => l[0] === "create").length
+const dup = { r: await page.evaluate(() => runTool("create_event", { title: "🦷 стоматолог", start: iso(new Date(Date.now() + 26 * 3600e3)), end: iso(new Date(Date.now() + 27 * 3600e3)) })) }
+dup.made = sheet.cal.log.filter(l => l[0] === "create").length - nMade
+check(dup.r.ok && dup.made === 0 && /уже есть/.test(dup.r.note || ""), "то же событие второй раз не создаётся (дубли тренировок)", dup)
+// сообщение без ответа (ход оборвался) не склеивается с новым: Изи отвечает на новое
+const ctxOrphan = await page.evaluate(() => { const keep = D.chat; D.chat = [
+  { role: "user", text: "Составь план тренировок и поставь в календарь", at: Date.now() - 6e6 },
+  { role: "user", text: "📷 Фото", prompt: SCAN_PROMPT + " Подпись: «Добавь в список покупок»", at: Date.now() }]
+  const c = chatContext(); D.chat = keep; return c })
+check(ctxOrphan.length === 1 && /ответа на него не было/.test(ctxOrphan[0].content) && /список покупок/.test(ctxOrphan[0].content), "старое сообщение без ответа помечено, новое — главное", ctxOrphan)
 
 // голос: зелёная ➤ во время записи отправляет сразу, без паузы
 await page.evaluate(() => {

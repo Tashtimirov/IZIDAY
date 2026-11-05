@@ -302,7 +302,9 @@ async function calRefresh() {
 // Google Календарь — через таблицу (Apps Script). Пока доступ не выдан — по-старому, через календарь iPhone
 const gcalOn = () => !!(D.gcal && D.gcal.ok)
 async function calDo(action, input) {
-  const res = await hubPost({ cal: Object.assign({ action }, input) })
+  let res
+  try { res = await hubPost({ cal: Object.assign({ action }, input) }, 25000) }
+  catch (e) { return { error: e.name === "AbortError" ? "Google Календарь не ответил за 25 секунд — проверьте календарь, возможно, изменение всё же прошло" : String(e.message || e) } }
   const r = res.cal || { error: "таблица не знает календарь — нужно обновить скрипт" }
   if (!r.error) { calForce = true; sync() }
   return r
@@ -959,6 +961,9 @@ const evOut = e => ({ id: e.id, title: e.title, start: e.start, end: e.end, all_
   repeats: !!e.repeats, ...(e.pending ? { pending: "ещё не внесено в iPhone" } : {}) })
 const QUEUED = "Записано в очередь: виджет внесёт это в iPhone при ближайшем обновлении (обычно в течение 15 минут)."
 
+// Ключ события для защиты от дублей: название без эмодзи и регистра + минута начала
+const evKey = (title, start) => { const d = parseIso(start); return String(title || "").toLowerCase().replace(/[^a-zа-яё0-9]+/gi, " ").trim() + "|" + (d ? Math.round(d / 6e4) : start) }
+const evMade = new Map()   // созданные в этом сеансе (Google отдаёт их в список не сразу)
 async function runTool(name, x) {
   if (IZI_TOOLS[name]) return IZI_TOOLS[name](x)
   const v = iphone()
@@ -975,7 +980,10 @@ async function runTool(name, x) {
       { const hit = !x.force && !x.all_day && protHit(parseIso(x.start), parseIso(x.end) || new Date(+parseIso(x.start) + 3600e3))
         if (hit) return { warning: `Это время защищено: «${hit.p.title}» ${hm(hit.s)}–${hm(hit.e)}. Спроси пользователя: поставить всё равно (повтори с force: true) или найти другое время.` } }
       x = Object.assign({}, x); delete x.force
-      if (gcalOn()) { const r = await calDo("create", x); return r.error ? { error: r.error } : { ok: true, id: r.event.id, event: r.event } }
+      { // такое же событие уже есть (ход повторился после обрыва, или Изи забыл, что уже поставил) — второй раз не создаём
+        const key = evKey(x.title, x.start), same = v.events.find(e => evKey(e.title, e.start) === key) || evMade.get(key)
+        if (same && same.id) return { ok: true, id: same.id, note: "такое событие уже есть в календаре — второй раз не создано", event: { id: same.id, title: same.title, start: same.start } } }
+      if (gcalOn()) { const r = await calDo("create", x); if (!r.error && r.event) evMade.set(evKey(x.title, x.start), r.event); return r.error ? { error: r.error } : { ok: true, id: r.event.id, event: r.event } }
       const op = queueOp("create_event", x)
       return { ok: true, id: "op:" + op.id, note: QUEUED }
     }
@@ -986,6 +994,7 @@ async function runTool(name, x) {
       if (x.start && x.start !== e.start) {
         const ok = await chatConfirm(`Перенести «${e.title}»?\n${core.cap(fullDate(e.s))}, ${hm(e.s)} → ${core.cap(fullDate(parseIso(x.start)))}, ${hm(parseIso(x.start))}`)
         if (!ok) return { cancelled: "пользователь отказался переносить" }
+        setStatus("переношу событие…")
       }
       if (gcalOn()) { const r = await calDo("update", Object.assign({}, x, { occurrence_start: x.occurrence_start || e.start })); return r.error ? { error: r.error } : { ok: true, event: r.event } }
       queueOp("update_event", Object.assign({}, x, { occurrence_start: x.occurrence_start || e.start }))
@@ -997,7 +1006,8 @@ async function runTool(name, x) {
       if (!e) return { error: "событие не найдено" }
       if (!(await chatConfirm(`Удалить «${e.title}»?\n${core.cap(fullDate(e.s))}, ${hm(e.s)}${x.all_future ? "\nи все следующие повторения" : ""}`)))
         return { cancelled: "пользователь отказался удалять" }
-      if (gcalOn()) { const r = await calDo("delete", Object.assign({}, x, { occurrence_start: x.occurrence_start || e.start })); return r.error ? { error: r.error } : { ok: true } }
+      setStatus("удаляю событие…")   // отсчёт секунд — с ответа «Да», а не с вопроса
+      if (gcalOn()) { const r = await calDo("delete", Object.assign({}, x, { occurrence_start: x.occurrence_start || e.start })); if (!r.error) evMade.forEach((ev, k) => { if (ev.id === x.id) evMade.delete(k) }); return r.error ? { error: r.error } : { ok: true } }
       queueOp("delete_event", Object.assign({}, x, { occurrence_start: x.occurrence_start || e.start }))
       return { ok: true, note: QUEUED }
     }
@@ -1576,9 +1586,14 @@ const BRIEFS = {
 function chatContext() {
   const out = []
   const msgs = D.chat.slice(-40), cur = msgs[msgs.length - 1]
+  const real = msgs.filter(m => (m.prompt || m.text) && !m.local)
   for (const m of msgs) {
     let content = m.prompt || m.text
     if (!content || m.local) continue
+    // сообщение без ответа (приложение закрылось или связь оборвалась посреди хода): иначе оно склеивается со следующим,
+    // и Изи снова берётся за старую просьбу вместо новой (фото «добавь в покупки» → «удалить тренировку?»)
+    const nx = real[real.indexOf(m) + 1]
+    if (m !== cur && m.role === "user" && nx && nx.role === "user") content = `(Старое сообщение, ответа на него не было — ход тогда прервался, часть могла уже выполниться. Сам его не продолжай и не доделывай; отвечай на последнее сообщение. Вернись к этому, только если пользователь попросит.) ${content}`
     // старое вложение: самого файла в запросе уже нет — иначе Изи думает, что его прислали снова, и просит повторить
     if (m !== cur && m.prompt && m.prompt.startsWith(SCAN_PROMPT)) content = `(Раньше прислал вложение «${m.text}» — оно уже разобрано в ответе ниже; файла здесь больше нет, повторно не проси.)`
     if (m.role === "user") { const d = new Date(m.at || Date.now()); content = `[${d.getDate()} ${MON_GEN[d.getMonth()].slice(0, 3)} ${hm(d)}] ${content}` }
@@ -1648,7 +1663,7 @@ async function chatSend(text, opts = {}) {
   text = String(text || "").trim()
   if (!text && !(chatAtt && !opts.attach && !askWait)) return
   // ответ на вопрос помощника (ask_user или подтверждение)
-  if (askWait) { const w = askWait; askWait = null; setBusyUI(); D.chat.push({ role: "user", text, at: Date.now(), voice: !!opts.voice, local: true }); save(false); renderChat(); w(text); return }
+  if (askWait) { const w = askWait; askWait = null; chatStatusAt = Date.now(); setBusyUI(); D.chat.push({ role: "user", text, at: Date.now(), voice: !!opts.voice, local: true }); save(false); renderChat(); w(text); return }
   if (chatBusy) { toast(`${iziName()} ещё отвечает…`); return }
   memorize()
   if (!aiKey()) { if (!D.conn && window.FRIEND && FRIEND.on()) return FRIEND.ask(); setTab("more"); return ui.info("Нужен ключ Claude", "Здесь откроется «Ключ Claude» → «Подключить»: три шага, около двух минут. Если вы в семье, где включён общий ключ, он подключится сам.") }
