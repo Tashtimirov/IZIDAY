@@ -181,3 +181,14 @@ body.kidm #view { padding: 0 !important; max-width: none; }
   body.kidm #toast { left: 50%; }
   body.kidm #side { display: none; }
 }
+
+/* Все окна в детском режиме (вопросы, подтверждения) — светлые и детские, даже если iPad в тёмной теме */
+body.kidm { color-scheme: light; --bg: #FBF8FF; --bg-glow: #EDE7FF; --card: #FFFFFF; --sand: #F1EDFF; --line: #E2DBFF; --track: #EFEAFF; --hair: rgba(106,75,242,.3);
+  --text: #2A2350; --sub: #7D76A6; --h2: #7D76A6; --accent: #6A4BF2; --accent-2: #8B6CFF; --glass: rgba(255,255,255,.82); --card-b: rgba(106,75,242,.12);
+  --shadow: 0 10px 30px -18px rgba(90,60,180,.45); }
+body.kidm .sheet { --sh-bg: #FBF8FF; font-family: ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif; color: #2A2350; background: linear-gradient(180deg, #EDE7FF, #FBF8FF 55%); }
+body.kidm .sheet h3 { font-weight: 900; color: #2A2350; } body.kidm .sheet .msg, body.kidm .sheet .sub { color: #4B4380; font-weight: 600; }
+body.kidm .sheet .btn { border-radius: 20px; font-weight: 800; background: #F1EDFF; color: #6A4BF2; border: 0; }
+body.kidm .sheet .btn.primary { background: linear-gradient(135deg, #8B6CFF, #5B3FE0); color: #fff; box-shadow: 0 10px 22px -12px rgba(91,63,224,.8); }
+body.kidm .sheet input, body.kidm .sheet textarea { background: #fff; color: #2A2350; border: 2px solid #E2DBFF; border-radius: 18px; font-weight: 700; }
+body.kidm .sheet input:focus { border-color: #8B6CFF; outline: none; }

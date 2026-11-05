@@ -377,7 +377,7 @@ const KDO = {
 function dreamTalk(d) {
   if (!d) return
   const s = sheet(`<div class="ksheet"><div class="ksay">${orb(60)}<div class="kbub">«${esc(d.title)}» — это желание или цель? Если сделать целью, придумаем шаги и посчитаем, сколько копить.</div></div>
-    <div class="field"><label>Сколько стоит (если знаешь)</label><input id="kd-p" type="number" inputmode="numeric" placeholder="например, 4500"></div>
+    <div class="field"><label>Сколько стоит (если знаешь)</label><input id="kd-p" type="number" inputmode="numeric" placeholder="например, 4500" value="${d.price || ""}"></div>
     <div class="btns"><button class="kbtn" data-a="goal">Сделать главной мечтой</button><button class="kbtn soft" data-a="later">Пусть мечтается</button><button class="klink" data-a="del">Убрать из банки</button></div></div>`)
   s.el.classList.add("kid-sheet")
   $('[data-a="goal"]', s.el).onclick = () => { const price = Math.round(+$("#kd-p", s.el).value || 0)
@@ -397,7 +397,11 @@ async function buyForm() {
   const me = meId(), j = jars(me), s = kset(me), cur = core.CONFIG.currency || "฿"
   const t = await ui.ask("Что хочешь купить?", "", "", { placeholder: "Например: слайм", ok: "Дальше" }); if (!t) return
   const p = Math.round(+(await ui.ask("Сколько стоит?", `В копилке «Трачу» сейчас ${num(j.spend)} ${cur}.`, "", { type: "number", ok: "Дальше" })) || 0); if (!p) return
-  if (p > j.spend) return ui.info("Пока не хватает", `В «Трачу» ${num(j.spend)} ${cur}, а нужно ${num(p)}. Можно подождать карманных, заработать на делах или записать это в банку желаний.`)
+  if (p > j.spend) {
+    const v = await ui.confirm("Пока не хватает", `<div class="msg">В «Трачу» ${num(j.spend)} ${esc(cur)}, а нужно ${num(p)} ${esc(cur)}. Можно подождать карманных, заработать на делах или положить «${esc(t)}» в банку желаний — и копить на мечту.</div>`, ["Понятно", "В банку желаний"])
+    if (v === "В банку желаний") { put("dreams", { id: uid("dr"), kid: me, title: t.slice(0, 60), price: p, at: Date.now() }); burst(); toast("Лежит в банке желаний"); kTab = "dreams"; render(); window.scrollTo(0, 0) }
+    return
+  }
   const ask = p > (+s.limit || 0)
   const v = await ui.confirm(ask ? "Спросить взрослых?" : "Записать покупку?", `<div class="msg">${esc(t)} — ${num(p)} ${esc(cur)} из копилки «Трачу».${ask ? ` Покупки дороже ${num(s.limit)} ${esc(cur)} — с разрешения мамы или папы.` : ""}</div>`, ["Подожду", ask ? "Спросить" : "Купил"])
   if (!v || v === "Подожду") return

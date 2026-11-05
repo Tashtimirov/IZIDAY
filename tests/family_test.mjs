@@ -110,6 +110,20 @@ check(await kp.evaluate(() => /Велосипед/.test($(".kmt").textContent) &
 await kp.screenshot({ path: SHOTS + "fm-kid-dreams.png", fullPage: true })
 // деньги: заработать
 await kp.click('#knav [data-kt="money"]'); await kp.waitForTimeout(200)
+// «Хочу купить» дороже, чем в «Трачу»: окно светлое детское (даже в тёмной теме) и можно положить в банку желаний
+await kp.emulateMedia({ colorScheme: "dark" })
+const kask = async v => { await kp.waitForSelector("#ask-v"); await kp.fill("#ask-v", String(v)); await kp.click('.sheet [data-a="ok"]'); await kp.waitForTimeout(350) }
+await kp.click('[data-k="buy"]'); await kask("Велосипед")
+await kp.waitForSelector("#ask-v"); await kp.fill("#ask-v", "18000")
+const sbg = await kp.evaluate(() => { const s = $$(".sheet").pop(); return { bg: getComputedStyle(s).backgroundImage, c: getComputedStyle(s).color, ok: getComputedStyle($('.sheet [data-a="ok"]')).backgroundImage } })
+await kp.screenshot({ path: SHOTS + "fm-kid-buy-ask.png" })
+check(/237, 231, 255/.test(sbg.bg) && sbg.c === "rgb(42, 35, 80)" && /139, 108, 255/.test(sbg.ok), "окна ребёнка светлые и фиолетовые в тёмной теме", sbg)
+await kp.click('.sheet [data-a="ok"]'); await kp.waitForTimeout(400)
+await kp.screenshot({ path: SHOTS + "fm-kid-buy-short.png" })
+await kp.click('.sheet button:has-text("В банку желаний")'); await kp.waitForTimeout(500)
+const wd = await kp.evaluate(() => (D.fam.data.dreams || []).find(d => d.title === "Велосипед" && d.price === 18000 && d.kid === D.fam.id))
+check(!!wd && await kp.evaluate(() => !!$(".kchips")), "не хватает денег → «В банку желаний» с ценой, открылись «Мечты»", wd)
+await kp.emulateMedia({ colorScheme: "light" }); await kp.click('#knav [data-kt="money"]'); await kp.waitForTimeout(200)
 await kp.click('[data-ktask="e1"]'); await kp.waitForTimeout(200)
 await kp.evaluate(() => FAM.push(true)); await kp.waitForTimeout(400)
 
