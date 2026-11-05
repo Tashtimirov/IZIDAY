@@ -55,6 +55,24 @@ await page.evaluate(() => { ccSet({ id: "ccOld", title: "Разбор догов
 ok(await page.evaluate(() => D.chat.filter(m => /«Разбор договора» идёт уже 4 ч/.test(m.text)).length) === 1, "долгая задача: одно сообщение со ссылкой")
 // голосовой разговор: итог читается вслух
 ok(await page.evaluate(() => typeof talkHear === "function"), "итог уходит в talkHear (вслух в разговоре)")
+// вопрос, где нужен интернет («лучшие кафе в округе»): Изи сам передаёт в Claude Code, с местом пользователя
+ok(await page.evaluate(() => /Интернета у тебя нет/.test(chatSystem()) && /near_me/.test(chatSystem()) && chatTools().find(t => t.name === "claude_code").input_schema.properties.near_me), "правило: вопросы из интернета — сразу в Claude Code, near_me")
+let turn2 = 0
+await page.unroute("https://api.anthropic.com/v1/messages")
+await page.route("https://api.anthropic.com/v1/messages", r => {
+  if (r.request().method() === "OPTIONS") return r.fulfill({ status: 200, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*" } })
+  turn2++
+  const body = turn2 === 1
+    ? { content: [{ type: "tool_use", id: "t2", name: "claude_code", input: { route: "Личное", title: "Лучшие кафе рядом", near_me: true, task: "Найти три лучших кафе рядом с пользователем по отзывам и рейтингам: название, чем хорошо, сколько идти." } }], stop_reason: "tool_use" }
+    : { content: [{ type: "text", text: "Узнаю по отзывам и рейтингам — итог пришлю сюда через несколько минут." }], stop_reason: "end_turn" }
+  return r.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(body) })
+})
+await page.evaluate(() => { D.chat = []; renderChat() })
+await page.evaluate(() => chatSend("Какие три кафе в округе ты считаешь лучшими", { voice: true }))
+await page.waitForTimeout(1500)
+ok(/Где сейчас пользователь/.test(globalThis.__fired || "") && /координаты 7\.84/.test(globalThis.__fired || ""), "к задаче добавлено место пользователя: " + String(globalThis.__fired || "").split("\n").find(l => /Где сейчас/.test(l)))
+ok(/Как вернуть результат/.test(globalThis.__fired || ""), "и инструкция вернуть итог")
+await shot("cc-3-cafe")
 ok(!errors.length, "без ошибок на странице " + errors.join("; "))
 console.log(fails ? `CC_FAIL ${fails}` : "CC_OK")
 await browser.close(); server.close()
