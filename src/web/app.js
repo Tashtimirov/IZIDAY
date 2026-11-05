@@ -660,7 +660,6 @@ let chatAtt = null
 function attStage(att, label) {
   chatAtt = { att, label }
   if (tab !== "chat") setTab("chat"); else attTray()
-  if (navigator.vibrate) navigator.vibrate(8)
 }
 function attCaption(c, text, voice) {   // что увидит Изи и что останется в ленте
   const a = c.att
