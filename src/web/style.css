@@ -889,7 +889,13 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 .mn-tot .btn.primary { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .mn-tot .btn.teal { background: var(--track); color: var(--text); }
 /* Кнопка «Помощник» в цветах иконки приложения: зелёный в голубой, мягкий блик */
-#tabs #fab .orb, #tabs #fab.rec .orb { padding: 0; background: radial-gradient(circle at 25% 15%, rgba(255,255,255,.22), rgba(255,255,255,0) 70%), linear-gradient(45deg, #0b8f5c, #18b98a 55%, #1f8fff); }
+#tabs #fab .orb, #tabs #fab.rec .orb { padding: 0; background: none; border-radius: 0; overflow: visible; box-shadow: none;
+  filter: drop-shadow(0 7px 10px color-mix(in srgb, var(--izi2, #18b98a) 45%, transparent)); }   /* фон шара рисует canvas, край растворяется */
+.chat-bar .mic.wave, .chat-bar .mic.wave.on { background: linear-gradient(150deg, var(--izi2, #18b98a), var(--izi1, #0b8f5c)); box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--izi1, #0b8f5c) 80%, transparent); }
+#silk { background: linear-gradient(110deg, var(--izi1, #0A9F6E), var(--izi2, #16B57E) 50%, var(--izi3, #0A84FF)); box-shadow: 0 12px 28px -10px color-mix(in srgb, var(--izi1, #0A9F6E) 80%, transparent); }
+.set .izi-c { display: flex; gap: 8px; }
+.set .izi-c button { width: 28px; height: 28px; border-radius: 50%; border: 0; padding: 0; box-shadow: 0 2px 6px rgba(0, 0, 0, .15); transition: transform .2s; }
+.set .izi-c button.on { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); transform: scale(1.08); }
 
 /* имя помощника под центральной кнопкой — крупнее и жирнее подписей вкладок */
 #tabs #fab span { font-size: 12.5px; font-weight: 700; letter-spacing: .01em; }
