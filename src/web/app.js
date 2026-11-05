@@ -135,6 +135,22 @@ const H = () => Object.assign({ waterGoal: 2000, glass: 250, moveGoal: 500, exer
 const IZI = () => { const z = D.izi || {}; return { name: String(z.name || "").trim() || (routes().length ? "ИЗИ" : "Изи"), g: z.g === "f" ? "f" : "m" } }
 const iziName = () => IZI().name
 const iziG = (m, f) => IZI().g === "f" ? f : m
+// Цвет Изи — выбирают в настройках (особенно дети): форма шара и волн та же, меняется только цвет. [id, название, фон, волна 1, волна 2]
+const IZI_COL = [
+  ["em", "Изумруд", ["#0b8f5c", "#18b98a", "#1f8fff"], "140,205,255", "150,255,220"],
+  ["space", "Космос", ["#3b22c4", "#7b5cff", "#2fb7ff"], "170,190,255", "200,175,255"],
+  ["sunset", "Закат", ["#e2365f", "#ff7a59", "#ffb547"], "255,200,170", "255,236,170"],
+  ["lagoon", "Лагуна", ["#06708f", "#16b3c4", "#5fe0b0"], "150,235,255", "190,255,230"],
+  ["neon", "Неон", ["#3a1f8f", "#b73cff", "#ff5fc8"], "255,170,240", "170,220,255"],
+  ["night", "Ночь", ["#0d1433", "#24306e", "#4257d6"], "140,205,255", "150,255,220"],
+]
+const iziCol = () => IZI_COL.find(p => p[0] === (D.izi && D.izi.c)) || IZI_COL[0]
+let iziPainted = ""
+function iziPaint() {
+  const p = iziCol(); if (iziPainted === p[0]) return; iziPainted = p[0]
+  const st = document.documentElement.style; p[2].forEach((c, i) => st.setProperty("--izi" + (i + 1), c))
+  const l = document.querySelector('link[rel="apple-touch-icon"]'); if (l) l.href = p[0] === "em" ? "icon-180.png?v=4" : `icon-${p[0]}-180.png?v=1`   // значок берётся при добавлении на экран «Домой»
+}
 const proteinGoal = () => H().proteinGoal || Math.round((H().weight || 80) * 1.6)   // по умолчанию 1,6 г на кг веса
 const live = list => list.filter(x => x && !x.deleted)
 function upsert(key, rec) {
@@ -1926,6 +1942,7 @@ function renderTop() {
   const v = iphone()
   if (tab === "today") { const d = new Date(); $("#top-title").innerHTML = `${esc(core.cap(WDF[d.getDay()]))}<span class="dt">${d.getDate()} ${MONTHS_GEN[d.getMonth()]}</span>` }
   else $("#top-title").textContent = tab === "chat" ? iziName() : TITLES[tab]
+  iziPaint()
   const fl = $("#fab span"); if (fl && fl.textContent !== iziName()) { fl.textContent = iziName(); $("#fab").setAttribute("aria-label", `${iziName()}: нажмите — чат, держите — голосовая команда`) }
   let sub = ""
   if (!D.conn) sub = "Не подключено к виджету"
@@ -2145,7 +2162,8 @@ function renderMore() {
   html += `<div class="card"><h2>Помощник</h2>
     <div class="set"><span>Имя</span><input type="text" data-izi="name" value="${esc(z.name)}" maxlength="20" autocomplete="off" style="text-align:right"></div>
     <div class="set"><span>Пол</span><div class="seg izi-g"><i style="--i:${z.g === "f" ? 1 : 0}"></i><button data-izi-g="m" class="${z.g === "m" ? "on" : ""}">Мужской</button><button data-izi-g="f" class="${z.g === "f" ? "on" : ""}">Женский</button></div></div>
-    <div class="muted small">Имя видно на центральной кнопке и в чате. От пола зависят окончания в ответах: «${esc(z.name)} ${z.g === "f" ? "записала" : "записал"}».</div></div>`
+    <div class="set"><span>Цвет</span><div class="izi-c">${IZI_COL.map(p => `<button data-izi-c="${p[0]}" class="${p[0] === iziCol()[0] ? "on" : ""}" style="background:linear-gradient(45deg,${p[2].join(",")})" aria-label="${p[1]}"></button>`).join("")}</div></div>
+    <div class="muted small">Цвет «${iziCol()[1]}» — на кнопке, в чате и на значке (значок меняется, если заново добавить приложение на экран «Домой»). Имя видно на центральной кнопке и в чате. От пола зависят окончания в ответах: «${esc(z.name)} ${z.g === "f" ? "записала" : "записал"}».</div></div>`
   html += `<div class="card"><h2>Связь с виджетом</h2>`
   if (c) html += `<div class="set"><span>Таблица</span><span class="ok">✓ ${esc((c.hook.match(/\/s\/(.{8})/) || [, "подключена"])[1])}</span></div>
       <div class="set"><span>Последний обмен</span><span>${esc(ago(D.sync.at))}</span></div>
@@ -2300,6 +2318,8 @@ function bind() {
   })
   $$("[data-izi]", v).forEach(inp => inp.onchange = () => {
     D.izi = Object.assign({}, D.izi, { name: inp.value.trim().slice(0, 20) }); save(false); render(); toast("Сохранено") })
+  $$("[data-izi-c]", v).forEach(b => b.onclick = () => {
+    D.izi = Object.assign({}, D.izi, { c: b.dataset.iziC }); save(false); iziPaint(); render(); toast(`Цвет «${iziCol()[1]}»`) })
   $$("[data-izi-g]", v).forEach(b => b.onclick = () => {
     D.izi = Object.assign({}, D.izi, { g: b.dataset.iziG }); save(false)
     const sg = b.parentNode; sg.querySelector("i").style.setProperty("--i", b.dataset.iziG === "f" ? 1 : 0); $$("button", sg).forEach(x => x.classList.toggle("on", x === b))
@@ -3350,13 +3370,18 @@ function silkLines(c, T, d, active) {
 function silkOrb(c, T, d, active) {
   const x = c.getContext("2d"), W = c.width, H = c.height, a = active ? SILK.lv : 0
   x.clearRect(0, 0, W, H)
-  const cx = W / 2, cy = H / 2, R = W * .42
+  const cx = W / 2, cy = H / 2, R = W * .42, P = iziCol()
+  const bg = x.createLinearGradient(0, H, W, 0); bg.addColorStop(0, P[2][0]); bg.addColorStop(.55, P[2][1]); bg.addColorStop(1, P[2][2]); x.fillStyle = bg; x.fillRect(0, 0, W, H)
+  const sh = x.createRadialGradient(W * .25, H * .15, 0, W * .25, H * .15, W * .8); sh.addColorStop(0, "rgba(255,255,255,.22)"); sh.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = sh; x.fillRect(0, 0, W, H)
+  x.globalCompositeOperation = "destination-in"   // внешнее кольцо: от стеклянного края наружу — в ноль
+  const fm = x.createRadialGradient(cx, cy, 0, cx, cy, W / 2); fm.addColorStop(0, "#000"); fm.addColorStop(R / (W / 2), "#000"); fm.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = fm; x.fillRect(0, 0, W, H)
+  x.globalCompositeOperation = "source-over"
   const b = x.createRadialGradient(cx - R * .3, cy - R * .35, R * .1, cx, cy, R)
   b.addColorStop(0, "rgba(255,255,255,.32)"); b.addColorStop(1, "rgba(255,255,255,.08)")
   x.fillStyle = b; x.beginPath(); x.arc(cx, cy, R, 0, 7); x.fill()
   x.save(); x.beginPath(); x.arc(cx, cy, R * .98, 0, 7); x.clip(); x.globalCompositeOperation = "lighter"
   const sp = active ? 2 + a * 1.5 : .9, len = R * 1.85
-  ;[["140,205,255", .95, .04, .32, 2.1, .035, .18, 1.25], ["150,255,220", 1, -.03, .42, 0, .045, .22, 1]].forEach(([rgb, al, dy, am, ph, lw, gw, k]) => {
+  ;[[P[3], .95, .04, .32, 2.1, .035, .18, 1.25], [P[4], 1, -.03, .42, 0, .045, .22, 1]].forEach(([rgb, al, dy, am, ph, lw, gw, k]) => {
     const amp = R * am * (1 + a * .5), g = x.createLinearGradient(cx - len / 2, 0, cx + len / 2, 0)
     g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(.28, `rgba(${rgb},${al})`); g.addColorStop(.72, `rgba(${rgb},${al})`); g.addColorStop(1, `rgba(${rgb},0)`)
     x.beginPath()
