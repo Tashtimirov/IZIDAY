@@ -3287,9 +3287,9 @@ function silkFrame(t) {
   if (t - SILK.last < 32) return   // ~30 кадров в секунду — плавно и бережно к батарее
   SILK.last = t
   const T = t / 1000
-  const syl = .55 + .45 * Math.sin(T * 2.1) * Math.sin(T * .9)
+  const syl = .6 + .4 * Math.sin(T * 1.1) * Math.sin(T * .5)
   const target = voice ? (.18 + .82 * syl) * Math.max(.2, SILK.en) : 0
-  SILK.lv += (target - SILK.lv) * (target > SILK.lv ? .12 : .05)
+  SILK.lv += (target - SILK.lv) * (target > SILK.lv ? .06 : .03)
   SILK.en *= .985
   const d = Math.min(2, devicePixelRatio || 1)
   for (const c of live) {
@@ -3315,31 +3315,27 @@ function silkLines(c, T, d, active) {
     x.strokeStyle = col; x.lineWidth = 1.8 * d; x.lineCap = "round"; x.lineJoin = "round"; x.stroke()
   })
 }
-// Полоса записи: две волны плывут медленно, как на кнопке; пока говорите — шире размах.
-// Яркая точка-луч летит в центре полосы и тянет за собой свет слева
+// Полоса записи: две волны плывут медленно, как на кнопке; пока говорите — чуть шире размах, но не быстрее.
+// Яркая точка стоит в центре и только мягко дышит. Всё свечение помещается внутри полосы
 function silkComet(c, T, d) {
   const x = c.getContext("2d"), W = c.width, H = c.height, a = SILK.lv
   x.clearRect(0, 0, W, H)
-  const L = 6 * d, Rt = W - 6 * d, mid = W / 2, sp = .9 + a * .9
-  const amp = (.12 + a * .4) * H
-  const wy = (u, j) => H / 2 + amp * (j ? .75 : 1) * Math.pow(Math.sin(Math.PI * u), 1.4) * Math.sin(u * Math.PI * 2 * 1.15 + T * sp * (j ? 1.25 : 1) + (j ? 2.2 : 0))
+  const L = 6 * d, Rt = W - 6 * d, mid = W / 2, sp = .8 + a * .25
+  const glow = 4 * d, amp = (.12 + a * .16) * H   // волна + свечение не выходят за высоту полосы
+  const wy = (u, j) => H / 2 + amp * (j ? .75 : 1) * Math.pow(Math.sin(Math.PI * u), 1.4) * Math.sin(u * Math.PI * 2 * 1.15 + T * sp * (j ? 1.2 : 1) + (j ? 2.2 : 0))
   ;[["rgba(255,255,255,", 0], ["rgba(190,240,255,", 1]].forEach(([col, j]) => {
     const g = x.createLinearGradient(L, 0, Rt, 0)
     g.addColorStop(0, col + "0)"); g.addColorStop(.2, col + ".55)"); g.addColorStop(.5, col + "1)"); g.addColorStop(.8, col + ".55)"); g.addColorStop(1, col + "0)")
     x.beginPath()
     for (let px = L; px <= Rt; px += 2) { const y = wy((px - L) / (Rt - L), j); px === L ? x.moveTo(px, y) : x.lineTo(px, y) }
-    x.strokeStyle = g; x.lineWidth = (j ? 1.8 : 2.3) * d; x.lineCap = "round"; x.lineJoin = "round"
-    x.shadowColor = "#bff"; x.shadowBlur = (5 + a * 8) * d; x.stroke(); x.shadowBlur = 0
+    x.strokeStyle = g; x.lineWidth = (j ? 1.6 : 2) * d; x.lineCap = "round"; x.lineJoin = "round"
+    x.shadowColor = "#bff"; x.shadowBlur = glow; x.stroke(); x.shadowBlur = 0
   })
-  const hx = mid + Math.sin(T * .7) * W * .04, hy = wy((hx - L) / (Rt - L), 0)
-  const bl = W * .3, rg = x.createLinearGradient(hx - bl, 0, hx, 0)
-  rg.addColorStop(0, "rgba(255,255,255,0)"); rg.addColorStop(1, "rgba(255,255,255,.85)")
-  x.beginPath(); x.moveTo(hx - bl, hy); x.lineTo(hx, hy); x.strokeStyle = rg; x.lineWidth = 2 * d; x.stroke()
-  const R = (5 + a * 6) * (1 + .12 * Math.sin(T * 2.4)) * d
-  const gl = x.createRadialGradient(hx, hy, 0, hx, hy, R * 2.6)
-  gl.addColorStop(0, "#fff"); gl.addColorStop(.25, "rgba(200,255,240,.95)"); gl.addColorStop(.6, "rgba(90,220,255,.35)"); gl.addColorStop(1, "rgba(90,220,255,0)")
-  x.fillStyle = gl; x.beginPath(); x.arc(hx, hy, R * 2.6, 0, 7); x.fill()
-  x.fillStyle = "#fff"; x.beginPath(); x.arc(hx, hy, R * .45, 0, 7); x.fill()
+  const hy = H / 2, R = (3.2 + a * 1.2) * (1 + .08 * Math.sin(T * 1.6)) * d, rr = Math.min(R * 2.4, H / 2 - d)
+  const gl = x.createRadialGradient(mid, hy, 0, mid, hy, rr)
+  gl.addColorStop(0, "#fff"); gl.addColorStop(.3, "rgba(200,255,240,.9)"); gl.addColorStop(.65, "rgba(90,220,255,.3)"); gl.addColorStop(1, "rgba(90,220,255,0)")
+  x.fillStyle = gl; x.beginPath(); x.arc(mid, hy, rr, 0, 7); x.fill()
+  x.fillStyle = "#fff"; x.beginPath(); x.arc(mid, hy, R * .5, 0, 7); x.fill()
 }
 let silkHide = null
 function silkShow(text) {
