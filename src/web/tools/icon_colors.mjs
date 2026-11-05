@@ -1,4 +1,4 @@
-// Значки приложения в цветах Изи (настройки → Помощник → Цвет). Берёт настоящий рисунок значка из icon_orb.html (вариант a2)
+// Значки приложения в цветах Изи (настройки → Помощник → Цвет). Берёт настоящий рисунок значка из icon_orb.html (вариант flat — одна сфера, 2026-11-05)
 // и меняет только цвета. Запуск: node src/web/tools/icon_colors.mjs → src/web/icon-<цвет>-180.png
 import { createRequire } from "module"
 const { chromium } = createRequire(import.meta.url)("playwright")
@@ -16,9 +16,7 @@ for (const [id, [bgc, w1, w2]] of Object.entries(COL)) {
   const url = await p.evaluate(([bgc, w1, w2]) => {
     window.bg = () => { const g = x.createLinearGradient(0, W, W, 0); g.addColorStop(0, bgc[0]); g.addColorStop(.55, bgc[1]); g.addColorStop(1, bgc[2]); x.fillStyle = g; x.fillRect(0, 0, W, W)
       const s = x.createRadialGradient(W * .25, W * .15, 0, W * .25, W * .15, W * .8); s.addColorStop(0, "rgba(255,255,255,.22)"); s.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = s; x.fillRect(0, 0, W, W) }
-    x.clearRect(0, 0, W, W); bg(); const cx = W / 2, cy = W / 2, R = W * .42; orbShell(cx, cy, R)
-    inside(cx, cy, R, () => { waveF(cx, cy + R * .04, R * 1.85, R * .32, w1, .95, 2.1, R * .035, R * .18); waveF(cx, cy - R * .03, R * 1.85, R * .42, w2, 1, 0, R * .045, R * .22) })
-    orbGlass(cx, cy, R)
+    window.ONE.w1 = w1; window.ONE.w2 = w2; x.clearRect(0, 0, W, W); V.flat()   // одна сфера: волны прямо на цвете, без внутреннего шара
     const o = document.createElement("canvas"); o.width = o.height = 180; const ox = o.getContext("2d"); ox.imageSmoothingQuality = "high"; ox.drawImage(c, 0, 0, 180, 180); return o.toDataURL("image/png")
   }, [bgc, w1, w2])
   createRequire(import.meta.url)("fs").writeFileSync(DIR + "../icon-" + id + "-180.png", Buffer.from(url.split(",")[1], "base64")); console.log(id)

@@ -68,7 +68,7 @@ export function sheetScript() {
     getLastColumn() { return this.cells.reduce((m, r) => Math.max(m, r ? r.length : 0), 0) }
     getSheetId() { return sheets.indexOf(this) + 100 }
   }
-  const ss = { getSheetByName: n => sheets.find(s => s.name === n) || null, insertSheet: n => { const s = new Sheet(n); sheets.push(s); return s },
+  const ss = { getId: () => "SHEETID", getSheetByName: n => sheets.find(s => s.name === n) || null, insertSheet: n => { const s = new Sheet(n); sheets.push(s); return s },
     getSheets: () => sheets, deleteSheet: s => sheets.splice(sheets.indexOf(s), 1), getName: () => "Мой день", getUrl: () => "https://docs.google.com/spreadsheets/d/T/edit",
     setActiveSheet: s => { ss.active = s }, moveActiveSheet: i => { sheets.splice(sheets.indexOf(ss.active), 1); sheets.splice(i - 1, 0, ss.active) },
     getSpreadsheetTimeZone: () => "Asia/Bangkok" }
@@ -112,7 +112,7 @@ export function sheetScript() {
         cal.log.push(["cut", url.split("/").pop(), JSON.parse(o.payload).recurrence[0]])
         return { getResponseCode: () => 200, getContentText: () => "{}" }
       }
-      if (/api\.anthropic\.com/.test(url)) { const b = JSON.parse(o.payload); globalThis.__famAsk = { key: o.headers["x-api-key"], body: b }; return { getContentText: () => JSON.stringify({ content: [{ type: "text", text: "Привет! Давай начнём с зубов — это быстро." }] }) } }
+      if (/api\.anthropic\.com/.test(url) && !/routines/.test(url)) { const b = JSON.parse(o.payload); globalThis.__famAsk = { key: o.headers["x-api-key"], body: b }; return { getContentText: () => JSON.stringify({ content: [{ type: "text", text: "Привет! Давай начнём с зубов — это быстро." }] }) } }
       if (/push\.example/.test(url)) { pushes.push({ url, headers: o.headers }); return { getResponseCode: () => /gone/.test(url) ? 410 : 201, getContentText: () => "" } }
       return { getContentText: () => JSON.stringify({ claude_code_session_url: "https://claude.ai/code/session_test" }) } } },
     GmailApp: mail.api,
