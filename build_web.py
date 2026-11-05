@@ -54,7 +54,7 @@ def minify(p):
         print(f"Внимание: {p.name} не сжат (esbuild недоступен): {r.stderr.strip()[:200]}")
     return not r.returncode
 if "--no-minify" not in sys.argv:
-    for name in ["core.js", "app.js", "style.css"]:
+    for name in ["core.js", "app.js", "onb.js", "style.css", "onb.css"]:
         if not minify(OUT / name):
             break
 
