@@ -1149,6 +1149,26 @@ function famAsk_(code, fam, id, q) {
   const text = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim();
   return { ok: true, text: text, left: FAM_KID_LIMIT - use[id] };
 }
+// Взрослые семьи без своего ключа ходят к Claude через общий ключ: запрос как есть (с инструментами), модель и потолок — от хозяина
+const FAM_ADULT_LIMIT = 200;
+function famAi_(code, fam, id, q) {
+  const m = fam.members[id];
+  if (!m || m.role === "kid") return { error: { type: "forbidden", message: "нет доступа" } };
+  const pr = PropertiesService.getScriptProperties(), k = pr.getProperty("famkey_" + code);
+  if (!k) return { error: { type: "nokey", message: "в семье не включён общий ключ Claude" } };
+  const cfg = JSON.parse(k), day = Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd"), uk = "famuse_" + code + "_" + day;
+  const use = JSON.parse(pr.getProperty(uk) || "{}");
+  if ((use[id] || 0) >= FAM_ADULT_LIMIT) return { error: { type: "limit", message: "дневной лимит общего ключа исчерпан (" + FAM_ADULT_LIMIT + ")" } };
+  use[id] = (use[id] || 0) + 1; pr.setProperty(uk, JSON.stringify(use));
+  const body = q.body || {};
+  if (!Array.isArray(body.messages)) return { error: { type: "bad", message: "bad request" } };
+  delete body.stream; delete body.fallbacks;
+  body.model = /opus/.test(body.model || "") ? body.model : cfg.model;
+  body.max_tokens = Math.min(+body.max_tokens || 2000, 8000);
+  const res = UrlFetchApp.fetch("https://api.anthropic.com/v1/messages", { method: "post", contentType: "application/json", muteHttpExceptions: true,
+    headers: { "x-api-key": cfg.key, "anthropic-version": "2023-06-01" }, payload: JSON.stringify(body) });
+  try { return JSON.parse(res.getContentText()); } catch (e) { return { error: { type: "bad", message: "Claude не ответил" } }; }
+}
 function famSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sh = ss.getSheetByName("_семья");
@@ -1201,6 +1221,7 @@ function family_(q, owner) {
       return { ok: true, key: !!q.key };
     }
     if (q.op === "ask") { lock.releaseLock(); return famAsk_(code, fam, id, q); }
+    if (q.op === "ai") { lock.releaseLock(); return famAi_(code, fam, id, q); }
     let changed = false;
     if (q.op === "put" && id) {
       const known = !!fam.members[id];
@@ -1250,7 +1271,7 @@ function family_(q, owner) {
       while (s.length > 400000 && (fam.log.length > 100 || fam.money.length > 100)) { fam.log.splice(0, 50); fam.money.splice(0, 50); s = JSON.stringify(fam); }
       famSave_(code, s);
     }
-    return { ok: true, family: fam };
+    return { ok: true, family: fam, key: !!PropertiesService.getScriptProperties().getProperty("famkey_" + code) };
   } finally {
     lock.releaseLock();
   }

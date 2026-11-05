@@ -442,13 +442,15 @@ const ui = {
 }
 
 // ───────────── Claude ─────────────
-const aiKey = () => (D.conn && D.conn.key) || ""
+// Ключ Claude: из виджета, свой (вставлен в «Настройках») или общий ключ семьи (window.FAM, «fam» — запросы идут через таблицу семьи)
+const aiKey = () => (D.conn && D.conn.key) || D.myKey || (window.FAM && FAM.keyOn() ? "fam" : "")
 async function claude(body, timeout = 90000, opts = {}) {
-  if (!aiKey()) throw new Error("нет ключа Claude — подключите приложение кодом из виджета («Ещё»)")
+  if (!aiKey()) throw new Error("нет ключа Claude — подключите его в «Настройках» → «Ключ Claude»")
   const ctl = new AbortController()
   const t = setTimeout(() => ctl.abort(), timeout)
   if (opts.signal) { if (opts.signal.aborted) ctl.abort(); else opts.signal.addEventListener("abort", () => ctl.abort()) }
   const send = async (b, beta) => {
+    if (aiKey() === "fam") return await FAM.ai(b, ctl.signal)
     const headers = { "x-api-key": aiKey(), "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-dangerous-direct-browser-access": "true" }
     if (beta) headers["anthropic-beta"] = beta
     const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: ctl.signal, headers, body: JSON.stringify(b) })
@@ -529,7 +531,7 @@ const today = list => live(list).filter(x => sameDay(x.date, Date.now())).sort((
 const waterToday = () => today(D.water).reduce((s, w) => s + (w.ml || 0), 0)
 // Еда: фото → оценка → сохранить / уточнить / поправить калории
 async function foodFlow(dataUrl, hint) {
-  if (!aiKey()) return ui.info("Нужен ключ Claude", "Калории по фото считает Claude. Подключите приложение кодом из виджета: «Ещё» → «Подключить».")
+  if (!aiKey()) return ui.info("Нужен ключ Claude", "Калории по фото считает Claude. Подключите ключ: шестерёнка → «Ключ Claude» → «Подключить», это около двух минут.")
   while (true) {
     const wait = sheet(`<h3>🍽 Считаю калории…</h3>${dataUrl ? `<img class="photo-prev" src="${dataUrl}">` : ""}<div class="msg">Claude смотрит на ${dataUrl ? "фото" : "описание"}, это 5–15 секунд.</div>`)
     let est
@@ -1489,7 +1491,7 @@ async function chatSend(text, opts = {}) {
   if (askWait) { const w = askWait; askWait = null; D.chat.push({ role: "user", text, at: Date.now(), voice: !!opts.voice, local: true }); save(false); renderChat(); w(text); return }
   if (chatBusy) { toast(`${iziName()} ещё отвечает…`); return }
   memorize()
-  if (!aiKey()) { setTab("more"); return ui.info("Нужен ключ Claude", "Подключите приложение кодом из виджета: в Scriptable меню → 📱 Приложение «Мой день» → «Подключить приложение».") }
+  if (!aiKey()) { setTab("more"); return ui.info("Нужен ключ Claude", "Здесь откроется «Ключ Claude» → «Подключить»: три шага, около двух минут. Если вы в семье, где включён общий ключ, он подключится сам.") }
   const item = { role: "user", text: opts.label || text, prompt: opts.label ? text : undefined, at: Date.now(), voice: !!opts.voice, thumb: opts.attach && opts.attach.thumb || undefined }
   D.chat.push(item)
   chatBusy = true

@@ -108,7 +108,7 @@ async function push(force, extra) {
       for (const k in sent) D.fam.out[k] = (D.fam.out[k] || []).filter(x => !sent[k].has(x.id + ":" + x.u))
       const f = r.family
       for (const k in D.fam.out) for (const x of D.fam.out[k] || []) { const arr = f[k] || (f[k] = []), i = arr.findIndex(y => y.id === x.id); if (i < 0) arr.push(x); else if ((arr[i].u || 0) <= x.u) arr[i] = x }
-      D.fam.data = f; D.fam.at = Date.now(); D.fam.err = ""; D.fam.fname = f.name
+      D.fam.data = f; D.fam.at = Date.now(); D.fam.err = ""; D.fam.fname = f.name; if (r.key != null) D.fam.key = !!r.key
       const m = f.members[D.fam.id]; if (m && D.fam.role !== m.role && !D.fam.me) D.fam.role = m.role
       delete D.fam.me
       ver++; save(false); after()
@@ -499,7 +499,7 @@ function famPage() {
     return `<div class="row" data-fg="${esc(g.id)}"><span class="ftile" style="background:${gi[1]}1F">${ic(g.ic || gi[0], 22, gi[1])}</span><div class="grow"><div class="t">${esc(g.title)}${g.done ? " · достигнута" : ""}</div><div class="s">${g.repeat ? `каждые ${num(g.target)} баллов${p.times ? ` · было ${p.times} ${plural(p.times, "раз", "раза", "раз")}` : ""}` : `${num(p.have)} из ${num(g.target)} баллов${g.due ? " · до " + esc(g.due.split("-").reverse().slice(0, 2).join(".")) : ""}`}</div><div class="fgbar"><i style="width:${Math.round(p.p * 100)}%;background:${gi[1]}"></i></div></div></div>` }).join("") || `<div class="empty">Например: «Аквапарк всей семьёй» за 3 000 баллов или «Кино с попкорном» каждые 1 000.</div>`}</div>`
   const kd = kids().filter(k => mainDream(k.id) || kidDreams(k.id).length)
   if (kd.length) h += `<div class="card fcard"><h2>Мечты детей</h2>${kd.map(k => kidDreams(k.id).filter(d => !d.done).slice(0, 4).map(d => dreamRow(k, d)).join("")).join("")}</div>`
-  if (D.fam.owner) h += `<div class="card fcard"><div class="row"><span class="ftile" style="background:#6A4BF21F">${ic("bulb", 22, "#6A4BF2")}</span><div class="grow"><div class="t">Чат детей с ${esc(iziName())}</div><div class="s">${D.fam.key ? "через ваш ключ Claude, до 30 сообщений в день на ребёнка; ключ детям не виден" : aiKey() ? "выключен — дети видят только подсказки" : "нужен ключ Claude в вашем приложении"}</div></div>${aiKey() ? `<button class="btn small ${D.fam.key ? "" : "primary"}" data-f="${D.fam.key ? "keyoff" : "keyon"}">${D.fam.key ? "Выключить" : "Включить"}</button>` : ""}</div></div>`
+  if (D.fam.owner) h += `<div class="card fcard"><div class="row"><span class="ftile" style="background:#6A4BF21F">${ic("bulb", 22, "#6A4BF2")}</span><div class="grow"><div class="t">Один ключ Claude на семью</div><div class="s">${D.fam.key ? "взрослые без своего ключа и дети говорят с " + esc(iziName()) + " через ваш ключ (детям — до 30 сообщений в день). Ключ лежит в вашей таблице, на телефоны не попадает. Друзьям и лиге он не доступен" : D.conn && D.conn.key ? "выключен — дети видят только подсказки" : "нужен ключ Claude в вашем приложении"}</div></div>${D.conn && D.conn.key ? `<button class="btn small ${D.fam.key ? "" : "primary"}" data-f="${D.fam.key ? "keyoff" : "keyon"}">${D.fam.key ? "Выключить" : "Включить"}</button>` : ""}</div></div>`
   h += `<div class="muted small" style="text-align:center;margin:4px 0 14px">Семья «${esc(F().name || D.fam.fname || "")}»${D.fam.err ? ` · ${esc(D.fam.err)}` : ""} · <button class="linkbtn" data-f="leave">Выйти</button></div>`
   return h
 }
@@ -616,10 +616,50 @@ async function famNew() {
   D.fam = { url: D.conn.hook, code: r.family.code, id: uid("m"), role: "adult", name: me, owner: true, data: r.family, at: 0, out: {}, seen: {}, me: { color: COLORS[0], owner: true } }
   save(false); await push(true); await shareKey(true); render()
 }
+// Взрослый без своего ключа — к Claude через общий ключ семьи
+const keyOn = () => famOn() && D.fam.role !== "kid" && !!D.fam.key
+async function ai(body, signal) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 120000)
+  if (signal) signal.addEventListener("abort", () => ctl.abort())
+  try {
+    const r = await fetch(D.fam.url, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, credentials: "omit", cache: "no-store", signal: ctl.signal,
+      body: JSON.stringify({ family: { op: "ai", code: D.fam.code, id: D.fam.id, body } }) })
+    return await r.json()
+  } finally { clearTimeout(t) }
+}
+// Свой ключ — в «Настройках»: три шага, проверка и сохранение только на этом телефоне
+function keyCard() {
+  const src = D.conn && D.conn.key ? "из виджета" : D.myKey ? "свой, вставлен вручную" : keyOn() ? `общий ключ семьи «${F().name || D.fam.fname || ""}»` : ""
+  return `<div class="card fcard" id="fkey"><h2>Ключ Claude</h2><div class="row"><span class="ftile" style="background:${src ? "#0A9F6E1F" : "#FF9F0A1F"}">${ic(src ? "check" : "bulb", 22, src ? "#0A9F6E" : "#FF9F0A")}</span>
+    <div class="grow"><div class="t">${src ? "Подключён" : "Не подключён"}</div><div class="s">${src ? esc(src) : `без ключа работает всё, кроме разговора с ${esc(iziName())} и калорий по фото`}</div></div>
+    ${D.conn && D.conn.key ? "" : D.myKey ? `<button class="btn small" data-f="keydel">Убрать</button>` : `<button class="btn small primary" data-f="keyadd">Подключить</button>`}</div>
+    ${!src || D.myKey ? `<div class="muted small" style="margin-top:8px">Ключ хранится только на этом телефоне. Им пользуетесь вы и ваша семья, если вы её создали, — больше никто.</div>` : ""}</div>`
+}
+async function keyAdd() {
+  const s = sheet(`<h3>Свой ключ Claude</h3><div class="msg">Три шага, около двух минут.</div>
+    <div class="fsteps"><div><b>1</b>Откройте сайт Anthropic и войдите (можно через Google).</div><div><b>2</b>Нажмите «Create Key», назовите «IZIDAY» и скопируйте ключ.</div><div><b>3</b>Вставьте его сюда — ${esc(iziName())} проверит, что он работает.</div></div>
+    <div class="btns"><button class="btn" data-a="open">${ic("link", 16)} Открыть сайт</button></div>
+    <div class="field"><label>Ключ</label><input id="fk-v" placeholder="sk-…" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+    <div class="btns"><button class="btn" data-a="paste">Вставить</button><button class="btn primary" data-a="ok">Проверить и сохранить</button></div><div class="msg" id="fk-m"></div>`)
+  const inp = $("#fk-v", s.el), msg = $("#fk-m", s.el)
+  $('[data-a="open"]', s.el).onclick = () => window.open("https://console.anthropic.com/settings/keys", "_blank")
+  $('[data-a="paste"]', s.el).onclick = async () => { try { inp.value = (await navigator.clipboard.readText()).trim() } catch (e) { inp.focus() } }
+  $('[data-a="ok"]', s.el).onclick = async () => {
+    const k = inp.value.trim()
+    if (!/^sk-an[t]-[A-Za-z0-9_-]{20,}$/.test(k)) { msg.textContent = "Это не похоже на ключ: он начинается с «sk-» и довольно длинный"; return }
+    msg.textContent = "Проверяю…"
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": k, "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-dangerous-direct-browser-access": "true" },
+        body: JSON.stringify({ model: core.CONFIG.agentModel || "claude-sonnet-5-5", max_tokens: 5, messages: [{ role: "user", content: "ok" }] }) }).then(x => x.json())
+      if (r.error) { msg.textContent = r.error.type === "authentication_error" ? "Ключ не подошёл. Скопируйте его ещё раз целиком." : /credit|billing/i.test(r.error.message || "") ? "Ключ верный, но на счёте Anthropic нет денег: пополните баланс в разделе Billing." : "Anthropic ответил: " + r.error.message; return }
+    } catch (e) { msg.textContent = "Нет связи — попробуйте ещё раз."; return }
+    D.myKey = k; save(false); s.close(); toast("Ключ подключён"); render()
+  }
+}
 // Общий ключ Claude: детям — чат с Изи через таблицу хозяина семьи; ключ лежит в скрипте таблицы, телефонам не виден
 async function shareKey(on) {
   if (!famOn() || !D.fam.owner || !D.conn || !D.conn.hook) return
-  const r = await post(D.conn.hook, { op: "key", code: D.fam.code, key: on && aiKey() ? aiKey() : "", model: core.CONFIG.agentModel || "claude-sonnet-5-5" }, D.conn.secret)
+  const r = await post(D.conn.hook, { op: "key", code: D.fam.code, key: on && D.conn.key ? D.conn.key : "", model: core.CONFIG.agentModel || "claude-sonnet-5-5" }, D.conn.secret)
   if (r && r.ok) { D.fam.key = !!r.key; save(false) } else if (on) toast("Общий ключ не включился: " + ((r && r.error) || "нет связи"))
   if (!stack.length) render()
 }
@@ -674,7 +714,7 @@ async function leave() {
 
 // ───────────── Встраивание в экраны ─────────────
 function openFam() { plansF = "fam"; if (tab !== "plans") setTab("plans"); else render(); scrollView(false) }
-const FDO = { keyon: () => shareKey(true), keyoff: () => shareKey(false), new: () => famNew(), paste: () => window.famJoin(), invite: () => invite(null), kid: () => kidAdd(), goal: () => goalForm(), leave: () => leave(), open: () => openFam() }
+const FDO = { keyadd: () => keyAdd(), keydel: () => { delete D.myKey; save(false); render(); toast("Ключ убран") }, keyon: () => shareKey(true), keyoff: () => shareKey(false), new: () => famNew(), paste: () => window.famJoin(), invite: () => invite(null), kid: () => kidAdd(), goal: () => goalForm(), leave: () => leave(), open: () => openFam() }
 function bindFam(v) {
   $$("[data-f]", v).forEach(b => b.onclick = e => { e.stopPropagation(); const f = FDO[b.dataset.f]; if (f) f() })
   $$("[data-fm]", v).forEach(b => b.onclick = () => kidSheet(b.dataset.fm))
@@ -697,6 +737,8 @@ function wrap() {
     const n = isAdult() ? waits().length : 0
     return (n ? `<button class="card fnote" data-f="open"><span class="ftile" style="background:#0A9F6E1F">${ic("users", 22, "#0A9F6E")}</span><div class="grow"><div class="t">Семья: ${n} ${plural(n, "дело ждёт", "дела ждут", "дел ждут")} проверки</div><div class="s">${esc(waits().slice(0, 2).map(w => short((member(w.x.kid) || {}).name) + " · " + (w.t === "money" ? w.x.note : w.x.title)).join(", "))}</div></div>${ic("chev", 18, "#8A8A8E")}</button>` : "") + top0.apply(this, arguments)
   }
+  const more0 = renderMore
+  renderMore = function () { const html = more0.apply(this, arguments), i = html.indexOf('<div class="card"><h2>Связь с виджетом'); return i < 0 ? keyCard() + html : html.slice(0, i) + keyCard() + html.slice(i) }
   const render0 = render
   render = function () {
     const kid = kidMode()
@@ -733,6 +775,6 @@ function init() {
   setInterval(() => { if (document.visibilityState === "visible") push(false) }, 60e3)
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") push(Date.now() - ((D.fam && D.fam.at) || 0) > 20e3) })
   if (pendingFam) setTimeout(join, 1000)
-  window.FAM = { link, kidSheet, join, push, put, famDays, sumSince, goalProg, jars, kidStars, waits, approve, kidMode, openFam, LESSONS, lesson, credit, pocketTick }
+  window.FAM = { keyOn, ai, link, kidSheet, join, push, put, famDays, sumSince, goalProg, jars, kidStars, waits, approve, kidMode, openFam, LESSONS, lesson, credit, pocketTick }
 }
 })()
