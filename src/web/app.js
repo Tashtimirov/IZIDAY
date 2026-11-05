@@ -3900,7 +3900,7 @@ function renderMoney() {
   const vi = ["all", "mine", "shared"].indexOf(mn.view)
   html += `<div class="seg mn-seg mn-in" ${anim()} style="--i:${vi}"><i></i><button data-mv="all" class="${vi === 0 ? "on" : ""}">Все</button><button data-mv="mine" class="${vi === 1 ? "on" : ""}">Мои</button><button data-mv="shared" class="${vi === 2 ? "on" : ""}">Общие с ${esc(partnerIns(mn.partner))}</button></div>`
   // Месяц
-  html += `<div class="card mn-in" ${anim()}><div class="month mn-mon"><button data-mon="-1" aria-label="Месяц назад">‹</button><b>${esc(core.monthTitle(monthKey))}</b><button data-mon="1" ${isCur ? "disabled style=opacity:.3" : ""} aria-label="Месяц вперёд">›</button></div>
+  html += `<div class="card mn-in mn-tot" ${anim()}><div class="month mn-mon"><button data-mon="-1" aria-label="Месяц назад">‹</button><b>${esc(core.monthTitle(monthKey))}</b><button data-mon="1" ${isCur ? "disabled style=opacity:.3" : ""} aria-label="Месяц вперёд">›</button></div>
     <div class="totals"><div><div class="muted small">Расходы</div><div class="big exp">−${esc(core.money(t.expense))}</div></div>
       <div><div class="muted small">Доходы</div><div class="big inc">+${esc(core.money(t.income))}</div></div>
       <div class="muted small">Наличными −${num(t.cash.expense)} · картой −${num(t.transfer.expense)}</div>
@@ -3964,7 +3964,7 @@ function renderMoney() {
       <div class="mn-week" id="mn-week">${esc(weekText(mn.tone, weekMoney(now)))}</div></div>` }
   // Операции (4. валюты)
   const items = t.items.slice().reverse()
-  html += `<div class="card mn-in" ${anim()}><h2>Операции<span class="muted small" style="text-transform:none;letter-spacing:0">${items.length}</span></h2>`
+  html += `<div class="card mn-in mn-ops" ${anim()}><h2>Операции<span class="muted small" style="text-transform:none;letter-spacing:0">${items.length}</span></h2>`
   if (!items.length) html += `<div class="empty">Скажите помощнику «потратил 300 на такси» или «подарок маме 5000 рублей» — валюта пересчитается сама</div>`
   let last = ""
   for (const e of items) {

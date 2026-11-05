@@ -883,3 +883,8 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 .pl-pct span, .pl-life { font-weight: 700; color: var(--sub); }
 .pl-life { min-width: 48px; text-align: right; color: var(--text); font-size: 16px; }
 #pl-ch .chip { font-size: 13px; }
+/* спокойнее: расходы — обычным цветом, доходы — мягким зелёным, кнопки тонированные */
+.mn-tot .big.exp, .mn-ops .amt.exp, .cap-g .tile .v.exp { color: var(--text); }
+.mn-tot .big.inc, .mn-ops .amt.inc, .mn-alloc .amt.inc, #mn-debts .amt.inc, .cap-g .tile .v.inc { color: var(--accent); }
+.mn-tot .btn.primary { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.mn-tot .btn.teal { background: var(--track); color: var(--text); }
