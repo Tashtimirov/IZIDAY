@@ -51,7 +51,7 @@ check(await page.evaluate(() => live(D.goals).filter(g => g.kind === "ach").leng
 
 // «Мой путь» в «Планах»
 for (const seg of ["path", "ach", "rew", "lg"]) { await page.evaluate(s => GAMI.openGame(s), seg); await page.waitForTimeout(150); await shot(page, `${SHOTS}gm-${seg}.png`) }
-check(await page.evaluate(() => tab === "plans" && $$(".gseg button").length === 4 && !!$(".pf [data-pf=game].on")), "«Мой путь»: Путь · Ачивки · Награды · Лига")
+check(await page.evaluate(() => tab === "plans" && $$(".gseg button").length === 5 && !!$(".pf [data-pf=game].on")), "«Мой путь»: Путь · Квесты · Ачивки · Награды · Лига")
 
 // награды: покупка списывает баланс, ранг не падает
 const buy = await page.evaluate(async () => {
