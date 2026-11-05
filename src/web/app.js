@@ -149,7 +149,7 @@ let iziPainted = ""
 function iziPaint() {
   const p = iziCol(); if (iziPainted === p[0]) return; iziPainted = p[0]
   const st = document.documentElement.style; p[2].forEach((c, i) => st.setProperty("--izi" + (i + 1), c))
-  const l = document.querySelector('link[rel="apple-touch-icon"]'); if (l) l.href = p[0] === "em" ? "icon-180.png?v=4" : `icon-${p[0]}-180.png?v=1`   // значок берётся при добавлении на экран «Домой»
+  const l = document.querySelector('link[rel="apple-touch-icon"]'); if (l) l.href = p[0] === "em" ? "icon-180.png?v=5" : `icon-${p[0]}-180.png?v=2`   // значок берётся при добавлении на экран «Домой»
 }
 const proteinGoal = () => H().proteinGoal || Math.round((H().weight || 80) * 1.6)   // по умолчанию 1,6 г на кг веса
 const live = list => list.filter(x => x && !x.deleted)
@@ -2073,7 +2073,7 @@ function renderChatHTML() {
   return `<div class="chat-tools"><button data-do="talk" class="tk-chip"><b class="mini-orb"></b>Поговорить</button><button data-brief="morning">☀️ Утренняя сводка</button><button data-brief="evening">🌙 Вечерняя</button><button data-do="memory">🧠 Память</button><button data-do="chat-clear">🧹 Очистить</button></div>
     <div class="chat-list" id="chat-list">${chatItems()}</div>
     <div class="chat-bar"><button class="cam plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
-    <button class="mic wave" aria-label="Нажмите — говорить, держите — как рация"><canvas></canvas></button><button class="send" aria-label="Отправить">${ICO.send}</button></div>`
+    <button class="send" aria-label="Отправить">${ICO.send}</button></div>`
 }
 const linkify = s => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`)
 function chatItems() {
@@ -2378,8 +2378,8 @@ function bind() {
     if (chatBusy && !askWait) setBusyUI(true)
     // тронули текст во время записи — не отправлять по паузе: можно поправить и нажать ➤
     inp.addEventListener("focus", () => { if (voice) { const t = inp.value, r = rec; voiceReset(); try { r && r.stop() } catch (e) {} inp.value = t; grow(inp); toast("✎ Поправьте и нажмите ➤") } })
-    if (voice) { $(".chat-bar .mic", v).classList.add("on"); inp.placeholder = "Слушаю… ➤ — отправить сразу"; if (voice.text) { inp.value = voice.text; grow(inp) } }
-    const wb = $(".chat-bar .mic", v); silkCanvas($("canvas", wb), "btn"); holdToTalk(wb, () => micStart())
+    if (voice) { inp.placeholder = "Слушаю… ➤ — отправить сразу"; if (voice.text) { inp.value = voice.text; grow(inp) } }
+    // голос — одна кнопка: большая «Изи» внизу (держать — как рация, ещё раз нажать — разговор); справа только ➤, когда есть текст
     $(".chat-bar .cam", v).onclick = e => plusMenu(e.currentTarget)
     grow(inp)
     bindChatList()
@@ -3373,40 +3373,39 @@ function silkLines(c, T, d, active) {
     x.strokeStyle = g; x.lineWidth = 1.8 * d; x.lineCap = "round"; x.lineJoin = "round"; x.stroke()
   })
 }
-// Кнопка «Помощник» — как иконка приложения: стеклянный шар, внутри две светящиеся волны с растворяющимися концами
+// Кнопка «Помощник» — как иконка приложения: одна цветная сфера, волны прямо в ней (без внутреннего шара и обводки).
+// Край сферы тает наружу в ноль, концы волн растворяются, без светящихся точек
+function iziSphere(x, W, H, R, edge, P, waves, o = {}) {
+  const cx = W / 2, cy = H / 2
+  x.globalAlpha = o.alpha || 1
+  const bg = x.createLinearGradient(cx - R, cy + R, cx + R, cy - R); bg.addColorStop(0, P[2][0]); bg.addColorStop(.55, P[2][1]); bg.addColorStop(1, P[2][2]); x.fillStyle = bg; x.fillRect(0, 0, W, H)
+  const lt = x.createRadialGradient(cx - R * .35, cy - R * .45, 0, cx - R * .2, cy - R * .25, R * 1.25)   // объём: свет сверху слева
+  lt.addColorStop(0, "rgba(255,255,255,.3)"); lt.addColorStop(.5, "rgba(255,255,255,.06)"); lt.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = lt; x.fillRect(0, 0, W, H)
+  const sd = x.createRadialGradient(cx - R * .15, cy - R * .2, R * .6, cx, cy, R * 1.05)                  // и мягкая тень к краю
+  sd.addColorStop(0, "rgba(0,40,50,0)"); sd.addColorStop(1, "rgba(0,40,60,.22)"); x.fillStyle = sd; x.fillRect(0, 0, W, H)
+  x.globalAlpha = 1; x.globalCompositeOperation = o.mode || "lighter"; waves(); x.globalCompositeOperation = "destination-in"
+  const fm = x.createRadialGradient(cx, cy, 0, cx, cy, edge); fm.addColorStop(0, "#000"); fm.addColorStop(R / edge, "#000"); fm.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = fm; x.fillRect(0, 0, W, H)
+  x.globalCompositeOperation = "source-over"
+}
 function silkOrb(c, T, d, active) {
   const x = c.getContext("2d"), W = c.width, H = c.height, a = active ? SILK.lv : 0
   x.clearRect(0, 0, W, H)
-  const cx = W / 2, cy = H / 2, R = W * .42, P = iziCol()
-  const bg = x.createLinearGradient(0, H, W, 0); bg.addColorStop(0, P[2][0]); bg.addColorStop(.55, P[2][1]); bg.addColorStop(1, P[2][2]); x.fillStyle = bg; x.fillRect(0, 0, W, H)
-  const sh = x.createRadialGradient(W * .25, H * .15, 0, W * .25, H * .15, W * .8); sh.addColorStop(0, "rgba(255,255,255,.22)"); sh.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = sh; x.fillRect(0, 0, W, H)
-  x.globalCompositeOperation = "destination-in"   // внешнее кольцо: от стеклянного края наружу — в ноль
-  const fm = x.createRadialGradient(cx, cy, 0, cx, cy, W / 2); fm.addColorStop(0, "#000"); fm.addColorStop(R / (W / 2), "#000"); fm.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = fm; x.fillRect(0, 0, W, H)
-  x.globalCompositeOperation = "source-over"
-  const b = x.createRadialGradient(cx - R * .3, cy - R * .35, R * .1, cx, cy, R)
-  b.addColorStop(0, "rgba(255,255,255,.32)"); b.addColorStop(1, "rgba(255,255,255,.08)")
-  x.fillStyle = b; x.beginPath(); x.arc(cx, cy, R, 0, 7); x.fill()
-  x.save(); x.beginPath(); x.arc(cx, cy, R * .98, 0, 7); x.clip(); x.globalCompositeOperation = "lighter"
-  const sp = active ? 2 + a * 1.5 : .9, len = R * 1.85
-  ;[[P[3], .95, .04, .32, 2.1, .035, .18, 1.25], [P[4], 1, -.03, .42, 0, .045, .22, 1]].forEach(([rgb, al, dy, am, ph, lw, gw, k]) => {
-    const amp = R * am * (1 + a * .5), g = x.createLinearGradient(cx - len / 2, 0, cx + len / 2, 0)
-    g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(.28, `rgba(${rgb},${al})`); g.addColorStop(.72, `rgba(${rgb},${al})`); g.addColorStop(1, `rgba(${rgb},0)`)
-    x.beginPath()
-    for (let i = 0; i <= 80; i++) {
-      const u = i / 80, env = Math.pow(Math.sin(Math.PI * u), 1.5), px = cx - len / 2 + u * len
-      const py = cy + dy * R + amp * env * Math.sin(u * Math.PI * 2.3 + ph + T * sp * k)
-      i ? x.lineTo(px, py) : x.moveTo(px, py)
-    }
-    x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = g; x.lineWidth = Math.max(1.2 * d, R * lw)
-    x.shadowColor = `rgba(${rgb},1)`; x.shadowBlur = R * gw; x.stroke(); x.shadowBlur = 0
+  const cx = W / 2, cy = H / 2, R = W * .4, P = iziCol()
+  iziSphere(x, W, H, R, W / 2, P, () => {
+    const sp = active ? 2 + a * 1.5 : .9, len = R * 1.8
+    ;[[P[3], .95, .04, .32, 2.1, .035, .18, 1.25], [P[4], 1, -.03, .42, 0, .045, .22, 1]].forEach(([rgb, al, dy, am, ph, lw, gw, k]) => {
+      const amp = R * am * (1 + a * .5), g = x.createLinearGradient(cx - len / 2, 0, cx + len / 2, 0)
+      g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(.28, `rgba(${rgb},${al})`); g.addColorStop(.72, `rgba(${rgb},${al})`); g.addColorStop(1, `rgba(${rgb},0)`)
+      x.beginPath()
+      for (let i = 0; i <= 80; i++) {
+        const u = i / 80, env = Math.pow(Math.sin(Math.PI * u), 1.5), px = cx - len / 2 + u * len
+        const py = cy + dy * R + amp * env * Math.sin(u * Math.PI * 2.3 + ph + T * sp * k)
+        i ? x.lineTo(px, py) : x.moveTo(px, py)
+      }
+      x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = g; x.lineWidth = Math.max(1.2 * d, R * lw)
+      x.shadowColor = `rgba(${rgb},1)`; x.shadowBlur = R * gw; x.stroke(); x.shadowBlur = 0
+    })
   })
-  x.globalCompositeOperation = "source-over"; x.restore()
-  const rim = x.createLinearGradient(cx - R, cy - R, cx + R, cy + R)
-  rim.addColorStop(0, "rgba(255,255,255,.8)"); rim.addColorStop(.5, "rgba(255,255,255,.12)"); rim.addColorStop(1, "rgba(255,255,255,.5)")
-  x.strokeStyle = rim; x.lineWidth = Math.max(d, R * .025); x.beginPath(); x.arc(cx, cy, R, 0, 7); x.stroke()
-  const hl = x.createRadialGradient(cx - R * .38, cy - R * .5, 0, cx - R * .38, cy - R * .5, R * .45)
-  hl.addColorStop(0, "rgba(255,255,255,.5)"); hl.addColorStop(1, "rgba(255,255,255,0)")
-  x.fillStyle = hl; x.beginPath(); x.ellipse(cx - R * .38, cy - R * .5, R * .4, R * .24, -.6, 0, 7); x.fill()
 }
 // Полоса записи: две волны плывут медленно, как на кнопке; пока говорите — чуть шире размах, но не быстрее.
 // Без точки: только волны, концы растворяются. Всё свечение помещается внутри полосы
@@ -5238,39 +5237,26 @@ function silkTalk(c, T, d) {
   SILK.ie *= .975; SILK.ye *= .975
   x.clearRect(0, 0, W, H)
   const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .34
-  // внешнее кольцо: свет растворяется наружу, дышит с голосом
-  const halo = R * (1.5 + .12 * Math.max(SILK.il, SILK.yl))
-  const hg = x.createRadialGradient(cx, cy, R * .96, cx, cy, halo)
-  hg.addColorStop(0, `rgba(150,235,225,${.22 + .16 * Math.max(SILK.il, SILK.yl)})`); hg.addColorStop(.3, "rgba(120,200,255,.07)"); hg.addColorStop(1, "rgba(120,200,255,0)")
-  x.fillStyle = hg; x.beginPath(); x.arc(cx, cy, halo, 0, Math.PI * 2); x.moveTo(cx + R * .99, cy); x.arc(cx, cy, R * .99, 0, Math.PI * 2, true); x.fill()   // только снаружи шара
-  // стекло
-  const b = x.createRadialGradient(cx - R * .3, cy - R * .35, R * .1, cx, cy, R)
-  b.addColorStop(0, "rgba(255,255,255,.16)"); b.addColorStop(.7, "rgba(255,255,255,.03)"); b.addColorStop(1, "rgba(255,255,255,.1)")
-  x.fillStyle = b; x.beginPath(); x.arc(cx, cy, R, 0, 7); x.fill()
-  x.save(); x.beginPath(); x.arc(cx, cy, R * .985, 0, 7); x.clip(); x.globalCompositeOperation = "screen"
-  const len = R * 1.9
-  // [цвет, уровень, смещение, базовый размах, фаза, скорость, толщина]
+  // одна сфера в цветах Изи, без стеклянной оболочки; край тает наружу и дышит с голосом
   const P = iziCol(), ci = P[0] === "em" ? "95,185,255" : P[3], cy2 = P[0] === "em" ? "80,245,190" : P[4]
-  ;[[ci, SILK.il, .05, .2, 2.1, .75, .03], [cy2, SILK.yl, -.05, .24, 0, .62, .034]].forEach(([rgb, lv, dy, am, ph, sp, lw]) => {
-    const amp = R * am * (1 + lv * .6), jit = lv * .14
-    const g = x.createLinearGradient(cx - len / 2, 0, cx + len / 2, 0)
-    g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(.3, `rgba(${rgb},${.75 + lv * .25})`); g.addColorStop(.7, `rgba(${rgb},${.75 + lv * .25})`); g.addColorStop(1, `rgba(${rgb},0)`)
-    x.beginPath()
-    for (let i = 0; i <= 120; i++) {
-      const u = i / 120, env = Math.pow(Math.sin(Math.PI * u), 1.5), px = cx - len / 2 + u * len
-      const py = cy + dy * R + amp * env * (Math.sin(u * Math.PI * 2.2 + ph + T * sp) + jit * Math.sin(u * Math.PI * 9 + T * 7.5))
-      i ? x.lineTo(px, py) : x.moveTo(px, py)
-    }
-    x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = g; x.lineWidth = Math.max(1.4 * d, R * lw * (1 + lv * .25))
-    x.shadowColor = `rgba(${rgb},.9)`; x.shadowBlur = R * (.1 + lv * .12); x.stroke(); x.shadowBlur = 0
-  })
-  x.globalCompositeOperation = "source-over"; x.restore()
-  const rim = x.createLinearGradient(cx - R, cy - R, cx + R, cy + R)
-  rim.addColorStop(0, "rgba(255,255,255,.7)"); rim.addColorStop(.5, "rgba(255,255,255,.1)"); rim.addColorStop(1, "rgba(255,255,255,.4)")
-  x.strokeStyle = rim; x.lineWidth = Math.max(d, R * .018); x.beginPath(); x.arc(cx, cy, R, 0, 7); x.stroke()
-  const hl = x.createRadialGradient(cx - R * .38, cy - R * .5, 0, cx - R * .38, cy - R * .5, R * .45)
-  hl.addColorStop(0, "rgba(255,255,255,.3)"); hl.addColorStop(1, "rgba(255,255,255,0)")
-  x.fillStyle = hl; x.beginPath(); x.ellipse(cx - R * .38, cy - R * .5, R * .4, R * .22, -.6, 0, 7); x.fill()
+  const edge = R * (1.2 + .1 * Math.max(SILK.il, SILK.yl))
+  iziSphere(x, W, H, R, edge, P, () => {
+    const len = R * 1.9
+    // [цвет, уровень, смещение, базовый размах, фаза, скорость, толщина]
+    ;[[ci, SILK.il, .05, .2, 2.1, .75, .03], [cy2, SILK.yl, -.05, .24, 0, .62, .034]].forEach(([rgb, lv, dy, am, ph, sp, lw]) => {
+      const amp = R * am * (1 + lv * .6), jit = lv * .14
+      const g = x.createLinearGradient(cx - len / 2, 0, cx + len / 2, 0)
+      g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(.3, `rgba(${rgb},${.8 + lv * .2})`); g.addColorStop(.7, `rgba(${rgb},${.8 + lv * .2})`); g.addColorStop(1, `rgba(${rgb},0)`)
+      x.beginPath()
+      for (let i = 0; i <= 120; i++) {
+        const u = i / 120, env = Math.pow(Math.sin(Math.PI * u), 1.5), px = cx - len / 2 + u * len
+        const py = cy + dy * R + amp * env * (Math.sin(u * Math.PI * 2.2 + ph + T * sp) + jit * Math.sin(u * Math.PI * 9 + T * 7.5))
+        i ? x.lineTo(px, py) : x.moveTo(px, py)
+      }
+      x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = g; x.lineWidth = Math.max(1.4 * d, R * lw * (1 + lv * .25))
+      x.shadowColor = `rgba(${rgb},.9)`; x.shadowBlur = R * (.1 + lv * .12); x.stroke(); x.shadowBlur = 0
+    })
+  }, { alpha: .5, mode: "screen" })
 }
 Object.assign(SILK, { il: 0, yl: 0, ie: 0, ye: 0 })
 
