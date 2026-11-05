@@ -3312,11 +3312,13 @@ function silkLines(c, T, d, active) {
       const y = H / 2 + amp * k * env * Math.sin(u * Math.PI * 2 * 1.15 + T * sp * (j ? 1.25 : 1) + off)
       px === pad ? x.moveTo(px, y) : x.lineTo(px, y)
     }
-    x.strokeStyle = col; x.lineWidth = 1.8 * d; x.lineCap = "round"; x.lineJoin = "round"; x.stroke()
+    const g = x.createLinearGradient(pad, 0, W - pad, 0), c0 = col.replace(/[\d.]+\)$/, "0)")
+    g.addColorStop(0, c0); g.addColorStop(.25, col); g.addColorStop(.75, col); g.addColorStop(1, c0)   // концы растворяются
+    x.strokeStyle = g; x.lineWidth = 1.8 * d; x.lineCap = "round"; x.lineJoin = "round"; x.stroke()
   })
 }
 // Полоса записи: две волны плывут медленно, как на кнопке; пока говорите — чуть шире размах, но не быстрее.
-// Яркая точка стоит в центре и только мягко дышит. Всё свечение помещается внутри полосы
+// Без точки: только волны, концы растворяются. Всё свечение помещается внутри полосы
 function silkComet(c, T, d) {
   const x = c.getContext("2d"), W = c.width, H = c.height, a = SILK.lv
   x.clearRect(0, 0, W, H)
@@ -3331,11 +3333,6 @@ function silkComet(c, T, d) {
     x.strokeStyle = g; x.lineWidth = (j ? 1.6 : 2) * d; x.lineCap = "round"; x.lineJoin = "round"
     x.shadowColor = "#bff"; x.shadowBlur = glow; x.stroke(); x.shadowBlur = 0
   })
-  const hy = H / 2, R = (3.2 + a * 1.2) * (1 + .08 * Math.sin(T * 1.6)) * d, rr = Math.min(R * 2.4, H / 2 - d)
-  const gl = x.createRadialGradient(mid, hy, 0, mid, hy, rr)
-  gl.addColorStop(0, "#fff"); gl.addColorStop(.3, "rgba(200,255,240,.9)"); gl.addColorStop(.65, "rgba(90,220,255,.3)"); gl.addColorStop(1, "rgba(90,220,255,0)")
-  x.fillStyle = gl; x.beginPath(); x.arc(mid, hy, rr, 0, 7); x.fill()
-  x.fillStyle = "#fff"; x.beginPath(); x.arc(mid, hy, R * .5, 0, 7); x.fill()
 }
 let silkHide = null
 function silkShow(text) {

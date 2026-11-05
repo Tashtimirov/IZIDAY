@@ -51,5 +51,13 @@ Object.assign(V,{
    orbGlass(cx,cy,R) }
 })
 
+
+function waveF(cx,cy,len,amp,rgb,a,ph,lw,glow,k=2.3){ const g=x.createLinearGradient(cx-len/2,0,cx+len/2,0); g.addColorStop(0,`rgba(${rgb},0)`); g.addColorStop(.28,`rgba(${rgb},${a})`); g.addColorStop(.72,`rgba(${rgb},${a})`); g.addColorStop(1,`rgba(${rgb},0)`)
+ x.beginPath(); for(let i=0;i<=200;i++){const u=i/200,env=Math.pow(Math.sin(Math.PI*u),1.5),px=cx-len/2+u*len,py=cy+amp*env*Math.sin(u*Math.PI*k+ph); i?x.lineTo(px,py):x.moveTo(px,py)}
+ x.lineCap="round";x.lineJoin="round";x.strokeStyle=g;x.lineWidth=lw;x.shadowColor=`rgba(${rgb},1)`;x.shadowBlur=glow;x.stroke();x.shadowBlur=0 }
+V.a2=function(){ bg(); const cx=W/2,cy=W/2,R=W*.42; orbShell(cx,cy,R)
+ inside(cx,cy,R,()=>{ waveF(cx,cy+R*.04,R*1.85,R*.32,"140,205,255",.95,2.1,R*.035,R*.18); waveF(cx,cy-R*.03,R*1.85,R*.42,"150,255,220",1,0,R*.045,R*.22) })
+ orbGlass(cx,cy,R) }
+
 window.draw=k=>{x.clearRect(0,0,W,W);V[k]()}
 </script>
