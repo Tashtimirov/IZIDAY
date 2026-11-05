@@ -959,9 +959,55 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 #talk .tk-btn svg { width: 26px; height: 26px; }
 #talk .tk-btn.off { background: rgba(255,255,255,.88); color: #0b4a33; }
 #talk .tk-btn:active { transform: scale(.92); }
-#talk .tk-hint { font-size: 12.5px; color: rgba(255,255,255,.45); }
+#talk .tk-hint { font-size: 12.5px; color: rgba(255,255,255,.45); text-align: center; }
 #talk .tk-izi { transition: opacity .3s; }
 #talk[data-st="listen"] .tk-izi, #talk[data-st="think"] .tk-izi:not(.ph) { opacity: .45; font-size: 19px; }
+/* Закреплённый разговор: стеклянная панель над меню — шар, кто говорит, последняя фраза, пауза и чат.
+   Приложение под ней живое: вкладки, прокрутка, кнопки. Вниз — закончить, вверх или касание текста — на весь экран */
+#talk.pin { pointer-events: none; }
+#talk.pin::before { opacity: 0; }
+#talk.pin { z-index: 15; }
+#talk.pin .tk-sheet { pointer-events: auto; inset: auto 10px calc(var(--tabs) + 24px); min-height: 82px; padding: 16px 8px 9px 4px; border-radius: 28px;
+  display: grid; grid-template-columns: 64px 1fr auto; grid-template-rows: auto 1fr; column-gap: 8px; row-gap: 3px; align-items: center; overflow: hidden;
+  background: linear-gradient(115deg, color-mix(in srgb, var(--izi1, #0b8f5c) 66%, rgba(4,19,26,.7)), rgba(6,24,30,.86) 72%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%); backdrop-filter: blur(30px) saturate(180%);
+  border: .5px solid rgba(255,255,255,.2); box-shadow: 0 18px 38px -14px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.14);
+  transition: transform .3s cubic-bezier(.2,.9,.25,1), opacity .3s; }
+#talk.pin .grab { position: absolute; top: 6px; left: 50%; width: 30px; height: 4px; margin: 0 0 0 -15px; background: rgba(255,255,255,.28); }
+#talk.pin .tk-orb { grid-column: 1; grid-row: 1 / 3; width: 64px; height: 64px; margin: -6px 0 0; }
+#talk.pin .tk-top { grid-column: 2; grid-row: 1; flex-direction: row; align-items: baseline; gap: 6px; align-self: end; min-width: 0; line-height: 1.2; }
+#talk.pin .tk-top b { font-size: 13.5px; letter-spacing: 0; }
+#talk.pin .tk-st { font-size: 12px; min-height: 0; line-height: 1.2; }
+#talk.pin .tk-cap { grid-column: 2; grid-row: 2; align-self: start; align-items: stretch; text-align: left; gap: 0; flex: none; min-width: 0; cursor: pointer; }
+#talk.pin .tk-izi, #talk.pin .tk-you { font: 500 14.5px/1.3 system-ui, -apple-system, sans-serif; letter-spacing: 0; opacity: 1; color: #fff; animation: none;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-wrap: pretty; }
+#talk.pin .tk-izi.ph { letter-spacing: .2em; color: rgba(255,255,255,.55); }
+#talk.pin[data-st="say"] .tk-you, #talk.pin:not([data-st="say"]) .tk-izi { display: none; }
+#talk.pin:not([data-st="say"]) .tk-you { color: rgba(225,255,242,.86); }
+#talk.pin .tk-bar { grid-column: 3; grid-row: 1 / 3; gap: 6px; margin: -6px 0 0; }
+#talk.pin .tk-btn { width: 44px; height: 44px; }
+#talk.pin .tk-btn svg { width: 20px; height: 20px; }
+#talk.pin .tk-hint { display: none; }
+#talk.pin.off .tk-sheet { transform: translateY(130%); opacity: 0; }
+body.chat #talk.pin .tk-sheet { bottom: calc(var(--tabs) + 74px); }
+body.chat #talk.pin .tk-chat { display: none; }   /* уже в чате */
+body.kb #talk.pin .tk-sheet { bottom: calc(var(--kb) + 64px); }
+body.talk-pin main { padding-bottom: calc(var(--tabs) + 190px); }
+body.talk-pin #toast { bottom: calc(var(--tabs) + 126px); }
+body.chat.talk-pin #toast { bottom: calc(var(--tabs) + 176px); }
+#talk .tk-sheet.tk-dock { animation: tk-dock .42s cubic-bezier(.2,.9,.25,1); }
+#talk .tk-sheet.tk-grow { animation: tk-grow .42s cubic-bezier(.2,.9,.25,1); }
+@keyframes tk-dock { from { opacity: 0; transform: translateY(28px) scale(.92); } }
+@keyframes tk-grow { from { opacity: 0; transform: translateY(16vh) scale(.9); } }
+/* пока держат «Изи»: «вверх — закрепить», тянется за пальцем и светлеет */
+#pin-hint { position: fixed; left: 50%; bottom: calc(var(--tabs) + 118px); z-index: 26; display: flex; align-items: center; gap: 6px; padding: 7px 14px 7px 10px;
+  border-radius: 18px; color: #fff; font: 600 13px/1 system-ui, -apple-system, sans-serif; pointer-events: none; --k: 0;
+  background: color-mix(in srgb, var(--izi1, #0b8f5c) calc(30% + var(--k) * 50%), rgba(6,24,30,.7));
+  -webkit-backdrop-filter: blur(20px) saturate(170%); backdrop-filter: blur(20px) saturate(170%); border: .5px solid rgba(255,255,255,.22);
+  box-shadow: 0 10px 24px -10px rgba(0,0,0,.5); opacity: 0; transition: opacity .25s; }
+#pin-hint.on { opacity: calc(.8 + var(--k) * .2); }
+#pin-hint svg { width: 16px; height: 16px; animation: pin-up 1.2s ease-in-out infinite; }
+@keyframes pin-up { 50% { transform: translateY(-3px); } }
 .izi-card .set.col { flex-direction: column; align-items: stretch; gap: 8px; }
 .izi-card .set.col .seg.izi-rate { width: 100%; }
 
