@@ -43,6 +43,7 @@ const HI = Object.assign({}, typeof TD_ICO !== "undefined" ? TD_ICO : {}, {
   scale: '<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M8.5 9a5 5 0 0 1 7 0l-2 2.5a2 2 0 0 0-3 0z"/>', plus: '<path d="M12 5v14M5 12h14"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>', cart: '<path d="M3 4h2.5l2 11h10.5l2-8H7"/><circle cx="9.5" cy="19.5" r="1.4"/><circle cx="17" cy="19.5" r="1.4"/>',
   share: '<path d="M12 15V3M7.5 7.5L12 3l4.5 4.5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>', cal: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  trash: '<path d="M4 7h16M9 7V4.5h6V7M6 7l1 12.3A1.8 1.8 0 0 0 8.8 21h6.4a1.8 1.8 0 0 0 1.8-1.7L18 7"/>', drop: '<path d="M12 3s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11z"/>',
   chev: '<path d="M9 5l7 7-7 7"/>', gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
 })
 const hi = (n, s = 16, c) => `<i class="tdi" style="width:${s}px;height:${s}px${c ? ";color:" + c : ""}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${HI[n] || ""}</svg></i>`
@@ -605,7 +606,25 @@ function waterCard(h, g) {
     <div class="hl-glass ${p >= 1 ? "full" : ""}" data-water="${g.glass}"><div class="liq" style="height:${Math.max(4, p * 92)}%"><svg viewBox="0 0 120 12" preserveAspectRatio="none"><path d="M0 6 Q15 0 30 6 T60 6 T90 6 T120 6 V12 H0z"/></svg><svg viewBox="0 0 120 12" preserveAspectRatio="none" class="b"><path d="M0 6 Q15 12 30 6 T60 6 T90 6 T120 6 V12 H0z"/></svg></div><i class="shine"></i></div>
     <div style="flex:1;min-width:0"><div class="hl-big2">${liters(h.water)} л</div><div class="small muted">из ${liters(g.waterGoal)} л · ${p >= 1 ? "сосуд полон" : "сосуд наполняется за день"}</div>
     <div class="btns" style="margin-top:10px"><button class="btn small hl-blue" data-water="${g.glass}">+ ${g.glass} мл</button><button class="btn small" data-water="500">+500</button></div>
-    <div class="btns" style="margin-top:6px"><button class="btn small" data-water="other">Другое</button><button class="btn small" data-water="undo">Отменить</button></div></div></div></div>`
+    <div class="btns" style="margin-top:6px"><button class="btn small" data-water="other">Другое</button><button class="btn small" data-water="undo">Отменить</button></div></div></div>${waterLog(h, g)}</div>`
+}
+// История воды за сегодня: время и объём каждой отметки, новые сверху; удалить — корзина или смахнуть влево
+function waterLog(h, g) {
+  const l = (h.waterList || []).slice().sort((a, b) => b.date - a.date)
+  if (!l.length) return `<div class="hl-wlog"><div class="hl-wlog-h">Сегодня</div><div class="small muted">Пока ни одной отметки — нажмите на стакан.</div></div>`
+  const mx = Math.max(g.glass || 250, ...l.map(w => +w.ml || 0))
+  return `<div class="hl-wlog"><div class="hl-wlog-h">Сегодня<span>${l.length} ${plural(l.length, "отметка", "отметки", "отметок")}</span></div>
+    ${l.map((w, i) => `<div class="hl-wrow" data-wrow="${esc(w.id)}" style="--i:${Math.min(i, 8)}"><div class="in">
+      <span class="tm">${hm(new Date(w.date))}</span>${hi("drop", 14, "#0A84FF")}<span class="bar"><i style="width:${Math.max(8, Math.min(1, (+w.ml || 0) / mx) * 100)}%"></i></span>
+      <b>${num(w.ml)} мл</b><button class="hl-wdel" data-wdel="${esc(w.id)}" aria-label="Удалить">${hi("trash", 16)}</button></div></div>`).join("")}</div>`
+}
+function waterDel(id, row) {
+  const w = live(D.water).find(x => x.id === id); if (!w) return
+  if (navigator.vibrate) navigator.vibrate(8)
+  const done = () => { remove("water", id); render(); toast(`Убрано ${num(w.ml)} мл`) }
+  if (!row) return done()
+  row.style.height = row.offsetHeight + "px"; row.classList.add("gone")
+  requestAnimationFrame(() => { row.style.height = "0px" }); setTimeout(done, 280)
 }
 function medsCard() {
   const l = meds(), k = dayKey(new Date()), now = new Date().getHours() * 60 + new Date().getMinutes()
@@ -747,6 +766,13 @@ const HDO = {
 }
 function bindHealth(v) {
   if (tab !== "health") return
+  $$("[data-wdel]", v).forEach(b => b.onclick = ev => { ev.stopPropagation(); waterDel(b.dataset.wdel, b.closest(".hl-wrow")) })
+  $$(".hl-wrow", v).forEach(r => { const inn = r.firstElementChild; let x0 = null, y0 = 0, dx = 0, lock = null
+    r.addEventListener("touchstart", e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; lock = null; inn.style.transition = "none" }, { passive: true })
+    r.addEventListener("touchmove", e => { if (x0 == null) return; const ddx = e.touches[0].clientX - x0, ddy = e.touches[0].clientY - y0
+      if (lock == null && Math.abs(ddx) + Math.abs(ddy) > 8) lock = Math.abs(ddx) > Math.abs(ddy) ? "x" : "y"
+      if (lock !== "x") return; dx = Math.min(0, ddx); inn.style.transform = `translateX(${dx}px)`; r.classList.toggle("arm", dx < -80) }, { passive: true })
+    r.addEventListener("touchend", () => { inn.style.transition = ""; if (lock === "x" && dx < -80) { inn.style.transform = "translateX(-110%)"; waterDel(r.dataset.wrow, r) } else { inn.style.transform = ""; r.classList.remove("arm") } x0 = null }) })
   $$("[data-hl]", v).forEach(b => b.onclick = ev => { ev.stopPropagation(); const f = HDO[b.dataset.hl]; if (f) f() })
   $$("[data-mood]", v).forEach(b => b.onclick = () => { const val = +b.dataset.mood; logMood(val); if (navigator.vibrate) navigator.vibrate(8)
     $$("[data-mood]", v).forEach(x => x.classList.toggle("on", x === b)); b.classList.add("pop")
