@@ -2187,7 +2187,7 @@ function render() {
   const fn = { today: renderToday, cal: renderCal, plans: renderPlans, chat: renderChatHTML, money: renderMoney, health: renderHealth, more: renderMore }[tab]
   const html = fn(), v = $("#view")
   if (html === lastHTML && tab === lastTab && v.firstChild) { renderTop(); return }
-  const strip = $("#strip", v), keep = strip && tab === lastTab ? strip.scrollLeft : null
+  const strip = $("#strip", v), keep = strip && tab === lastTab ? stripFirst(strip) : null
   v.classList.toggle("anim", tab !== lastTab)
   lastHTML = html; lastTab = tab
   v.innerHTML = html
@@ -2328,13 +2328,20 @@ function weekLabel(w0) {
 }
 // Лента дней: после перерисовки — на неделю выбранного дня (или туда, где пальцем оставили); подпись — по видимой неделе
 let stripCenter = null, stripJump = false
+// Первый видимый день ленты (дата, не пиксели): лента перестраивается вокруг недели выбранного дня,
+// поэтому прежний scrollLeft после нажатия на день в другой неделе показал бы чужие недели
+function stripFirst(s) {
+  const col = s.children[1] ? s.children[1].offsetLeft - s.children[0].offsetLeft : 0
+  return col ? +addDays(new Date(+s.dataset.start), Math.round(s.scrollLeft / col)) : null
+}
 function stripInit(keep) {
   const s = $("#strip")
   if (!s) return
   const col = s.children[1] ? s.children[1].offsetLeft - s.children[0].offsetLeft : 0
   if (!col) return
   const start = +s.dataset.start, idx = Math.round((+s.dataset.sel - start) / 864e5)
-  s.scrollLeft = keep != null && !stripJump ? keep : idx * col
+  const kIdx = keep != null ? Math.round((sod(keep) - start) / 864e5) : -1
+  s.scrollLeft = kIdx >= 0 && kIdx < s.children.length - 6 && !stripJump ? kIdx * col : idx * col
   stripJump = false
   let t = null, touched = false   // перестраивать ленту только после пальца, не от прокрутки кодом
   s.addEventListener("pointerdown", () => { touched = true }, { passive: true })
