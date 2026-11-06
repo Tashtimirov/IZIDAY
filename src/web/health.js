@@ -267,7 +267,7 @@ function medForm(m) {
     <div class="field"><label>Название</label><input id="md-t" value="${esc(m ? m.title : "")}" placeholder="Витамин D 2000, Омега-3…"></div>
     <div class="field"><label>Доза</label><input id="md-d" value="${esc(m ? m.dose || "" : "")}" placeholder="1 капсула, с едой — необязательно"></div>
     <div class="field"><label>Когда</label><div class="chips" id="md-w">${PRE.map(([t, n]) => `<button class="chip" data-t="${t}">${n} · ${t}</button>`).join("")}</div>
-      <div class="chips" id="md-x" style="margin-top:7px"></div><input id="md-h" type="time" style="margin-top:7px"></div>
+      <div class="chips" id="md-x" style="margin-top:7px"></div><div class="md-add"><input id="md-h" type="time" value="09:00"><button class="btn primary" id="md-ok" aria-label="Добавить время"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></div></div>
     <div class="field"><label>Осталось, штук</label><input id="md-s" type="number" inputmode="numeric" value="${m && m.stock != null ? esc(m.stock) : ""}" placeholder="Напомню купить, когда останется на неделю"></div>
     <div class="btns">${m ? '<button class="btn red" data-a="del">Убрать</button>' : ""}<button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>
     <div class="muted small" style="margin-top:8px">В нужное время придёт пуш. Отметка «принял» — касанием кружка или словами Изи.</div>`, { onClose: () => render() })
@@ -275,7 +275,8 @@ function medForm(m) {
     $("#md-x", s.el).innerHTML = [...times].filter(t => !PRE.some(p => p[0] === t)).sort().map(t => `<button class="chip on" data-x="${t}">${t} ✕</button>`).join("")
     $$("#md-x .chip", s.el).forEach(b => b.onclick = () => { times.delete(b.dataset.x); paint() }) }
   $$("#md-w .chip", s.el).forEach(b => b.onclick = () => { times.has(b.dataset.t) ? times.delete(b.dataset.t) : times.add(b.dataset.t); paint() })
-  $("#md-h", s.el).onchange = e => { if (e.target.value) { times.add(e.target.value); e.target.value = ""; paint() } }
+  // Колесо времени на iPhone шлёт change при каждой остановке, поэтому время добавляем только по галочке
+  $("#md-ok", s.el).onclick = () => { const v = $("#md-h", s.el).value; if (!v) return toast("Выберите время"); times.add(v); paint() }
   paint()
   $('[data-a="no"]', s.el).onclick = () => s.close()
   if (m) $('[data-a="del"]', s.el).onclick = () => { upsert("goals", Object.assign({}, m, { off: true })); medNudges(); s.close(); toast("Убрано") }
