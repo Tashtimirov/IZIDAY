@@ -190,6 +190,8 @@ function approve(w, yes) {
 
 // ───────────── Копилки ─────────────
 const kset = kid => Object.assign({ pocket: 0, wd: 5, split: SPLIT, limit: 200 }, (F().set || {})[kid] || {})
+// Валюта ребёнка — выбирает взрослый в «Деньги ребёнка» (set[kid].cur); без выбора — валюта этого телефона
+const kcur = kid => { const c = kid && kset(kid).cur; return (c && typeof CUR !== "undefined" && CUR[c]) || core.CONFIG.currency || "฿" }
 function jars(kid) {
   const j = { spend: 0, save: 0, share: 0 }
   for (const m of L("money")) if (m.kid === kid && m.st === "ok" && j[m.jar] != null) j[m.jar] += +m.amount || 0
@@ -279,6 +281,7 @@ let kTab = "day", kCourse = "goals"
 const star = (n, cls = "") => `<span class="kstar ${cls}">${ic("star", 16, "#E89A00", 2.4)}${n}</span>`
 const orb = (s = 56) => `<b class="orb kidorb" style="width:${s}px;height:${s}px"></b>`
 function kidRender() {
+  if (famOn() && meId() && kset(meId()).cur && typeof CUR !== "undefined" && CUR[kset(meId()).cur]) core.CONFIG.currency = CUR[kset(meId()).cur]
   if (!famOn()) return kidNoFam()
   const me = member(meId()) || { name: D.fam.name || "Друг", age: 10 }
   const body = { day: kDay, learn: kLearn, money: kMoney, dreams: kDreams }[kTab](me)
@@ -324,7 +327,7 @@ function kLearn(me) {
   return h
 }
 function kMoney(me) {
-  const j = jars(me.id), all = j.spend + j.save + j.share, s = kset(me.id), np = nextPocket(me.id), cur = core.CONFIG.currency || "฿"
+  const j = jars(me.id), all = j.spend + j.save + j.share, s = kset(me.id), np = nextPocket(me.id), cur = kcur(me.id)
   let h = kHead("Мои деньги", "Копилки")
   h += `<div class="kcard kc"><div class="kmuted">У меня всего</div><div class="kbig">${num(all)} ${esc(cur)}</div><div class="kjars">${JARS.map(([k, t, n, c]) => `<div style="background:${c}18"><span class="kji" style="background:${c}">${ic(n, 22, "#fff")}</span><b>${t}</b><em style="color:${c}">${num(j[k])}</em></div>`).join("")}</div></div>`
   if (s.pocket > 0) h += `<div class="kcard"><h2>Карманные <span>${["", "по понедельникам", "по вторникам", "по средам", "по четвергам", "по пятницам", "по субботам", "по воскресеньям"][s.wd]}</span></h2><div class="krow"><div class="grow"><div class="kbig s">${num(s.pocket)} ${esc(cur)}</div><div class="kmuted">сами разложатся: ${s.split.join("% · ")}%</div></div><div class="kr"><div class="kmuted">${np === 0 ? "" : "через"}</div><b>${np === 0 ? "сегодня" : np + " " + plural(np, "день", "дня", "дней")}</b></div></div></div>`
@@ -337,7 +340,7 @@ function kMoney(me) {
   return h
 }
 function kDreams(me) {
-  const ds = kidDreams(me.id), main = mainDream(me.id), bank = ds.filter(d => !d.main && !d.done), j = jars(me.id), cur = core.CONFIG.currency || "฿"
+  const ds = kidDreams(me.id), main = mainDream(me.id), bank = ds.filter(d => !d.main && !d.done), j = jars(me.id), cur = kcur(me.id)
   let h = kHead("Банка желаний", "Мои мечты", `<button class="kadd" data-k="wish" aria-label="Добавить желание">${ic("plus", 24, "#fff", 2.6)}</button>`)
   if (main) { const p = main.price ? Math.min(1, j.save / main.price) : 0
     h += `<div class="kcard kmain"><div class="krow"><div class="kmi">${ic(main.ic || "star", 34, "#fff")}</div><div class="grow"><div class="kcap">ГЛАВНАЯ МЕЧТА</div><div class="kmt">${esc(main.title)}</div>${main.price ? `<div class="kmp">${num(Math.min(j.save, main.price))} из ${num(main.price)} ${esc(cur)}</div>` : ""}</div></div>
@@ -394,7 +397,7 @@ function dreamGot(d) {
   party({ title: d.title, kid: true }); render()
 }
 async function buyForm() {
-  const me = meId(), j = jars(me), s = kset(me), cur = core.CONFIG.currency || "฿"
+  const me = meId(), j = jars(me), s = kset(me), cur = kcur(me)
   const t = await ui.ask("Что хочешь купить?", "", "", { placeholder: "Например: слайм", ok: "Дальше" }); if (!t) return
   const p = Math.round(+(await ui.ask("Сколько стоит?", `В копилке «Трачу» сейчас ${num(j.spend)} ${cur}.`, "", { type: "number", ok: "Дальше" })) || 0); if (!p) return
   if (p > j.spend) {
@@ -409,7 +412,7 @@ async function buyForm() {
   toast(ask ? "Спросил — ответ придёт сюда" : "Записано"); render()
 }
 function moneyHist(kid) {
-  const cur = core.CONFIG.currency || "฿", l = L("money").filter(m => m.kid === kid).sort((a, b) => b.at - a.at).slice(0, 40)
+  const cur = kcur(kid), l = L("money").filter(m => m.kid === kid).sort((a, b) => b.at - a.at).slice(0, 40)
   const s = sheet(`<h3>Что было с деньгами</h3>${l.map(m => `<div class="row"><div class="grow"><div class="t">${esc(m.note || "")}</div><div class="s">${esc(shortDate(new Date(m.at)))} · ${(JARS.find(j => j[0] === m.jar) || [0, ""])[1]}${m.st === "wait" ? " · ждёт" : m.st === "no" ? " · отказано" : ""}</div></div><b style="color:${m.amount < 0 ? "var(--red,#FF453A)" : "#18B57A"}">${m.amount > 0 ? "+" : ""}${num(m.amount)} ${esc(cur)}</b></div>`).join("") || '<div class="empty">Пока ничего</div>'}`)
   s.el.classList.add("kid-sheet")
 }
@@ -551,13 +554,13 @@ function famPage() {
 const MONTH_NOM_L = () => ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"][new Date().getMonth()]
 const mineWish = d => live(D.goals).find(g => g.kind === "wish" && g.from === d.id)
 function dreamRow(k, d) {
-  const n = d.ic || taskIc(d.title), c = icColor(n), have = mineWish(d), cur = core.CONFIG.currency || "฿"
+  const n = d.ic || taskIc(d.title), c = icColor(n), have = mineWish(d), cur = kcur(k && k.id || k)
   return `<div class="row"><span class="ftile" style="background:${c}1F">${ic(n, 22, c)}</span><div class="grow"><div class="t">${esc(short(k.name))}: ${esc(d.title)}</div><div class="s">${d.main ? `главная мечта${d.price ? ` · ${num(Math.min(jars(k.id).save, d.price))} из ${num(d.price)} ${esc(cur)}` : ""}` : "в банке желаний"}</div></div>${have ? `<span class="tag">в моих желаниях</span>` : `<button class="btn small" data-fwish="${esc(d.id)}">К себе</button>`}</div>`
 }
 function kidSheet(id) {
   const k = member(id); if (!k) return
   if (id === meId() || k.role === "adult") return ui.info(k.name, k.role === "adult" ? "Взрослый: баллы приходят из его приложения IZIDAY." : "")
-  const adult = isAdult(), w0 = dayKey(addDays(sod(new Date()), -6)), cur = core.CONFIG.currency || "฿"
+  const adult = isAdult(), w0 = dayKey(addDays(sod(new Date()), -6)), cur = kcur(id)
   const tl = L("log").filter(x => x.kid === id && x.day >= w0), tasksDone = tl.filter(x => x.kind === "task" && x.st === "ok").length
   const plan = kidTasks(id).reduce((s, t) => s + (t.days && t.days.length ? t.days.length : 7), 0), les = tl.filter(x => x.kind === "lesson").length, st = kset(id), j = jars(id)
   const html = `<h3>${esc(k.name)}${k.age ? ", " + k.age : ""}</h3><div class="msg">${ROLE_T[k.role]}${k.at ? "" : " · ещё не вошёл на своём телефоне"}</div>
@@ -594,7 +597,7 @@ function toWish(did) {
   toast("Добавлено в ваши желания"); if (!stack.length) render()
 }
 async function taskForm(kid, pay) {
-  const k = member(kid), cur = core.CONFIG.currency || "฿"
+  const k = member(kid), cur = kcur(kid)
   const s = sheet(`<h3>${pay ? "Дело за деньги" : "Новое дело"} · ${esc(short(k.name))}</h3>
     <div class="field"><label>Что сделать</label><input id="ft-t" placeholder="${pay ? "Полить сад" : "Почистить зубы, собрать рюкзак…"}"></div>
     ${pay ? `<div class="field"><label>Сколько платим, ${esc(cur)}</label><input id="ft-p" type="number" inputmode="numeric" value="50"></div>` : `<div class="field"><label>Звёзд</label><div class="chips">${[5, 10, 15, 20].map(n => `<button class="chip ${n === 5 ? "on" : ""}" data-st="${n}">${n}</button>`).join("")}</div></div>
@@ -612,12 +615,13 @@ async function taskForm(kid, pay) {
     s.close(); toast("Добавлено"); kidSheet(kid) }
 }
 async function moneyForm(kid) {
-  const k = member(kid), st = kset(kid), cur = core.CONFIG.currency || "฿"
+  const k = member(kid), st = kset(kid), cur = kcur(kid)
   const s = sheet(`<h3>Деньги · ${esc(short(k.name))}</h3>
     <div class="field"><label>Карманные, ${esc(cur)} (0 — без карманных)</label><input id="fm-p" type="number" inputmode="numeric" value="${st.pocket || ""}" placeholder="500"></div>
     <div class="field"><label>День</label><div class="chips">${WD7S.map((d, i) => `<button class="chip ${+st.wd === i + 1 ? "on" : ""}" data-d="${i + 1}">${d}</button>`).join("")}</div></div>
     <div class="field"><label>Раскладка, %: Трачу · Коплю · Делюсь</label><div class="row" style="gap:8px">${st.split.map((v, i) => `<input class="fm-s" type="number" inputmode="numeric" value="${v}" style="width:30%">`).join("")}</div></div>
     <div class="field"><label>Покупки без спроса — до, ${esc(cur)}</label><input id="fm-l" type="number" inputmode="numeric" value="${st.limit}"></div>
+    ${typeof CURS !== "undefined" ? `<div class="field"><label>Валюта копилок</label><select id="fm-c">${CURS.map(c => `<option value="${c[0]}" ${c[0] === (st.cur || baseCur()) ? "selected" : ""}>${esc(c[1] + "  " + c[2])}</option>`).join("")}</select></div>` : ""}
     <div class="btns"><button class="btn primary" data-a="ok">Сохранить</button></div>`)
   let day = +st.wd
   $$("[data-d]", s.el).forEach(b => b.onclick = () => { day = +b.dataset.d; $$("[data-d]", s.el).forEach(x => x.classList.toggle("on", x === b)) })
@@ -625,7 +629,7 @@ async function moneyForm(kid) {
     const sp = $$(".fm-s", s.el).map(x => Math.max(0, Math.round(+x.value || 0)))
     if (sp[0] + sp[1] + sp[2] !== 100) return toast("Раскладка должна давать 100%")
     const pocket = Math.max(0, Math.round(+$("#fm-p", s.el).value || 0))
-    const v = { pocket, wd: day, split: sp, limit: Math.max(0, Math.round(+$("#fm-l", s.el).value || 0)), since: pocket && !st.since ? today() : st.since || "" }
+    const v = { pocket, wd: day, split: sp, limit: Math.max(0, Math.round(+$("#fm-l", s.el).value || 0)), ...($("#fm-c", s.el) ? { cur: $("#fm-c", s.el).value } : {}), since: pocket && !st.since ? today() : st.since || "" }
     const f = D.fam.data; f.set = f.set || {}; f.set[kid] = Object.assign({}, f.set[kid] || {}, v)
     s.close(); push(true, { set: { [kid]: v } }); toast("Сохранено")
   }

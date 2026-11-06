@@ -41,6 +41,17 @@ function plural(n, one, few, many) {
   const a = Math.abs(n) % 100, b = a % 10
   return a > 10 && a < 20 ? many : b > 1 && b < 5 ? few : b === 1 ? one : many
 }
+// Основную валюту выбирают в Настройках (D.cur, на этом телефоне); без выбора — из виджета или по часовому поясу
+// [код, значок, название, «в …», слова для чтения вслух: 1 / 2–4 / 5+, примерно единиц за 1 бат — пока курса нет]
+const CURS = [
+  ["RUB", "₽", "Рубль", "в рублях", ["рубль", "рубля", "рублей"], 2.33],
+  ["THB", "฿", "Бат", "в батах", ["бат", "бата", "бат"], 1],
+  ["KZT", "₸", "Тенге", "в тенге", ["тенге", "тенге", "тенге"], 14.6],
+  ["USD", "$", "Доллар США", "в долларах", ["доллар", "доллара", "долларов"], 0.0283],
+  ["EUR", "€", "Евро", "в евро", ["евро", "евро", "евро"], 0.026],
+  ["CNY", "¥", "Юань", "в юанях", ["юань", "юаня", "юаней"], 0.2],
+]
+const CUR = Object.fromEntries(CURS.map(c => [c[0], c[1]]))
 // «2026-11-03T15:00» или «2026-11-03» — местное время
 function parseIso(s) {
   const m = String(s || "").match(/(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{1,2}):(\d{2}))?/)
@@ -156,7 +167,7 @@ function load() {
   D.conn = D.conn || null
   if (!D.cc || typeof D.cc !== "object" || Array.isArray(D.cc)) D.cc = {}
   D.sync = Object.assign({ since: 0, pushedAt: 0, snapAt: 0, at: 0, error: "" }, D.sync || {})
-  applyCfg()
+  applyCfg(); curApply()
 }
 let saveT = null
 function save(push = true) {
@@ -817,7 +828,7 @@ const AGENT_TOOLS = [
       method: { type: "string", enum: ["cash", "transfer"], description: "cash — наличные; transfer — перевод, карта, QR" },
       category: { type: "string", description: "Строго одна из категорий из системного сообщения" },
       comment: { type: "string" }, date: { type: "string", description: "Только если не сегодня, YYYY-MM-DD" },
-      currency: { type: "string", enum: ["THB", "RUB", "USD"], description: "Валюта суммы, если не основная («5000 рублей», «$12»): пересчитаю по курсу" },
+      currency: { type: "string", enum: CURS.map(c => c[0]), description: "Валюта суммы, если не основная («5000 рублей», «$12»): пересчитаю по курсу" },
       shared: { type: "boolean", description: "Общая семейная трата (с женой)" } },
       required: ["type", "amount", "method", "category"] } },
   { name: "add_jar", description: "Копилка на цель со сроком («коплю на Японию 150 000 к июню»). Сама считает, сколько откладывать в месяц.",
@@ -1949,7 +1960,7 @@ function moneyForm(type, entry) {
     const cats = core.CONFIG.categories[type].map(c => c[0]), B = baseCur()
     let cat = e.category, method = e.method, manualCat = !!entry, done = false, cur = e.cur || B, shared = !!e.shared
     const s = sheet(`<h3>${entry ? "Изменить" : type === "expense" ? "Расход" : "Доход"}</h3>
-      <div class="field"><div class="mn-amt"><input id="m-amt" class="huge" type="number" inputmode="decimal" placeholder="0" value="${e.cur && e.orig ? e.orig : e.amount}"><div class="mn-cur" id="m-cur">${Object.keys(CUR).map(c => `<button data-c="${c}">${CUR[c]}</button>`).join("")}</div></div><div class="small muted" id="m-fx"></div></div>
+      <div class="field"><div class="mn-amt"><input id="m-amt" class="huge" type="number" inputmode="decimal" placeholder="0" value="${e.cur && e.orig ? e.orig : e.amount}"><div class="mn-cur" id="m-cur">${[...new Set([...curOpts(), cur])].map(c => `<button data-c="${c}">${CUR[c]}</button>`).join("")}</div></div><div class="small muted" id="m-fx"></div></div>
       <div class="field"><input id="m-com" placeholder="Комментарий: такси, кафе, зарплата…" value="${esc(e.comment)}"></div>
       <div class="field"><div class="seg two" id="m-meth"><button data-m="cash">Наличные</button><button data-m="transfer">Перевод / карта</button></div></div>
       <div class="field"><label>Категория</label><div class="chips" id="m-cats">${cats.map(c => `<button class="chip" data-c="${esc(c)}">${esc(c)}</button>`).join("")}</div><div class="small muted" id="m-rule"></div></div>
@@ -2461,6 +2472,7 @@ function renderMore() {
     : `<div class="banner"><b>Поставьте на экран «Домой»</b>Нажмите «Поделиться» ⎋ внизу Safari → «На экран «Домой»». Приложение будет открываться отдельно и мгновенно.</div>`
   const z = IZI()
   html += iziCard()
+  html += curCard()
   if (c && c.friend) html += FRIEND.card()
   else if (!c && window.FRIEND && FRIEND.on()) html += FRIEND.card()
   else {
@@ -2687,7 +2699,7 @@ function bindChatBar(v) {
 }
 
 const DO = {
-  install: () => installApp(), talk: () => talkOpen(), "izi-voice": () => voicePicker(), stt: () => window.STT && STT.sheetOpen(),
+  install: () => installApp(), talk: () => talkOpen(), "izi-voice": () => voicePicker(), "cur-pick": () => curPick(), stt: () => window.STT && STT.sheetOpen(),
   event: () => eventForm(), reminder: () => reminderForm(), food: () => foodMenu(), workout: () => workoutForm(), photo: () => photoPrompt(),
   expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
   "push-on": () => pushEnable(),
@@ -3462,13 +3474,16 @@ async function pushEnable() {
     let sub = await reg.pushManager.getSubscription()
     if (sub && D.pushKey && D.pushKey !== key) { await sub.unsubscribe(); sub = null }
     if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(key) })
-    const r = (await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: { waterGoal: H().waterGoal } } })).push || {}
+    const r = (await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: pushCfg() } })).push || {}
     if (r.error) throw new Error(r.error)
     D.pushKey = key; D.pushAt = Date.now(); save(false)
     pushHere(true)
     render(); toast("🔔 Уведомления включены")
   } catch (e) { ui.info("Не получилось включить", String(e.message || e)) }
 }
+// Что таблица учитывает в пушах: цель по воде, валюта сводок
+const pushCfg = () => ({ waterGoal: H().waterGoal, currency: core.CONFIG.currency })
+async function pushCfgSend() { try { if (D.conn && pushAble() && Notification.permission === "granted") { const sub = await pushSub(); if (sub) { await pushConn(); await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: pushCfg() } }) } } } catch (e) {} }
 async function pushTest() {
   try { const r = (await hubPost({ push: { action: "test" } })).push || {}; toast(r.sent ? "🔔 Отправил — сейчас придёт" : `Не дошло: ${(r.errors || [r.error || "нет подписки"]).join("; ")}`) }
   catch (e) { toast("Не получилось: " + e.message) }
@@ -3477,7 +3492,7 @@ async function pushTest() {
 async function pushKeep() {
   if (!D.conn || !pushAble() || Notification.permission !== "granted" || Date.now() - (D.pushAt || 0) < 864e5) return
   try { const sub = await pushSub(); if (!sub) return
-    await pushConn(); await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: { waterGoal: H().waterGoal } } }); D.pushAt = Date.now(); save(false) } catch (e) {}
+    await pushConn(); await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: pushCfg() } }); D.pushAt = Date.now(); save(false) } catch (e) {}
 }
 // Где я — для «пора выезжать» (только если место уже разрешено; не чаще раза в 10 минут, пока приложение открыто)
 let hereAt = 0
@@ -4064,21 +4079,47 @@ const mKeyOf = i => `${Math.floor(i / 12)}-${z2(i % 12 + 1)}`
 const r100 = n => Math.ceil(n / 100) * 100
 
 // — 4. Валюты: курс раз в 12 часов (open.er-api.com, без ключа); сумма операции хранится в основной валюте, своя — в orig/cur
-const CUR = { THB: "฿", RUB: "₽", USD: "$" }
-const baseCur = () => ({ "₽": "RUB", "$": "USD" }[core.CONFIG.currency] || "THB")
-const FX_DEF = { THB: 1, USD: 0.0283, RUB: 2.33 }   // единиц валюты за 1 бат, пока курса нет
+const curRow = code => CURS.find(c => c[0] === code)
+const PRE = { USD: 1 }   // значок перед числом: $12
+const TZ_CUR = [[/^Asia\/Bangkok/, "THB"], [/^Asia\/(Almaty|Qyzylorda|Aqtobe|Aqtau|Atyrau|Oral|Qostanay)/, "KZT"],
+  [/^(Europe\/(Moscow|Kaliningrad|Samara|Volgograd|Saratov|Ulyanovsk|Astrakhan|Kirov|Simferopol|Minsk)|Asia\/(Yekaterinburg|Omsk|Novosibirsk|Barnaul|Tomsk|Novokuznetsk|Krasnoyarsk|Irkutsk|Chita|Yakutsk|Khandyga|Vladivostok|Ust-Nera|Magadan|Sakhalin|Srednekolymsk|Kamchatka|Anadyr))/, "RUB"],
+  [/^Asia\/(Shanghai|Chongqing|Harbin|Urumqi|Hong_Kong|Macau)/, "CNY"], [/^Europe\//, "EUR"], [/^America\//, "USD"]]
+const curGuess = () => { let tz = ""; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "" } catch (e) {}
+  const m = TZ_CUR.find(x => x[0].test(tz)); return m ? m[1] : "THB" }
+const fromWidget = () => { const c = D.conn && D.conn.cfg && D.conn.cfg.currency; return c && (CURS.find(x => x[1] === c) || [])[0] }
+const baseCur = () => (D.cur && CUR[D.cur] && D.cur) || fromWidget() || curGuess()
+// Выбранная валюта → core.CONFIG (на ней держатся все суммы: core.money, тексты Изи, детские копилки)
+function curApply() {
+  const r = curRow(baseCur()); if (!r) return
+  core.CONFIG.currency = r[1]; core.CONFIG.currencyIn = r[3]
+}
+const FX_DEF = Object.fromEntries(CURS.map(c => [c[0], c[5]]))   // единиц валюты за 1 бат, пока курса нет
 const fxRate = c => (D.fx && D.fx.r && D.fx.r[c]) || FX_DEF[c] || 1
 const fx = (n, from, to = baseCur()) => from === to ? n : n / fxRate(from) * fxRate(to)
-const fmtCur = (n, c) => c === "USD" ? `$${num(n)}` : `${num(n)} ${CUR[c] || core.CONFIG.currency}`
+const fmtCur = (n, c) => PRE[c] ? `${CUR[c]}${num(n)}` : `${num(n)} ${CUR[c] || core.CONFIG.currency}`
+// Валюты для быстрого выбора в формах: своя + самые ходовые (до 4)
+const curOpts = () => [...new Set([baseCur(), "USD", "RUB", "THB", "EUR"])].slice(0, 4)
 async function fxLoad(force) {
-  if (!force && D.fx && Date.now() - D.fx.at < 12 * 3600e3) return
+  if (!force && D.fx && D.fx.r && D.fx.r.EUR && Date.now() - D.fx.at < 12 * 3600e3) return
   try {
     const j = await (await fetch("https://open.er-api.com/v6/latest/THB", { cache: "no-store" })).json()
-    if (j && j.rates && j.rates.USD && j.rates.RUB) { D.fx = { at: Date.now(), r: { THB: 1, USD: j.rates.USD, RUB: j.rates.RUB } }; save(false); if (tab === "money") render() }
+    if (j && j.rates && j.rates.USD && j.rates.RUB) { const r = { THB: 1 }; for (const c of CURS) if (j.rates[c[0]]) r[c[0]] = j.rates[c[0]]
+      D.fx = { at: Date.now(), r }; save(false); if (tab === "money") render() }
   } catch (e) {}
 }
-const fxLine = () => { const b = baseCur(), o = ["USD", "RUB", "THB"].filter(c => c !== b)
-  return o.map(c => `${c === "USD" ? "$1" : "1 " + CUR[c]} = ${String(Math.round(fx(1, c, b) * 100) / 100).replace(".", ",")} ${CUR[b]}`).join(" · ") }
+const fxLine = () => { const b = baseCur(), o = curOpts().filter(c => c !== b).slice(0, 3)
+  return o.map(c => `${PRE[c] ? CUR[c] + "1" : "1 " + CUR[c]} = ${String(Math.round(fx(1, c, b) * 100) / 100).replace(".", ",")} ${CUR[b]}`).join(" · ") }
+// Выбор валюты в Настройках
+async function curPick() {
+  const b = baseCur(), i = await ui.choose("Валюта", "Все суммы, разделы «Деньги» и «Копилки», сводки и ответы Изи будут в ней. Уже записанные суммы не пересчитываются.",
+    CURS.map(c => `${c[1]}  ${c[2]}${c[0] === b ? "  ✓" : ""}`))
+  if (i < 0 || CURS[i][0] === b) return
+  D.cur = CURS[i][0]; curApply(); save(false); fxLoad(true); pushCfgSend(); render(); toast(`Валюта: ${CURS[i][2].toLowerCase()} ${CURS[i][1]}`)
+}
+function curCard() {
+  const r = curRow(baseCur())
+  return `<div class="card"><h2>Валюта</h2><button class="set voice-row" data-do="cur-pick"><span><b>${esc(r[1])}  ${esc(r[2])}</b><small>все суммы, «Деньги», «Копилки», сводки и Изи — ${esc(r[3])}</small></span><i class="chev">${ICO.chev || "›"}</i></button></div>`
+}
 
 // — 8. Семейный бюджет: «Все / Мои / Общие с Олей»
 const mnyView = list => { const v = MNY().view; return v === "mine" ? list.filter(e => !e.shared) : v === "shared" ? list.filter(e => e.shared) : list }
@@ -4426,7 +4467,7 @@ function renderMoney() {
   // 1. Сегодня можно потратить
   if (isCur) {
     const cs = canSpend(now), b = baseCur()
-    const pills = cs ? ["USD", "RUB", "THB"].filter(c => c !== b).map(c => `<span class="pill">≈ ${esc(fmtCur(Math.round(fx(cs.today, b, c)), c))}</span>`).join("") : ""
+    const pills = cs ? curOpts().filter(c => c !== b).slice(0, 3).map(c => `<span class="pill">≈ ${esc(fmtCur(Math.round(fx(cs.today, b, c)), c))}</span>`).join("") : ""
     html += cs ? `<div class="mn-hero mn-in" ${anim()} data-do="mn-why"><div class="k">Сегодня можно потратить</div><div class="v" data-count="${cs.today}">${esc(core.money(cs.today))}</div>
       <div class="s2">${cs.left > 0 ? `После платежей и копилок до ${cs.last} ${MONTHS_GEN[now.getMonth()]} остаётся ${esc(core.money(cs.left))}` : `Бюджет месяца уже потрачен на ${esc(core.money(-cs.left))} больше`}${cs.spentToday ? ` · сегодня уже −${num(cs.spentToday)}` : ""}</div>
       <div class="pills">${pills}</div></div>`
@@ -4607,7 +4648,7 @@ function acctForm(a) {
   const s = sheet(`<h3>${a ? "Счёт" : "Новый счёт"}</h3>
     <div class="field"><div class="chips" id="a-ty">${Object.entries(ACCT_T).map(([k, [n, ic]]) => `<button class="chip" data-t="${k}">${tdIco(ic, 14)} ${esc(n)}</button>`).join("")}</div></div>
     <div class="field"><input id="a-t" placeholder="Название: Kasikorn, наличные дома, квартира" value="${esc(e.title)}"></div>
-    <div class="field"><label>Сколько сейчас</label><div class="mn-amt"><input id="a-a" type="number" inputmode="decimal" value="${e.amount}"><div class="mn-cur" id="a-c">${Object.keys(CUR).map(c => `<button data-c="${c}">${CUR[c]}</button>`).join("")}</div></div></div>
+    <div class="field"><label>Сколько сейчас</label><div class="mn-amt"><input id="a-a" type="number" inputmode="decimal" value="${e.amount}"><div class="mn-cur" id="a-c">${[...new Set([...curOpts(), cur])].map(c => `<button data-c="${c}">${CUR[c]}</button>`).join("")}</div></div></div>
     <div class="msg small">Обновляйте остатки раз в месяц — график капитала строится по ним.</div>
     <div class="btns">${a ? '<button class="btn red" data-a="del">Удалить</button>' : ""}<button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
   const paint = () => { $$("#a-ty .chip", s.el).forEach(b => b.classList.toggle("on", b.dataset.t === type)); $$("#a-c button", s.el).forEach(b => b.classList.toggle("on", b.dataset.c === cur)) }
@@ -5563,11 +5604,13 @@ function iziVoice() {
   return by(vs.filter(x => voiceSex(x) === z.g)) || by(vs.filter(x => !voiceSex(x))) || by(vs) || null
 }
 if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => { if (tab === "more") render() }
+const CUR_SYM_RE = CURS.map(c => c[1]).sort((a, b) => b.length - a.length).map(x => x.replace(/[$]/g, "\\$")).join("|")
+const CUR_SAY_RE = new RegExp(`(\\d[\\d\\s]*?(?:,\\d+)?)\\s*(${CUR_SYM_RE})(?![а-яёa-z])|(${CUR_SYM_RE})\\s*(\\d[\\d\\s]*(?:,\\d+)?)`, "g")
 // Текст для чтения вслух: без ссылок, разметки и смайликов, валюта и единицы — словами
 function sayable(t) {
   return String(t || "").replace(/https?:\/\/\S+/g, "ссылка в чате").replace(/[*_#`>|~]+/g, "")
     .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}️‍]/gu, "").replace(/^\s*[-•·]\s*/gm, "")
-    .replace(/(\d)\s*฿/g, "$1 бат").replace(/฿\s*(\d[\d\s]*)/g, "$1 бат").replace(/(\d)\s*₽/g, "$1 рублей").replace(/\$\s*(\d[\d\s]*)/g, "$1 долларов")
+    .replace(CUR_SAY_RE, (m, a, s1, s2, b) => { const r = CURS.find(c => c[1] === (s1 || s2)), n = String(a || b).replace(/\s+/g, ""); return `${n} ${plural(+n.replace(",", ".") || 0, ...r[4])}` })
     .replace(/(\d)\s*ккал/g, "$1 килокалорий").replace(/(\d)\s*км\b/g, "$1 километров").replace(/(\d)\s*мин\b\.?/g, "$1 минут")
     .replace(/[ \t]+/g, " ").trim()
 }

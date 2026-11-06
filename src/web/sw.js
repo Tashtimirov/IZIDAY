@@ -26,7 +26,7 @@ async function connRead(key) { const r = await (await caches.open(CONN)).match(k
 async function connWrite(key, v) { await (await caches.open(CONN)).put(key, new Response(JSON.stringify(v))) }
 // Заголовок — суть подсказки, а не «IZIDAY»: значок и подпись «from IZIDAY» iPhone и так показывает
 const EMO = [[/ужин|обед|завтрак|перекус|ккал|белок|поешь|еда/i, "🍽"], [/вод[аыу]|стакан|попей/i, "💧"], [/трениров|шаг|прогул|зарядк|пробеж/i, "🏃"],
-  [/сон|спать|ложись|лечь/i, "😴"], [/потрат|бюджет|деньг|฿|оплат|расход/i, "💰"], [/дет[ия]|школ/i, "👧"], [/встреч|созвон|звонок/i, "📅"]]
+  [/сон|спать|ложись|лечь/i, "😴"], [/потрат|бюджет|деньг|฿|₽|€|₸|оплат|расход/i, "💰"], [/дет[ия]|школ/i, "👧"], [/встреч|созвон|звонок/i, "📅"]]
 function pretty(x) {
   const t = String(x.title || "").trim(), b = String(x.body || "").trim()
   if (t && !/^[^\p{L}]*IZIDAY[^\p{L}]*$/iu.test(t)) return { t, b }
