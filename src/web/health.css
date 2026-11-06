@@ -72,22 +72,16 @@ button.link { border: 0; background: none; padding: 0; color: var(--teal); font:
 .hl-glass .shine { position: absolute; top: 10px; left: 10px; width: 9px; height: 62%; border-radius: 6px; background: linear-gradient(180deg, rgba(255, 255, 255, .7), rgba(255, 255, 255, 0)); }
 .hl-glass.full { box-shadow: inset 0 0 0 2px #0A84FF, 0 0 24px -4px rgba(10, 132, 255, .6); }
 .btn.hl-blue { background: #0A84FF; color: #fff; }
-/* История воды за сегодня */
-.hl-wlog { margin-top: 14px; padding-top: 12px; border-top: .5px solid var(--line); }
-.hl-wlog-h { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
-.hl-wlog-h span { font-weight: 400; color: var(--sub); font-size: 12px; }
-.hl-wrow { position: relative; overflow: hidden; border-radius: 12px; transition: height .28s cubic-bezier(.2, .8, .2, 1), opacity .28s; }
-.hl-wrow::before { content: ""; position: absolute; inset: 0; border-radius: 12px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--red, #FF3B30) 22%, transparent)); opacity: 0; transition: opacity .2s; }
-.hl-wrow.arm::before { opacity: 1; }
-.hl-wrow.gone { opacity: 0; }
-.hl-wrow .in { position: relative; display: flex; align-items: center; gap: 10px; padding: 7px 2px 7px 4px; transition: transform .3s cubic-bezier(.2, .8, .2, 1); }
-#view.anim .hl-wrow { animation: rise .42s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i) * 40ms + .15s); }
-.hl-wrow .tm { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--sub); width: 44px; flex: none; }
-.hl-wrow .bar { flex: 1; height: 6px; border-radius: 3px; background: color-mix(in srgb, #0A84FF 10%, transparent); overflow: hidden; }
-.hl-wrow .bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #5AC8FA, #0A84FF); }
-.hl-wrow b { font-size: 14px; font-variant-numeric: tabular-nums; min-width: 62px; text-align: right; }
-.hl-wdel { border: 0; background: none; color: var(--sub); padding: 6px; margin: -6px -2px -6px 0; border-radius: 10px; display: grid; place-items: center; cursor: pointer; transition: color .15s, background .15s, transform .15s; }
-.hl-wdel:active { transform: scale(.88); color: var(--red, #FF3B30); background: color-mix(in srgb, var(--red, #FF3B30) 12%, transparent); }
+/* История воды за сегодня — справа от итога */
+.hl-wtop { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.hl-wlog { display: flex; flex-direction: column; gap: 1px; max-height: 52px; overflow-y: auto; scrollbar-width: none; flex: none; margin-top: 3px; }
+.hl-wlog::-webkit-scrollbar { display: none; }
+.hl-wlog.more { -webkit-mask-image: linear-gradient(180deg, #000 72%, transparent); mask-image: linear-gradient(180deg, #000 72%, transparent); }
+.hl-wrow { display: flex; gap: 8px; justify-content: flex-end; align-items: baseline; border: 0; background: none; padding: 1px 2px; margin: 0; font: inherit; font-size: 12px; line-height: 17px; color: var(--sub); font-variant-numeric: tabular-nums; cursor: pointer; border-radius: 6px; transition: background .15s, transform .15s; }
+.hl-wrow b { color: var(--text); font-weight: 600; min-width: 28px; text-align: right; }
+.hl-wrow b small { font-size: 11px; font-weight: 400; color: var(--sub); }
+.hl-wrow:active { transform: scale(.94); background: color-mix(in srgb, #0A84FF 12%, transparent); }
+#view.anim .hl-wrow { animation: rise .42s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i) * 40ms + .2s); }
 
 /* Лекарства */
 .hl-med .grow { cursor: pointer; }

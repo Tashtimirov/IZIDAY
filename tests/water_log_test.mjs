@@ -22,14 +22,17 @@ for (const dark of [false, true]) {
   const rows = await page.$$eval(".hl-wrow", r => r.map(x => x.innerText.replace(/\s+/g, " ").trim()))
   if (!dark) {
     check(rows.length === 4, "4 отметки за сегодня (вчерашняя не попала)", rows)
-    check(/^13:05 330 мл/.test(rows[0]) && /^07:45 250 мл/.test(rows[3]), "новые сверху, время и объём", rows)
-    check(/4 отметки/.test(await page.$eval(".hl-wlog-h", e => e.textContent)), "счётчик отметок")
+    check(rows[0] === "13:05 330 мл" && rows[3] === "07:45 250 мл", "новые сверху, время и объём", rows)
+    const hh = await page.evaluate(() => { const c = document.querySelector(".hl-water"); return c.offsetHeight })
+    const h0 = await page.evaluate(() => { const l = document.querySelector(".hl-wlog"), d = l.style.display; l.style.display = "none"; const r = document.querySelector(".hl-water").offsetHeight; l.style.display = d; return r })
+    check(hh === h0, "плашка не выросла", [hh, h0])
   }
   await card(page, SHOTS + `water-log-${dark ? "dark" : "light"}.png`)
   if (!dark) {
-    await page.click('[data-wdel="wb"]'); await page.waitForTimeout(800)
+    await page.click('[data-wdel="wb"]'); await page.waitForTimeout(500)
+    await page.click('#layer button:has-text("Удалить")'); await page.waitForTimeout(800)
     const left = await page.$$eval(".hl-wrow", r => r.map(x => x.dataset.wrow))
-    check(left.length === 3 && !left.includes("wb"), "корзина удаляет отметку", left)
+    check(left.length === 3 && !left.includes("wb"), "нажатие и «Удалить» убирает отметку", left)
     check(/0,83 л/.test(await page.$eval("#view", v => v.innerText)), "итог пересчитан: 0,83 л")
     await card(page, SHOTS + "water-log-deleted.png")
     check(!errors.length, "без ошибок", errors)
