@@ -19,6 +19,8 @@
   transform-origin: left; transform: scaleX(0); }
 #undo.show .u-line { animation: u-left 5s linear forwards; }
 #undo.hold .u-line { animation-play-state: paused; }
+#undo.show.out { opacity: 0; filter: blur(8px); transform: translate(calc(-50% + var(--dx, 0px)), var(--dy, 0px)) scale(.97);
+  transition: opacity .35s ease, filter .35s ease, transform .35s ease; pointer-events: none; }
 #undo.ok .u-btn, #undo.ok .u-line { opacity: 0; pointer-events: none; }
 @media (prefers-color-scheme: dark) { #undo { background: rgba(44, 44, 48, .78); box-shadow: 0 14px 34px -12px rgba(0, 0, 0, .6), 0 0 0 .5px rgba(255, 255, 255, .1); } }
 @keyframes u-left { from { transform: scaleX(1); } to { transform: scaleX(0); } }

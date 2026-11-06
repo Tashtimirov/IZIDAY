@@ -145,7 +145,7 @@ window.UNDO = (function () {
     b.shown = true
     bar(); el._b = b
     el.classList.toggle("top", !!document.querySelector("#layer .sheet"))   // открыто окно снизу — плашка сверху, чтобы не закрывать его
-    el.classList.remove("away", "ok", "drag", "hold"); el.style.removeProperty("--dx"); el.style.removeProperty("--dy"); el.style.opacity = ""
+    el.classList.remove("away", "ok", "drag", "hold", "out"); el.style.removeProperty("--dx"); el.style.removeProperty("--dy"); el.style.opacity = ""
     paint(b)
     document.getElementById("toast")?.classList.remove("show")
     el.classList.remove("show"); void el.offsetWidth; el.classList.add("show")
@@ -153,7 +153,11 @@ window.UNDO = (function () {
   }
   function hide(ms = 0) {
     clearTimeout(hideT)
-    hideT = setTimeout(() => { if (!el) return; el.classList.remove("show"); el._b = null }, ms)
+    hideT = setTimeout(() => {   // растворяется на месте: прозрачность и лёгкое размытие, ~0,35 с
+      if (!el) return; el._b = null
+      if (el.classList.contains("away")) { el.classList.remove("show"); return }
+      el.classList.add("out"); hideT = setTimeout(() => el.classList.remove("show", "out"), 380)
+    }, ms)
   }
 
   function undo(b) {
