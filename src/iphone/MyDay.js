@@ -990,7 +990,7 @@ function travelFor(e) {
   const t = e.startDate.getTime()
   const x = TRAVEL.find(x => x.start === t && (!x.t || stripEmoji(x.t) === stripEmoji(e.title || ""))) || TRAVEL.find(x => x.start === t)
   if (!x || !x.min || x.min < 4) return null
-  const leave = new Date(t - (x.min + (x.buf || 10)) * 60e3)
+  const leave = new Date((x.arr || t) - (x.min + (x.buf != null ? x.buf : 10)) * 60e3)   // поездка: arr — конец события, buf 0
   return leave > new Date(Date.now() - 30 * 60e3) ? { leave, min: x.min } : null
 }
 

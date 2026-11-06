@@ -225,7 +225,7 @@ function hub_(h) {
   if (JSON.stringify(ops) !== before) hubSet_("ops", ops);
   out.ops = h.from === "widget" ? ops.filter(o => o.state === "new") : ops.filter(o => o.state === "new" || o.doneAt >= since);
   // дорога до встреч (её считает пуш «Пора выезжать»): виджет пишет «выехать в …»
-  if (h.from === "widget") out.travel = Object.values(hubGet_("push_travel") || {}).filter(x => x.min && x.start > now).map(x => ({ start: x.start, t: x.t, min: x.min, buf: PUSH.buffer }));
+  if (h.from === "widget") out.travel = Object.values(hubGet_("push_travel") || {}).filter(x => x.min && (x.arr || x.start) > now).map(x => ({ start: x.start, t: x.t, min: x.min, buf: x.arr ? 0 : PUSH.buffer, arr: x.arr || x.start }));
   // 4. Задача в Claude Code (браузер не может обратиться к API рутин напрямую)
   // Ключ рутины живёт только в свойствах скрипта (ROUTES = [{ name, url, token }]), телефон присылает адрес рутины
   if (h.fire && ROUTE_URL.test(h.fire.url || "")) {
@@ -909,6 +909,9 @@ function out_(obj) {
 // воду и ближайшие события с адресом (сколько ехать — по Картам Google) и шлёт пуш в приложение на iPhone.
 // Пуш приходит пустым (без шифрования содержимого) — приложение само забирает текст из «исходящих» (push: outbox).
 // Ключи VAPID (P-256) создаются здесь при первом запросе и хранятся в свойствах скрипта.
+// Событие-поездка («Отвезти детей в школу», «Дорога в аэропорт»): само событие — это дорога, его КОНЕЦ — время прибытия.
+// Выезд = конец − дорога, без лишнего запаса (запас пользователь уже заложил во время прибытия).
+const TRIP_RE = /^\s*(?:\S+\s)?(отвез|завез|подвез|довез|развез|доехать|поехать|поездк|ехать|съездить|дорога(?![а-яё])|выезд|выехать|в путь)/i;
 const PUSH = { tick: 5, sub: "https://tashtimirov.github.io/IZIDAY/", water: [2, 3.5, 5], waterFrom: 9, waterTo: 21, buffer: 10, look: 3 * 3600e3, kidsAt: 7, kidsLead: 30, briefs: { morning: "08:00", evening: "21:00" } };
 
 function push_(p, from) {
@@ -1031,14 +1034,21 @@ function pushTick() {
         const loc = String(e.getLocation() || "").trim();
         if (!loc || e.isAllDayEvent() || /^https?:|zoom|meet\.google|teams|онлайн|online/i.test(loc)) continue;   // созвон — ехать не нужно
         const start = e.getStartTime().getTime(), key = e.getId() + ":" + start;
+        const trip = TRIP_RE.test(e.getTitle()), arr = trip ? e.getEndTime().getTime() : start;   // во сколько надо быть на месте
         let tr = travel[key];
-        if (!tr || now - tr.at > (start - now < 3600e3 ? 10 : 25) * 60e3) {   // ближе к выезду — пересчитываем чаще (пробки)
+        if (!tr || now - tr.at > (arr - now < 3600e3 ? 10 : 25) * 60e3) {   // ближе к выезду — пересчитываем чаще (пробки)
           const r = route_({ from: here, to: loc, mode: "driving" });
-          tr = travel[key] = r.error ? { at: now, error: r.error } : { at: now, min: r.minutes_in_traffic || r.minutes, base: r.minutes, km: r.km, t: e.getTitle(), start };
+          tr = travel[key] = r.error ? { at: now, error: r.error } : { at: now, min: r.minutes_in_traffic || r.minutes, base: r.minutes, km: r.km, t: e.getTitle(), start, arr: trip ? arr : 0 };
         }
         if (!tr.min || tr.min < 4) continue;   // уже на месте или рядом
+        const at = Utilities.formatDate(new Date(arr), tz, "HH:mm");
+        if (trip) {   // поездка: один пуш за 3 минуты до выезда
+          const leave = arr - tr.min * 60e3;
+          if (leave - 3 * 60e3 <= now + 60e3 && arr > now)
+            once("g:" + key, { title: "🚗 Пора выезжать", body: `${e.getTitle()}: быть на месте к ${at}, ехать ~${tr.min} мин${tr.min > (tr.base || 0) ? " с пробками" : ""}. Выезд в ${Utilities.formatDate(new Date(leave), tz, "HH:mm")}.${oldNote}`, url: "./" });
+          continue;
+        }
         const leave = start - (tr.min + PUSH.buffer) * 60e3;
-        const at = Utilities.formatDate(new Date(start), tz, "HH:mm");
         if (leave - 20 * 60e3 <= now && leave - 20 * 60e3 > from - 60e3 && leave - now > 15 * 60e3)
           once("g20:" + key, { title: "🚗 Через 20 минут выезжать", body: `«${e.getTitle()}» в ${at}. Ехать ~${tr.min} мин (${tr.km} км).${oldNote}`, url: "./" });
         if (leave <= now + 60e3 && start > now)

@@ -67,6 +67,16 @@ hub({ from: "widget", since: 0, lists: { locs: [{ id: "l1", date: now - 20 * 360
 sh.pushTick()
 const out2 = hub({ from: "app", push: { action: "outbox" } }).push.items.map(x => x.title + " | " + x.body)
 check(out2.some(x => /Забрать детей завтра.*где вы были 20 ч назад/.test(x)), "место старое — «пора выезжать» всё равно, с пометкой", out2.slice(-2))
+// 4б2. поездка («Отвезти детей в школу»): конец события — прибытие, пуш за ~3 мин до выезда (прибытие − дорога), без запаса сверху
+const tripEv = (s, e, title) => sh.cal.mk(title, new Date(now + s * 60e3), new Date(now + e * 60e3), { location: "Phoenix School" })
+tripEv(-2, 33, "Отвезти детей в школу")      // ехать 31 мин → выезд через 2 мин → пуш сейчас
+tripEv(10, 60, "Отвезти Олю на танцы")        // выезд через 29 мин → рано; по старой логике (начало − 31 − 10) пуш ушёл бы уже
+sh.pushTick()
+const outTrip = hub({ from: "app", push: { action: "outbox" } }).push.items.map(x => x.title + " | " + x.body)
+console.log("   " + outTrip.slice(-3).join("\n   "))
+check(outTrip.some(x => /Пора выезжать \| Отвезти детей в школу: быть на месте к \d\d:\d\d, ехать ~31 мин.*Выезд в/.test(x)), "поездка: «пора выезжать» за пару минут до выезда, время — прибытие", outTrip.slice(-3))
+check(!outTrip.some(x => /танцы/.test(x)), "поездка: за полчаса до выезда пуша ещё нет")
+check(!outTrip.some(x => /Через 20 минут выезжать \| «Отвезти/.test(x)), "поездка: без лишнего «через 20 минут»")
 // 4в. дела детей и голодание
 const wdNow = ((new Date().getDay() + 6) % 7) + 1, hhmm = d => `${z(d.getHours())}:${z(d.getMinutes())}`
 hub({ from: "app", since: 0, lists: { kids: [{ id: "k1", date: now, u: now + 9, title: "Плавание", kid: "Алия", take: "очки и полотенце", days: [wdNow], time: hhmm(new Date(now + 30 * 60e3)) },

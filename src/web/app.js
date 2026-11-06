@@ -1426,6 +1426,7 @@ function agentSystem() {
 - Выполняй команду сам с помощью инструментов. Перед изменением или удалением события найди его через get_events (в разумном диапазоне дат), затем используй его id и start как occurrence_start.
 - «Перенеси», «сдвинь», «поменяй время» — это update_event существующего события, а не новое событие.
 - Повторяющиеся события меняй только в нужное повторение, если пользователь не сказал «все» или «каждую неделю».
+- Поездка к сроку («отвезти детей в школу к 7:50», «быть в аэропорту к 9»): событие с названием-глаголом поездки («Отвезти детей в школу»), location — адрес назначения. Конец события = время прибытия, которое назвал пользователь; начало = прибытие минус дорога (route_to до места, с пробками), округли до минуты. Никаких своих запасов сверху: если пользователь сказал «за 10 минут до урока в 8:00» — прибытие 7:50, и всё. Пример: уроки в 8:00, приезжать за 10 минут, ехать 18 мин → событие 7:32–7:50. «Пора выезжать» приложение пришлёт само примерно за 3 минуты до выезда — не ставь для этого напоминаний и подсказок plan_day и не называй другое время пуша. «Каждый будний день» — обязательно repeat {freq: weekly, days: [MO,TU,WE,TH,FR]}, а не одно событие.
 - Время без «утра/вечера»: встречи, спорт, свидания, ужины после 6 обычно вечером; созвоны и работа — днём. Если перепутать дорого и неясно — спроси.
 - Уточняй через ask_user, только если без ответа нельзя сделать правильно: не названо новое время переноса, несколько подходящих событий, не указан способ оплаты (наличные или перевод). Давай короткие варианты ответа.
 - Календарь — Google Календарь пользователя: события создаёшь, переносишь и удаляешь сразу (create_event/update_event/delete_event). Если инструмент ответил, что изменение ушло в очередь виджета, — скажи коротко «внесу при обновлении виджета».
@@ -4692,6 +4693,9 @@ function wxLine(now = new Date()) {
 }
 const wxRain = (s, e) => D.wx && D.wx.h.find(x => x.t + 3600e3 > +s && x.t < +e && x.p >= 60 && x.mm >= 0.5)
 
+// Событие-поездка («Отвезти детей в школу»): само событие — дорога, его конец — время прибытия (как TRIP_RE в Code.gs)
+const TRIP_RE = /^\s*(?:\S+\s)?(отвез|завез|подвез|довез|развез|доехать|поехать|поездк|ехать|съездить|дорога(?![а-яё])|выезд|выехать|в путь)/i
+const isTrip = e => !!e && TRIP_RE.test(e.title || "")
 // — Дорога до места события: считает таблица (route), кэш на 20 минут
 function travelOf(e) {
   if (!e || !e.location || e.all_day) return null
@@ -4715,7 +4719,7 @@ function nowCard(v, now = new Date()) {
   const e = evs[0]
   if (!e) return ""
   const tr = travelOf(e), going = e.s <= now, mins = Math.round((e.s - now) / 60e3)
-  const leave = tr && tr.min ? new Date(+e.s - (tr.min + 10) * 60e3) : null, inL = leave ? Math.round((leave - now) / 60e3) : null
+  const leave = tr && tr.min ? (isTrip(e) ? new Date(+e.e - tr.min * 60e3) : new Date(+e.s - (tr.min + 10) * 60e3)) : null, inL = leave ? Math.round((leave - now) / 60e3) : null
   const when = going ? `идёт · до ${hm(e.e)}` : mins < 60 ? `через ${mins} мин` : `в ${hm(e.s)}`
   return `<div class="hero-now" data-now="${esc(e.id || "")}"><div class="k">${going ? "Сейчас" : "Дальше"} · ${when}</div><div class="v">${esc(e.title || "(без названия)")}</div>
     <div class="s2">${hm(e.s)}–${hm(e.e)}${e.location ? " · " + esc(e.location) : ""}${tr && tr.km ? `, ${Math.round(tr.km)} км` : ""}</div>
@@ -4782,7 +4786,7 @@ function dayLoad(v, now = new Date()) {
   const end = new Date(sod(now)); end.setHours(DAY_TO, 0, 0, 0)
   const from = new Date(Math.max(+now, +new Date(sod(now)).setHours(DAY_FROM, 0, 0, 0)))
   if (from >= end) return null
-  const busy = v.events.filter(e => !e.all_day && e.e > from && e.s < end).reduce((s, e) => s + (Math.min(+e.e, +end) - Math.max(+e.s, +from)) / 60e3 + ((travelOf(e) || {}).min || 0) * 2, 0)
+  const busy = v.events.filter(e => !e.all_day && e.e > from && e.s < end).reduce((s, e) => s + (Math.min(+e.e, +end) - Math.max(+e.s, +from)) / 60e3 + (isTrip(e) ? 0 : ((travelOf(e) || {}).min || 0) * 2), 0)
   const tasks = openRems(v).filter(r => { const d = remDue(r); return d && sameDay(d, now) || (d && d < sod(now)) })
   const need = tasks.reduce((s, r) => s + (+(D.rems.find(x => x.id === r.id) || {}).est || 30), 0)
   const free = Math.max(0, (end - from) / 60e3 - busy)
@@ -4813,7 +4817,7 @@ function timelineHTML(v, day, evs, now = new Date()) {
   const items = []
   evs.forEach((e, i) => {
     if (e.all_day || e.s < t0) return
-    const tr = isT && e.s > now ? travelOf(e) : null
+    const tr = isT && e.s > now && !isTrip(e) ? travelOf(e) : null   // поездка сама и есть дорога
     if (tr && tr.min) items.push({ s: new Date(+e.s - tr.min * 60e3), e: e.s, kind: "road", min: tr.min })
     items.push({ s: e.s, e: e.e, kind: "ev", ev: e, i })
   })
@@ -5127,7 +5131,7 @@ function calItems(v, d, now) {
     const pr = prots.find(p => normT(p.p.title) === normT(e.title) && p.s < en && p.e > s)
     if (pr) pr.used = 1
     out.push({ kind: "ev", ev: e, s, e: en, L, prot: !!pr })
-    if (L === "me" && e.location && e.s > now && e.s - now < 2 * 864e5) {
+    if (L === "me" && e.location && !isTrip(e) && e.s > now && e.s - now < 2 * 864e5) {   // поездка сама и есть дорога
       const tr = travelOf(e) || travCached(e)
       if (tr && tr.min) out.push({ kind: "road", s: new Date(+e.s - tr.min * 60e3), e: e.s, min: tr.min, ev: e })
     }
