@@ -2498,6 +2498,11 @@ function renderMore() {
       ${!gcalOn() && pendingOps().length ? `<div class="muted small" style="margin-top:8px">В очереди ${pendingOps().length}: ${esc(pendingOps().map(o => OP_LABEL[o.tool] || o.tool).join(", "))}. Виджет внесёт их сам при обновлении; кнопка «Внести сейчас» на секунду откроет Scriptable.</div>` : ""}`
   html += `<div class="btns" style="margin-top:10px"><button class="btn ${c ? "" : "primary"}" data-do="connect">${c ? "Подключить заново" : ei("link") + "Подключить"}</button>${c ? '<button class="btn red" data-do="disconnect">Отключить</button>' : ""}</div>
     <div class="muted small" style="margin-top:8px">Код подключения даёт виджет: в Scriptable меню → 📱 Приложение «Мой день». В нём ключ Claude и ключ таблицы — он хранится только на этом телефоне.</div></div>`
+  // Своя таблица подключена — можно один раз привязать к ней вход Google, чтобы на новом телефоне хватило одной кнопки
+  if (c && window.FRIEND && FRIEND.on()) html += `<div class="card"><h2>Вход через Google</h2>
+    <div class="set"><span>Эта таблица</span>${D.gLink ? '<span class="ok">✓ привязана</span>' : '<span class="exp">не привязана</span>'}</div>
+    <div class="muted small">Войдите один раз своей почтой Google — и на любом телефоне хватит кнопки «Войти через Google»: откроется эта таблица со всеми записями, без Scriptable.</div>
+    <div class="btns" style="margin-top:10px"><button class="btn ${D.gLink ? "" : "primary"}" data-do="glogin">${FRIEND.gico}${D.gLink ? "Привязать заново" : "Привязать вход Google"}</button></div></div>`
   }
   const g = H()
   html += `<div class="card"><h2>Уведомления</h2><div class="set"><span>Подсказки и напоминания</span><span id="push-state">…</span></div>
