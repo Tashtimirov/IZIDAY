@@ -47,8 +47,8 @@ ok(await page.evaluate(() => new Promise(r => { SAID.length = 0; speak("Тест
 await page.evaluate(() => iziSet("speak", true))
 // 3. живой разговор
 await page.evaluate(() => setTab("chat")); await page.waitForTimeout(300)
-await page.click("#fab"); await page.waitForTimeout(500)
-ok(await page.evaluate(() => !!TALK && TALK.state === "listen" && /Говорите/.test(document.querySelector(".tk-you").textContent)), "второе нажатие на «Изи» в чате — разговор, слушаю")
+await page.click(".chat-bar .izi-talk"); await page.waitForTimeout(500)
+ok(await page.evaluate(() => !!TALK && TALK.state === "listen" && /Говорите/.test(document.querySelector(".tk-you").textContent)), "шар Изи справа в строке ввода — разговор, слушаю")
 ok(await page.evaluate(() => /живой голосовой разговор/.test(chatSystem())), "в разговоре — правила для голоса в промпте")
 await page.evaluate(() => { SAID.length = 0; hearSay("а если в пятницу вечером") })
 await page.waitForTimeout(3000)
