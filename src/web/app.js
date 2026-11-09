@@ -1736,10 +1736,11 @@ const talkPinned = () => !!(TALK && TALK.pin)
 // Кнопка справа от поля: есть текст — ➤; Изи пишет или говорит ответ — рабочий «стоп»; иначе (закончил или ждёт ответа на вопрос) — микрофон «ответить голосом»
 function setBusyUI() {
   const b = $(".chat-bar .send"); if (!b) return
-  const inp = $("#chat-in"), st = inp && inp.value.trim() ? "send" : chatBusy && !askWait ? "stop" : "mic"
-  b.classList.toggle("stop", st === "stop"); b.classList.toggle("mic-on", st === "mic"); b.parentNode.classList.toggle("busy", st !== "send")
-  b.innerHTML = st === "stop" ? ICO.stop : st === "mic" ? ICO.mic : ICO.send
-  b.setAttribute("aria-label", st === "stop" ? "Остановить ответ" : st === "mic" ? "Ответить голосом" : "Отправить")
+  const inp = $("#chat-in"), st = inp && inp.value.trim() ? "send" : chatBusy && !askWait ? "stop" : "talk"   // talk — справа шар Изи
+  const bar = b.closest(".chat-bar")
+  b.classList.toggle("stop", st === "stop"); if (bar) bar.classList.toggle("busy", st === "stop")
+  if (b.dataset.ic !== st) { b.innerHTML = st === "stop" ? ICO.stop : ICO.send; b.dataset.ic = st }
+  b.setAttribute("aria-label", st === "stop" ? "Остановить ответ" : "Отправить")
 }
 function chatStop() {
   if (!chatStopCtl) return
@@ -1784,17 +1785,17 @@ function brief(kind) {
 const SILENCE_MS = 2500, FIRST_WORD_MS = 8000
 let rec = null, voice = null, lastVoice = null   // lastVoice — последняя запись: её итоги, пришедшие после отправки, не нужны
 const voiceSent = () => { if (lastVoice) lastVoice.sent = true }
-function micStart(auto) {
+function micStart(auto, o = {}) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
   const inp = $("#chat-in")
   if (!SR) { if (inp) inp.focus(); toast("Нажмите 🎤 на клавиатуре и говорите"); return }
   if (voice) return voiceFinish()
-  if (window.STT && STT.on() && Date.now() > sttOffUntil) return micWhisper(auto)
-  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: !!PTT.holding }
+  if (window.STT && STT.on() && Date.now() > sttOffUntil) return micWhisper(auto, o)
+  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: !!PTT.holding, bar: !!o.bar }
   const v = voice
   lastVoice = v
   const show = (extra = "") => { SILK.en = 1; v.text = [v.base, v.done, extra].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); const i = $("#chat-in"); if (i) { i.value = v.text; grow(i) }; pttShow(v.text) }
-  const arm = ms => { clearTimeout(v.timer); if (!v.ptt) v.timer = setTimeout(voiceFinish, ms) }   // пока кнопку держат — пауза не обрывает запись
+  const arm = ms => { clearTimeout(v.timer); if (!v.ptt && !v.bar) v.timer = setTimeout(voiceFinish, ms) }   // диктовка из строки ввода — до «стоп» или «отправить», без паузы   // пока кнопку держат — пауза не обрывает запись
   v.t0 = Date.now()
   $(".chat-bar .mic") && $(".chat-bar .mic").classList.add("on")
   if (inp) inp.placeholder = "Слушаю… ➤ — отправить сразу"
@@ -1860,10 +1861,10 @@ function sttFail(e) {
   toast(st === 401 ? `Ключ Groq не подошёл — пока распознаёт ${PHONE}. Проверьте ключ в «Настройках» → «Помощник»`
     : st === 429 ? `Groq: лимит на минуту — минуту распознаёт ${PHONE}` : `Точное распознавание не ответило — пока распознаёт ${PHONE}`)
 }
-function micWhisper(auto) {
+function micWhisper(auto, o = {}) {
   const inp = $("#chat-in")
   try { STT.prime() } catch (e) {}
-  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: !!PTT.holding, w: true, text: inp ? inp.value.trim() : "" }
+  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: !!PTT.holding, bar: !!o.bar, w: true, text: inp ? inp.value.trim() : "" }
   const v = voice
   lastVoice = v
   v.t0 = Date.now()
@@ -1875,6 +1876,7 @@ function micWhisper(auto) {
     v.h = h; rec = h
     v.timer = setInterval(() => {
       if (voice !== v || v.finishing || v.ptt) return
+      if (v.bar) { if (h.secs() > 180) voiceFinish(); return }
       const now = Date.now()
       if (!h.voiced && now - v.t0 > FIRST_WORD_MS) return voiceFinish()        // так ничего и не сказали
       if (h.voiced > .25 && now - h.lastVoice > SILENCE_MS) return voiceFinish()  // договорили — пауза
@@ -1884,7 +1886,7 @@ function micWhisper(auto) {
     if (voice !== v) return
     voiceReset()
     if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) { if (auto) return micPrompt(); toast(MIC_HELP); return }
-    sttOffUntil = Date.now() + 60e3; micStart(auto)   // запись не пошла — распознаёт Safari
+    sttOffUntil = Date.now() + 60e3; micStart(auto, o)   // запись не пошла — распознаёт Safari
   })
 }
 async function voiceWhisper(v) {
@@ -1915,6 +1917,7 @@ function voiceSend(v) {
   const t = [v.base, v.done].filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
   voiceReset()
   if (!v.done.trim()) return
+  if (v.keep && inp) { inp.value = t; grow(inp); inp.focus(); try { inp.setSelectionRange(t.length, t.length) } catch (e) {} return }   // ■ — текст в поле: поправить и отправить самому
   v.sent = true
   if (!inp) { setTab("chat"); return setTimeout(() => chatSend(t, { voice: true }), 30) }   // команда, сказанная с кнопки на любом экране
   inp.value = ""; grow(inp); chatSend(t, { voice: true })
@@ -2375,12 +2378,17 @@ function stripInit(keep) {
 function renderChatHTML() {
   return `<div class="chat-tools"><button data-do="talk" class="tk-chip"><b class="mini-orb"></b>Поговорить</button><button data-brief="morning">${ei("sun")}Утренняя сводка</button><button data-brief="evening">${ei("moon")}Вечерняя</button><button data-do="memory">${ei("brain")}Память</button><button data-do="chat-clear">${ei("eraser")}Очистить</button></div>
     <div class="chat-list" id="chat-list">${chatItems()}</div>
-    <div class="chat-bar"><div class="att-tray" id="att-tray"></div><button class="cam plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
-    <button class="send" aria-label="Отправить">${ICO.send}</button></div>`
+    <div class="chat-bar"><div class="att-tray" id="att-tray"></div><div class="cb-pill"><button class="cam plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
+    <button class="dict" aria-label="Диктовать текст">${CB_MIC}</button><button class="send" aria-label="Отправить">${ICO.send}</button><button class="izi-talk" aria-label="Живой разговор с ${esc(iziName())}"><b class="mini-orb"></b></button>
+    <div class="cb-rec" aria-hidden="true"><button class="rx" aria-label="Отменить запись">${CB_X}</button><canvas></canvas><button class="rstop" aria-label="Остановить и поправить текст">${CB_STOP}</button><button class="rgo" aria-label="Отправить сразу">${ICO.send}</button></div></div></div>`
 }
+// Строка ввода как в ChatGPT: «+», поле, микрофон-диктовка, справа шар Изи (живой разговор) или зелёная стрелка
+const CB_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="8.75" y="2.75" width="6.5" height="11.5" rx="3.25"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5v3.25"/></svg>'
+const CB_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>'
+const CB_STOP = '<svg viewBox="0 0 24 24"><rect x="7.5" y="7.5" width="9" height="9" rx="1.8" fill="currentColor"/></svg>'
 const linkify = s => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`)
 function chatItems() {
-  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я — ${esc(iziName())}, ${iziG("ваш помощник", "ваша помощница")}: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Нажмите на волну справа и скажите — или держите её, как рацию. Например: «завтра в 10 встреча с Олей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
+  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я — ${esc(iziName())}, ${iziG("ваш помощник", "ваша помощница")}: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Пишите в строке внизу, микрофон в ней — надиктовать текст, шар справа — живой разговор голосом. «${esc(iziName())}» в меню можно держать, как рацию. Например: «завтра в 10 встреча с Олей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
   const last = D.chat.length - 1
   return D.chat.slice(-60).map((m, i, arr) => {
     const isLast = i === arr.length - 1 && askWait
@@ -2694,6 +2702,26 @@ function bindChatBar(v) {
     if (voice) { inp.placeholder = "Слушаю… ➤ — отправить сразу"; if (voice.text) { inp.value = voice.text; grow(inp) } }
     // голос — одна кнопка: большая «Изи» внизу (держать — как рация, ещё раз нажать — разговор); справа только ➤, когда есть текст
     $(".chat-bar .cam", v).onclick = e => plusMenu(e.currentTarget)
+    const bar = $(".chat-bar", v)
+    // кнопки строки не забирают фокус у поля — клавиатура остаётся открытой, как в ChatGPT
+    bar.addEventListener("mousedown", e => { if (e.target.closest("button")) e.preventDefault() })
+    $(".dict", bar).onclick = () => { if (!voice) micStart(false, { bar: true }) }
+    $(".izi-talk", bar).onclick = () => { inp.blur(); talkOpen() }
+    const orb = $(".izi-talk .mini-orb", bar); if (orb && !orb.firstChild) { const c = document.createElement("canvas"); orb.append(c); silkCanvas(c, "orb") }
+    silkCanvas($(".cb-rec canvas", bar), "bars")
+    $(".cb-rec .rx", bar).onclick = () => voiceCancel()
+    $(".cb-rec .rstop", bar).onclick = () => { if (!voice || voice.finishing) return; voice.keep = true; voiceFinish(); pttShow(voice ? voice.text || "" : null) }
+    $(".cb-rec .rgo", bar).onclick = () => voiceSendNow()
+    if (voice && voice.bar) bar.classList.add("rec")
+    // убрать клавиатуру и вернуть нижнее меню: нажать на переписку или смахнуть её вниз
+    const list = $("#chat-list", v)
+    if (list) {
+      let ly = null
+      const kbOff = () => { if (document.activeElement === inp && !voice) inp.blur() }
+      list.addEventListener("click", e => { if (!e.target.closest("button, a")) kbOff() })
+      list.addEventListener("touchstart", e => { ly = e.touches[0].clientY }, { passive: true })
+      list.addEventListener("touchmove", e => { if (ly != null && e.touches[0].clientY - ly > 40) { ly = null; kbOff() } }, { passive: true })
+    }
     grow(inp)
     attTray()
     bindChatList()
@@ -3748,9 +3776,25 @@ function silkFrame(t) {
     if (!w || !h) continue
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h }
     const k = c.dataset.k
-    if (k === "talk") silkTalk(c, T, d); else if (k === "comet") silkComet(c, T, d); else if (k === "orb") silkOrb(c, T, d, voice && PTT.holding); else silkLines(c, T, d, false)
+    if (k === "talk") silkTalk(c, T, d); else if (k === "bars") silkBars(c, t, d); else if (k === "comet") silkComet(c, T, d); else if (k === "orb") silkOrb(c, T, d, voice && PTT.holding); else silkLines(c, T, d, false)
   }
   const tm = $("#silk .tm"); if (tm && voice && voice.t0) { const sec = Math.floor((Date.now() - voice.t0) / 1000); tm.textContent = Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0") }
+}
+// Диктовка в строке ввода: громкость бежит справа налево — тишина точками, голос столбиками
+function silkBars(c, t, d) {
+  const x = c.getContext("2d"), W = c.width, H = c.height
+  x.clearRect(0, 0, W, H)
+  if (!voice || !voice.bar) return
+  const step = 7 * d, n = Math.floor(W / step), hs = SILK.hist || (SILK.hist = [])
+  if (!SILK.ht || t - SILK.ht > 70) { SILK.ht = t; hs.push(voice.finishing ? 0 : Math.min(1, SILK.lv * (.75 + Math.random() * .5))); if (hs.length > n) hs.splice(0, hs.length - n) }
+  const col = getComputedStyle(c).color
+  x.fillStyle = col; x.strokeStyle = col; x.lineCap = "round"; x.lineWidth = 3 * d
+  for (let i = 0; i < n; i++) {
+    const v = hs[hs.length - n + i] || 0, px = i * step + step / 2, h = v * H * .9
+    if (h > 4 * d) { x.globalAlpha = .95; x.beginPath(); x.moveTo(px, H / 2 - h / 2); x.lineTo(px, H / 2 + h / 2); x.stroke() }
+    else { x.globalAlpha = .4; x.beginPath(); x.arc(px, H / 2, 1.5 * d, 0, 7); x.fill() }
+  }
+  x.globalAlpha = 1
 }
 const silkK = k => 1 - Math.pow(1 - k, SILK.f || 1)
 function silkLines(c, T, d, active) {
@@ -3959,7 +4003,10 @@ const PTT = { holding: false }
 function pttShow(text) {
   const fab = $("#fab"), on = text !== null && !!voice
   if (fab) fab.classList.toggle("rec", !!(on && (PTT.holding || voice.ptt)))
-  silkShow(on ? text : null)
+  const inBar = !!(on && voice.bar)   // диктовка из строки ввода: волна прямо в строке, без полосы «Шёлк»
+  $$(".chat-bar").forEach(b => { b.classList.toggle("rec", inBar); b.classList.toggle("wait", inBar && !!voice.finishing) })
+  if (!inBar) SILK.hist = null
+  silkShow(on && !inBar ? text : null)
 }
 // Нажатие — onTap; держите дольше 280 мс — запись, пока держите; отпустили — ушло; увели палец влево — отмена
 function holdToTalk(btn, onTap) {
@@ -4000,7 +4047,8 @@ function holdToTalk(btn, onTap) {
   btn.addEventListener("contextmenu", e => e.preventDefault())
   btn.onclick = () => { if (long) { long = false; return } onTap() }
 }
-holdToTalk($("#fab"), () => chatOn() ? talkOpen() : setTab("chat"))
+// Нажатие на «Изи» — чат и сразу клавиатура: фокус ставится в том же касании, иначе iPhone клавиатуру не покажет
+holdToTalk($("#fab"), () => { if (!chatOn()) setTab("chat"); const i = $("#chat-in"); if (i) { i.focus({ preventScroll: true }); try { i.setSelectionRange(i.value.length, i.value.length) } catch (e) {} } })
 // Подсказка над кнопкой, пока держат «Изи»: «вверх — закрепить»; тянется за пальцем. null — убрать
 function pinHint(up) {
   let h = $("#pin-hint")
