@@ -1124,3 +1124,10 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 .scam-flip svg { width: 100%; height: 100%; display: block; }
 @media (prefers-reduced-motion: reduce) { .scam, .att-th, .scam-th { transition: none; animation: none; } }
 .chat-bar .att-tray .att-card { background: var(--card); }   /* у поля своё стекло — второе размытие внутри не работает, поэтому почти без прозрачности */
+
+/* ── Один шар Изи везде (как главная кнопка): живой холст, сфера во весь круг, край растворяется наружу ── */
+.izi-orb { display: block; border-radius: 50%; flex: none; }
+.izi-orb, .mini-orb, .kidorb, .gizi .orb, .gsmart .orb { position: relative; background: none !important; box-shadow: none !important; overflow: visible !important; }
+.izi-orb canvas, .mini-orb canvas, .kidorb canvas, .gizi .orb canvas, .gsmart .orb canvas { position: absolute; inset: -12.5%; width: 125%; height: 125%; display: block; pointer-events: none; }
+.izi-orb::before, .ds-empty .ds-orb::before, .kidorb::before { content: ""; position: absolute; left: 20%; right: 20%; top: 40%; bottom: -8%; border-radius: 50%; z-index: -1; pointer-events: none;
+  background: color-mix(in srgb, var(--izi2, #18b98a) 45%, transparent); filter: blur(8px); }

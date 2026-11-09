@@ -3943,6 +3943,16 @@ if (window.visualViewport) {
 }
 addEventListener("orientationchange", () => setTimeout(fitHeight, 300))
 { const c = document.createElement("canvas"); $("#fab .orb").append(c); silkCanvas(c, "orb") }
+// Все шары Изи в приложении — тот же живой рисунок, что на главной кнопке: холст сам появляется в каждом
+// .izi-orb / .mini-orb (чат, iPad, пустые экраны), в детском режиме (.kidorb) и в карточках игры (.gizi .orb, .gsmart .orb)
+const ORB_SEL = ".izi-orb, .mini-orb, .kidorb, .gizi .orb, .gsmart .orb"
+function iziOrbs(root) {
+  const put = o => { if (o.querySelector("canvas")) return; const c = document.createElement("canvas"); o.append(c); silkCanvas(c, "orb") }
+  if (root.matches && root.matches(ORB_SEL)) put(root)
+  if (root.querySelectorAll) root.querySelectorAll(ORB_SEL).forEach(put)
+}
+iziOrbs(document)
+new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && n.tagName !== "CANVAS") iziOrbs(n) }).observe(document.body, { childList: true, subtree: true })
 // Зелёная кнопка с волной: нажатие — чат с помощником; держите — сразу запись голосовой команды,
 // отпустили — команда уходит помощнику (как рация). Меню «Добавить» — кнопка «+» вверху
 const PTT = { holding: false }
@@ -5903,7 +5913,7 @@ function talkHear(text, opts) {
 // Шар разговора: стекло, две волны с растворяющимися концами и внешнее кольцо, которое тает наружу.
 // Темп медленный; кто говорит — у того волна дрожит, размах чуть больше
 function silkTalk(c, T, d) {
-  const x = c.getContext("2d"), W = c.width, H = c.height, st = TALK ? TALK.state : ""
+  const x = c.getContext("2d"), W = c.width, H = c.height, st = TALK ? TALK.state : SILK.demo || ""   // demo — знакомство (onb.js) «говорит» без разговора
   const syl = .55 + .45 * Math.sin(T * 2.3) * Math.sin(T * .9 + 1)
   const ti = st === "say" ? (.35 + .65 * syl) * Math.max(.4, SILK.ie) : st === "think" ? .12 + .08 * Math.sin(T * 1.6) : 0
   const ty = st === "listen" ? (.12 + .88 * syl) * Math.max(.12, SILK.ye) : 0

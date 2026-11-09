@@ -2,72 +2,99 @@
 :root { --ob-glass: rgba(251,248,240,.66); --ob-tile: rgba(255,255,255,.7); --ob-h: #063322; --ob-p: #4d5f55; --ob-line: rgba(6,51,34,.08); }
 @media (prefers-color-scheme: dark) { :root { --ob-glass: rgba(8,19,14,.7); --ob-tile: rgba(255,255,255,.08); --ob-h: #F6F1E4; --ob-p: #A9BBAE; --ob-line: rgba(255,255,255,.1); } }
 .ob-ic { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
-.ob-orb { border-radius: 50%; position: relative; margin: 0 auto; flex: none;
-  background: radial-gradient(circle at 30% 22%, rgba(255,255,255,.75), rgba(255,255,255,0) 45%), radial-gradient(circle at 50% 60%, rgba(24,185,138,.28), rgba(31,143,255,.18) 70%), rgba(255,255,255,.25);
-  box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.8), inset 0 -10px 30px rgba(24,185,138,.25), 0 18px 50px rgba(11,143,92,.3); }
-.ob-orb svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.ob-orb path { fill: none; stroke-width: 3.2; stroke-linecap: round; transform-origin: 50% 50%; }
-.ob-orb .w1 { stroke: #0FA86B; filter: drop-shadow(0 0 3px #18b98a); animation: obw 2.6s ease-in-out infinite alternate; }
-.ob-orb .w2 { stroke: #1f8fff; opacity: .85; filter: drop-shadow(0 0 3px #1f8fff); animation: obw 3.1s ease-in-out -1s infinite alternate-reverse; }
-@keyframes obw { from { transform: scaleY(.55) } to { transform: scaleY(1.15) } }
-
-/* Знакомство */
-#onb { position: fixed; inset: 0; z-index: 900; display: flex; flex-direction: column; padding: calc(56px + env(safe-area-inset-top)) 24px calc(22px + env(safe-area-inset-bottom));
-  background: var(--ob-glass); -webkit-backdrop-filter: blur(26px) saturate(1.6); backdrop-filter: blur(26px) saturate(1.6); animation: obIn .4s ease both; overflow: hidden; }
-#onb.out { animation: obOut .32s ease both; }
+/* Знакомство и анкета — в стиле живого разговора: глубокий фон цвета Изи, большой шар, стеклянные плитки */
+#onb { position: fixed; inset: 0; z-index: 900; display: flex; flex-direction: column; color: #fff; overflow: hidden;
+  padding: calc(12px + env(safe-area-inset-top)) 22px calc(18px + env(safe-area-inset-bottom));
+  background: radial-gradient(70% 45% at 50% 30%, rgba(40,190,160,.35), transparent 70%), radial-gradient(60% 40% at 85% 95%, rgba(30,120,255,.22), transparent 70%),
+    linear-gradient(170deg, color-mix(in srgb, var(--izi1, #0b8f5c) 55%, #04131a) 0%, color-mix(in srgb, var(--izi1, #0b8f5c) 22%, #04131a) 55%, #04131a 100%);
+  animation: obIn .5s ease both; --t: cubic-bezier(.32,.72,0,1); }
+#onb.out { animation: obOut .42s var(--t) both; }
 @keyframes obIn { from { opacity: 0 } to { opacity: 1 } }
 @keyframes obOut { to { opacity: 0; transform: scale(1.04) } }
-.ob-card { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
-.ob-card.in { animation: obUp .5s cubic-bezier(.2,.8,.2,1) both; }
-.ob-card.in-r { animation: obR .38s cubic-bezier(.2,.8,.2,1) both; }
-.ob-card.in-l { animation: obL .38s cubic-bezier(.2,.8,.2,1) both; }
-@keyframes obUp { from { opacity: 0; transform: translateY(24px) } to { opacity: 1; transform: none } }
-@keyframes obR { from { opacity: 0; transform: translateX(48px) } to { opacity: 1; transform: none } }
-@keyframes obL { from { opacity: 0; transform: translateX(-48px) } to { opacity: 1; transform: none } }
-.ob-hero { position: relative; margin: 6px 0 28px; }
-.ob-hero .ob-orb { animation: obFloat 4s ease-in-out infinite; }
-@keyframes obFloat { 50% { transform: translateY(-6px) } }
-.ob-h { font-size: 30px; font-weight: 800; letter-spacing: -.6px; color: var(--ob-h); line-height: 1.12; text-align: center; }
-.ob-p { font-size: 16.5px; color: var(--ob-p); line-height: 1.45; text-align: center; margin: 10px 0 18px; }
-.ob-p.ob-sm { font-size: 13.5px; margin: 8px 0 0; }
-.ob-q { margin-top: 10px; font-weight: 700; color: var(--ob-h); text-align: center; font-size: 15px; }
-.ob-pick { display: flex; gap: 12px; margin-top: 12px; }
-.ob-pick button { flex: 1; border: 0; border-radius: 20px; padding: 18px 12px; text-align: center; background: var(--ob-tile); box-shadow: inset 0 0 0 1px var(--ob-line); color: var(--ob-h); font-weight: 700; font-size: 16px; transition: transform .2s, box-shadow .2s, background .2s; }
+.ob-top { display: flex; align-items: center; gap: 12px; min-height: 30px; }
+.ob-prog { flex: 1; display: flex; gap: 4px; }
+.ob-prog i { flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,.16); overflow: hidden; position: relative; }
+.ob-prog i::after { content: ""; position: absolute; inset: 0; background: rgba(255,255,255,.9); transform: scaleX(0); transform-origin: left; transition: transform .5s var(--t); }
+.ob-prog i.done::after, .ob-prog i.on::after { transform: scaleX(1); }
+.ob-prog i.on::after { background: #a6ffe0; }
+.ob-out { border: 0; background: rgba(255,255,255,.12); color: rgba(255,255,255,.85); font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 14px;
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); transition: opacity .3s; white-space: nowrap; }
+.ob-out[hidden] { display: block; visibility: hidden; opacity: 0; }
+/* Шар: один холст на всё знакомство; высота места плавно меняется, сам холст только масштабируется (без перерисовки размера) */
+.ob-stage { position: relative; flex: none; height: min(64vw, 290px, 34vh); transition: height .6s var(--t); pointer-events: none; }
+.ob-stage canvas { position: absolute; left: 50%; top: 50%; width: min(108vw, 470px); height: min(108vw, 470px); margin: calc(min(108vw, 470px) / -2) 0 0 calc(min(108vw, 470px) / -2);
+  transform: scale(1); transition: transform .6s var(--t); }
+#onb.quiz .ob-stage { height: min(30vw, 130px, 17vh); }
+#onb.quiz .ob-stage canvas { transform: scale(.46); }
+#onb:not(.big):not(.quiz) .ob-stage { height: min(40vw, 170px, 21vh); }
+#onb:not(.big):not(.quiz) .ob-stage canvas { transform: scale(.6); }
+.ob-body { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; margin: 0 -22px; padding: 0 22px; }
+.ob-card { display: flex; flex-direction: column; padding-bottom: 8px; }
+.ob-card.in { animation: obUp .55s var(--t) both; }
+.ob-card.in-r { animation: obR .5s var(--t) both; }
+.ob-card.in-l { animation: obL .5s var(--t) both; }
+@keyframes obUp { from { opacity: 0; transform: translateY(18px) } to { opacity: 1; transform: none } }
+@keyframes obR { from { opacity: 0; transform: translateX(36px) } to { opacity: 1; transform: none } }
+@keyframes obL { from { opacity: 0; transform: translateX(-36px) } to { opacity: 1; transform: none } }
+.ob-h { font: 700 28px/1.15 system-ui, -apple-system, sans-serif; letter-spacing: -.5px; text-align: center; text-wrap: balance; }
+.ob-hq { font-size: 25px; }
+.ob-p { font-size: 16.5px; color: rgba(255,255,255,.72); line-height: 1.42; text-align: center; margin: 10px 0 18px; text-wrap: balance; }
+.ob-p.ob-sm { font-size: 13.5px; color: rgba(255,255,255,.55); margin: 8px 0 14px; }
+.ob-step { text-align: center; font-size: 12.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: rgba(166,255,224,.8); margin-bottom: 6px; }
+/* Взрослый / ребёнок */
+.ob-pick { display: flex; gap: 12px; margin-top: 4px; }
+.ob-pick button { flex: 1; border: 0; border-radius: 22px; padding: 18px 12px 16px; text-align: center; color: #fff; background: rgba(255,255,255,.1);
+  box-shadow: inset 0 0 0 .5px rgba(255,255,255,.2); -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%);
+  transition: transform .25s var(--t), background .3s, color .3s; }
+.ob-pick button b { display: block; font-size: 16.5px; }
 .ob-pick button:active { transform: scale(.96); }
-.ob-pick .ob-ic { display: block; margin: 0 auto 8px; color: #0B8F5C; }
-.ob-pick button.on { box-shadow: inset 0 0 0 2px #0B8F5C; background: rgba(24,185,138,.16); }
-.ob-pick small { display: block; font-weight: 500; color: var(--ob-p); font-size: 12.5px; margin-top: 4px; }
-.ob-say { margin: 0 0 9px; padding: 13px 16px; border-radius: 20px; background: var(--ob-tile); color: var(--ob-h); font-size: 15.5px; box-shadow: inset 0 0 0 1px var(--ob-line); }
-.ob-feat { display: flex; gap: 14px; align-items: center; padding: 12px 14px; border-radius: 18px; background: var(--ob-tile); box-shadow: inset 0 0 0 1px var(--ob-line); margin-bottom: 9px; color: var(--ob-h); }
-.ob-card .ob-feat { animation: obUp .45s cubic-bezier(.2,.8,.2,1) both; }
+.ob-pick .ob-ic { display: block; margin: 0 auto 8px; opacity: .9; }
+.ob-pick button.on { background: rgba(255,255,255,.92); color: #063322; }
+.ob-pick small { display: block; font-weight: 500; opacity: .6; font-size: 12.5px; margin-top: 3px; }
+/* Вопросы: список (один ответ) и капсулы (несколько) */
+.ob-ans { margin-top: 2px; }
+.ob-list { border-radius: 20px; overflow: hidden; background: rgba(255,255,255,.08); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.16); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
+.ob-row { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: none; color: #fff; padding: 12px 14px; font-size: 16px; text-align: left;
+  border-top: .5px solid rgba(255,255,255,.1); transition: background .25s; animation: obUp .45s var(--t) both; animation-delay: var(--d, 0ms); }
+.ob-row:first-child { border-top: 0; }
+.ob-row:active { background: rgba(255,255,255,.08); }
+.ob-row .i { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; background: rgba(255,255,255,.12); flex: none; transition: background .3s, color .3s; }
+.ob-row .l { flex: 1; }
+.ob-row .c { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.28); color: transparent; transition: all .3s var(--t); }
+.ob-row.on .c { background: #a6ffe0; box-shadow: none; color: #063322; transform: scale(1.06); }
+.ob-row.on .i { background: rgba(166,255,224,.22); color: #a6ffe0; }
+.ob-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.ob-chip { border: 0; border-radius: 999px; padding: 10px 15px; font-size: 15px; font-weight: 500; color: #fff; background: rgba(255,255,255,.1);
+  box-shadow: inset 0 0 0 .5px rgba(255,255,255,.2); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+  transition: background .3s, color .3s, transform .25s var(--t); animation: obUp .45s var(--t) both; animation-delay: var(--d, 0ms); }
+.ob-chip:active { transform: scale(.94); }
+.ob-chip.on { background: rgba(255,255,255,.92); color: #063322; box-shadow: none; }
+.ob-seg-l { text-align: center; font-size: 13px; color: rgba(255,255,255,.55); margin: 4px 0 8px; }
+.ob-seg + .ob-seg-l { margin-top: 18px; }
+.ob-in { display: block; width: 100%; margin-top: 12px; border: 0; border-radius: 16px; padding: 13px 15px; font-size: 16px; color: #fff; background: rgba(255,255,255,.08);
+  box-shadow: inset 0 0 0 .5px rgba(255,255,255,.18); outline: none; }
+.ob-in::placeholder { color: rgba(255,255,255,.45); }
+.ob-in:focus { box-shadow: inset 0 0 0 1px rgba(166,255,224,.6); }
+/* Обучающие карточки */
+.ob-say { margin: 0 0 9px; padding: 13px 16px; border-radius: 20px 20px 20px 6px; background: rgba(255,255,255,.1); font-size: 15.5px; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.16); animation: obUp .45s var(--t) both; }
+.ob-say:nth-of-type(2) { animation-delay: .06s } .ob-say:nth-of-type(3) { animation-delay: .12s }
+.ob-feat { display: flex; gap: 14px; align-items: center; padding: 11px 14px; border-radius: 18px; background: rgba(255,255,255,.08); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.14); margin-bottom: 8px; animation: obUp .45s var(--t) both; }
 .ob-card .ob-feat:nth-of-type(2) { animation-delay: .05s } .ob-card .ob-feat:nth-of-type(3) { animation-delay: .1s } .ob-card .ob-feat:nth-of-type(4) { animation-delay: .15s } .ob-card .ob-feat:nth-of-type(5) { animation-delay: .2s }
 .ob-feat .b { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: #fff; flex: none; }
-.ob-feat b { display: block; font-size: 15.5px; } .ob-feat span { font-size: 13.5px; color: var(--ob-p); }
-.ob-try { position: relative; height: 112px; margin-top: auto; padding-top: 14px; }
-.ob-try > i { position: absolute; left: 50%; top: 64px; margin-left: 6px; color: var(--ob-h); animation: obPress 1.8s ease-in-out infinite; }
-@keyframes obPress { 0%, 100% { transform: translate(6px, 6px) } 40%, 70% { transform: none } }
+.ob-feat b { display: block; font-size: 15.5px; } .ob-feat span { font-size: 13.5px; color: rgba(255,255,255,.6); }
 .ob-tri { display: flex; gap: 10px; margin-top: 8px; }
-.ob-tri > div { flex: 1; text-align: center; padding: 14px 6px; border-radius: 22px; background: var(--ob-tile); color: var(--ob-h); font-weight: 700; font-size: 13.5px; animation: obUp .45s cubic-bezier(.2,.8,.2,1) both; }
+.ob-tri > div { flex: 1; text-align: center; padding: 14px 6px; border-radius: 22px; background: rgba(255,255,255,.1); font-weight: 600; font-size: 13.5px; animation: obUp .45s var(--t) both; }
 .ob-tri > div:nth-child(2) { animation-delay: .08s } .ob-tri > div:nth-child(3) { animation-delay: .16s }
-.ob-tri span { width: 46px; height: 46px; border-radius: 16px; margin: 0 auto 8px; display: grid; place-items: center; color: #fff; }
-.ob-foot { padding-top: 14px; }
-.ob-dots { display: flex; gap: 7px; justify-content: center; margin-bottom: 16px; }
-.ob-dots i { width: 7px; height: 7px; border-radius: 4px; background: var(--ob-line); transition: width .3s; }
-.ob-dots i.on { width: 22px; background: #0B8F5C; }
-.ob-btn { display: block; width: 100%; border: 0; border-radius: 18px; padding: 16px; font-size: 17px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #0b8f5c, #18b98a 60%, #1f8fff); box-shadow: 0 10px 26px rgba(11,143,92,.3); }
-.ob-btn:active { transform: scale(.98); }
-.ob-skip { display: block; margin: 10px auto 0; border: 0; background: none; color: var(--sub); font-size: 15px; padding: 6px 12px; }
-.ob-skip[hidden] { visibility: hidden; display: block; }
-.ob-sp { position: absolute; animation: obFloat 3s ease-in-out infinite; }
-.ob-sp.s1 { left: 22%; top: 0; color: #ffb020; } .ob-sp.s2 { right: 22%; top: 70%; color: #ff5fa2; animation-delay: -1.2s; }
-/* Детская версия: теплее и крупнее */
-#onb.kid { background: radial-gradient(circle at 20% 10%, rgba(255,200,120,.5), transparent 50%), radial-gradient(circle at 90% 40%, rgba(180,140,255,.42), transparent 55%), var(--ob-glass); }
-#onb.kid .ob-h { font-size: 32px; } #onb.kid .ob-p { font-size: 18px; }
-#onb.kid .ob-btn { background: linear-gradient(135deg, #ff8a3d, #ff5fa2 55%, #8b5cf6); box-shadow: 0 10px 26px rgba(255,95,162,.35); font-size: 19px; border-radius: 24px; }
-#onb.kid .ob-dots i.on { background: #ff5fa2; }
-#onb.kid .ob-pick button.on { box-shadow: inset 0 0 0 2px #ff5fa2; background: rgba(255,95,162,.12); }
-#onb.kid .ob-pick .ob-ic { color: #ff5fa2; }
-@media (prefers-color-scheme: light) { #onb.kid .ob-h { color: #3a2a7a; } #onb.kid .ob-p { color: #5b5385; } }
+.ob-tri span { width: 46px; height: 46px; border-radius: 16px; margin: 0 auto 8px; display: grid; place-items: center; background: rgba(255,255,255,.14); }
+.ob-foot { flex: none; padding-top: 12px; }
+.ob-btn { display: block; width: 100%; border: 0; border-radius: 18px; padding: 16px; font-size: 17px; font-weight: 600; color: #063322; background: rgba(255,255,255,.94);
+  box-shadow: 0 12px 30px -10px rgba(0,0,0,.45); transition: transform .2s var(--t); }
+.ob-btn svg { vertical-align: -4px; margin-right: 8px; }
+.ob-btn:active { transform: scale(.97); }
+.ob-skip { display: block; margin: 8px auto 0; border: 0; background: none; color: rgba(255,255,255,.6); font-size: 15px; padding: 6px 12px; transition: opacity .3s; }
+.ob-skip[hidden], .ob-skip.gone { display: block; visibility: hidden; opacity: 0; }
+@media (max-height: 700px) { .ob-h { font-size: 24px; } .ob-hq { font-size: 22px; } .ob-p { font-size: 15px; margin: 6px 0 12px; } .ob-row { padding: 9px 14px; } }
+@media (prefers-reduced-motion: reduce) { #onb *, #onb { animation: none !important; transition: none !important; } }
 
 /* Первые шаги */
 .card.ob-steps { padding: 16px 16px 8px; transition: transform .26s ease, opacity .26s ease; touch-action: pan-y; }
