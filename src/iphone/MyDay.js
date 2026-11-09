@@ -60,7 +60,7 @@ const CONFIG = {
   eventAlertMinutes: 10,         // с веб-приложением виджет сам присылает уведомления о встречах (за N минут) и напоминаниях
   routes: "__ROUTES__",          // маршруты в Claude Code из secrets.json (routes); заданные в меню 🤖 важнее   // утренняя и вечерняя сводка помощника (уведомление → чат); "" — без сводки
   webApp: "__WEB_APP__",         // веб-приложение «Мой день» (build.py берёт web_app из secrets.json): кнопки виджета открывают его, а виджет передаёт ему календарь и напоминания
-  selfUpdate: "https://iziday.netlify.app/w.json",   // откуда виджет сам берёт новую версию общего кода (личный блок остаётся свой); "" — не обновляться
+  selfUpdate: "https://iziday.pages.dev/w.json",   // откуда виджет сам берёт новую версию общего кода (личный блок остаётся свой); "" — не обновляться
   // Google Таблица с доходами и расходами (кнопка ▦ в виджете)
   sheetUrl: "https://docs.google.com/spreadsheets/d/1dsrjcRimF85iZptC0WOyLImhe-llh4BOJmSgGzK_om8/edit",
   sheetSecret: "__SHEET_SECRET__",   // совпадает с ключом в скрипте таблицы
