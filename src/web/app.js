@@ -2713,6 +2713,15 @@ function bindChatBar(v) {
     $(".cb-rec .rstop", bar).onclick = () => { if (!voice || voice.finishing) return; voice.keep = true; voiceFinish(); pttShow(voice ? voice.text || "" : null) }
     $(".cb-rec .rgo", bar).onclick = () => voiceSendNow()
     if (voice && voice.bar) bar.classList.add("rec")
+    // убрать клавиатуру и вернуть нижнее меню: нажать на переписку или смахнуть её вниз
+    const list = $("#chat-list", v)
+    if (list) {
+      let ly = null
+      const kbOff = () => { if (document.activeElement === inp && !voice) inp.blur() }
+      list.addEventListener("click", e => { if (!e.target.closest("button, a")) kbOff() })
+      list.addEventListener("touchstart", e => { ly = e.touches[0].clientY }, { passive: true })
+      list.addEventListener("touchmove", e => { if (ly != null && e.touches[0].clientY - ly > 40) { ly = null; kbOff() } }, { passive: true })
+    }
     grow(inp)
     attTray()
     bindChatList()
