@@ -190,7 +190,7 @@ function intro(at) {
   if (ov) return
   ov = document.createElement("div")
   ov.id = "onb"
-  ov.innerHTML = `<div class="ob-top"><div class="ob-prog"></div><button class="ob-out" data-ob="quiz-skip"></button></div>
+  ov.innerHTML = `<div class="ob-top"><div class="ob-prog"></div></div>
     <div class="ob-stage"><canvas></canvas></div><div class="ob-body"></div><div class="ob-foot"></div>`
   document.body.appendChild(ov)
   if (typeof silkCanvas === "function") silkCanvas(ov.querySelector(".ob-stage canvas"), "talk")
@@ -204,12 +204,10 @@ function intro(at) {
     const gl = last && !kid() && !D.conn && window.FRIEND && FRIEND.on()
     ov.className = "ob-ov" + (kid() ? " kid" : "") + (c.big ? " big" : "") + (inQuiz ? " quiz" : "")
     ov.querySelector(".ob-prog").innerHTML = list.map((_, k) => `<i class="${k < i ? "done" : k === i ? "on" : ""}"></i>`).join("")
-    const out = ov.querySelector(".ob-out")
-    out.textContent = inQuiz || c.start ? "Пропустить анкету" : ""; out.hidden = !(inQuiz || c.start)
     body.innerHTML = `<div class="ob-card ${dir > 0 ? "in-r" : dir < 0 ? "in-l" : "in"}">${c.h}${gl ? `<div class="ob-p">Осталось войти через Google — и всё настроится само.</div>` : ""}</div>`
     foot.innerHTML = `<button class="ob-btn" data-ob="next">${gl ? FRIEND.gico + "Войти через Google" : last ? (kid() ? "Поехали!" : "Начать") : c.start ? "Начнём" : "Дальше"}</button>
       ${gl ? `<button class="ob-skip" data-ob="widget">У меня свой виджет Scriptable</button>` : ""}
-      <button class="ob-skip" data-ob="${inQuiz ? "next" : c.start ? "quiz-skip" : "skip"}" ${last && !gl ? "hidden" : ""}>${gl ? "Позже" : inQuiz ? "Пропустить вопрос" : c.start ? "Не сейчас" : "Пропустить"}</button>`
+      <button class="ob-skip" data-ob="${inQuiz || c.start ? "quiz-skip" : "skip"}" ${last && !gl ? "hidden" : ""}>${gl ? "Позже" : inQuiz || c.start ? "Пропустить анкету" : "Пропустить"}</button>`
     body.querySelectorAll("[data-who]").forEach(b => b.onclick = () => { youSay(); setWho(b.dataset.who); draw() })
     body.querySelectorAll("[data-q]").forEach(b => b.onclick = () => {
       youSay(); qSet(b.dataset.q, b.dataset.v, !!b.dataset.many)
@@ -218,13 +216,11 @@ function intro(at) {
       // выбор одного варианта — отметка и сам переход дальше; несколько — только отметка
       if (b.dataset.many || c.q[3] === "rows") { b.classList.toggle("on"); if (!b.dataset.many) b.parentNode.querySelectorAll(".ob-chip").forEach(x => x !== b && x.classList.remove("on")); return refreshFoot() }
       body.querySelectorAll(`[data-q="${b.dataset.q}"]`).forEach(x => x.classList.toggle("on", x === b && qVal(b.dataset.q) === b.dataset.v))
-      if (one && qVal(b.dataset.q)) setTimeout(() => { if (list[i] === c) { i++; draw(1) } }, 380)
-      else refreshFoot()
+      refreshFoot()   // дальше — только кнопкой «Дальше»
     })
     const inp = body.querySelector("[data-qt]")
     if (inp) { inp.oninput = () => { PF()[inp.dataset.qt] = inp.value.trim().slice(0, 80); save(false); refreshFoot() }; inp.onkeydown = e => { if (e.key === "Enter") inp.blur() } }
-    function refreshFoot() { const [k, , , type, opts] = c.q, ans = type === "rows" ? opts.some(o => qVal(o[0]) !== "") : type === "many" ? (qVal(k) || []).length > 0 : !!qVal(k) || !!PF()[k + "Text"]; const s = foot.querySelector(".ob-skip"); if (s) s.classList.toggle("gone", ans) }
-    if (inQuiz) refreshFoot()
+    function refreshFoot() {}
     foot.querySelectorAll("button").forEach(b => b.onclick = () => act(b.dataset.ob))
     if (dir !== 0 || !draw.done) iziSays(c.q ? 1100 : 1600)
     draw.done = 1
@@ -239,7 +235,6 @@ function intro(at) {
     // владелец со своим виджетом: подключиться к нему, а не к серверу друзей (иначе — новый пустой аккаунт)
     if (a === "widget") { done(); setTimeout(() => FRIEND.widget(), 340) }
   }
-  ov.querySelector(".ob-out").onclick = () => act("quiz-skip")
   // Листание пальцем: влево — дальше, вправо — назад
   let x0 = null, y0 = 0
   ov.addEventListener("touchstart", e => { if (e.target.closest("input")) return; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY }, { passive: true })
