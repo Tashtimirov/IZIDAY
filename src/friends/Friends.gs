@@ -109,6 +109,13 @@ function login_(q) {
     String(t.email_verified) !== "true" || !t.sub) return { ok: false, error: "вход не подтверждён" };
   if (q.nonce && t.nonce !== q.nonce) return { ok: false, error: "вход устарел — нажмите «Войти» ещё раз" };
   const email = String(t.email || "").toLowerCase();
+  // Владелец: у него своя основная таблица и виджет. Его вход через Google ведёт туда, а не в пустой аккаунт друзей.
+  // Код подключения (как из виджета) приложение присылает само, когда уже подключено к основной таблице, — храним в свойстве OWNER_SETUP
+  if (q.own && owner_(email)) {   // q.own — приложение умеет такой ответ (старые версии ждут обычный вход)
+    if (setupOk_(q.setup)) GP_().setProperty("OWNER_SETUP", q.setup);
+    const setup = GP_().getProperty("OWNER_SETUP");
+    if (setup) return { ok: true, owner: true, setup, me: { id: "owner", name: String(t.name || "").slice(0, 60), email } };
+  }
   const allow = String(GP_().getProperty("ALLOW") || "").toLowerCase().split(/[\s,;]+/).filter(Boolean);
   if (allow.length && allow.indexOf(email) < 0) return { ok: false, error: "этой почте вход пока не открыт — напишите тому, кто прислал приложение" };
   const id = "f" + sha_("sub:" + t.sub).slice(0, 12);
@@ -139,6 +146,16 @@ function login_(q) {
       `${u.name} (${email}) вошёл в IZIDAY. Всего друзей: ${users_().length} из ${FR.max}.`); } catch (e) {}
     return { ok: true, secret, isNew, me: meOut_(u) };
   } finally { lock.releaseLock(); }
+}
+// Почты владельца: хозяин сервера и свойство OWNER_EMAILS (через запятую, например второй аккаунт Google)
+function owner_(email) {
+  const list = String(GP_().getProperty("OWNER_EMAILS") || "").toLowerCase().split(/[\s,;]+/).filter(Boolean);
+  try { list.push(String(Session.getEffectiveUser().getEmail() || "").toLowerCase()); } catch (e) {}
+  return !!email && list.indexOf(email) >= 0;
+}
+function setupOk_(s) {
+  if (typeof s !== "string" || s.length < 40 || s.length > 30000) return false;
+  try { const d = JSON.parse(Utilities.newBlob(Utilities.base64Decode(s)).getDataAsString()); return /^https:\/\/script\.google(usercontent)?\.com\//.test(d.hook || "") && !!d.secret; } catch (e) { return false; }
 }
 function logout_(u, secret) {
   const hash = sha_(secret);

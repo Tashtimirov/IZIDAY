@@ -19,6 +19,24 @@ window.FRIEND = (() => {
       return CFG.owner.split(",").includes(h)
     } catch (x) { return false }
   }
+  // Код подключения своей таблицы (тот же, что копирует виджет) — из текущего подключения телефона
+  function mySetup() {
+    const c = D.conn
+    if (!c || c.friend || !c.hook || !c.secret) return ""
+    try { return btoa(unescape(encodeURIComponent(JSON.stringify({ v: 1, hook: c.hook, secret: c.secret, key: c.key || "", routes: c.routes || [], sheetUrl: c.sheetUrl || "", run: c.run || "", cfg: c.cfg || null })))) } catch (e) { return "" }
+  }
+  // После подключения кодом из виджета — один раз предлагаем привязать вход Google к этой таблице
+  if (typeof connect === "function") {
+    const c0 = connect
+    connect = async function (code) {
+      const r = await c0.apply(this, arguments)
+      if (on() && D.conn && !D.conn.friend && D.sync && D.sync.at && !D.sync.error && !D.gLink && !D.gLinkAsk) {
+        D.gLinkAsk = Date.now(); save(false)
+        setTimeout(async () => { if (await ui.confirm("Привязать вход Google?", `<div class="msg">Войдите один раз через Google своей почтой — и на новом телефоне или после переустановки хватит одной кнопки «Войти через Google»: откроется эта таблица со всеми записями.</div>`, ["Позже", "Привязать"]) === "Привязать") login() }, 1200)
+      }
+      return r
+    }
+  }
   // Подключиться к своему виджету вместо сервера друзей: Scriptable копирует код, приложение вставляет (app.js → autoConnect)
   async function widget(ask = true) {
     if (ask) {
@@ -56,14 +74,20 @@ window.FRIEND = (() => {
     if (p.get("error")) { if (p.get("error") !== "access_denied") toast("Google не пустил: " + p.get("error")); return }
     const token = p.get("id_token")
     if (!token) return
-    // телефон уже подключён к своему виджету — Google не должен молча его заменить
-    if (D.conn && D.conn.hook && !D.conn.friend && await ui.confirm("Сменить подключение?", `<div class="msg">Сейчас приложение подключено к вашему виджету Scriptable. Если войти через Google, календарь и записи будут из другого, отдельного аккаунта.</div>`, ["Оставить виджет", "Войти через Google"]) !== "Войти через Google") return
     // state совпал — проверяем и nonce; не совпал (вход открылся в другом окне Safari) — сервер всё равно проверит пропуск у Google
     const nonce = st.state && st.state === p.get("state") ? st.nonce : ""
     const wait = sheet(`<h3>Настраиваю IZIDAY…</h3><div class="msg">Готовлю ваш календарь, деньги, здоровье и ${esc(iziName())}. Это 5–15 секунд.</div>`)
-    const r = await post({ login: { id_token: token, nonce, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "" } }, 90000)
+    const own = mySetup()   // подключены к своей таблице — сервер запомнит её для входа владельца (чужим почтам не сохранит)
+    const r = await post({ login: { id_token: token, nonce, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "" , setup: own || undefined, own: 1 } }, 90000)
     wait.close()
     if (!r.ok) return ui.info("Не получилось войти", (r.error || "сервер не ответил") + "\n\nНажмите «Войти через Google» ещё раз.")
+    // владелец: сервер вернул код его основной таблицы — подключаемся к ней, как кодом из виджета
+    if (r.owner && r.setup) {
+      D.gLink = Date.now(); save(false)
+      if (own) return ui.info("Вход Google привязан", `Теперь на любом телефоне достаточно «Войти через Google» почтой ${r.me && r.me.email || ""}: откроется ваша основная таблица со всеми записями.`)
+      return connect(r.setup)
+    }
+    if (own && await ui.confirm("Это другой аккаунт", `<div class="msg">Почта ${esc(r.me && r.me.email || "")} — не ваша основная. Если перейти, календарь и записи будут из отдельного аккаунта друзей.</div>`, ["Оставить свою таблицу", "Перейти"]) !== "Перейти") return
     if (await isOwner(r.me && r.me.email) && await ownerAsk() === "Подключить виджет") return widget(false)
     D.conn = { hook: CFG.hook, secret: r.secret, key: "srv", routes: [], sheetUrl: "", cfg: null, friend: r.me }
     D.sync = { since: 0, pushedAt: 0, snapAt: 0, at: 0, error: "" }
