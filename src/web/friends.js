@@ -4,11 +4,32 @@
 // Google возвращает на сайт id_token (подписанный пропуск с почтой и именем); index.html забирает его из адреса
 // до app.js, а здесь он уходит на сервер и меняется на ключ этого телефона.
 window.FRIEND = (() => {
-  const CFG = { hook: "__FRIENDS_HOOK__", client: "__GOOGLE_CLIENT__" }
+  const CFG = { hook: "__FRIENDS_HOOK__", client: "__GOOGLE_CLIENT__", owner: "__OWNER_HASHES__" }
   const on = () => /^https:\/\/script\.google\.com\//.test(CFG.hook) && /\.apps\.googleusercontent\.com$/.test(CFG.client)
   const me = () => (D.conn && D.conn.friend) || null
   const rnd = () => [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, "0")).join("")
   const GICO = `<span style="display:inline-flex;background:#fff;border-radius:50%;padding:4px;margin-right:9px;vertical-align:-6px"><svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg></span>`
+
+  // Почты владельца (у него свой виджет Scriptable со своим календарём) — только отпечатками sha256, сами адреса в сайт не попадают
+  async function isOwner(email) {
+    const e = String(email || "").trim().toLowerCase()
+    if (!e || !/^[0-9a-f,]{64,}$/.test(CFG.owner)) return false
+    try {
+      const h = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(e)))].map(b => b.toString(16).padStart(2, "0")).join("")
+      return CFG.owner.split(",").includes(h)
+    } catch (x) { return false }
+  }
+  // Подключиться к своему виджету вместо сервера друзей: Scriptable копирует код, приложение вставляет (app.js → autoConnect)
+  async function widget(ask = true) {
+    if (ask) {
+      const b = await ui.confirm("Подключить свой виджет", `<div class="msg">Календарь, напоминания и все записи придут из вашего виджета Scriptable. Откроется Scriptable и скопирует код: вернитесь кнопкой «◀ IZIDAY» слева вверху и нажмите «Вставить».</div>`, ["Отмена", "Ввести код", "Подключить"])
+      if (b === "Ввести код") { if (D.conn && D.conn.friend) { D.conn = null; save(false) } return DO.connect() }
+      if (b !== "Подключить") return
+    }
+    if (D.conn && D.conn.friend) { D.conn = null; save(false); render() }
+    autoConnect()
+  }
+  const ownerAsk = () => ui.confirm("Это ваш личный аккаунт", `<div class="msg">Ваш календарь и записи живут в виджете Scriptable. Вход через Google — для друзей: здесь будет отдельный пустой аккаунт.</div>`, ["Всё равно Google", "Подключить виджет"])
 
   async function post(body, timeout = 30000) {
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), timeout)
@@ -35,12 +56,15 @@ window.FRIEND = (() => {
     if (p.get("error")) { if (p.get("error") !== "access_denied") toast("Google не пустил: " + p.get("error")); return }
     const token = p.get("id_token")
     if (!token) return
+    // телефон уже подключён к своему виджету — Google не должен молча его заменить
+    if (D.conn && D.conn.hook && !D.conn.friend && await ui.confirm("Сменить подключение?", `<div class="msg">Сейчас приложение подключено к вашему виджету Scriptable. Если войти через Google, календарь и записи будут из другого, отдельного аккаунта.</div>`, ["Оставить виджет", "Войти через Google"]) !== "Войти через Google") return
     // state совпал — проверяем и nonce; не совпал (вход открылся в другом окне Safari) — сервер всё равно проверит пропуск у Google
     const nonce = st.state && st.state === p.get("state") ? st.nonce : ""
     const wait = sheet(`<h3>Настраиваю IZIDAY…</h3><div class="msg">Готовлю ваш календарь, деньги, здоровье и ${esc(iziName())}. Это 5–15 секунд.</div>`)
     const r = await post({ login: { id_token: token, nonce, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "" } }, 90000)
     wait.close()
     if (!r.ok) return ui.info("Не получилось войти", (r.error || "сервер не ответил") + "\n\nНажмите «Войти через Google» ещё раз.")
+    if (await isOwner(r.me && r.me.email) && await ownerAsk() === "Подключить виджет") return widget(false)
     D.conn = { hook: CFG.hook, secret: r.secret, key: "srv", routes: [], sheetUrl: "", cfg: null, friend: r.me }
     D.sync = { since: 0, pushedAt: 0, snapAt: 0, at: 0, error: "" }
     save(false)
@@ -48,9 +72,11 @@ window.FRIEND = (() => {
     render()
     sync()
     const first = String((r.me && r.me.name) || "").split(" ")[0]
+    // почту показываем всегда: в Safari бывает несколько аккаунтов Google (свой, детей), и легко войти не в тот
+    const mail = r.me && r.me.email ? `\n\nАккаунт: ${r.me.email}. Не тот? Настройки → Аккаунт → «Выйти» и войдите снова, выбрав другую почту.` : ""
     ui.info(r.isNew ? `Готово${first ? ", " + first : ""}!` : `С возвращением${first ? ", " + first : ""}!`,
-      r.isNew ? `Всё настроено само: календарь, деньги, здоровье и ${iziName()}. Нажмите на ${iziName()} внизу и расскажите, что у вас сегодня.`
-        : "Ваши записи снова здесь.")
+      (r.isNew ? `Всё настроено само: календарь, деньги, здоровье и ${iziName()}. Нажмите на ${iziName()} внизу и расскажите, что у вас сегодня.`
+        : "Ваши записи снова здесь.") + mail)
   }
 
   async function logout() {
@@ -87,7 +113,7 @@ window.FRIEND = (() => {
     const m = me()
     if (!m) return `<div class="card"><h2>Аккаунт</h2><div class="muted small">Войдите через Google: IZIDAY сам заведёт вам календарь, деньги, здоровье и подключит ${esc(iziName())}.</div>
       <div class="btns" style="margin-top:10px"><button class="btn primary" data-do="glogin">${GICO}Войти через Google</button></div>
-      <div class="btns" style="margin-top:6px"><button class="btn small" data-do="connect">У меня есть виджет Scriptable</button></div></div>`
+      <div class="btns" style="margin-top:6px"><button class="btn small" data-fw="1">У меня есть виджет Scriptable</button></div></div>`
     setTimeout(refresh, 50)
     return `<div class="card"><h2>Аккаунт</h2>
       <div class="set"><span>${esc(m.name || "Вы")}</span><span class="ok">✓ ${esc(m.email || "")}</span></div>
@@ -96,13 +122,19 @@ window.FRIEND = (() => {
       <div class="set"><span>Последний обмен</span><span>${esc(ago(D.sync.at))}</span></div>
       ${D.sync.error ? `<div class="msg exp small">${esc(D.sync.error)}</div>` : ""}
       <div class="btns" style="margin-top:10px"><button class="btn" data-do="sync">${ei("sync")}Обменяться сейчас</button><button class="btn red" data-do="glogout">Выйти</button></div>
+      <div class="btns" style="margin-top:6px"><button class="btn small" data-fw="1">У меня свой виджет Scriptable</button></div>
       <div class="muted small" style="margin-top:8px">Записи хранятся на сервере IZIDAY в вашем личном разделе. Войдите той же почтой на другом телефоне — и всё будет там.</div></div>`
   }
 
   // вернулись от Google: index.html положил ответ в sessionStorage
   let pending = null
   try { pending = sessionStorage.getItem("izi-glogin"); sessionStorage.removeItem("izi-glogin") } catch (e) {}
+  document.addEventListener("click", e => { const b = e.target.closest && e.target.closest("[data-fw]"); if (b) { e.stopPropagation(); widget() } }, true)
   if (pending) setTimeout(() => finish(pending), 300)
+  // владелец по ошибке вошёл через Google (пустой аккаунт друзей) — при запуске предлагаем вернуться к своему виджету
+  else setTimeout(async () => {
+    try { if (me() && !sessionStorage.getItem("izi-own") && await isOwner(me().email)) { sessionStorage.setItem("izi-own", "1"); if (await ownerAsk() === "Подключить виджет") widget(false) } } catch (e) {}
+  }, 1500)
 
-  return { on, me, login, logout, finish, ai, ask, banner, card, gico: GICO }
+  return { on, me, login, logout, finish, ai, ask, banner, card, widget, gico: GICO }
 })()

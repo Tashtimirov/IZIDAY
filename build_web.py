@@ -58,7 +58,10 @@ import json as _json
 _sec = _json.loads((ROOT / "secrets.json").read_text()) if (ROOT / "secrets.json").exists() else {}
 FRIENDS_HOOK = _sec.get("friends_hook", "")
 _f = OUT / "friends.js"
-_f.write_text(_f.read_text().replace("__FRIENDS_HOOK__", FRIENDS_HOOK).replace("__GOOGLE_CLIENT__", _sec.get("google_client", "")))
+# Почты владельца (secrets.json → owner_emails): в сайт идут только отпечатки sha256 — по ним вход через Google
+# предлагает владельцу вернуться к своему виджету вместо пустого аккаунта на сервере друзей
+OWNER_HASHES = ",".join(hashlib.sha256(e.strip().lower().encode()).hexdigest() for e in _sec.get("owner_emails", []) if e.strip())
+_f.write_text(_f.read_text().replace("__FRIENDS_HOOK__", FRIENDS_HOOK).replace("__GOOGLE_CLIENT__", _sec.get("google_client", "")).replace("__OWNER_HASHES__", OWNER_HASHES))
 if FRIENDS_HOOK and FRIENDS_HOOK == _sec.get("sheet_hook"):
     sys.exit("friends_hook совпадает с личной таблицей — так нельзя")
 

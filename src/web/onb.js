@@ -88,10 +88,13 @@ function intro() {
     ov.innerHTML = `<div class="ob-card ${dir > 0 ? "in-r" : dir < 0 ? "in-l" : "in"}">${list[i]}${gl ? `<div class="ob-p">Осталось войти через Google — и всё настроится само.</div>` : ""}</div>
       <div class="ob-foot"><div class="ob-dots">${list.map((_, k) => `<i class="${k === i ? "on" : ""}"></i>`).join("")}</div>
       <button class="ob-btn" data-ob="next">${gl ? FRIEND.gico + "Войти через Google" : last ? (kid() ? "Поехали!" : "Начать") : "Дальше"}</button>
+      ${gl ? `<button class="ob-skip" data-ob="widget">У меня свой виджет Scriptable</button>` : ""}
       <button class="ob-skip" data-ob="skip" ${last && !gl ? "hidden" : ""}>${gl ? "Позже" : "Пропустить"}</button></div>`
     ov.querySelectorAll("[data-who]").forEach(b => b.onclick = () => { setWho(b.dataset.who); draw() })
     ov.querySelector('[data-ob="next"]').onclick = () => last ? (done(), gl && setTimeout(() => FRIEND.login(), 340)) : (i++, draw(1))
     ov.querySelector('[data-ob="skip"]').onclick = done
+    // владелец со своим виджетом: подключиться к нему, а не к серверу друзей (иначе — новый пустой аккаунт)
+    const w = ov.querySelector('[data-ob="widget"]'); if (w) w.onclick = () => { done(); setTimeout(() => FRIEND.widget(), 340) }
   }
   // Листание пальцем: влево — дальше, вправо — назад
   let x0 = null, y0 = 0
