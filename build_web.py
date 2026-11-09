@@ -66,7 +66,7 @@ if FRIENDS_HOOK and FRIENDS_HOOK == _sec.get("sheet_hook"):
     sys.exit("friends_hook совпадает с личной таблицей — так нельзя")
 
 if "--no-minify" not in sys.argv:
-    for name in ["core.js", "app.js", "friends.js", "gami.js", "quest.js", "onb.js", "health.js", "fast.js", "family.js", "album.js", "mem.js", "design.js", "order.js", "tablet.js", "stt.js", "style.css", "gami.css", "quest.css", "onb.css", "health.css", "fast.css", "family.css", "album.css", "mem.css", "design.css", "order.css", "tablet.css"]:
+    for name in ["core.js", "app.js", "friends.js", "gami.js", "quest.js", "onb.js", "health.js", "fast.js", "family.js", "album.js", "mem.js", "design.js", "order.js", "undo.js", "tablet.js", "stt.js", "style.css", "gami.css", "quest.css", "onb.css", "health.css", "fast.css", "family.css", "album.css", "mem.css", "design.css", "order.css", "undo.css", "tablet.css"]:
         if not minify(OUT / name):
             break
 

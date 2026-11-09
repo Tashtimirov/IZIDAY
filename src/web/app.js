@@ -64,6 +64,7 @@ function ago(t) {
 }
 
 function toast(t) {
+  if (window.UNDO && UNDO.toast(t)) return   // подсказка этого действия идёт подписью на плашку «Отменить»
   const el = $("#toast")
   el.innerHTML = deEmo(esc(t))
   el.classList.add("show")
@@ -207,6 +208,7 @@ function iziPaint() {
 const proteinGoal = () => H().proteinGoal || Math.round((H().weight || 80) * 1.6)   // по умолчанию 1,6 г на кг веса
 const live = list => list.filter(x => x && !x.deleted)
 function upsert(key, rec) {
+  if (window.UNDO) UNDO.note(key, rec)   // отмена действия (undo.js): запомнить прежнюю версию
   rec.u = Date.now()
   const i = D[key].findIndex(x => x.id === rec.id)
   if (i >= 0) D[key][i] = rec; else D[key].push(rec)
@@ -3342,6 +3344,7 @@ function listOpen(key) {
   if (key === "wish" || key === "dream") return goalsForm(key)
   return listSheet(key)
 }
+let undoRedraw = null
 function itemSheet(title, sub, items, h) {
   const open = items.filter(x => !x.done), done = items.filter(x => x.done)
   const one = x => `<div class="row"><button class="check ${x.done ? "on" : ""}" data-it="${esc(x.id)}"></button><div class="grow"><div class="t ${x.done ? "struck" : ""}">${esc(x.t)}</div></div><button class="x-btn" data-ix="${esc(x.id)}" aria-label="Убрать">${ICO.x}</button></div>`
@@ -3349,7 +3352,8 @@ function itemSheet(title, sub, items, h) {
     <div class="add-line"><input id="it-t" placeholder="+ Добавить пункт" enterkeyhint="done"><button class="btn primary small" data-a="add">Добавить</button></div>
     <div>${open.map(one).join("") || (done.length ? "" : `<div class="empty">${esc(h.empty)}</div>`)}</div>
     ${done.length ? `<div class="sub-h">Отмечено · ${done.length}</div><div>${done.map(one).join("")}</div>` : ""}
-    <div class="btns" style="margin-top:12px">${h.extra || ""}<button class="btn" data-a="no">Готово</button></div>`, { onClose: () => render() })
+    <div class="btns" style="margin-top:12px">${h.extra || ""}<button class="btn" data-a="no">Готово</button></div>`, { onClose: () => { if (undoRedraw === redraw) undoRedraw = null; render() } })
+  const redraw = () => h.again(s); undoRedraw = redraw   // «Отменить» — окно списка перерисуется
   $$("[data-it]", s.el).forEach(b => b.onclick = () => { h.toggle(b.dataset.it); if (navigator.vibrate) navigator.vibrate(10); h.again(s) })
   $$("[data-ix]", s.el).forEach(b => b.onclick = () => { h.del(b.dataset.ix); h.again(s) })
   const add = () => { const t = $("#it-t", s.el).value.trim(); if (!t) return; h.add(t); h.again(s, true) }
