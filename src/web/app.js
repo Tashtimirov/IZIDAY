@@ -3834,6 +3834,8 @@ function silkBars(c, t, d) {
   x.globalAlpha = 1
 }
 const silkK = k => 1 - Math.pow(1 - k, SILK.f || 1)
+// голос в волну шара разговора: не толчок «+», а уровень 0…1 с удержанием пика — плавность даёт silkTalk
+function silkVoice(w, l) { SILK[w] = Math.max(SILK[w] || 0, Math.min(1, l || 0)) }
 function silkLines(c, T, d, active) {
   const x = c.getContext("2d"), W = c.width, H = c.height, a = active ? SILK.lv : 0
   x.clearRect(0, 0, W, H)
@@ -5662,8 +5664,8 @@ function speak(text, { onSentence, onEnd, force } = {}) {
     if (i >= parts.length) { TTS.speaking = false; if (onEnd) onEnd(); return }
     const s = parts[i++], u = new SpeechSynthesisUtterance(s)
     u.lang = "ru-RU"; try { if (v) u.voice = v } catch (e) {}; u.rate = z.rate || 1; u.pitch = 1
-    u.onstart = () => { TTS.tick = performance.now(); if (my === TTS.token) { TTS.speaking = true; SILK.ie = 1; if (onSentence) onSentence(s) } }
-    u.onboundary = () => { TTS.tick = performance.now(); SILK.ie = Math.min(1.3, SILK.ie + .45) }   // каждое слово подталкивает волну Изи
+    u.onstart = () => { TTS.tick = performance.now(); if (my === TTS.token) { TTS.speaking = true; silkVoice("ie", .75); if (onSentence) onSentence(s) } }
+    u.onboundary = () => { TTS.tick = performance.now(); silkVoice("ie", .8) }   // каждое слово мягко поддерживает волну Изи
     u.onend = next
     u.onerror = e => { if (e.error === "interrupted" || e.error === "canceled") return; next() }
     TTS.keep.push(u); S.speak(u)
@@ -5842,7 +5844,7 @@ function talkListen(first, keep) {
         return
       }
       if (t.state !== "listen") return
-      t.heard = all; SILK.ye = Math.min(1.3, SILK.ye + .5)
+      t.heard = all; silkVoice("ye", .7)
       talkState("listen", null, t.heard)
       arm()
     }
@@ -5901,7 +5903,7 @@ function talkListenW(first, keep) {
   t.rec = { abort() { dead = true }, stop() { dead = true } }   // место занято, пока микрофон включается
   const go = () => {
     if (!live() || dead) return
-    const ov = { onVoice: l => { if (live() && t.state === "listen") SILK.ye = Math.min(1.3, SILK.ye + l * 6) } }
+    const ov = { onVoice: l => { if (live() && t.state === "listen") silkVoice("ye", Math.sqrt(l * 8)) } }
     ;(pre && !pre.stopped ? Promise.resolve(Object.assign(pre, { opts: ov })) : STT.record(ov)).then(h => {
       if (!live() || dead) return h.close()
       t.rec = h
@@ -6094,19 +6096,28 @@ function talkBargeIn(t, rms, thr) {
 function silkTalk(c, T, d) {
   const x = c.getContext("2d"), W = c.width, H = c.height, st = TALK ? TALK.state : SILK.demo || ""   // demo — знакомство (onb.js) «говорит» без разговора
   const syl = .55 + .45 * Math.sin(T * 2.3) * Math.sin(T * .9 + 1)
-  const ti = st === "say" ? (.35 + .65 * syl) * Math.max(.4, SILK.ie) : st === "think" ? .1 + .06 * Math.sin(T * 1.6) : 0
-  const ty = st === "listen" ? (.12 + .88 * syl) * Math.max(.12, SILK.ye) : 0
-  SILK.il += (ti - SILK.il) * silkK(ti > SILK.il ? .08 : .035); SILK.yl += (ty - SILK.yl) * silkK(ty > SILK.yl ? .08 : .035)
-  SILK.ie *= Math.pow(.975, SILK.f); SILK.ye *= Math.pow(.975, SILK.f)
+  // цель для волн: «слоги» качают размах неглубоко (раньше почти до нуля — волна дёргалась)
+  const ti = st === "say" ? (.6 + .4 * syl) * Math.max(.4, SILK.ie) : st === "think" ? .1 + .06 * Math.sin(T * 1.6) : 0
+  const ty = st === "listen" ? (.25 + .75 * syl) * Math.max(.15, SILK.ye) : 0
+  // два мягких фильтра подряд — уровень меняется без углов, как на iPhone: подъём ~0,4 с, спад ~0,8 с
+  SILK.i1 = (SILK.i1 || 0) + (ti - (SILK.i1 || 0)) * silkK(ti > (SILK.i1 || 0) ? .05 : .028)
+  SILK.y1 = (SILK.y1 || 0) + (ty - (SILK.y1 || 0)) * silkK(ty > (SILK.y1 || 0) ? .05 : .028)
+  SILK.il += (SILK.i1 - SILK.il) * silkK(.1); SILK.yl += (SILK.y1 - SILK.yl) * silkK(.1)
+  SILK.ie *= Math.pow(.985, SILK.f); SILK.ye *= Math.pow(.985, SILK.f)
   // «думаю» — облака внутри кружатся быстрее; плавно, без скачка
   SILK.tk += ((st === "think" ? 1 : 0) - SILK.tk) * silkK(.04)
   SILK.ph += (SILK.f || 1) * .033 * (.35 + SILK.tk * 1.1 + Math.max(SILK.il, SILK.yl) * .5)
+  // волны уравновешивают друг друга: громче один — второй уступает, но тихо покачивается в такт
+  const bi = SILK.il * (1 - .4 * SILK.yl) + .14 * SILK.yl, by = SILK.yl * (1 - .4 * SILK.il) + .14 * SILK.il
+  // фаза копится по времени кадра: скорость меняется с голосом, а волна не прыгает (раньше T·скорость давало рывки)
+  const wp = SILK.wp || (SILK.wp = [0, 0]), dts = (SILK.f || 1) * .0333
+  wp[0] += dts * .8 * (1 + bi * .35); wp[1] += dts * .66 * (1 + by * .35)
   const lv = Math.max(SILK.il, SILK.yl), ph = SILK.ph
   const P = iziCol(), ci = P[0] === "em" ? "95,185,255" : P[3], cy2 = P[0] === "em" ? "80,245,190" : P[4]
   const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .33
   x.clearRect(0, 0, W, H)
   // сфера «дышит»: в покое еле заметно, с голосом чуть растёт (масштаб вокруг центра)
-  const k = 1 + .012 * Math.sin(T * 1.2) + .045 * lv, s = x
+  const k = 1 + .012 * Math.sin(T * 1.2) + .03 * lv, s = x
   x.setTransform(k, 0, 0, k, cx - cx * k, cy - cy * k)
   iziSphere(s, W, H, R, R * 1.12, P, () => {
     // облака света внутри — медленно плывут по кругу
@@ -6120,8 +6131,8 @@ function silkTalk(c, T, d) {
     s.globalCompositeOperation = "lighter"
     const len = R * 1.95
     // [цвет, уровень, смещение, размах, фаза, скорость, толщина]
-    ;[[ci, SILK.il, .04, .17, 2.1, .8, .028], [cy2, SILK.yl, -.04, .19, 0, .66, .032]].forEach(([rgb, l, dy, am, f0, sp, lw]) => {
-      const amp = R * am * (1 + l * 1.9), jit = l * .07, spd = sp * (1 + l * .6)
+    ;[[ci, bi, .04, .17, 2.1, wp[0], .028], [cy2, by, -.04, .19, 0, wp[1], .032]].forEach(([rgb, l, dy, am, f0, tp, lw]) => {
+      const amp = R * am * (1 + l * 1.25), jit = l * .025
       const g = s.createLinearGradient(cx - len / 2, 0, cx + len / 2, 0)
       g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(.28, `rgba(${rgb},1)`); g.addColorStop(.72, `rgba(${rgb},1)`); g.addColorStop(1, `rgba(${rgb},0)`)
       s.strokeStyle = g; s.lineCap = "round"; s.lineJoin = "round"
@@ -6130,8 +6141,8 @@ function silkTalk(c, T, d) {
         s.beginPath()
         for (let i = 0; i <= 120; i++) {
           const u = i / 120, env = Math.pow(Math.sin(Math.PI * u), 1.6), px = cx - len / 2 + u * len
-          const w = .72 * Math.sin(u * Math.PI * 2.2 + f0 + dp + T * spd) + .28 * Math.sin(u * Math.PI * 3.6 - T * spd * 1.35 + f0 * 2 + dp * .7)
-          const py = cy + dy * R + amp * k * env * (w + jit * Math.sin(u * Math.PI * 9 + T * 7.5 + dp))
+          const w = .72 * Math.sin(u * Math.PI * 2.2 + f0 + dp + tp) + .28 * Math.sin(u * Math.PI * 3.6 - tp * 1.35 + f0 * 2 + dp * .7)
+          const py = cy + dy * R + amp * k * env * (w + jit * Math.sin(u * Math.PI * 5 + tp * 4 + dp))
           i ? s.lineTo(px, py) : s.moveTo(px, py)
         }
         const lw0 = Math.max(1.3 * d, R * lw * (j ? .45 : 1) * (1 + l * .3))

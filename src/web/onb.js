@@ -177,11 +177,11 @@ let speakT = 0
 function iziSays(ms = 1500) {
   if (typeof SILK === "undefined") return
   clearInterval(speakT); SILK.demo = "say"; const t0 = Date.now()
-  speakT = setInterval(() => { if (Date.now() - t0 > ms) { clearInterval(speakT); if (SILK.demo === "say") SILK.demo = "" ; return } SILK.ie = Math.min(1.3, SILK.ie + .25 + Math.random() * .3) }, 170)
+  speakT = setInterval(() => { if (Date.now() - t0 > ms) { clearInterval(speakT); if (SILK.demo === "say") SILK.demo = "" ; return } silkVoice("ie", .55 + Math.random() * .3) }, 170)
 }
 function youSay() {
   if (typeof SILK === "undefined") return
-  clearInterval(speakT); SILK.demo = "listen"; SILK.ye = Math.min(1.3, (SILK.ye || 0) + .9)
+  clearInterval(speakT); SILK.demo = "listen"; silkVoice("ye", .8)
   speakT = setTimeout(() => { if (SILK.demo === "listen") SILK.demo = "" }, 700)
 }
 
