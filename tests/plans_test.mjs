@@ -111,7 +111,7 @@ await page.evaluate(() => { shopAdd(["Молоко", "Авокадо", "Кофе
   goalAdd("month", ["Пробежать 50 км", "Прочитать книгу", "Выучить 100 слов"]); goalToggle(goalsOf("month")[0].id, true); render() })
 await page.waitForTimeout(200)
 const lt = await page.textContent("#lists")
-check(/Покупки.*3/.test(lt) && /100 желаний.*3 из 100/.test(lt) && /Дом у моря · шаги 1 из 3/.test(lt) && /На выходные.*1 из 4/.test(lt), "списки: покупки, желания, мечты, свой", lt)
+check(/Покупки.*3/.test(lt) && /100 желаний.*3 желания/.test(lt) && /Дом у моря · шаги 1 из 3/.test(lt) && /На выходные.*1 из 4/.test(lt), "списки: покупки, желания, мечты, свой", lt)
 await page.click('[data-list="shop"]'); await page.waitForTimeout(300)
 await page.fill("#it-t", "Хлеб"); await page.press("#it-t", "Enter"); await page.waitForTimeout(300)
 check(await page.evaluate(() => shopOpen().length === 4 && !!$(".sheet #it-t")), "покупки: добавил пункт прямо в списке")
@@ -162,6 +162,8 @@ check(hg.some(g => g.kind === "chore" && g.title === "Помыть машину"
 // желание → цель на месяц → шаги с датами → календарь
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close(); goalsForm("wish") }); await page.waitForTimeout(400)
 const wid = await page.evaluate(() => goalsOf("wish").find(g => g.title === "Увидеть северное сияние").id)
+check(await page.evaluate(() => [...document.querySelectorAll(".sheet .wgrp .wg-h .t")].map(e => e.textContent).join("|") === "Путешествия и впечатления|Учёба и увлечения|Другое"), "желания разбиты по разделам")
+await page.click('[data-wgh="trip"]'); await page.waitForTimeout(450)
 await page.click(`[data-tomonth="${wid}"]`); await page.waitForTimeout(400)
 check(await page.evaluate(() => goalsOf("month").some(g => g.title === "Увидеть северное сияние" && g.from) && /Разбить на шаги/.test($(".sheet").textContent)), "желание стало целью на месяц, предлагает шаги")
 await page.click('.sheet [data-b="Разбить на шаги"]'); await page.waitForTimeout(400)

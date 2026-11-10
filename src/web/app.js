@@ -871,9 +871,9 @@ const AGENT_TOOLS = [
   { name: "delete_kids_item", description: "Убрать дело детей по id (из get_kids).", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "start_fast", description: "Начать интервальное голодание (по умолчанию 16 ч). Когда окно откроется — придёт пуш.", input_schema: { type: "object", properties: { hours: { type: "number" } } } },
   { name: "stop_fast", description: "Закончить голодание сейчас (поел).", input_schema: { type: "object", properties: {} } },
-  { name: "add_goal", description: "Цели: kind=month — цели на этот месяц; wish — «100 желаний» (любые желания, большие и маленькие); dream — «10 мечт», крупное на срок до 2 лет (due YYYY-MM-DD, по умолчанию через год). Мечты разбивай на шаги через add_goal_steps. " +
+  { name: "add_goal", description: "Цели: kind=month — цели на этот месяц; wish — «100 желаний» (любые желания, большие и маленькие; предела нет, можно больше 100; group — раздел, если не указать — угадаем); dream — «10 мечт», крупное на срок до 2 лет (due YYYY-MM-DD, по умолчанию через год). Мечты разбивай на шаги через add_goal_steps. " +
       "Если пользователю трудно придумать — задавай по одному вопросу про разные стороны жизни (поездки, учёба, семья, тело, деньги, дом, люди, творчество) и записывай ответы.",
-    input_schema: { type: "object", properties: { kind: { type: "string", enum: ["month", "wish", "dream"] }, items: { type: "array", items: { type: "string" } }, due: { type: "string", description: "Для dream: YYYY-MM-DD" } }, required: ["kind", "items"] } },
+    input_schema: { type: "object", properties: { kind: { type: "string", enum: ["month", "wish", "dream"] }, items: { type: "array", items: { type: "string" } }, due: { type: "string", description: "Для dream: YYYY-MM-DD" }, group: { type: "string", enum: ["Покупки и вещи", "Бизнес и деньги", "Дом и быт", "Семья и близкие", "Здоровье и спорт", "Путешествия и впечатления", "Учёба и увлечения", "Другое"], description: "Для wish: раздел" } }, required: ["kind", "items"] } },
   { name: "start_pomodoro", description: "Начать помидор: фокус на одном деле (по умолчанию 25 минут, потом 5 минут отдыха). Когда время выйдет — придёт уведомление.",
     input_schema: { type: "object", properties: { title: { type: "string", description: "Над чем работаем" }, minutes: { type: "number" } } } },
   { name: "stop_pomodoro", description: "Остановить текущий помидор.", input_schema: { type: "object", properties: {} } },
@@ -1312,10 +1312,10 @@ async function runTool(name, x) {
     case "delete_kids_item": { if (!live(D.kids).some(k => k.id === x.id)) return { error: "нет такого" }; remove("kids", x.id); return { ok: true } }
     case "start_fast": { if (fastNow()) return { error: "голодание уже идёт", since: iso(new Date(fastNow().start)) }; const f = fastStart(x.hours); return { ok: true, hours: f.hours, window_opens: iso(new Date(f.start + f.hours * 3600e3)) } }
     case "stop_fast": { const f = fastStop(); return f ? { ok: true, fasted: durTxt(f.end - f.start) } : { error: "голодание не идёт" } }
-    case "add_goal": { const r = goalAdd(x.kind, x.items || [], x.due); if (r.error) return r
+    case "add_goal": { const r = goalAdd(x.kind, x.items || [], x.due, x.kind === "wish" ? wishGroupKey(x.group) : ""); if (r.error) return r
       return { ok: true, added: r.added.map(g => g.title), total: r.total, max: GOAL_MAX[x.kind] || undefined, note: r.added.length < (x.items || []).length ? "часть уже есть или места кончились" : undefined } }
     case "get_goals": { const kinds = x.kind ? [x.kind] : Object.keys(GOAL_KIND), out = {}
-      for (const k of kinds) out[k] = goalsOf(k).map(g => Object.assign({ id: g.id, title: g.title, done: !!g.done, due: g.due }, g.toMonth ? { moved_to_goals: g.toMonth } : {}, stepsOf(g).length ? { steps: stepsOf(g).map(x => Object.assign({ step: x.t, done: !!x.done }, x.date ? { date: x.date, in_calendar: !!x.cal } : {})) } : {}))
+      for (const k of kinds) out[k] = goalsOf(k).map(g => Object.assign({ id: g.id, title: g.title, done: !!g.done, due: g.due }, k === "wish" ? { group: WISH_GROUPS.find(z => z[0] === wishGroup(g))[1] } : {}, g.toMonth ? { moved_to_goals: g.toMonth } : {}, stepsOf(g).length ? { steps: stepsOf(g).map(x => Object.assign({ step: x.t, done: !!x.done }, x.date ? { date: x.date, in_calendar: !!x.cal } : {})) } : {}))
       if (!x.kind || x.kind === "month") out.month_left_from_last = goalsLeft().map(g => g.title)
       return out }
     case "start_pomodoro": { const p = pomoStart(x.title, "", x.minutes); return { ok: true, title: p.title, minutes: p.min, ends: iso(new Date(p.start + p.min * 60e3)), today_done: pomoToday().length } }
@@ -3060,7 +3060,21 @@ function fastCard() {
 
 // ── Цели: на месяц, «100 желаний» (с подсказками), «10 мечт» — крупное, на срок до 2 лет, с разбивкой на шаги ──
 const GOAL_KIND = { month: ["🎯", "На месяц"], wish: ["✨", "100 желаний"], dream: ["🌠", "10 мечт"] }
-const GOAL_MAX = { month: 0, wish: 100, dream: 10 }
+const GOAL_MAX = { month: 0, wish: 0, dream: 10 }   // «100 желаний» — название, не предел: можно хоть 200
+// Разделы желаний: внутри списка желания сгруппированы. Без раздела — угадываем по словам
+const WISH_GROUPS = [["buy", "Покупки и вещи", "gift"], ["biz", "Бизнес и деньги", "money"], ["home", "Дом и быт", "home"], ["fam", "Семья и близкие", "heart"],
+  ["body", "Здоровье и спорт", "activity"], ["trip", "Путешествия и впечатления", "plane"], ["learn", "Учёба и увлечения", "book"], ["other", "Другое", "star"]]
+const WISH_GUESS = [["trip", /поездк|посетить|побывать|путешеств|съездить|увидеть|страны|круиз|лета(ть|ю)|полетать|отпуск|фестивал|театр/i],
+  ["body", /тел[оа]|здоров|спорт|трениров|йог|падел|плава|кг\b|живот|зуб|алкогол|кури|питани|обследован|омоложен|ретрит|гольф/i],
+  ["biz", /бизнес|стартап|доход|деньг|бат\b|доллар|подушк|инвест|агентств|клиент|блог|проект|финанс|заработ/i],
+  ["fam", /семь|дет(и|ей|ям)|дочер|сын|супруг|жен[аеуы]\b|родител|мам|пап|друз|близки/i],
+  ["home", /дом\b|дома\b|квартир|вилл|ремонт|кабинет|спальн|ванн|гардероб|повар|водител|няню|охран|питомц/i],
+  ["learn", /научиться|освоить|выучить|учёб|курс|книг|инструмент|шахмат|танц|гитар/i],
+  ["buy", /купить|приобрести|iphone|macbook|машин|автомоб|монитор|велосипед|принтер|проигрыв|контроллер|мойк/i]]
+const wishGroup = g => (g.grp && WISH_GROUPS.some(x => x[0] === g.grp)) ? g.grp : ((WISH_GUESS.find(([, re]) => re.test(g.title || "")) || ["other"])[0])
+const wishGroupKey = t => { const n = normT(t || ""); if (!n) return ""; const f = WISH_GROUPS.find(([k, name]) => k === t || normT(name) === n || normT(name).startsWith(n)); return f ? f[0] : "" }
+const wishWord = n => { const a = n % 10, b = n % 100; return a === 1 && b !== 11 ? "желание" : a >= 2 && a <= 4 && (b < 12 || b > 14) ? "желания" : "желаний" }
+let wishOpen = {}
 const GOAL_ICO = { month: "target", wish: "star", dream: "summit" }
 const WISH_HINTS = ["Куда хочу поехать?", "Чему хочу научиться?", "Что хочу попробовать впервые?", "Что хочу сделать вместе с детьми?", "Что хочу для семьи и дома?",
   "Каким хочу чувствовать своё тело?", "Сколько хочу зарабатывать и откладывать?", "С кем хочу встретиться или подружиться?", "Какое приключение хочу пережить?",
@@ -3073,7 +3087,7 @@ const goalsOf = (kind, month = curMonth()) => live(D.goals).filter(g => g.title 
   .sort((a, b) => (!!a.done - !!b.done) || a.date - b.date)
 const yearAhead = (n = 1) => { const d = new Date(); d.setMonth(d.getMonth() + Math.round(n * 12)); return dayKey(d) }
 const DREAM_MAX_Y = 2   // мечта: по умолчанию год, не дальше 2 лет
-function goalAdd(kind, items, due) {
+function goalAdd(kind, items, due, grp) {
   if (!GOAL_KIND[kind]) return { error: "kind: month, wish или dream" }
   const have = goalsOf(kind), out = []
   if (kind === "dream" && due) { if (!/^\d{4}-\d\d-\d\d$/.test(due)) due = ""; else if (due > yearAhead(DREAM_MAX_Y)) due = yearAhead(DREAM_MAX_Y) }
@@ -3081,7 +3095,7 @@ function goalAdd(kind, items, due) {
     if (GOAL_MAX[kind] && have.length + out.length >= GOAL_MAX[kind]) break
     if ([...have, ...out].some(g => normT(g.title) === normT(t))) continue
     out.push(upsert("goals", Object.assign({ id: uid("o"), date: Date.now() + out.length, kind, title: t.charAt(0).toUpperCase() + t.slice(1), done: false },
-      kind === "month" ? { month: curMonth() } : {}, kind === "dream" ? { due: due || yearAhead() } : {})))
+      kind === "month" ? { month: curMonth() } : {}, kind === "dream" ? { due: due || yearAhead() } : {}, kind === "wish" && grp ? { grp } : {})))
   }
   return { added: out, total: have.length + out.length }
 }
@@ -3231,23 +3245,32 @@ function goalsMore() {
   return `<div class="card"><h2>Цели и мечты</h2>${["month", "wish", "dream"].map(k => `<button class="row list-row" data-goals="${k}">${icoBox(GOAL_ICO[k])}
     <div class="grow"><div class="t">${GOAL_KIND[k][1]}</div><div class="s">${n(k) ? `${d(k)} ${k === "month" ? "сделано" : "сбылось"} из ${n(k)}${GOAL_MAX[k] ? ` · мест ${GOAL_MAX[k]}` : ""}` : k === "wish" ? "Пишите всё, чего хочется: большое и маленькое" : k === "dream" ? "Крупное: на год, два, три" : "3–5 целей на этот месяц"}</div></div><span class="chev">${ICO.chev}</span></button>`).join("")}</div>`
 }
+function wishGroupsHTML(l, rowFn) {
+  return WISH_GROUPS.map(([k, name, ic]) => { const g = l.filter(x => wishGroup(x) === k); if (!g.length) return ""
+    const d = g.filter(x => x.done).length
+    return `<div class="wgrp ${wishOpen[k] ? "open" : ""}"><button class="row wg-h" data-wgh="${k}">${icoBox(ic)}<div class="grow"><div class="t">${esc(name)}</div><div class="s">${g.length} ${wishWord(g.length)}${d ? ` · сбылось ${d}` : ""}</div></div><span class="chev">${ICO.chev}</span></button><div class="wg-b"><div>${g.map(rowFn).join("")}</div></div></div>` }).join("")
+}
 function goalsForm(kind = "month") {
+  const gRow = g => `<div class="row"><button class="check ${g.done ? "on" : ""}" data-g="${esc(g.id)}"></button><div class="grow"><div class="t">${esc(g.title)}</div>${g.due || stepsOf(g).length ? `<div class="s">${esc([dueTxt(g.due), stepsTxt(g)].filter(Boolean).join(" · "))}</div>` : ""}</div>${kind === "wish" && !g.done ? (g.toMonth === curMonth() ? `<span class="tag">в целях</span>` : `<button class="btn small" data-tomonth="${esc(g.id)}">В цели</button>`) : ""}${kind !== "wish" ? `<button class="btn small" data-steps="${esc(g.id)}">Шаги</button>` : ""}<button class="x-btn" data-del="${esc(g.id)}" aria-label="Убрать">${ICO.x}</button></div>`
   const l = goalsOf(kind), hints = kind === "dream" ? DREAM_HINTS : WISH_HINTS, full = GOAL_MAX[kind] && l.length >= GOAL_MAX[kind]
   let hi = Math.floor(Math.random() * hints.length)
   const left = kind === "month" ? goalsLeft().filter(g => !l.some(x => normT(x.title) === normT(g.title))) : []
   const s = sheet(`<h3>${kind === "month" ? "Цели на " + esc(core.monthTitle(curMonth()).toLowerCase()) : GOAL_KIND[kind][1]}</h3>
     <div class="seg" id="g-k">${Object.keys(GOAL_KIND).map(k => `<button data-k="${k}" class="${k === kind ? "on" : ""}">${{ month: "Месяц", wish: "Желания", dream: "Мечты" }[k]}</button>`).join("")}</div>
-    <div style="margin-top:10px">${l.map(g => `<div class="row"><button class="check ${g.done ? "on" : ""}" data-g="${esc(g.id)}"></button><div class="grow"><div class="t">${esc(g.title)}</div>${g.due || stepsOf(g).length ? `<div class="s">${esc([dueTxt(g.due), stepsTxt(g)].filter(Boolean).join(" · "))}</div>` : ""}</div>${kind === "wish" && !g.done ? (g.toMonth === curMonth() ? `<span class="tag">в целях</span>` : `<button class="btn small" data-tomonth="${esc(g.id)}">В цели</button>`) : ""}${kind !== "wish" ? `<button class="btn small" data-steps="${esc(g.id)}">Шаги</button>` : ""}<button class="x-btn" data-del="${esc(g.id)}" aria-label="Убрать">${ICO.x}</button></div>`).join("")
+    <div style="margin-top:10px">${(kind === "wish" && l.length ? wishGroupsHTML(l, gRow) : l.map(gRow).join(""))
       || `<div class="empty">${kind === "wish" ? "Пишите всё, чего хочется, — большое и маленькое. Не получается? Нажмите «Подсказка» или «Помочь придумать»." : kind === "dream" ? "До 10 крупных мечт на срок до 2 лет. Каждую можно разбить на шаги." : "3–5 целей на этот месяц."}</div>`}</div>
     ${left.length ? `<button class="btn small" data-a="carry" style="margin-top:8px">Перенести с прошлого месяца (${left.length})</button>` : ""}
     ${full ? `<div class="muted small" style="margin-top:12px">Все ${GOAL_MAX[kind]} мест заняты — отметьте сбывшееся или уберите лишнее.</div>` : `
     <div class="field" style="margin-top:12px"><label>${kind === "month" ? "Новая цель" : kind === "wish" ? `Желание №${l.length + 1}` : `Мечта №${l.length + 1}`}</label><input id="g-t" placeholder="${esc(kind === "month" ? "Пробежать 50 км, прочитать книгу…" : hints[hi])}"></div>
+    ${kind === "wish" ? `<div class="field"><label>Раздел</label><div class="chips" id="g-grp"><button class="chip on" data-grp="">Сам угадает</button>${WISH_GROUPS.map(([k, n]) => `<button class="chip" data-grp="${k}">${esc(n)}</button>`).join("")}</div></div>` : ""}
     ${kind === "dream" ? `<div class="field"><label>Срок</label><div class="chips" id="g-y">${[[0.5, "полгода"], [1, "1 год"], [1.5, "1,5 года"], [2, "2 года"]].map(([n, t]) => `<button class="chip ${n === 1 ? "on" : ""}" data-y="${n}">${t}</button>`).join("")}</div><input id="g-d" type="date" style="margin-top:8px" value="${yearAhead()}" max="${yearAhead(DREAM_MAX_Y)}" min="${dayKey(new Date())}"></div>` : ""}
     ${kind !== "month" ? `<div class="muted small" id="g-h">${ei("bulb")}${esc(hints[hi])}</div>` : ""}`}
     <div class="btns" style="margin-top:10px">${kind !== "month" && !full ? '<button class="btn" data-a="hint">Подсказка</button>' : ""}<button class="btn" data-a="ai">Помочь придумать</button>${full ? "" : '<button class="btn primary" data-a="ok">Добавить</button>'}</div>`, { onClose: () => render() })
   const again = k => { s.close(); goalsForm(k) }
   $$("#g-y .chip", s.el).forEach(b => b.onclick = () => { $("#g-d", s.el).value = yearAhead(+b.dataset.y); $$("#g-y .chip", s.el).forEach(c => c.classList.toggle("on", c === b)) })
   $$("#g-k button", s.el).forEach(b => b.onclick = () => again(b.dataset.k))
+  $$("[data-wgh]", s.el).forEach(b => b.onclick = () => { const k = b.dataset.wgh; wishOpen[k] = !wishOpen[k]; b.parentNode.classList.toggle("open", !!wishOpen[k]) })
+  let grp = ""; $$("#g-grp .chip", s.el).forEach(b => b.onclick = () => { grp = b.dataset.grp; $$("#g-grp .chip", s.el).forEach(c => c.classList.toggle("on", c === b)) })
   $$("[data-g]", s.el).forEach(b => b.onclick = () => { const g = goalToggle(b.dataset.g); b.classList.toggle("on", !!(g && g.done)); if (g && g.done) toast(kind === "month" ? "🎯 Готово!" : "✨ Сбылось!") })
   $$("[data-del]", s.el).forEach(b => b.onclick = () => { remove("goals", b.dataset.del); again(kind) })
   $$("[data-steps]", s.el).forEach(b => b.onclick = () => { s.close(); stepsForm(b.dataset.steps) })
@@ -3266,7 +3289,8 @@ function goalsForm(kind = "month") {
   }
   const ok = $('[data-a="ok"]', s.el)
   if (ok) { const add = () => { const t = $("#g-t", s.el).value.trim(); if (!t) return toast("Напишите, что хотите")
-      const r = goalAdd(kind, [t], kind === "dream" ? $("#g-d", s.el).value : ""); again(kind); toast(r.added.length ? (kind === "wish" ? `✨ ${r.total} из 100` : "Добавлено") : "Уже есть") }
+      const r = goalAdd(kind, [t], kind === "dream" ? $("#g-d", s.el).value : "", grp); if (r.added[0] && kind === "wish") wishOpen[wishGroup(r.added[0])] = true
+      again(kind); toast(r.added.length ? (kind === "wish" ? `✨ Желание №${r.total}` : "Добавлено") : "Уже есть") }
     ok.onclick = add; $("#g-t", s.el).onkeydown = e => { if (e.key === "Enter") add() } }
 }
 
@@ -3376,7 +3400,7 @@ function listsCard() {
   const row = (k, key, title, sub, n = "") => `<button class="row list-row" data-list="${esc(key)}">${icoBox(k)}<div class="grow"><div class="t">${esc(title)}</div><div class="s">${esc(sub)}</div></div>${n ? `<span class="cnt">${esc(n)}</span>` : ""}<span class="chev">${ICO.chev}</span></button>`
   let html = `<div class="card" id="lists"><h2>Списки<button class="act" data-do="list-add">+ Список</button></h2>`
   html += row("cart", "shop", "Покупки", sh.length ? sh.slice(0, 3).map(s => s.title).join(", ") + (sh.length > 3 ? "…" : "") : "Пусто — скажите «купить молоко»", sh.length ? String(sh.length) : "")
-  html += row("star", "wish", "100 желаний", wish.length ? `сбылось ${wish.filter(g => g.done).length}` : "Всё, чего хочется, — большое и маленькое", wish.length ? `${wish.length} из 100` : "")
+  html += row("star", "wish", "100 желаний", wish.length ? `сбылось ${wish.filter(g => g.done).length}` : "Всё, чего хочется, — большое и маленькое", wish.length ? `${wish.length} ${wishWord(wish.length)}` : "")
   html += row("summit", "dream", "10 мечт", d1 ? `${d1.title}${stepsOf(d1).length ? " · " + stepsTxt(d1) : ""}` : "Крупное на срок до 2 лет, с шагами", dream.length ? `${dream.length} из 10` : "")
   html += myLists().map(l => { const it = itemsOf(l), done = it.filter(x => x.done).length, open = it.filter(x => !x.done)
     return row(l.ico || "list", l.id, l.title, it.length ? open.slice(0, 3).map(x => x.t).join(", ") || "всё отмечено" : "Пустой список", it.length ? `${done} из ${it.length}` : "") }).join("")

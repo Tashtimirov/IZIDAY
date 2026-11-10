@@ -1169,3 +1169,16 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
   .chat-bar .cb-pill { border-color: rgba(255, 255, 255, .09); }
   .chat-bar .cb-rec .rx, .chat-bar .cb-rec .rstop { background: rgba(255, 255, 255, .1); }
 }
+
+/* Разделы «100 желаний»: заголовок раскрывает список */
+.wgrp { border-top: 1px solid var(--line); }
+.wgrp:first-child { border-top: 0; }
+.wgrp > .wg-h { width: 100%; border-top: 0; text-align: left; background: none; color: inherit; font: inherit; cursor: pointer; }
+.wgrp > .wg-h .chev { transition: transform .32s cubic-bezier(.2,.8,.2,1); }
+.wgrp.open > .wg-h .chev { transform: rotate(90deg); }
+.wgrp > .wg-b { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .36s cubic-bezier(.2,.8,.2,1); }
+.wgrp.open > .wg-b { grid-template-rows: 1fr; }
+.wgrp > .wg-b > * { min-height: 0; }
+.wgrp > .wg-b { overflow: hidden; padding-left: 4px; }
+.wgrp > .wg-b > div { overflow: hidden; visibility: hidden; transition: visibility 0s .36s; }
+.wgrp.open > .wg-b > div { visibility: visible; transition: visibility 0s; }
