@@ -5913,16 +5913,9 @@ function silkTalk(c, T, d) {
   const P = iziCol(), ci = P[0] === "em" ? "95,185,255" : P[3], cy2 = P[0] === "em" ? "80,245,190" : P[4]
   const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .33
   x.clearRect(0, 0, W, H)
-  // сияние вокруг: цвет того, кто говорит; в покое еле заметно
-  const who = SILK.il >= SILK.yl ? ci : cy2, ha = .1 + .22 * lv + .03 * Math.sin(T * 1.3)
-  const hg = x.createRadialGradient(cx, cy, R * .8, cx, cy, R * 1.5)
-  hg.addColorStop(0, `rgba(${who},${ha})`); hg.addColorStop(.45, `rgba(${who},${ha * .35})`); hg.addColorStop(1, `rgba(${who},0)`)
-  x.fillStyle = hg; x.fillRect(0, 0, W, H)
-  // сферу рисуем отдельно и кладём с «дыханием» — так она одна и та же, а масштаб меняется плавно
-  const o = c._sph || (c._sph = document.createElement("canvas"))
-  if (o.width !== W || o.height !== H) { o.width = W; o.height = H }
-  const s = o.getContext("2d")
-  s.clearRect(0, 0, W, H)
+  // сфера «дышит»: в покое еле заметно, с голосом чуть растёт (масштаб вокруг центра)
+  const k = 1 + .012 * Math.sin(T * 1.2) + .045 * lv, s = x
+  x.setTransform(k, 0, 0, k, cx - cx * k, cy - cy * k)
   iziSphere(s, W, H, R, R * 1.12, P, () => {
     // облака света внутри — медленно плывут по кругу
     s.globalCompositeOperation = "screen"
@@ -5930,7 +5923,7 @@ function silkTalk(c, T, d) {
       const a = ph * (k === 1 ? -.8 : .6) + o0, bx = cx + Math.cos(a) * R * .38, by = cy + Math.sin(a * 1.3) * R * .3
       const g = s.createRadialGradient(bx, by, 0, bx, by, R * rr)
       const rgb = col[0] === "#" ? [1, 3, 5].map(i => parseInt(col.slice(i, i + 2), 16)).join(",") : col
-      g.addColorStop(0, `rgba(${rgb},${al})`); g.addColorStop(1, `rgba(${rgb},0)`); s.fillStyle = g; s.fillRect(0, 0, W, H)
+      g.addColorStop(0, `rgba(${rgb},${al})`); g.addColorStop(1, `rgba(${rgb},0)`); s.fillStyle = g; s.fillRect(bx - R * rr, by - R * rr, R * rr * 2, R * rr * 2)
     })
     s.globalCompositeOperation = "lighter"
     const len = R * 1.95
@@ -5950,20 +5943,31 @@ function silkTalk(c, T, d) {
           i ? s.lineTo(px, py) : s.moveTo(px, py)
         }
         const lw0 = Math.max(1.3 * d, R * lw * (j ? .45 : 1) * (1 + l * .3))
-        if (!j) for (const [m, a] of [[1.6, .03], [1.1, .045], [.7, .065], [.4, .09], [.18, .13]]) { s.globalAlpha = a * (1 + l); s.lineWidth = lw0 + R * .2 * m; s.stroke() }
+        if (!j) for (const [m, a] of [[1.4, .05], [.75, .08], [.3, .13]]) { s.globalAlpha = a * (1 + l); s.lineWidth = lw0 + R * .2 * m; s.stroke() }
         s.globalAlpha = al * (.82 + l * .18); s.lineWidth = lw0; s.stroke()
       })
       s.globalAlpha = 1
     })
-    // объём: мягкий блик сверху слева (пятно света, не точка) и отсвет по нижнему краю
-    s.globalCompositeOperation = "screen"
-    const hl = s.createRadialGradient(cx - R * .32, cy - R * .48, 0, cx - R * .32, cy - R * .48, R * .62)
-    hl.addColorStop(0, "rgba(255,255,255,.28)"); hl.addColorStop(.5, "rgba(255,255,255,.08)"); hl.addColorStop(1, "rgba(255,255,255,0)"); s.fillStyle = hl; s.fillRect(0, 0, W, H)
-    const rim = s.createRadialGradient(cx - R * .1, cy - R * .16, R * .8, cx, cy, R * 1.04)
-    rim.addColorStop(0, "rgba(255,255,255,0)"); rim.addColorStop(.8, `rgba(${cy2},${.06 + lv * .08})`); rim.addColorStop(1, `rgba(${ci},${.16 + lv * .14})`); s.fillStyle = rim; s.fillRect(0, 0, W, H)
+    // объём: мягкий блик сверху слева (пятно света, не точка) и отсвет по краю — рисуются один раз и копируются
+    s.globalCompositeOperation = "screen"; s.globalAlpha = .75 + lv * .25; s.drawImage(talkGloss(W, H, R, ci, cy2), 0, 0); s.globalAlpha = 1
   }, { alpha: .82, cache: true })
-  const k = 1 + .012 * Math.sin(T * 1.2) + .045 * lv
-  x.drawImage(o, cx - cx * k, cy - cy * k, W * k, H * k)
+  x.setTransform(1, 0, 0, 1, 0, 0)
+  // сияние вокруг — под шаром: цвет того, кто говорит; в покое еле заметно
+  const who = SILK.il >= SILK.yl ? ci : cy2, ha = .1 + .22 * lv + .03 * Math.sin(T * 1.3)
+  const hg = x.createRadialGradient(cx, cy, R * .8, cx, cy, R * 1.5)
+  hg.addColorStop(0, `rgba(${who},${ha})`); hg.addColorStop(.45, `rgba(${who},${ha * .35})`); hg.addColorStop(1, `rgba(${who},0)`)
+  x.globalCompositeOperation = "destination-over"; x.fillStyle = hg; x.fillRect(cx - R * 1.5, cy - R * 1.5, R * 3, R * 3); x.globalCompositeOperation = "source-over"
+}
+function talkGloss(W, H, R, ci, cy2) {
+  const key = ["gl", W, H, R, ci, cy2].join("|"); let c = SPH.get(key); if (c) return c
+  c = document.createElement("canvas"); c.width = W; c.height = H; SPH.set(key, c)
+  const s = c.getContext("2d"), cx = W / 2, cy = H / 2
+  const hl = s.createRadialGradient(cx - R * .32, cy - R * .48, 0, cx - R * .32, cy - R * .48, R * .62)
+  hl.addColorStop(0, "rgba(255,255,255,.3)"); hl.addColorStop(.5, "rgba(255,255,255,.09)"); hl.addColorStop(1, "rgba(255,255,255,0)"); s.fillStyle = hl; s.fillRect(0, 0, W, H)
+  const rim = s.createRadialGradient(cx - R * .1, cy - R * .16, R * .8, cx, cy, R * 1.04)
+  rim.addColorStop(0, "rgba(255,255,255,0)"); rim.addColorStop(.8, `rgba(${cy2},.09)`); rim.addColorStop(1, `rgba(${ci},.22)`)
+  s.beginPath(); s.arc(cx, cy, R * 1.12, 0, 7); s.fillStyle = rim; s.fill()
+  return c
 }
 Object.assign(SILK, { il: 0, yl: 0, ie: 0, ye: 0, tk: 0, ph: 0 })
 
