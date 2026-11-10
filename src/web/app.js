@@ -6028,11 +6028,31 @@ function talkHear(text, opts) {
   const my = t.n, back = why => { if (TALK === t && t.n === my && t.state === "say") { clearInterval(t.wd); tdbg(why || "договорила"); t.saidAt = Date.now(); talkBargeHand(t, 0); talkListen() } }
   tdbg("говорит")
   let armed = false
-  speak(say, { force: true, onSentence: s => {
-    if (TALK !== t) return
-    t.sayI++; talkState("say", s, null)
-    if (!armed && t.n === my) { armed = true; setTimeout(() => talkBarge(my), 250) }   // голос пошёл — включаем «ухо», чтобы можно было перебить
-  }, onEnd: () => back() })
+  const go = pre => {
+    if (TALK !== t || t.n !== my || t.state !== "say") return
+    speak(say, { force: true, onSentence: s => {
+      if (TALK !== t) return
+      t.sayI++; talkState("say", s, null)
+      if (!armed && t.n === my) { armed = true; setTimeout(() => talkBarge(my), 250) }   // голос пошёл — включаем «ухо», чтобы можно было перебить
+    }, onEnd: () => back() })
+    // iPhone с открытым микрофоном не начал говорить — больше в этом разговоре микрофон до речи не берём, говорим без «уха»
+    if (pre) setTimeout(() => {
+      if (armed || TALK !== t || t.n !== my || t.state !== "say") return
+      tdbg("голос не пошёл с микрофоном — без уха"); t.noEar = true
+      ttsStop(); try { STT.release() } catch (e) {}
+      talkHear(text, opts)
+    }, 2500)
+  }
+  // iPhone: микрофон нельзя брать, когда голос уже звучит (iOS обрывает речь). Поэтому «ухо» готовим ДО речи:
+  // открываем поток, и уже потом Изи говорит; само «ухо» потом лишь подключается к открытому потоку
+  const pre = IS_IOS && talkEarOK(t) && !(STT.live && STT.live())
+  if (!pre) go(false)
+  else {
+    tdbg("ухо: микрофон до речи"); let fired = false
+    const fire = () => { if (!fired) { fired = true; go(true) } }
+    STT.record({}).then(h => { h.close(); fire() }, e => { tdbg("ухо: нет микрофона " + (e && e.name || e)); t.noEar = true; fire() })
+    setTimeout(fire, 1500)
+  }
   // Safari иногда не присылает конец речи — тогда Изи «зависала» и больше не слушала. Сторож: речь давно стихла — слушаем дальше
   // iPhone бывает и «вечно говорит» (speaking не сбрасывается) — предел по длине текста: ~85 мс на букву + 5 с
   clearInterval(t.wd); let quiet = 0
@@ -6070,10 +6090,10 @@ function talkBargeHand(t, keep) {
   if (g && g.h && !g.h.stopped && talkWhisper()) { g.h.keepLast(keep); g.h.voiced = keep ? .3 : 0; g.h.lastVoice = Date.now(); t.bh = g.h; g.h = null }
   talkBargeOff(t, true)
 }
+const talkEarOK = t => !!(t && !t.noEar && !(D.izi && D.izi.barge === false) && window.STT && STT.record && navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
 function talkBarge(my) {
   const t = TALK
-  if (!t || t.n !== my || t.state !== "say" || t.bg || (D.izi && D.izi.barge === false)) return
-  if (!(window.STT && STT.record && navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return
+  if (!t || t.n !== my || t.state !== "say" || t.bg || !talkEarOK(t)) return
   // iPhone: если взять микрофон, когда голос Изи уже звучит, iOS переключает звук и молча обрывает речь —
   // Изи «зависала» на «Говорит» и больше не слушала. Пока на iPhone «ухо» выключено (включить: D.izi.barge = true)
   // Безопасно, только если микрофон уже открыт с прошлой реплики (Whisper держит один поток на весь разговор):
