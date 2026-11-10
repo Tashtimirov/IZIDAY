@@ -4052,8 +4052,8 @@ function holdToTalk(btn, onTap) {
   btn.addEventListener("contextmenu", e => e.preventDefault())
   btn.onclick = () => { if (long) { long = false; return } onTap() }
 }
-// Нажатие на «Изи» — чат и сразу клавиатура: фокус ставится в том же касании, иначе iPhone клавиатуру не покажет
-holdToTalk($("#fab"), () => { if (!chatOn()) setTab("chat"); const i = $("#chat-in"); if (i) { i.focus({ preventScroll: true }); try { i.setSelectionRange(i.value.length, i.value.length) } catch (e) {} } })
+// Нажатие на «Изи» — чат (клавиатура сама не открывается: только по касанию поля); в чате ещё раз — живой разговор
+holdToTalk($("#fab"), () => chatOn() ? talkOpen() : setTab("chat"))
 // Подсказка над кнопкой, пока держат «Изи»: «вверх — закрепить»; тянется за пальцем. null — убрать
 function pinHint(up) {
   let h = $("#pin-hint")
