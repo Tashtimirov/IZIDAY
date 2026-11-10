@@ -930,7 +930,7 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 
 /* ── Живой разговор: стекло на глубоком зелёном, шар с двумя волнами ── */
 #talk { position: fixed; inset: 0; z-index: 60; color: #fff; pointer-events: none; --fade: 1; }
-#talk::before { content: ""; position: absolute; inset: 0; opacity: 0; transition: opacity .38s;
+#talk::before { content: ""; position: absolute; inset: 0; opacity: 0; transition: opacity .42s cubic-bezier(.32,.72,0,1);
   background: radial-gradient(70% 45% at 50% 38%, rgba(40,190,160,.35), transparent 70%), radial-gradient(60% 40% at 80% 90%, rgba(30,120,255,.22), transparent 70%),
     linear-gradient(170deg, color-mix(in srgb, var(--izi1, #0b8f5c) 55%, #04131a) 0%, color-mix(in srgb, var(--izi1, #0b8f5c) 22%, #04131a) 55%, #04131a 100%); }
 #talk.on { pointer-events: auto; }
@@ -938,7 +938,8 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 #talk .tk-sheet { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; padding: calc(10px + env(safe-area-inset-top)) 24px calc(22px + env(safe-area-inset-bottom));
   transform: translateY(100%); transition: transform .45s cubic-bezier(.2,.9,.25,1); }
 #talk.on .tk-sheet { transform: none; }
-#talk.off .tk-sheet { transform: translateY(100%); transition-duration: .35s; }
+/* закрытие — как лист iOS: продолжает движение пальца и мягко тормозит, без рывка в начале */
+#talk.off .tk-sheet { transform: translateY(100%); transition: transform .44s cubic-bezier(.32,.72,0,1); }
 #talk .grab { width: 38px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.35); margin-bottom: 14px; }
 #talk .tk-top { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 #talk .tk-top b { font: 600 17px/1.2 system-ui, -apple-system, sans-serif; letter-spacing: .02em; }
@@ -960,7 +961,7 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 #talk .tk-btn.off { background: rgba(255,255,255,.88); color: #0b4a33; }
 #talk .tk-btn:active { transform: scale(.92); }
 #talk .tk-hint { font-size: 12.5px; color: rgba(255,255,255,.45); text-align: center; }
-#talk .tk-izi { transition: opacity .3s; }
+#talk .tk-izi { transition: opacity .35s ease, font-size .35s ease; }
 #talk[data-st="listen"] .tk-izi, #talk[data-st="think"] .tk-izi:not(.ph) { opacity: .45; font-size: 19px; }
 /* Закреплённый разговор: стеклянная панель над меню — шар, кто говорит, последняя фраза, пауза и чат.
    Приложение под ней живое: вкладки, прокрутка, кнопки. Вниз — закончить, вверх или касание текста — на весь экран */
@@ -995,10 +996,10 @@ body.kb #talk.pin .tk-sheet { bottom: calc(var(--kb) + 64px); }
 body.talk-pin main { padding-bottom: calc(var(--tabs) + 190px); }
 body.talk-pin #toast { bottom: calc(var(--tabs) + 126px); }
 body.chat.talk-pin #toast { bottom: calc(var(--tabs) + 176px); }
-#talk .tk-sheet.tk-dock { animation: tk-dock .42s cubic-bezier(.2,.9,.25,1); }
-#talk .tk-sheet.tk-grow { animation: tk-grow .42s cubic-bezier(.2,.9,.25,1); }
-@keyframes tk-dock { from { opacity: 0; transform: translateY(28px) scale(.92); } }
-@keyframes tk-grow { from { opacity: 0; transform: translateY(16vh) scale(.9); } }
+#talk .tk-sheet.tk-dock { animation: tk-dock .48s cubic-bezier(.32,.72,0,1); }
+#talk .tk-sheet.tk-grow { animation: tk-grow .48s cubic-bezier(.32,.72,0,1); }
+@keyframes tk-dock { from { opacity: .25; transform: translateY(36px) scale(.94); } }
+@keyframes tk-grow { from { opacity: .25; transform: translateY(14vh) scale(.92); } }
 /* пока держат «Изи»: «вверх — закрепить», тянется за пальцем и светлеет */
 #pin-hint { position: fixed; left: 50%; bottom: calc(var(--tabs) + 118px); z-index: 26; display: flex; align-items: center; gap: 6px; padding: 7px 14px 7px 10px;
   border-radius: 18px; color: #fff; font: 600 13px/1 system-ui, -apple-system, sans-serif; pointer-events: none; --k: 0;

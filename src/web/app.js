@@ -5680,24 +5680,30 @@ function talkOpen(o = {}) {
   $(".tk-cap", el).onclick = () => { if (TALK && TALK.pin) talkPin(false) }
   // Полный экран: вниз — закончить, вверх — закрепить панелью над меню.
   // Закреплённая панель: вниз — закончить, вверх — снова на весь экран
-  const sh = $(".tk-sheet", el); let y0 = null, dy = 0
+  const sh = $(".tk-sheet", el); let y0 = null, dy = 0, t0 = 0, vy = 0, yl = 0, tl = 0
   const back = () => { sh.style.transform = ""; sh.style.opacity = ""; el.style.removeProperty("--fade") }
-  el.addEventListener("touchstart", e => { y0 = e.touches[0].clientY; dy = 0; sh.style.transition = "none" }, { passive: true })
+  el.addEventListener("touchstart", e => { y0 = yl = e.touches[0].clientY; dy = vy = 0; t0 = tl = performance.now(); sh.style.transition = "none" }, { passive: true })
   el.addEventListener("touchmove", e => {
     if (y0 == null || !TALK) return
-    dy = e.touches[0].clientY - y0
+    const y = e.touches[0].clientY, now = performance.now()
+    if (now > tl) { vy = vy * .4 + (y - yl) / (now - tl) * .6; yl = y; tl = now }   // скорость пальца, px/мс
+    dy = y - y0
     if (TALK.pin) { sh.style.transform = `translateY(${dy > 0 ? dy : dy * .35}px)`; sh.style.opacity = String(dy > 0 ? 1 - Math.min(.7, dy / 120) : 1) }
     else if (dy > 0) { sh.style.transform = `translateY(${dy}px)`; el.style.setProperty("--fade", String(1 - Math.min(1, dy / 400))) }
     else { const k = Math.min(1, -dy / 260); sh.style.transform = `translateY(${dy * .5}px) scale(${1 - k * .12})`; el.style.setProperty("--fade", String(1 - k * .6)) }
   }, { passive: true })
-  el.addEventListener("touchend", () => {
+  // Отпустили: закрыть, если протянули далеко или быстро смахнули (рывок вниз — сразу, без дотягивания).
+  // touchcancel — iOS иногда отменяет касание (жест системы, прокрутка под окном): окно не должно застревать на полпути
+  const up = () => {
     if (y0 == null || !TALK) return
     y0 = null; sh.style.transition = ""
-    const lim = TALK.pin ? 40 : 110
-    if (dy > lim) return talkClose()
-    if (dy < -lim) { back(); return talkPin(!TALK.pin) }
+    const lim = TALK.pin ? 40 : 110, fast = performance.now() - tl < 120 ? vy : 0
+    if (dy > lim || (dy > 24 && fast > .45)) return talkClose()
+    if (dy < -lim || (dy < -24 && fast < -.45)) { back(); return talkPin(!TALK.pin) }
     back()
-  }, { passive: true })
+  }
+  el.addEventListener("touchend", up, { passive: true })
+  el.addEventListener("touchcancel", up, { passive: true })
   // с удержания «Изи»: услышанное уходит сразу, иначе — если Изи как раз задал вопрос, прочитать его, иначе слушать
   const last = D.chat[D.chat.length - 1]
   if (o.say) { talkState("think", "·  ·  ·", o.say); setTimeout(() => chatSend(o.say, { voice: true }), 30) }
@@ -5716,15 +5722,19 @@ function talkPin(on, quiet) {
   $(".tk-chat", t.el).setAttribute("aria-label", t.pin ? "Чат" : "Перейти в чат")
   if (!quiet && navigator.vibrate) navigator.vibrate(10)
 }
+// Сначала окно уезжает вниз — сразу, с того места, где его отпустил палец; голос и микрофон гасим следующим кадром,
+// а чат перерисовываем, когда окно уже скрылось: раньше всё это шло до анимации, и окно замирало на полпути
 function talkClose() {
   const t = TALK; if (!t) return
   TALK = null
-  ttsStop(); clearTimeout(t.timer); clearInterval(t.poll); clearInterval(t.wd)
-  try { t.rec && t.rec.abort() } catch (e) {}
+  clearTimeout(t.timer); clearTimeout(t.idle); clearInterval(t.poll); clearInterval(t.wd)
+  const r = t.rec; t.rec = null; t.n++
+  // палец оставил окну сдвиг прямо в style — он перекрывал «уехать вниз» из CSS, и окно висело на полпути до удаления
+  const sh = $(".tk-sheet", t.el); sh.style.transition = ""; sh.style.transform = ""; sh.style.opacity = ""
   t.el.classList.remove("on"); t.el.classList.add("off")
   document.body.classList.remove("talk-pin")
-  setTimeout(() => t.el.remove(), 380)
-  if (chatOn()) renderChat()
+  requestAnimationFrame(() => setTimeout(() => { ttsStop(); try { r && r.abort() } catch (e) {} }, 0))
+  setTimeout(() => { t.el.remove(); if (chatOn() && !TALK) renderChat() }, 470)
 }
 function talkState(s, izi, you) {
   const t = TALK; if (!t) return
