@@ -1674,7 +1674,10 @@ async function agentTurn(messages, system, tools) {
     for (const u of uses) {
       let out
       setStatus((TOOL_STATUS[u.name] || "работаю") + "…")
+      confirmSaid = ""
       try { out = await runTool(u.name, u.input || {}) } catch (e) { out = { error: String(e.message || e) } }
+      if (confirmSaid && out && typeof out === "object") out = Object.assign({}, out, { user_said: confirmSaid, note: "на вопрос пользователь ответил своими словами (user_said) — сделай, как он сказал" })
+      confirmSaid = ""
       results.push({ type: "tool_result", tool_use_id: u.id, content: JSON.stringify(out) })
     }
     messages.push({ role: "user", content: results })
@@ -1783,9 +1786,23 @@ function chatAsk(question, options) {
     setBusyUI()
   })
 }
+// Ответ «да» / «нет» на вопрос Изи — кнопкой, текстом или голосом («ага», «давай удаляй», «ну да», «нет, не надо»).
+// true — да, false — нет, null — ответил что-то другое («лучше перенеси на завтра»)
+var YES_RE = /^(да|дада|ага|угу|ок|окей|ok|okay|yes|yep|sure|конечно|давай|давайте|хорошо|ладно|верно|точно|подтверждаю|согласен|согласна|можно|можешь|именно|разумеется|естественно|безусловно|го|поехали|пожалуйста|сделай|делай|выполняй|выполни|удаляй|удали|удалить|переноси|перенеси|перенести|добавь|добавляй|добавить|отправь|отправляй|отправить|отвечай|ответь|создай|создавай|записывай|запиши|убери|убирай|стирай|сотри)(?=\s|$)/
+var NO_RE = /^(нет|неа|не|ни|нету|no|nope|отмена|отмени|отменить|стоп|стой|подожди|погоди|не надо|не нужно|никак|оставь|оставить)(?=\s|$)/
+function yesNo(a) {
+  let s = talkNorm(a).replace(/^((ну|так|ой|э+|эм+|м+|изи|слушай|а)\s+)+/, "")
+  if (!s) return null
+  if (/^да нет(\s|$)/.test(s)) return false   // «да нет, не надо» — это «нет»
+  if (NO_RE.test(s)) return false
+  if (YES_RE.test(s)) return true
+  return null
+}
+let confirmSaid = ""   // ответ на подтверждение, если в нём больше, чем «да»/«нет», — помощник увидит его в результате инструмента
 async function chatConfirm(question) {
-  const a = await chatAsk(question, ["Да", "Нет"])
-  return /^(да|ага|конечно|давай|ок|okay|yes|удаляй|переноси)/i.test(String(a || "").trim())
+  const a = String(await chatAsk(question, ["Да", "Нет"]) || "").trim(), yn = yesNo(a)
+  confirmSaid = a && (yn === null || talkNorm(a).split(" ").length > 3) ? a : ""
+  return yn === true
 }
 function brief(kind) {
   const b = BRIEFS[kind]
@@ -5759,9 +5776,12 @@ function talkPause() { const t = TALK; if (!t) return; ttsStop(); clearTimeout(t
 // в первые секунды, — ответ отменяется, Изи слушает дальше и потом отвечает на всю мысль сразу.
 var TALK_HANG = /(^|\s)(и|а|но|или|что|чтобы|потому|потому что|так как|если|когда|как|где|куда|который|которая|которое|которые|это|то есть|в|во|на|с|со|к|ко|у|о|об|по|для|из|от|до|за|про|при|без|под|над|ну|вот|э+|эм+|м+|ммм|короче|типа|значит|слушай|смотри|кстати|ещё|еще|также|тоже|потом|затем|then)$/i
 var TALK_SILENCE = 2600, TALK_SILENCE_HANG = 4500, TALK_RESUME_MS = 6000
+var TALK_YN = 1100   // короткое «да» / «нет» в ответ на вопрос Изи — не ждём 3 секунды
+const talkAsked = () => !!askWait || !!(TALK && /\?\s*$/.test(String(TALK.said || "").trim()))   // Изи только что спросила
 function talkWait(text) {
   const s = String(text || "").trim().toLowerCase().replace(/[.,!?…;:]+$/, "")
   if (!s) return TALK_SILENCE
+  if (talkAsked() && s.split(/\s+/).length <= 3 && yesNo(s) !== null) return TALK_YN
   if (TALK_HANG.test(s)) return TALK_SILENCE_HANG
   return s.split(/\s+/).length <= 2 ? TALK_SILENCE + 600 : TALK_SILENCE   // одно-два слова — скорее всего начало мысли
 }
@@ -5769,7 +5789,9 @@ const talkNorm = s => String(s || "").toLowerCase().replace(/[^a-zа-яё0-9\s]/
 // Эхо: микрофон подхватил хвост голоса Изи — это не слова человека
 function talkEcho(heard, said) {
   const h = talkNorm(heard), z = talkNorm(said)
-  return !!h && !!z && h.split(" ").length <= 8 && z.includes(h)
+  if (!h || !z || h.split(" ").length > 8) return false
+  if (/\?\s*$/.test(String(said).trim()) && h.split(" ").length <= 3 && yesNo(h) !== null) return false   // «да», «нет, не надо» на вопрос — это ответ
+  return (" " + z + " ").includes(" " + h + " ")   // целыми словами: «да» не эхо от «календарь»
 }
 function talkListen(first, keep) {
   const t = TALK; if (!t) return
@@ -5879,7 +5901,7 @@ function talkListenW(first, keep) {
         }
         if (t.state !== "listen") return
         if (!h.voiced) { if (t.force) { t.force = false; if (t.heard) talkSendNow() } return }
-        if (h.voiced > .25 && (quiet > 700 || t.force) && !busy && doneAt !== h.lastVoice) return run()
+        if (h.voiced > (talkAsked() ? .1 : .25) && (quiet > 700 || t.force) && !busy && doneAt !== h.lastVoice) return run()   // ответ на вопрос бывает одним коротким «да»
         const hs = t.heard || "", wait = /(,|…|\.\.\.)$/.test(hs) ? TALK_SILENCE_HANG : talkWait(hs)   // Whisper ставит запятую или многоточие, если фраза повисла
         if (doneAt === h.lastVoice && !busy && (quiet > wait || t.force)) {
           t.force = false
@@ -5929,7 +5951,8 @@ function talkHear(text, opts) {
   const t = TALK; if (!t) return
   clearTimeout(t.timer); clearTimeout(t.idle)
   const r = t.rec; t.rec = null; t.n++; try { r && r.abort() } catch (e) {}   // Safari: микрофон и голос вместе не работают
-  const say = String(text || "") + (opts && opts.length ? " " + (opts.length === 2 ? `${opts[0]} или ${opts[1]}?` : opts.slice(0, 4).join(", ") + "?") : "")
+  const yn = opts && opts.length === 2 && opts[0] === "Да" && opts[1] === "Нет"   // подтверждение: просто вопрос, ответить «да» или «нет» голосом
+  const say = String(text || "") + (opts && opts.length && !yn ? " " + (opts.length === 2 ? `${opts[0]} или ${opts[1]}?` : opts.slice(0, 4).join(", ") + "?") : "")
   t.said = say; t.saidAt = Date.now() + 6e4
   talkState("say", sentences(say)[0] || "", "")
   // в живом разговоре Изи всегда отвечает голосом — настройка «Читать ответы вслух» только для обычного чата
