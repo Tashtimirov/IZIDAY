@@ -680,7 +680,15 @@ async function scanFile(f) {
   } else if (/^video\//.test(f.type) || /\.(mov|mp4|m4v|webm)$/i.test(f.name || "")) {
     const url = await videoFrame(f)   // помощник видит кадр из середины видео
     att = { type: "image", media_type: "image/jpeg", data: url.split(",")[1], thumb: await shrinkData(url, 360), video: true }
-  } else throw new Error("Можно фото, видео или PDF")
+  } else {   // Word, Excel, PowerPoint, текст и др. — текст достаётся прямо в телефоне (docread.js)
+    const d = await DOCREAD.read(f), name = f.name || "документ"
+    if (d.image) {   // Pages / Numbers / Keynote — их картинка первой страницы
+      const url = await shrinkPhoto(d.image, 1568)
+      att = { type: "image", media_type: "image/jpeg", data: url.split(",")[1], thumb: await shrinkData(url, 360) }
+      return attStage(att, `📄 ${name}`)
+    }
+    att = { type: "document", text: d.text, name, kind: d.kind, context: `Файл «${name}» (${d.kind}): текст извлечён из файла${d.note ? "; " + d.note : ""}.` }
+  }
   const label = att.type === "document" ? `📄 ${att.name}` : att.video ? "🎬 Видео" : "📷 Фото"
   delete att.video
   attStage(att, label)
@@ -719,7 +727,8 @@ function attTray() {
   const th = (x, k) => `<button class="att-th" data-k="${k}" aria-label="Убрать">${x.att.thumb ? `<img src="${esc(x.att.thumb)}" alt="">` : `<span class="att-doc">${ICO.doc}</span>`}<i>Убрать</i></button>`
   const add = n < ATT_MAX ? `<button class="att-add" aria-label="Добавить ещё">${ICO.plus}</button>` : ""
   const title = n > 1 ? attSum(chatAtt) : doc ? a.name : attIsVideo(c) ? "Видео" : "Фото"
-  const sub = n > 1 ? "Подпись — ко всем сразу. Нажмите на кадр, чтобы убрать" : "Добавьте подпись или отправьте так"
+  const pages = a.text ? Math.max(1, Math.round(a.text.length / 1800)) : 0   // ≈ 1800 знаков на страницу
+  const sub = n > 1 ? "Подпись — ко всем сразу. Нажмите на кадр, чтобы убрать" : a.text ? `${a.kind || "Документ"} · ≈ ${pages} стр. текста — добавьте подпись или отправьте так` : "Добавьте подпись или отправьте так"
   t.innerHTML = `<div class="att-card${n > 1 ? " multi" : ""}"><div class="att-strip">${chatAtt.map(th).join("")}${add}</div>
     <div class="att-t"><b>${esc(title)}</b><small>${sub}</small></div>
     <button class="att-go" aria-label="Отправить без подписи">${ICO.send}</button></div>`
@@ -1703,7 +1712,9 @@ async function chatSend(text, opts = {}) {
   const ctx = chatContext()
   if (opts.attach && ctx.length) {   // само вложение уходит только в этот запрос; в истории остаются миниатюра и ответ помощника
     const last = ctx[ctx.length - 1]
-    last.content = opts.attach.map(a => ({ type: a.type, source: { type: "base64", media_type: a.media_type, data: a.data } })).concat({ type: "text", text: last.content })
+    last.content = opts.attach.map(a => a.text != null
+      ? { type: "document", source: { type: "text", media_type: "text/plain", data: a.text }, title: a.name, context: a.context }
+      : Object.assign({ type: a.type, source: { type: "base64", media_type: a.media_type, data: a.data } }, a.type === "document" && a.name ? { title: a.name } : {})).concat({ type: "text", text: last.content })
   }
   chatStopCtl = new AbortController()
   setBusyUI(true)
@@ -3740,7 +3751,7 @@ async function seriesCam() {
 function photoPrompt() {
   const s = sheet(`<h3>📷 Фото или файл</h3><div class="msg">Еда — посчитаю калории. Счёт — от кого, сумма и срок, напомню оплатить. Чек — что куплено и почём, запишу расход.</div>
     <div class="btns"><button class="btn gold" data-a="cam" style="padding:18px;font-size:18px">Сфотографировать</button></div>
-    <div class="btns"><button class="btn" data-a="lib">Из фото</button><button class="btn" data-a="doc">Файл / PDF</button></div>
+    <div class="btns"><button class="btn" data-a="lib">Из фото</button><button class="btn" data-a="doc">Файл / документ</button></div>
     <div class="btns"><button class="btn" data-a="txt">Описать еду словами</button></div>`)
   $('[data-a="doc"]', s.el).onclick = () => { s.close(); $("#doc").click() }
   $('[data-a="cam"]', s.el).onclick = () => { s.close(); seriesCam() }
@@ -3912,7 +3923,7 @@ function plusMenu(btn) {
   const layer = $("#layer"), bar = btn.closest(".chat-bar")
   const scrim = document.createElement("div"); scrim.className = "plus-scrim"
   const m = document.createElement("div"); m.className = "plus-menu"
-  const items = [["photo", "cam", "c-cam", "Камера", "Один кадр или серия подряд"], ["photo-lib", "gallery", "c-lib", "Фото и видео", "Из галереи, можно несколько"], ["doc", "doc", "c-doc", "Файл", "PDF или документ"]]
+  const items = [["photo", "cam", "c-cam", "Камера", "Один кадр или серия подряд"], ["photo-lib", "gallery", "c-lib", "Фото и видео", "Из галереи, можно несколько"], ["doc", "doc", "c-doc", "Файл", "PDF, Word, Excel, текст и другие"]]
   m.innerHTML = items.map(([id, ic, cl, t, sub]) => `<button data-in="${id}"><span class="ic ${cl}">${ICO[ic]}</span><span><b>${t}</b><small>${sub}</small></span></button>`).join("")
   layer.append(scrim, m)
   btn.classList.add("open"); if (bar) bar.classList.add("menu")
