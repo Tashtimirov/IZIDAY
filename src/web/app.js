@@ -5782,11 +5782,13 @@ function talkListen(first, keep) {
   const my = ++t.n
   const arm = () => { clearTimeout(t.timer); if (t.heard) t.timer = setTimeout(() => talkSendNow(), talkWait(t.heard)) }
   if (t.done) arm()
+  let tries = 0
   const start = () => {
     if (TALK !== t || t.n !== my) return
     const r = new SR(); r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
     let cur = ""
     r.onresult = e => {
+      r.live = true
       if (TALK !== t || t.n !== my || t.rec !== r) return
       const s = srGlue(e.results).all
       if (!t.done && t.said && talkEcho(s, t.said) && Date.now() - t.saidAt < 2500) return   // своё эхо — пропускаем
@@ -5811,6 +5813,15 @@ function talkListen(first, keep) {
       if (t.state === "listen") { t.done = t.heard; cur = ""; setTimeout(start, 120) }
       else if (t.state === "think" && t.canResume && Date.now() - t.sentAt < TALK_RESUME_MS) { t.done = t.sent; setTimeout(start, 120) }
     }
+    // сторож: Safari после голоса Изи иногда «запускает» распознавание, но не слушает — ни звука, ни конца.
+    // Нет начала звука за 2,5 с — пересоздать распознаватель (до трёх раз), потом пауза с подсказкой
+    r.onaudiostart = r.onstart = () => { r.live = true }
+    setTimeout(() => {
+      if (TALK !== t || t.n !== my || t.rec !== r || r.live || t.state !== "listen") return
+      t.rec = null; try { r.abort() } catch (e) {}
+      if (++tries <= 3) setTimeout(start, 400)
+      else talkState("pause", null, "Микрофон не ответил — нажмите на шар")
+    }, 2500)
     try { r.start(); t.rec = r } catch (e) { setTimeout(start, 500) }
   }
   // после голоса Изи — короткая пауза, чтобы микрофон не поймал её последний звук
@@ -5836,6 +5847,12 @@ function talkListenW(first, keep) {
     STT.record({ onVoice: l => { if (live() && t.state === "listen") SILK.ye = Math.min(1.3, SILK.ye + l * 6) } }).then(h => {
       if (!live() || dead) return h.close()
       t.rec = h
+      // сторож: микрофон «включён», а звук не идёт (iPhone после голоса Изи) — дальше слушает Safari, без касаний
+      setTimeout(() => {
+        if (!live() || t.rec !== h || h.frames !== 0) return
+        clearInterval(t.poll); h.close(); t.rec = null; sttOffUntil = Date.now() + 60e3
+        if (t.state === "listen") talkListen(false, t.done)
+      }, 1800)
       let busy = false, doneAt = -1, txt = "", vAtSend = 0
       const glue = () => [t.done, txt].filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
       const run = () => {

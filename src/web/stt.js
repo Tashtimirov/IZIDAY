@@ -39,13 +39,17 @@
     const ctx = prime()
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } })
     try { if (ctx.state !== "running") await ctx.resume() } catch (e) {}
+    // iPhone после голоса Изи может оставить звук «прерванным»: ещё раз попробовать, иначе — честно сказать, что не пишется
+    if (ctx.state !== "running") { await new Promise(r => setTimeout(r, 300)); try { await ctx.resume() } catch (e) {} }
+    if (ctx.state !== "running") { try { stream.getTracks().forEach(t => t.stop()) } catch (e) {}; const e = new Error("audio context " + ctx.state); e.name = "CtxDown"; throw e }
     const src = ctx.createMediaStreamSource(stream)
     const node = ctx.createScriptProcessor(4096, 1, 1)
     const ratio = ctx.sampleRate / RATE
-    const h = { parts: [], len: 0, level: 0, noise: .004, voiced: 0, lastVoice: 0, t0: Date.now(), stopped: false, stream, ctx }
+    const h = { parts: [], len: 0, level: 0, noise: .004, voiced: 0, lastVoice: 0, t0: Date.now(), stopped: false, stream, ctx, frames: 0 }
     let carry = 0
     node.onaudioprocess = ev => {
       if (h.stopped) return
+      h.frames++
       const x = ev.inputBuffer.getChannelData(0)
       // уровень (RMS) и простая граница речи: заметно громче фонового шума
       let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * x[i]
@@ -73,7 +77,7 @@
       if (h.stopped) return; h.stopped = true
       try { node.disconnect(); src.disconnect() } catch (e) {}
       try { stream.getTracks().forEach(t => t.stop()) } catch (e) {}   // микрофон отпускаем, контекст оставляем
-      if (--ACTIVE <= 0) { ACTIVE = 0; setTimeout(() => { if (!ACTIVE) try { ctx.suspend() } catch (e) {} }, 400) }   // звук не держим, когда никто не пишет
+      if (--ACTIVE <= 0) { ACTIVE = 0; setTimeout(() => { if (!ACTIVE && !window.TALK) try { ctx.suspend() } catch (e) {} }, 400) }   // в живом разговоре не усыплять: iPhone не разбудит его без касания, и после ответа Изи микрофон оглохнет   // звук не держим, когда никто не пишет
     }
     return h
   }
