@@ -1443,7 +1443,7 @@ function agentSystem() {
   const cats = t => c.categories[t].map(x => x[0]).join(", ")
   const cals = c.calendars || []
   return `Ты — личный ассистент в приложении «Мой день» на ${IS_DROID ? "Android-телефоне" : "iPhone"}. Тебя зовут ${iziName()}; ${iziG("о себе говори в мужском роде («я записал», «я понял»)", "ты девушка, о себе говори в женском роде («я записала», «я поняла»)")}. Пользователь часто говорит голосом по-русски; речь распознаётся с ошибками («падал», «падлу» = «падел»), восстанавливай смысл.
-Сейчас ${iso(now).replace("T", " ")}, ${DAY_NAMES[now.getDay()].toLowerCase()}. Используй местное время без смещения, формат YYYY-MM-DDTHH:MM.
+Сегодня ${dayKey(now)}, ${DAY_NAMES[now.getDay()].toLowerCase()}; точное время сейчас — в квадратных скобках в начале последнего сообщения пользователя. Используй местное время без смещения, формат YYYY-MM-DDTHH:MM.
 
 Как работать:
 - Выполняй команду сам с помощью инструментов. Перед изменением или удалением события найди его через get_events (в разумном диапазоне дат), затем используй его id и start как occurrence_start.
@@ -1652,11 +1652,23 @@ setInterval(() => {   // долгое ожидание — показать, с�
   const el = $(".typing .st")
   if (el && chatStatus) { const sec = Math.round((Date.now() - chatStatusAt) / 1000); el.textContent = chatStatus + (sec >= 8 ? ` · ${sec} с` : "") }
 }, 1000)
+// Кэш: описание инструментов одинаковое всегда, а внутри хода каждый шаг повторяет предыдущие — повтор стоит в 10 раз дешевле
+const cacheTools = tools => tools.map((t, i) => i === tools.length - 1 ? Object.assign({}, t, { cache_control: { type: "ephemeral" } }) : t)
+// Прогрев кэша, когда открыли живой разговор: пока человек говорит первую фразу, Claude уже прочитал инструкции,
+// память и историю чата (max_tokens 0 — без ответа, платится только запись кэша) — первый ответ приходит быстрее
+function talkWarm() {
+  const k = aiKey(); if (!k || k === "fam" || k === "srv" || chatBusy || !TALK) return
+  const msgs = chatContext(); while (msgs.length && msgs[msgs.length - 1].role !== "user") msgs.pop()
+  if (!msgs.length) return
+  claude({ max_tokens: 0, system: chatSystem(), tools: cacheTools(chatTools()), messages: msgs, output_config: { effort: "low" }, cache_control: { type: "ephemeral" } }, 30000, { smart: true, model: CHAT_MODEL })
+    .then(r => { const u = r && r.usage; if (u) tdbg("кэш " + Math.round(((u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0)) / 1000) + "k") }, () => {})
+}
 async function agentTurn(messages, system, tools) {
   const stopSig = chatStopCtl && chatStopCtl.signal
-  // Кэш: описание инструментов одинаковое всегда, а внутри хода каждый шаг повторяет предыдущие — повтор стоит в 10 раз дешевле
-  const ctools = tools.map((t, i) => i === tools.length - 1 ? Object.assign({}, t, { cache_control: { type: "ephemeral" } }) : t)
-  const ask = () => claude({ max_tokens: 16000, system, tools: ctools, messages, output_config: { effort: "high" }, cache_control: { type: "ephemeral" } }, 150000, { smart: true, model: CHAT_MODEL, signal: stopSig })
+  const ctools = cacheTools(tools)
+  // живой разговор: думать коротко (effort low) — ответ голосом в 1–3 предложения, а ждать «думаю…» долго неприятно
+  const effort = TALK ? "low" : "high"
+  const ask = () => claude({ max_tokens: 16000, system, tools: ctools, messages, output_config: { effort }, cache_control: { type: "ephemeral" } }, 150000, { smart: true, model: CHAT_MODEL, signal: stopSig })
   for (let step = 0; step < 14; step++) {
     let res
     setStatus(step ? "готовлю ответ…" : "думаю…")
@@ -1740,6 +1752,7 @@ async function chatSend(text, opts = {}) {
   }
   D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice(), cc: chatCC.length ? chatCC.slice() : undefined, draft: chatDraft || undefined, mem: window.memUsed ? memUsed() : undefined })
   chatDraft = null
+  if (TALK && TALK.sentAt && TALK.state === "think") tdbg("ответ за " + ((Date.now() - TALK.sentAt) / 1000).toFixed(1) + " с")
   talkHear(reply)
   if (!TALK && opts.voice) speak(reply)   // спросили голосом в чате — ответ и вслух (если «Читать ответы вслух» включено)
   if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
@@ -5758,6 +5771,7 @@ function talkOpen(o = {}) {
   else if (askWait && last && last.role === "assistant") talkHear(last.text, last.opts)
   else if (o.pin) { talkState("listen", null, "Говорите — я слушаю"); setTimeout(() => { if (TALK && TALK.state === "listen" && !TALK.rec) talkListen(true) }, 450) }   // микрофон рации успевает освободиться
   else talkListen(true)
+  if (!o.say) setTimeout(talkWarm, 50)
 }
 // Закрепить разговор компактной панелью над меню (можно ходить по вкладкам и говорить дальше) или раскрыть обратно
 function talkPin(on, quiet) {
@@ -5807,7 +5821,8 @@ function talkWake() { try { ttsUnlock(); if (window.STT && STT.on()) { STT.relea
 // услышанное не отправляем, а копим и слушаем дальше. Если отправили, а человек продолжил говорить
 // в первые секунды, — ответ отменяется, Изи слушает дальше и потом отвечает на всю мысль сразу.
 var TALK_HANG = /(^|\s)(и|а|но|или|что|чтобы|потому|потому что|так как|если|когда|как|где|куда|который|которая|которое|которые|это|то есть|в|во|на|с|со|к|ко|у|о|об|по|для|из|от|до|за|про|при|без|под|над|ну|вот|э+|эм+|м+|ммм|короче|типа|значит|слушай|смотри|кстати|ещё|еще|также|тоже|потом|затем|then)$/i
-var TALK_SILENCE = 1800, TALK_SILENCE_HANG = 3300, TALK_RESUME_MS = 6000   // быстрее: обычная пауза 1,8 с, повисшая фраза 3,3 с
+var TALK_SILENCE = 1500, TALK_SILENCE_HANG = 3000, TALK_RESUME_MS = 6000   // быстрее: обычная пауза 1,5 с, повисшая фраза 3 с
+var TALK_DONE = 900   // Whisper поставил точку или «?» в законченной фразе — отвечаем почти сразу (продолжит говорить — ответ отменится)
 var TALK_YN = 1100   // короткое «да» / «нет» в ответ на вопрос Изи — не ждём 3 секунды
 const talkAsked = () => !!askWait || !!(TALK && /\?\s*$/.test(String(TALK.said || "").trim()))   // Изи только что спросила
 function talkWait(text) {
@@ -5816,6 +5831,13 @@ function talkWait(text) {
   if (talkAsked() && s.split(/\s+/).length <= 3 && yesNo(s) !== null) return TALK_YN
   if (TALK_HANG.test(s)) return TALK_SILENCE_HANG
   return s.split(/\s+/).length <= 2 ? TALK_SILENCE + 500 : TALK_SILENCE   // одно-два слова — скорее всего начало мысли
+}
+// фраза закончена: Whisper поставил . ! ? в конце, слов хотя бы два и последнее слово не «и», «что», «потому»…
+function talkDone(s) {
+  s = String(s || "").trim()
+  if (!/[^.][.!?]$/.test(s) || /\.\.\.$/.test(s)) return false
+  const w = s.toLowerCase().replace(/[.!?…,;:]+$/, "")
+  return w.split(/\s+/).length >= 2 && !TALK_HANG.test(w)
 }
 const talkNorm = s => String(s || "").toLowerCase().replace(/[^a-zа-яё0-9\s]/gi, " ").replace(/\s+/g, " ").trim()
 // Эхо: микрофон подхватил хвост голоса Изи — это не слова человека
@@ -5967,8 +5989,8 @@ function talkListenW(first, keep) {
         }
         if (t.state !== "listen") return
         if (!h.voiced) { if (t.force) { t.force = false; if (t.heard) talkSendNow() } return }
-        if (h.voiced > (talkAsked() ? .1 : .25) && (quiet > 700 || t.force) && !busy && doneAt !== h.lastVoice) return run()   // ответ на вопрос бывает одним коротким «да»
-        const hs = t.heard || "", wait = /(,|…|\.\.\.)$/.test(hs) ? TALK_SILENCE_HANG : talkWait(hs)   // Whisper ставит запятую или многоточие, если фраза повисла
+        if (h.voiced > (talkAsked() ? .1 : .25) && (quiet > 450 || t.force) && !busy && doneAt !== h.lastVoice) return run()   // ответ на вопрос бывает одним коротким «да»
+        const hs = t.heard || "", wait = /(,|…|\.\.\.)$/.test(hs) ? TALK_SILENCE_HANG : talkDone(hs) ? TALK_DONE : talkWait(hs)   // Whisper ставит запятую или многоточие, если фраза повисла
         if (doneAt === h.lastVoice && !busy && (quiet > wait || t.force)) {
           t.force = false
           if (!t.heard) return   // распознана тишина — слушаем дальше
