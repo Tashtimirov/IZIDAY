@@ -1736,6 +1736,7 @@ async function chatSend(text, opts = {}) {
   D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice(), cc: chatCC.length ? chatCC.slice() : undefined, draft: chatDraft || undefined, mem: window.memUsed ? memUsed() : undefined })
   chatDraft = null
   talkHear(reply)
+  if (!TALK && opts.voice) speak(reply)   // спросили голосом в чате — ответ и вслух (если «Читать ответы вслух» включено)
   if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
   D.chat.filter(m => m.thumb || m.thumbs).slice(0, -12).forEach(m => { delete m.thumb; delete m.thumbs })   // миниатюры только у последних фото — память телефона
   save(false)
@@ -5580,7 +5581,7 @@ Object.assign(DO, {
 // ═════════════ Изи: характер, голос и живой разговор ═════════════
 // Настройки помощника (только на телефоне, в D.izi): имя, пол, характер, голос, скорость речи,
 // советы по целям, психология, самообучение. Голос — системный голос iPhone под пол помощника.
-function IZX() { return Object.assign({ mode: "friend", rate: 1, goals: true, psy: true, learn: true, first: true, voice: "", speak: false }, D.izi || {}, { g: IZI().g }) }
+function IZX() { return Object.assign({ mode: "friend", rate: 1, goals: true, psy: true, learn: true, first: true, voice: "", aloud: true }, D.izi || {}, { g: IZI().g }) }
 function iziSet(k, val) { D.izi = Object.assign({}, D.izi, { [k]: val }); save(false) }
 var IZI_MODES = { friend: ["Друг", "тепло, с юмором, поддерживает"], coach: ["Строгий тренер", "прямо, без поблажек, держит планку"], brief: ["Кратко и по делу", "минимум слов, только суть"] }
 var IZI_RATES = [[.9, "Спокойно"], [1, "Обычно"], [1.12, "Быстрее"]]
@@ -5629,7 +5630,7 @@ function sentences(t) { return (sayable(t).match(/[^.!?…\n]+[.!?…]*["»)]?\s
 var TTS = { keep: [], token: 0 }
 function speak(text, { onSentence, onEnd, force } = {}) {
   ttsStop()
-  if (!force && !IZX().speak) { if (onEnd) setTimeout(onEnd, 0); return }   // «Читать ответы вслух» выключено — Изи отвечает текстом
+  if (!force && !IZX().aloud) { if (onEnd) setTimeout(onEnd, 0); return }   // «Читать ответы вслух» выключено — Изи отвечает текстом
   const S = window.speechSynthesis, parts = sentences(text)
   if (!S || !parts.length) { if (onEnd) setTimeout(onEnd, 0); return }
   const my = ++TTS.token, z = IZX(), v = iziVoice()
@@ -5935,9 +5936,12 @@ function talkHear(text, opts) {
   const my = t.n, back = () => { if (TALK === t && t.n === my && t.state === "say") { clearInterval(t.wd); t.saidAt = Date.now(); talkListen() } }
   speak(say, { force: true, onSentence: s => { if (TALK === t) talkState("say", s, null) }, onEnd: back })
   // Safari иногда не присылает конец речи — тогда Изи «зависала» и больше не слушала. Сторож: речь давно стихла — слушаем дальше
+  // iPhone бывает и «вечно говорит» (speaking не сбрасывается) — предел по длине текста: ~85 мс на букву + 5 с
   clearInterval(t.wd); let quiet = 0
+  const cap = performance.now() + say.length * 85 / (IZX().rate || 1) + 5000
   t.wd = setInterval(() => {
     if (TALK !== t || t.n !== my || t.state !== "say") return clearInterval(t.wd)
+    if (performance.now() > cap) { ttsStop(); return back() }
     let busy = true; try { busy = speechSynthesis.speaking || speechSynthesis.pending } catch (e) { busy = false }
     quiet = busy ? 0 : quiet + 1
     if (quiet >= 6) back()   // ~3 с тишины синтеза
@@ -6031,7 +6035,7 @@ function iziCard() {
     <div class="izi-sub">Характер</div>
     ${Object.entries(IZI_MODES).map(([k, [t, s]]) => `<button class="set mode-row" data-izi-mode="${k}"><span><b>${t}</b><small>${s}</small></span>${x.mode === k ? `<i class="ck">${ICO.check}</i>` : "<i></i>"}</button>`).join("")}
     <div class="izi-sub">Голос</div>
-    ${tg("speak", "Читать ответы вслух", "выключено — Изи отвечает текстом, а вы можете говорить голосом")}
+    ${tg("aloud", "Читать ответы вслух", "на голосовые сообщения в чате Изи отвечает и голосом; в живом разговоре говорит всегда")}
     <button class="set voice-row" data-do="izi-voice"><span><b>${esc(voiceLabel(v))}</b><small>${canTalk ? (IS_DROID ? "голос телефона" : "голос iPhone") + " · нажмите, чтобы выбрать и послушать" : "в этом браузере нет голоса"}</small></span><i class="chev">${ICO.chev}</i></button>
     <div class="set col"><span>Темп речи</span><div class="seg izi-rate">${IZI_RATES.map(([r, t]) => `<button data-izi-rate="${r}" class="${Math.abs((x.rate || 1) - r) < .01 ? "on" : ""}">${t}</button>`).join("")}</div></div>
     ${window.STT ? `<div class="izi-sub">Распознавание речи</div>${STT.row()}` : ""}

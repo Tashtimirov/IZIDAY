@@ -41,10 +41,11 @@ ok(await page.evaluate(() => IZX().rate === 1.12), "темп речи")
 // 2. текст для голоса
 ok(await page.evaluate(() => sayable("**Готово** 🎉 потратили 450 ฿, см. https://x.y") === "Готово потратили 450 бат, см. ссылка в чате"), "чистка текста для голоса")
 ok(await page.evaluate(() => sentences("Раз. Два! Три?").length === 3), "деление на фразы")
-// 2б. «Читать ответы вслух» по умолчанию выключено: speak молчит, но сообщает о конце
-ok(await page.evaluate(() => IZX().speak === false && !!document.querySelector('.izi-card [data-izi-tg="speak"]') || (setTab("more"), false)), "переключатель «Читать ответы вслух», по умолчанию выкл.")
+// 2б. «Читать ответы вслух» по умолчанию включено; выключили — speak молчит, но сообщает о конце
+ok(await page.evaluate(() => IZX().aloud === true && !!document.querySelector('.izi-card [data-izi-tg="aloud"]') || (setTab("more"), false)), "переключатель «Читать ответы вслух», по умолчанию вкл.")
+await page.evaluate(() => iziSet("aloud", false))
 ok(await page.evaluate(() => new Promise(r => { SAID.length = 0; speak("Тест.", { onEnd: () => r(SAID.length === 0) }) })), "выключено — вслух не читает, разговор идёт дальше")
-await page.evaluate(() => iziSet("speak", true))
+await page.evaluate(() => iziSet("aloud", true))
 // 3. живой разговор
 await page.evaluate(() => setTab("chat")); await page.waitForTimeout(300)
 await page.click('.chat-tools [data-do="talk"]'); await page.waitForTimeout(500)
