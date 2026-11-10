@@ -5662,8 +5662,8 @@ function speak(text, { onSentence, onEnd, force } = {}) {
     if (i >= parts.length) { TTS.speaking = false; if (onEnd) onEnd(); return }
     const s = parts[i++], u = new SpeechSynthesisUtterance(s)
     u.lang = "ru-RU"; try { if (v) u.voice = v } catch (e) {}; u.rate = z.rate || 1; u.pitch = 1
-    u.onstart = () => { if (my === TTS.token) { TTS.speaking = true; SILK.ie = 1; if (onSentence) onSentence(s) } }
-    u.onboundary = () => { SILK.ie = Math.min(1.3, SILK.ie + .45) }   // каждое слово подталкивает волну Изи
+    u.onstart = () => { TTS.tick = performance.now(); if (my === TTS.token) { TTS.speaking = true; SILK.ie = 1; if (onSentence) onSentence(s) } }
+    u.onboundary = () => { TTS.tick = performance.now(); SILK.ie = Math.min(1.3, SILK.ie + .45) }   // каждое слово подталкивает волну Изи
     u.onend = next
     u.onerror = e => { if (e.error === "interrupted" || e.error === "canceled") return; next() }
     TTS.keep.push(u); S.speak(u)
@@ -5770,10 +5770,12 @@ function talkState(s, izi, you) {
 function talkTap() {
   const t = TALK; if (!t) return
   if (t.state === "say") { ttsStop(); t.cut = talkCutOf(t); return talkListen() }       // перебить
-  if (t.state === "listen") { if (t.w && t.rec && t.rec.wav) { t.force = true; return } return talkSendNow() }   // сказали всё — отправить сразу (Whisper: сперва дораспознать)
-  if (t.state === "pause") return talkListen()
+  if (t.state === "listen") { if (t.w && t.rec && t.rec.wav && (t.heard || t.rec.voiced)) { t.force = true; return } if (!t.heard) { tdbg("касание — микрофон заново"); talkWake(); return talkListen(false, t.done) } return talkSendNow() }   // сказали всё — отправить сразу (Whisper: сперва дораспознать)
+  if (t.state === "pause") { tdbg("касание — слушаю"); talkWake(); return talkListen() }
 }
-function talkPause() { const t = TALK; if (!t) return; ttsStop(); talkBargeOff(t, true); clearTimeout(t.timer); clearTimeout(t.idle); t.n++; const r = t.rec; t.rec = null; try { r && r.abort() } catch (e) {}; talkState("pause", null, "Нажмите на шар, чтобы продолжить") }
+function talkPause(msg) { const t = TALK; if (!t) return; ttsStop(); talkBargeOff(t, true); clearTimeout(t.timer); clearTimeout(t.idle); t.n++; const r = t.rec; t.rec = null; try { r && r.abort() } catch (e) {}; talkState("pause", null, typeof msg === "string" ? msg : "Нажмите на шар, чтобы продолжить") }
+// Касание — единственное, что iPhone точно разрешает: в нём заново будим звук и берём свежий микрофон
+function talkWake() { try { ttsUnlock(); if (window.STT && STT.on()) { STT.release && STT.release(); STT.prime() } } catch (e) {} }
 // Дослушивать: Изи ждёт, пока человек договорит. Пауза для отправки — 2,6 с; если фраза повисла
 // на «и», «что», «потому что», «э», «ну»… — ждём 4,5 с. Safari сам рвёт распознавание на паузах —
 // услышанное не отправляем, а копим и слушаем дальше. Если отправили, а человек продолжил говорить
@@ -5880,7 +5882,8 @@ function talkListen(first, keep) {
   // после голоса Изи — короткая пауза, чтобы микрофон не поймал её последний звук
   if (t.said && Date.now() - t.saidAt < 600) setTimeout(start, 350); else start()
   // 20 секунд тишины — пауза, чтобы микрофон не висел впустую
-  t.idle = setTimeout(() => { if (TALK === t && t.n === my && t.state === "listen" && !t.heard) talkPause() }, 20000)
+  // тишина: сразу после открытия — 20 с; после ответа Изи — 9 с: если iPhone не дал микрофон, человек не ждёт впустую
+  t.idle = setTimeout(() => { if (TALK === t && t.n === my && t.state === "listen" && !t.heard) { tdbg("тишина — жду касания"); talkPause(first ? undefined : "Не слышу. Коснитесь шара и говорите") } }, first ? 20000 : 9000)
 }
 // Живой разговор с Whisper: запись идёт всё время, пока Изи слушает. На каждой паузе (0,7 с) вся запись
 // распознаётся заново — так видно сказанное и понятно, «висит» ли фраза (talkWait). Отправка — когда
@@ -5956,7 +5959,7 @@ function talkListenW(first, keep) {
     })
   }
   if (pre && !pre.stopped) go(); else if (t.said && Date.now() - t.saidAt < 600) setTimeout(go, 350); else go()
-  t.idle = setTimeout(() => { if (live() && t.state === "listen" && !t.heard && !(t.rec && t.rec.voiced)) talkPause() }, 20000)
+  t.idle = setTimeout(() => { if (live() && t.state === "listen" && !t.heard && !(t.rec && t.rec.voiced)) { tdbg("тишина — жду касания"); talkPause(first ? undefined : "Не слышу. Коснитесь шара и говорите") } }, first ? 20000 : 9000)
 }
 function talkSendNow() {
   const t = TALK; if (!t || t.state !== "listen") return
@@ -6007,10 +6010,12 @@ function talkHear(text, opts) {
   // Safari иногда не присылает конец речи — тогда Изи «зависала» и больше не слушала. Сторож: речь давно стихла — слушаем дальше
   // iPhone бывает и «вечно говорит» (speaking не сбрасывается) — предел по длине текста: ~85 мс на букву + 5 с
   clearInterval(t.wd); let quiet = 0
-  const cap = performance.now() + say.length * 85 / (IZX().rate || 1) + 5000
+  const cap = performance.now() + say.length * 85 / (IZX().rate || 1) + 5000, t0s = performance.now()
   t.wd = setInterval(() => {
     if (TALK !== t || t.n !== my || t.state !== "say") return clearInterval(t.wd)
     if (performance.now() > cap) { ttsStop(); return back("предел речи") }
+    // голос замер: ни начала фразы, ни нового слова 8 с (iOS оборвал речь и не сказал) — дальше слушаем
+    if (performance.now() - Math.max(t0s, TTS.tick || 0) > 8000) { ttsStop(); return back("голос замер") }
     let busy = true; try { busy = speechSynthesis.speaking || speechSynthesis.pending } catch (e) { busy = false }
     quiet = busy ? 0 : quiet + 1
     if (quiet >= 6) back("тишина синтеза")   // ~3 с тишины синтеза
@@ -6043,6 +6048,9 @@ function talkBarge(my) {
   const t = TALK
   if (!t || t.n !== my || t.state !== "say" || t.bg || (D.izi && D.izi.barge === false)) return
   if (!(window.STT && STT.record && navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return
+  // iPhone: если взять микрофон, когда голос Изи уже звучит, iOS переключает звук и молча обрывает речь —
+  // Изи «зависала» на «Говорит» и больше не слушала. Пока на iPhone «ухо» выключено (включить: D.izi.barge = true)
+  if (IS_IOS && !(D.izi && D.izi.barge === true)) { if (!t.bgOff) { t.bgOff = true; tdbg("ухо выкл.") } return }
   const g = t.bg = { lv: [], hot: 0, t0: 0, dead: false, h: null }
   const off = () => g.dead || TALK !== t || t.n !== my || t.state !== "say"
   STT.record({ onLevel: (rms, dt) => {
