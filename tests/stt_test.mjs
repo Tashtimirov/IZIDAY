@@ -70,7 +70,7 @@ await page.evaluate(() => talkOpen()); await page.waitForTimeout(300)
 ok(await page.evaluate(() => TALK && TALK.state === "listen" && TALK.w), "разговор слушает через Whisper")
 await page.evaluate(() => talk(1.5)); await page.waitForTimeout(1300)
 ok(await page.evaluate(() => /спортзал/.test(TALK.heard)), "после паузы видно распознанное: " + await page.evaluate(() => TALK.heard))
-await page.waitForTimeout(2800)
+await page.waitForTimeout(1600)
 ok((await userMsgs()).length === 1, "фраза повисла на «и» — ещё ждёт")
 reply = "Я хочу сегодня сходить в спортзал и потом в магазин."
 await page.evaluate(() => talk(1)); await page.waitForTimeout(4200)

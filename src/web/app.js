@@ -5777,7 +5777,7 @@ function talkPause() { const t = TALK; if (!t) return; ttsStop(); clearTimeout(t
 // услышанное не отправляем, а копим и слушаем дальше. Если отправили, а человек продолжил говорить
 // в первые секунды, — ответ отменяется, Изи слушает дальше и потом отвечает на всю мысль сразу.
 var TALK_HANG = /(^|\s)(и|а|но|или|что|чтобы|потому|потому что|так как|если|когда|как|где|куда|который|которая|которое|которые|это|то есть|в|во|на|с|со|к|ко|у|о|об|по|для|из|от|до|за|про|при|без|под|над|ну|вот|э+|эм+|м+|ммм|короче|типа|значит|слушай|смотри|кстати|ещё|еще|также|тоже|потом|затем|then)$/i
-var TALK_SILENCE = 2600, TALK_SILENCE_HANG = 4500, TALK_RESUME_MS = 6000
+var TALK_SILENCE = 1800, TALK_SILENCE_HANG = 3300, TALK_RESUME_MS = 6000   // быстрее: обычная пауза 1,8 с, повисшая фраза 3,3 с
 var TALK_YN = 1100   // короткое «да» / «нет» в ответ на вопрос Изи — не ждём 3 секунды
 const talkAsked = () => !!askWait || !!(TALK && /\?\s*$/.test(String(TALK.said || "").trim()))   // Изи только что спросила
 function talkWait(text) {
@@ -5785,7 +5785,7 @@ function talkWait(text) {
   if (!s) return TALK_SILENCE
   if (talkAsked() && s.split(/\s+/).length <= 3 && yesNo(s) !== null) return TALK_YN
   if (TALK_HANG.test(s)) return TALK_SILENCE_HANG
-  return s.split(/\s+/).length <= 2 ? TALK_SILENCE + 600 : TALK_SILENCE   // одно-два слова — скорее всего начало мысли
+  return s.split(/\s+/).length <= 2 ? TALK_SILENCE + 500 : TALK_SILENCE   // одно-два слова — скорее всего начало мысли
 }
 const talkNorm = s => String(s || "").toLowerCase().replace(/[^a-zа-яё0-9\s]/gi, " ").replace(/\s+/g, " ").trim()
 // Эхо: микрофон подхватил хвост голоса Изи — это не слова человека
