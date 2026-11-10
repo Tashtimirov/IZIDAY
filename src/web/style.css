@@ -1173,7 +1173,7 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 /* Разделы «100 желаний»: заголовок раскрывает список */
 .wgrp { border-top: 1px solid var(--line); }
 .wgrp:first-child { border-top: 0; }
-.wgrp > .wg-h { width: 100%; border-top: 0; text-align: left; background: none; color: inherit; font: inherit; cursor: pointer; }
+.wgrp > .wg-h { width: 100%; border: 0; border-radius: 0; padding: 9px 0; -webkit-appearance: none; appearance: none; text-align: left; background: none; color: inherit; font: inherit; cursor: pointer; }
 .wgrp > .wg-h .chev { transition: transform .32s cubic-bezier(.2,.8,.2,1); }
 .wgrp.open > .wg-h .chev { transform: rotate(90deg); }
 .wgrp > .wg-b { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .36s cubic-bezier(.2,.8,.2,1); }
