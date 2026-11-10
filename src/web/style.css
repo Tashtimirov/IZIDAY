@@ -961,6 +961,8 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 #talk .tk-btn.off { background: rgba(255,255,255,.88); color: #0b4a33; }
 #talk .tk-btn:active { transform: scale(.92); }
 #talk .tk-hint { font-size: 12.5px; color: rgba(255,255,255,.45); text-align: center; }
+#talk .tk-dbg { font-size: 10px; line-height: 1.3; color: rgba(255,255,255,.32); text-align: center; margin-top: 4px; min-height: 13px; max-width: 360px; font-variant-numeric: tabular-nums; }
+#talk.pin .tk-dbg { display: none; }
 #talk .tk-izi { transition: opacity .35s ease, font-size .35s ease; }
 #talk[data-st="listen"] .tk-izi, #talk[data-st="think"] .tk-izi:not(.ph) { opacity: .45; font-size: 19px; }
 /* Закреплённый разговор: стеклянная панель над меню — шар, кто говорит, последняя фраза, пауза и чат.

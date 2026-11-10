@@ -5688,9 +5688,9 @@ function talkOpen(o = {}) {
     <button class="tk-orb" aria-label="Шар: перебить, отправить или продолжить"><canvas></canvas></button>
     <div class="tk-cap"><p class="tk-izi"></p><p class="tk-you"></p></div>
     <div class="tk-bar"><button class="tk-btn tk-mic" aria-label="Пауза">${ICO.mic}</button><button class="tk-btn tk-chat" aria-label="Перейти в чат">${ICO.chat}</button></div>
-    <div class="tk-hint">Вниз — закончить · вверх — закрепить</div></div>`
+    <div class="tk-hint">Вниз — закончить · вверх — закрепить</div><div class="tk-dbg"></div></div>`
   document.body.append(el)
-  TALK = { el, state: "", rec: null, timer: null, heard: "", n: 0, pin: false }
+  TALK = { el, state: "", rec: null, timer: null, heard: "", n: 0, pin: false, t0: performance.now() }
   if (o.pin) talkPin(true, true)
   silkCanvas($("canvas", el), "talk")
   requestAnimationFrame(() => el.classList.add("on"))
@@ -5795,6 +5795,13 @@ function talkEcho(heard, said) {
   if ((talkAsked() || /\?/.test(String(said))) && h.split(" ").length <= 3 && yesNo(h) !== null) return false   // «да», «нет, не надо» на вопрос — это ответ
   return (" " + z + " ").includes(" " + h + " ")   // целыми словами: «да» не эхо от «календарь»
 }
+// Журнал микрофона в окне разговора (мелко внизу): что делает распознавание на iPhone — чтобы по скриншоту
+// было видно, где обрыв: «Safari: старт → звук ✓ → слова ✓ → конец» или «Whisper: звук 0 кадров»
+function tdbg(m) {
+  const t = TALK; if (!t) return
+  t.log = (t.log || []).concat(`${((performance.now() - (t.t0 || 0)) / 1000).toFixed(1)} ${m}`).slice(-5)
+  const el = $(".tk-dbg", t.el); if (el) el.textContent = t.log.join(" · ")
+}
 function talkListen(first, keep) {
   const t = TALK; if (!t) return
   if (window.STT && STT.on() && Date.now() > sttOffUntil) return talkListenW(first, keep)
@@ -5810,9 +5817,14 @@ function talkListen(first, keep) {
   let tries = 0
   const start = () => {
     if (TALK !== t || t.n !== my) return
+    // залипший синтез (пустая фраза «разбудить», недоговорённый ответ) держит звук iPhone в режиме
+    // воспроизведения — распознавание тогда молча не слышит
+    try { const S = window.speechSynthesis; if (S && (S.speaking || S.pending)) { S.cancel(); tdbg("голос снят") } } catch (e) {}
     const r = new SR(); r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
-    let cur = ""
+    let cur = "", err = ""
+    tdbg("Safari старт" + (tries ? " #" + (tries + 1) : ""))
     r.onresult = e => {
+      if (!r.words) { r.words = true; tdbg("слова") }
       r.live = true
       if (TALK !== t || t.n !== my || t.rec !== r) return
       const s = srGlue(e.results).all
@@ -5829,20 +5841,32 @@ function talkListen(first, keep) {
       arm()
     }
     r.onerror = e => {
+      err = e.error || "?"; tdbg("ошибка " + err)
       if (TALK !== t || t.n !== my) return
       if (e.error === "not-allowed" || e.error === "service-not-allowed") { talkState("pause", "Нет доступа к микрофону", IS_DROID ? "Настройки → Приложения → Chrome → Разрешения → Микрофон" : "Настройки → Safari → Микрофон"); return }
     }
     r.onend = () => {   // Safari сам закрывает распознавание на паузе — копим услышанное и слушаем дальше
+      tdbg("конец")
       if (TALK !== t || t.n !== my || t.rec !== r) return
       t.rec = null
-      if (t.state === "listen") { t.done = t.heard; cur = ""; setTimeout(start, 120) }
-      else if (t.state === "think" && t.canResume && Date.now() - t.sentAt < TALK_RESUME_MS) { t.done = t.sent; setTimeout(start, 120) }
+      const gap = err === "audio-capture" ? 700 : 120   // микрофон ещё занят прошлым — подождать
+      if (t.state === "listen") { t.done = t.heard; cur = ""; setTimeout(start, gap) }
+      else if (t.state === "think" && t.canResume && Date.now() - t.sentAt < TALK_RESUME_MS) { t.done = t.sent; setTimeout(start, gap) }
     }
     // сторож: Safari после голоса Изи иногда «запускает» распознавание, но не слушает — ни звука, ни конца.
     // Нет начала звука за 2,5 с — пересоздать распознаватель (до трёх раз), потом пауза с подсказкой
-    r.onaudiostart = r.onstart = () => { r.live = true }
+    // «старт» ещё не значит, что звук идёт: живым считаем, только когда пошёл звук или слова
+    r.onstart = () => { r.live = true; tdbg("старт ✓") }
+    r.onaudiostart = () => { r.audio = true; tdbg("звук ✓") }
+    // запустился, но звук так и не пошёл (ни звука, ни слов за 6 с) — тихо перезапустить, сказанное сохраняется
+    setTimeout(() => {
+      if (TALK !== t || t.n !== my || t.rec !== r || r.audio || r.words || t.state !== "listen") return
+      tdbg("звук не пошёл — заново")
+      t.rec = null; try { r.abort() } catch (e) {}; t.done = t.heard; setTimeout(start, 400)
+    }, 6000)
     setTimeout(() => {
       if (TALK !== t || t.n !== my || t.rec !== r || r.live || t.state !== "listen") return
+      tdbg("нет звука — заново")
       t.rec = null; try { r.abort() } catch (e) {}
       if (++tries <= 3) setTimeout(start, 400)
       else talkState("pause", null, "Микрофон не ответил — нажмите на шар")
@@ -5872,9 +5896,11 @@ function talkListenW(first, keep) {
     STT.record({ onVoice: l => { if (live() && t.state === "listen") SILK.ye = Math.min(1.3, SILK.ye + l * 6) } }).then(h => {
       if (!live() || dead) return h.close()
       t.rec = h
+      tdbg("Whisper запись, звук " + (h.ctx && h.ctx.state))
       // сторож: микрофон «включён», а звук не идёт (iPhone после голоса Изи) — дальше слушает Safari, без касаний
       setTimeout(() => {
-        if (!live() || t.rec !== h || h.frames !== 0) return
+        if (!live() || t.rec !== h || h.frames !== 0) { if (live() && t.rec === h) tdbg("Whisper звук ✓"); return }
+        tdbg("Whisper звук 0 — Safari")
         clearInterval(t.poll); h.close(); t.rec = null; sttOffUntil = Date.now() + 60e3
         if (t.state === "listen") talkListen(false, t.done)
       }, 1800)
@@ -5917,7 +5943,7 @@ function talkListenW(first, keep) {
       if (!live()) return
       t.rec = null
       if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) return talkState("pause", "Нет доступа к микрофону", IS_DROID ? "Настройки → Приложения → Chrome → Разрешения → Микрофон" : "Настройки → Safari → Микрофон")
-      sttOffUntil = Date.now() + 60e3; talkListen(first, t.done)
+      tdbg("Whisper ошибка " + (e && e.name || e)); sttOffUntil = Date.now() + 60e3; talkListen(first, t.done)
     })
   }
   if (t.said && Date.now() - t.saidAt < 600) setTimeout(go, 350); else go()
@@ -5931,7 +5957,7 @@ function talkSendNow() {
   // микрофон не выключаем: если человек продолжит говорить в первые секунды — дослушаем
   t.sent = text; t.sentAt = Date.now(); t.resumed = false; t.canResume = !askWait   // ответ на вопрос Изи не отменяем
   talkState("think", "·  ·  ·", text)
-  chatSend(text, { voice: true })
+  tdbg("отправила"); chatSend(text, { voice: true })
 }
 // Человек продолжил говорить после отправки — отменить ответ и слушать дальше с уже сказанным
 function talkResume(all) {
@@ -5958,18 +5984,19 @@ function talkHear(text, opts) {
   t.said = say; t.saidAt = Date.now() + 6e4
   talkState("say", sentences(say)[0] || "", "")
   // в живом разговоре Изи всегда отвечает голосом — настройка «Читать ответы вслух» только для обычного чата
-  const my = t.n, back = () => { if (TALK === t && t.n === my && t.state === "say") { clearInterval(t.wd); t.saidAt = Date.now(); talkListen() } }
-  speak(say, { force: true, onSentence: s => { if (TALK === t) talkState("say", s, null) }, onEnd: back })
+  const my = t.n, back = why => { if (TALK === t && t.n === my && t.state === "say") { clearInterval(t.wd); tdbg(why || "договорила"); t.saidAt = Date.now(); talkListen() } }
+  tdbg("говорит")
+  speak(say, { force: true, onSentence: s => { if (TALK === t) talkState("say", s, null) }, onEnd: () => back() })
   // Safari иногда не присылает конец речи — тогда Изи «зависала» и больше не слушала. Сторож: речь давно стихла — слушаем дальше
   // iPhone бывает и «вечно говорит» (speaking не сбрасывается) — предел по длине текста: ~85 мс на букву + 5 с
   clearInterval(t.wd); let quiet = 0
   const cap = performance.now() + say.length * 85 / (IZX().rate || 1) + 5000
   t.wd = setInterval(() => {
     if (TALK !== t || t.n !== my || t.state !== "say") return clearInterval(t.wd)
-    if (performance.now() > cap) { ttsStop(); return back() }
+    if (performance.now() > cap) { ttsStop(); return back("предел речи") }
     let busy = true; try { busy = speechSynthesis.speaking || speechSynthesis.pending } catch (e) { busy = false }
     quiet = busy ? 0 : quiet + 1
-    if (quiet >= 6) back()   // ~3 с тишины синтеза
+    if (quiet >= 6) back("тишина синтеза")   // ~3 с тишины синтеза
   }, 500)
 }
 // Шар разговора — та же сфера, что на кнопке «Изи», только большая и живая:
