@@ -45,7 +45,7 @@
     const src = ctx.createMediaStreamSource(stream)
     const node = ctx.createScriptProcessor(4096, 1, 1)
     const ratio = ctx.sampleRate / RATE
-    const h = { parts: [], len: 0, level: 0, noise: .004, voiced: 0, lastVoice: 0, t0: Date.now(), stopped: false, stream, ctx, frames: 0 }
+    const h = { parts: [], len: 0, level: 0, noise: .004, voiced: 0, lastVoice: 0, t0: Date.now(), stopped: false, stream, ctx, frames: 0, opts }
     let carry = 0
     node.onaudioprocess = ev => {
       if (h.stopped) return
@@ -57,7 +57,8 @@
       h.level = rms
       const loud = rms > Math.max(.012, h.noise * 3.2)
       if (!loud) h.noise = h.noise * .96 + rms * .04   // шум подстраивается только в тишине
-      if (loud) { h.voiced += x.length / ctx.sampleRate; h.lastVoice = Date.now(); opts.onVoice && opts.onVoice(rms) }
+      if (loud) { h.voiced += x.length / ctx.sampleRate; h.lastVoice = Date.now(); h.opts.onVoice && h.opts.onVoice(rms) }
+      if (h.opts.onLevel) h.opts.onLevel(rms, x.length / ctx.sampleRate)   // каждый кадр — для «перебить голосом»
       // понижение частоты до 16 кГц (усреднение)
       const n = Math.floor((x.length - carry) / ratio)
       const out = new Float32Array(Math.max(0, n))
@@ -73,6 +74,12 @@
     h.wav = () => wav(h.parts, h.len)
     h.abort = h.stop = () => h.close()   // как у распознавания Safari: старый код просто «обрывает» запись
     h.secs = () => h.len / RATE
+    // оставить только последние sec секунд (запись передаётся дальше — например, с момента, когда человек перебил Изи)
+    h.keepLast = sec => {
+      let need = Math.round(sec * RATE), out = []
+      for (let i = h.parts.length - 1; i >= 0 && need > 0; i--) { const p = h.parts[i]; out.unshift(p.length > need ? p.slice(p.length - need) : p); need -= p.length }
+      h.parts = out; h.len = out.reduce((a, p) => a + p.length, 0)
+    }
     h.close = () => {
       if (h.stopped) return; h.stopped = true
       try { node.disconnect(); src.disconnect() } catch (e) {}

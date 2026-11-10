@@ -1702,6 +1702,8 @@ async function chatSend(text, opts = {}) {
     text = c.prompt
   }
   const item = { role: "user", text: opts.label || text, prompt: opts.label ? text : undefined, at: Date.now(), voice: !!opts.voice }
+  // перебили голосом: помощник знает, что из ответа человек услышал, и отвечает на всё вместе одной репликой
+  if (opts.cut && !opts.label) item.prompt = `(Ты отвечал${iziG("", "а")} вслух, и тебя перебили на словах: «${opts.cut.said.slice(-160)}». Остальное человек не дослушал. Не повторяй сказанное и не говори, что тебя перебили: ответь одной репликой на его слова с учётом всего разговора, а если недосказанное важно — коротко вплети.) ${text}`
   const thumbs = (opts.attach || []).map(a => a.thumb).filter(Boolean)
   if (thumbs.length === 1) item.thumb = thumbs[0]; else if (thumbs.length) item.thumbs = thumbs
   D.chat.push(item)
@@ -5747,7 +5749,7 @@ function talkPin(on, quiet) {
 function talkClose() {
   const t = TALK; if (!t) return
   TALK = null
-  clearTimeout(t.timer); clearTimeout(t.idle); clearInterval(t.poll); clearInterval(t.wd)
+  clearTimeout(t.timer); clearTimeout(t.idle); clearInterval(t.poll); clearInterval(t.wd); talkBargeOff(t, true)
   const r = t.rec; t.rec = null; t.n++
   // палец оставил окну сдвиг прямо в style — он перекрывал «уехать вниз» из CSS, и окно висело на полпути до удаления
   const sh = $(".tk-sheet", t.el); sh.style.transition = ""; sh.style.transform = ""; sh.style.opacity = ""
@@ -5767,11 +5769,11 @@ function talkState(s, izi, you) {
 }
 function talkTap() {
   const t = TALK; if (!t) return
-  if (t.state === "say") { ttsStop(); return talkListen() }       // перебить
+  if (t.state === "say") { ttsStop(); t.cut = talkCutOf(t); return talkListen() }       // перебить
   if (t.state === "listen") { if (t.w && t.rec && t.rec.wav) { t.force = true; return } return talkSendNow() }   // сказали всё — отправить сразу (Whisper: сперва дораспознать)
   if (t.state === "pause") return talkListen()
 }
-function talkPause() { const t = TALK; if (!t) return; ttsStop(); clearTimeout(t.timer); clearTimeout(t.idle); t.n++; const r = t.rec; t.rec = null; try { r && r.abort() } catch (e) {}; talkState("pause", null, "Нажмите на шар, чтобы продолжить") }
+function talkPause() { const t = TALK; if (!t) return; ttsStop(); talkBargeOff(t, true); clearTimeout(t.timer); clearTimeout(t.idle); t.n++; const r = t.rec; t.rec = null; try { r && r.abort() } catch (e) {}; talkState("pause", null, "Нажмите на шар, чтобы продолжить") }
 // Дослушивать: Изи ждёт, пока человек договорит. Пауза для отправки — 2,6 с; если фраза повисла
 // на «и», «что», «потому что», «э», «ну»… — ждём 4,5 с. Safari сам рвёт распознавание на паузах —
 // услышанное не отправляем, а копим и слушаем дальше. Если отправили, а человек продолжил говорить
@@ -5807,6 +5809,7 @@ function talkListen(first, keep) {
   if (window.STT && STT.on() && Date.now() > sttOffUntil) return talkListenW(first, keep)
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
   if (!SR) { talkState("pause", "Распознавание речи недоступно в этом браузере", ""); return }
+  talkBargeOff(t, true)   // Safari слушает сам: запись сторожа перебивания отпускаем, иначе микрофон занят
   clearTimeout(t.timer); clearTimeout(t.idle)
   t.done = String(keep || "").trim(); t.heard = t.done; t.sent = ""
   const prev = t.rec; t.rec = null; try { prev && prev.abort() } catch (e) {}
@@ -5884,6 +5887,7 @@ function talkListen(first, keep) {
 function talkListenW(first, keep) {
   const t = TALK; if (!t) return
   clearTimeout(t.timer); clearTimeout(t.idle); clearInterval(t.poll)
+  const pre = t.bh; t.bh = null; talkBargeOff(t, true)   // запись сторожа перебивания — уже идёт, её и слушаем дальше
   t.done = String(keep || "").trim(); t.heard = t.done; t.sent = ""; t.w = true
   const prev = t.rec; try { prev && prev.abort() } catch (e) {}
   talkState("listen", null, t.done || (first ? "Говорите — я слушаю" : ""))
@@ -5893,7 +5897,8 @@ function talkListenW(first, keep) {
   t.rec = { abort() { dead = true }, stop() { dead = true } }   // место занято, пока микрофон включается
   const go = () => {
     if (!live() || dead) return
-    STT.record({ onVoice: l => { if (live() && t.state === "listen") SILK.ye = Math.min(1.3, SILK.ye + l * 6) } }).then(h => {
+    const ov = { onVoice: l => { if (live() && t.state === "listen") SILK.ye = Math.min(1.3, SILK.ye + l * 6) } }
+    ;(pre && !pre.stopped ? Promise.resolve(Object.assign(pre, { opts: ov })) : STT.record(ov)).then(h => {
       if (!live() || dead) return h.close()
       t.rec = h
       tdbg("Whisper запись, звук " + (h.ctx && h.ctx.state))
@@ -5946,7 +5951,7 @@ function talkListenW(first, keep) {
       tdbg("Whisper ошибка " + (e && e.name || e)); sttOffUntil = Date.now() + 60e3; talkListen(first, t.done)
     })
   }
-  if (t.said && Date.now() - t.saidAt < 600) setTimeout(go, 350); else go()
+  if (pre && !pre.stopped) go(); else if (t.said && Date.now() - t.saidAt < 600) setTimeout(go, 350); else go()
   t.idle = setTimeout(() => { if (live() && t.state === "listen" && !t.heard && !(t.rec && t.rec.voiced)) talkPause() }, 20000)
 }
 function talkSendNow() {
@@ -5956,13 +5961,14 @@ function talkSendNow() {
   if (!text) return talkListen()
   // микрофон не выключаем: если человек продолжит говорить в первые секунды — дослушаем
   t.sent = text; t.sentAt = Date.now(); t.resumed = false; t.canResume = !askWait   // ответ на вопрос Изи не отменяем
+  const cut = t.cut; t.cut = null; t.cutSent = cut
   talkState("think", "·  ·  ·", text)
-  tdbg("отправила"); chatSend(text, { voice: true })
+  tdbg("отправила"); chatSend(text, { voice: true, cut })
 }
 // Человек продолжил говорить после отправки — отменить ответ и слушать дальше с уже сказанным
 function talkResume(all) {
   const t = TALK; if (!t || t.state !== "think") return
-  t.resumed = true
+  t.resumed = true; if (t.cutSent) t.cut = t.cutSent   // перебивание ещё в силе — уйдёт со всей фразой
   const my = t.n, r = t.rec
   t.state = "listen"; chatStop()
   if (TALK !== t) return
@@ -5982,11 +5988,18 @@ function talkHear(text, opts) {
   const yn = opts && opts.length === 2 && opts[0] === "Да" && opts[1] === "Нет"   // подтверждение: просто вопрос, ответить «да» или «нет» голосом
   const say = String(text || "") + (opts && opts.length && !yn ? " " + (opts.length === 2 ? `${opts[0]} или ${opts[1]}?` : opts.slice(0, 4).join(", ") + "?") : "")
   t.said = say; t.saidAt = Date.now() + 6e4
-  talkState("say", sentences(say)[0] || "", "")
+  talkBargeOff(t, true); t.cut = null
+  t.sayParts = sentences(say); t.sayI = 0
+  talkState("say", t.sayParts[0] || "", "")
   // в живом разговоре Изи всегда отвечает голосом — настройка «Читать ответы вслух» только для обычного чата
-  const my = t.n, back = why => { if (TALK === t && t.n === my && t.state === "say") { clearInterval(t.wd); tdbg(why || "договорила"); t.saidAt = Date.now(); talkListen() } }
+  const my = t.n, back = why => { if (TALK === t && t.n === my && t.state === "say") { clearInterval(t.wd); tdbg(why || "договорила"); t.saidAt = Date.now(); talkBargeHand(t, 0); talkListen() } }
   tdbg("говорит")
-  speak(say, { force: true, onSentence: s => { if (TALK === t) talkState("say", s, null) }, onEnd: () => back() })
+  let armed = false
+  speak(say, { force: true, onSentence: s => {
+    if (TALK !== t) return
+    t.sayI++; talkState("say", s, null)
+    if (!armed && t.n === my) { armed = true; setTimeout(() => talkBarge(my), 250) }   // голос пошёл — включаем «ухо», чтобы можно было перебить
+  }, onEnd: () => back() })
   // Safari иногда не присылает конец речи — тогда Изи «зависала» и больше не слушала. Сторож: речь давно стихла — слушаем дальше
   // iPhone бывает и «вечно говорит» (speaking не сбрасывается) — предел по длине текста: ~85 мс на букву + 5 с
   clearInterval(t.wd); let quiet = 0
@@ -5998,6 +6011,69 @@ function talkHear(text, opts) {
     quiet = busy ? 0 : quiet + 1
     if (quiet >= 6) back("тишина синтеза")   // ~3 с тишины синтеза
   }, 500)
+}
+// ── Перебить голосом ──
+// Пока Изи говорит, микрофон слушает громкость (запись с эхоподавлением). Первые 0,7 с — мерим, насколько громко
+// в микрофоне слышен сам голос Изи; потом, если звук держится заметно громче этого эха ~0,25 с, — значит, заговорил
+// человек: Изи сразу замолкает и слушает. Сказанное потом уходит помощнику вместе с пометкой, на каких словах её
+// перебили, — и она отвечает на всё одной репликой. Кашель или шум (за 3,5 с ни слова) — Изи договаривает с той фразы.
+// С Whisper та же запись становится записью ответа — первые слова не теряются. D.izi.barge === false — выключить
+var TALK_BARGE_K = 2.4, TALK_BARGE_MIN = .03, TALK_BARGE_HOT = .25, TALK_BARGE_CAL = 700, TALK_BARGE_FALSE = 3500
+const talkWhisper = () => !!(window.STT && STT.on() && Date.now() > sttOffUntil)
+function talkCutOf(t) {
+  const p = t.sayParts || [], i = Math.max(1, t.sayI || 0)
+  return { said: p.slice(0, i).join(" "), rest: p.slice(i - 1).join(" "), at: Date.now() }   // прерванную фразу при «ложной тревоге» — сначала
+}
+function talkBargeOff(t, close) {
+  const g = t && t.bg; if (!g) return
+  g.dead = true; t.bg = null
+  if (close && g.h) { try { g.h.close() } catch (e) {} ; g.h = null }
+}
+// речь кончилась сама или перебили: с Whisper запись не закрываем — её подхватит talkListenW (меньше переключений звука на iPhone)
+function talkBargeHand(t, keep) {
+  const g = t.bg
+  if (g && g.h && !g.h.stopped && talkWhisper()) { g.h.keepLast(keep); g.h.voiced = keep ? .3 : 0; g.h.lastVoice = Date.now(); t.bh = g.h; g.h = null }
+  talkBargeOff(t, true)
+}
+function talkBarge(my) {
+  const t = TALK
+  if (!t || t.n !== my || t.state !== "say" || t.bg || (D.izi && D.izi.barge === false)) return
+  if (!(window.STT && STT.record && navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return
+  const g = t.bg = { lv: [], hot: 0, t0: 0, dead: false, h: null }
+  const off = () => g.dead || TALK !== t || t.n !== my || t.state !== "say"
+  STT.record({ onLevel: (rms, dt) => {
+    if (off()) return
+    const now = performance.now()
+    if (!g.t0) g.t0 = now
+    if (now - g.t0 < TALK_BARGE_CAL) { g.lv.push(rms); return }   // эхо голоса Изи
+    const s = g.lv.slice().sort((a, b) => a - b), echo = s[Math.floor(s.length * .8)] || 0
+    const thr = Math.max(TALK_BARGE_MIN, echo * TALK_BARGE_K)
+    if (rms > thr) g.hot += dt; else { g.hot = 0; g.lv.push(rms); if (g.lv.length > 30) g.lv.shift() }   // окно эха ~2,5 с, без громких кадров
+    if (!g.cal) { g.cal = true; tdbg(`ухо: эхо ${echo.toFixed(3)}, порог ${thr.toFixed(3)}`) }
+    if (g.hot >= TALK_BARGE_HOT) talkBargeIn(t, rms, thr)
+  } }).then(h => {
+    if (off()) return h.close()
+    g.h = h; tdbg("ухо ✓ " + (h.ctx && h.ctx.state))
+  }, e => { if (!g.dead) tdbg("ухо: нет микрофона " + (e && (e.name || e.message) || e)) })
+}
+function talkBargeIn(t, rms, thr) {
+  if (TALK !== t || t.state !== "say") return
+  tdbg(`перебили ${rms.toFixed(3)} > ${thr.toFixed(3)}`)
+  clearInterval(t.wd); ttsStop()
+  const cut = talkCutOf(t)
+  if (navigator.vibrate) navigator.vibrate(8)
+  talkBargeHand(t, .45)   // с Whisper: последние 0,45 с — начало слов человека
+  t.saidAt = Date.now() - 700   // эхо ещё отсекаем, но микрофон Safari включаем без лишней паузы
+  talkListen()
+  t.cut = cut
+  const my = t.n
+  // ложная тревога: за 3,5 с ни слова — договорить с прерванной фразы
+  setTimeout(() => {
+    if (TALK !== t || t.n !== my || t.state !== "listen" || t.cut !== cut || t.heard) return
+    if (t.w && t.rec && t.rec.voiced > .6) return   // Whisper ещё распознаёт сказанное
+    tdbg("не слова — договариваю"); t.cut = null
+    if (cut.rest) talkHear(cut.rest); else talkListen()
+  }, TALK_BARGE_FALSE)
 }
 // Шар разговора — та же сфера, что на кнопке «Изи», только большая и живая:
 // полупрозрачная, с объёмом (мягкий блик сверху, отсвет по краю), внутри медленно плывут цветные облака света,
