@@ -1781,6 +1781,8 @@ function chatAsk(question, options) {
     D.chat.push({ role: "assistant", text: question, at: Date.now(), opts: options, local: true })
     save(false)
     talkHear(question, options)
+    // в обычном чате спросили голосом — вопрос Изи тоже вслух (ответить можно микрофоном: «да» / «нет»)
+    if (!TALK) { const u = D.chat.filter(m => m.role === "user").slice(-1)[0]; if (u && u.voice && Date.now() - u.at < 10 * 60e3) speak(question) }
     askWait = a => res(a)
     if (chatOn()) renderChat(); else if (!talkPinned()) setTab("chat")
     setBusyUI()
@@ -5790,7 +5792,7 @@ const talkNorm = s => String(s || "").toLowerCase().replace(/[^a-zа-яё0-9\s]/
 function talkEcho(heard, said) {
   const h = talkNorm(heard), z = talkNorm(said)
   if (!h || !z || h.split(" ").length > 8) return false
-  if (/\?\s*$/.test(String(said).trim()) && h.split(" ").length <= 3 && yesNo(h) !== null) return false   // «да», «нет, не надо» на вопрос — это ответ
+  if ((talkAsked() || /\?/.test(String(said))) && h.split(" ").length <= 3 && yesNo(h) !== null) return false   // «да», «нет, не надо» на вопрос — это ответ
   return (" " + z + " ").includes(" " + h + " ")   // целыми словами: «да» не эхо от «календарь»
 }
 function talkListen(first, keep) {
