@@ -300,6 +300,9 @@ function offCard() {
 const toastQ = []
 function showPending() { if (gOff()) return; const lv = D.gamiRankPending; if (!lv) return; D.gamiRankPending = 0; save(false); const st = stats(); if (st.lv >= lv) rankUp(st) }
 let lastToday = null, lastIds = null, lastTop = "", busy = false, bornAt = Date.now()
+// что уже показано плашкой «+N» сегодня (на этом устройстве; только сегодняшний день)
+function toldGet(k) { try { const o = JSON.parse(localStorage.getItem("gamiTold") || "{}"); return new Set(o.k === k ? o.ids || [] : []) } catch (e) { return new Set() } }
+function toldSet(k, set) { try { localStorage.setItem("gamiTold", JSON.stringify({ k, ids: [...set].slice(-400) })) } catch (e) {} }
 function gToast(n, t, big, onTap) {
   let el = document.getElementById("gtoast")
   if (!el) { el = document.createElement("div"); el.id = "gtoast"; document.body.appendChild(el) }
@@ -342,11 +345,15 @@ function tick() {
     }
     if (toastQ.length) { const [c, t, f] = toastQ.shift(); gToast(c, t, true, f); lastToday = st.today.total; lastIds = new Set(st.today.items.map(i => i.id).concat(st.today.extra.map(x => x.id))); if (toastQ.length) setTimeout(tick, 2800); return }
     const tt = st.today.total, ids = new Set(st.today.items.map(i => i.id).concat(st.today.extra.map(x => x.id)))
-    if (lastToday != null && tt > lastToday && Date.now() - bornAt > 6000 && !stack.length) {
-      const it = st.today.items.filter(i => !lastIds.has(i.id)).sort((a, b) => b.p - a.p)[0]
-      const clean = st.today.clean.ok && !lastTop.includes("clean"), ex = st.today.extra.find(x => !lastIds.has(x.id))
-      gToast(tt - lastToday, clean ? "Чистый день — баллы ×2" : ex ? ex.t : it ? it.t + (it.mult > 1 ? ` · комбо ×${String(it.mult).replace(".", ",")}` : "") : "ачивка", clean || !!ex)
+    // уже показанное за день помнится между запусками: данные, пришедшие с сервера после старта, не дают «+15» повторно
+    const told = toldGet(st.today.k), isNew = x => !lastIds.has(x.id) && !told.has(x.id) && !(x.at > sod(new Date()) && Date.now() - x.at > 10 * 60e3)
+    if (lastToday == null) { ids.forEach(i => told.add(i)); if (st.today.clean.ok) told.add("clean") }
+    else if (tt > lastToday && Date.now() - bornAt > 6000 && !stack.length) {
+      const it = st.today.items.filter(isNew).sort((a, b) => b.p - a.p)[0]
+      const clean = st.today.clean.ok && !lastTop.includes("clean") && !told.has("clean"), ex = st.today.extra.find(isNew)
+      if (clean || ex || it) gToast(tt - lastToday, clean ? "Чистый день — баллы ×2" : ex ? ex.t : it.t + (it.mult > 1 ? ` · комбо ×${String(it.mult).replace(".", ",")}` : ""), clean || !!ex)
     }
+    ids.forEach(i => told.add(i)); if (st.today.clean.ok) told.add("clean"); toldSet(st.today.k, told)
     lastToday = tt; lastIds = ids; lastTop = st.today.clean.ok ? "clean" : ""
   } finally { busy = false }
 }
