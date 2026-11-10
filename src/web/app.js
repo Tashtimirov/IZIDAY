@@ -6076,7 +6076,10 @@ function talkBarge(my) {
   if (!(window.STT && STT.record && navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return
   // iPhone: если взять микрофон, когда голос Изи уже звучит, iOS переключает звук и молча обрывает речь —
   // Изи «зависала» на «Говорит» и больше не слушала. Пока на iPhone «ухо» выключено (включить: D.izi.barge = true)
-  if (IS_IOS && !(D.izi && D.izi.barge === true)) { if (!t.bgOff) { t.bgOff = true; tdbg("ухо выкл.") } return }
+  // Безопасно, только если микрофон уже открыт с прошлой реплики (Whisper держит один поток на весь разговор):
+  // тогда новый getUserMedia не нужен, «ухо» лишь подключается к тому же потоку
+  const warm = !!(STT.live && STT.live())
+  if (IS_IOS && !warm && !(D.izi && D.izi.barge === true)) { if (!t.bgOff) { t.bgOff = true; tdbg("ухо выкл. (микрофон закрыт)") } return }
   const g = t.bg = { lv: [], hot: 0, t0: 0, dead: false, h: null }
   const off = () => g.dead || TALK !== t || t.n !== my || t.state !== "say"
   STT.record({ onLevel: (rms, dt) => {
