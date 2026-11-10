@@ -5719,7 +5719,7 @@ function talkPin(on, quiet) {
 function talkClose() {
   const t = TALK; if (!t) return
   TALK = null
-  ttsStop(); clearTimeout(t.timer); clearInterval(t.poll)
+  ttsStop(); clearTimeout(t.timer); clearInterval(t.poll); clearInterval(t.wd)
   try { t.rec && t.rec.abort() } catch (e) {}
   t.el.classList.remove("on"); t.el.classList.add("off")
   document.body.classList.remove("talk-pin")
@@ -5904,7 +5904,17 @@ function talkHear(text, opts) {
   const say = String(text || "") + (opts && opts.length ? " " + (opts.length === 2 ? `${opts[0]} или ${opts[1]}?` : opts.slice(0, 4).join(", ") + "?") : "")
   t.said = say; t.saidAt = Date.now() + 6e4
   talkState("say", sentences(say)[0] || "", "")
-  speak(say, { onSentence: s => { if (TALK === t) talkState("say", s, null) }, onEnd: () => { if (TALK === t && t.state === "say") { t.saidAt = Date.now(); talkListen() } } })
+  // в живом разговоре Изи всегда отвечает голосом — настройка «Читать ответы вслух» только для обычного чата
+  const my = t.n, back = () => { if (TALK === t && t.n === my && t.state === "say") { clearInterval(t.wd); t.saidAt = Date.now(); talkListen() } }
+  speak(say, { force: true, onSentence: s => { if (TALK === t) talkState("say", s, null) }, onEnd: back })
+  // Safari иногда не присылает конец речи — тогда Изи «зависала» и больше не слушала. Сторож: речь давно стихла — слушаем дальше
+  clearInterval(t.wd); let quiet = 0
+  t.wd = setInterval(() => {
+    if (TALK !== t || t.n !== my || t.state !== "say") return clearInterval(t.wd)
+    let busy = true; try { busy = speechSynthesis.speaking || speechSynthesis.pending } catch (e) { busy = false }
+    quiet = busy ? 0 : quiet + 1
+    if (quiet >= 6) back()   // ~3 с тишины синтеза
+  }, 500)
 }
 // Шар разговора — та же сфера, что на кнопке «Изи», только большая и живая:
 // полупрозрачная, с объёмом (мягкий блик сверху, отсвет по краю), внутри медленно плывут цветные облака света,
