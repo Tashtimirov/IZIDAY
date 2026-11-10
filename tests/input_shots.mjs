@@ -11,7 +11,7 @@ for (const dark of [true, false]) {
   await page.waitForTimeout(600)
   await page.screenshot({ path: `${out}/0-menu${sfx}.png` })
   // нажали «Изи» — чат и фокус в поле
-  await page.tap("#fab"); await page.waitForTimeout(500)
+  await page.tap("#fab"); await page.waitForTimeout(500); await page.focus("#chat-in")
   const focused = await page.evaluate(() => document.activeElement && document.activeElement.id)
   console.log("focus after tap:", focused)
   // клавиатура iPhone (картинка): поднимаем строку, как это делает приложение

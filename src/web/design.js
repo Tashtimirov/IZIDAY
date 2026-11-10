@@ -114,7 +114,7 @@ window.DS = (function () {
   function chatEmpty() {
     const name = typeof iziName === "function" ? iziName() : "Изи"
     return `<div class="ds-empty"><b class="mini-orb ds-orb"></b><div class="t">Я — ${escA(name)}. Чем помочь?</div>
-      <div class="s">Скажите или напишите. Нажмите на волну — или держите её, как рацию.</div>
+      <div class="s">Напишите или нажмите микрофон в строке внизу и скажите.</div>
       <div class="ds-ex">${EX_CHAT.map(x => `<button data-ds-say="${escA(x)}">${escA(x)}</button>`).join("")}</div></div>`
   }
   function empties(root) {

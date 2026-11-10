@@ -154,7 +154,7 @@ function cards() {
     <div class="ob-p ob-sm">${kid() ? "Любой вопрос можно пропустить" : "Любой вопрос можно пропустить, ответы видны только на этом телефоне"}</div>`, start: 1 })
   qs.forEach((q, j) => L.push({ q, h: qHTML(q, j + 1, qs.length) }))
   if (kid()) {
-    L.push({ h: `<div class="ob-h">Скажи мне</div><div class="ob-p">Держи круглую кнопку внизу и говори. Я всё запишу сам${iziG("", "а")}.</div>
+    L.push({ h: `<div class="ob-h">Скажи мне</div><div class="ob-p">Нажми микрофон в строке внизу и говори. Я всё запишу сам${iziG("", "а")}.</div>
       <div class="ob-say">«Завтра футбол в пять»</div><div class="ob-say">«Я почистил зубы»</div><div class="ob-say">«Хочу накопить на самокат»</div>` })
     L.push({ h: `<div class="ob-h">Собирай звёзды</div><div class="ob-p">Каждое сделанное дело приносит звёзды. За звёзды — награды, которые вы придумаете вместе с родителями.</div>
       <div class="ob-tri">${[["check", "Делай дела"], ["star", "Собирай звёзды"], ["gift", "Получай награды"]].map(([n, t]) => `<div><span>${I(n, 24)}</span>${t}</div>`).join("")}</div>` })

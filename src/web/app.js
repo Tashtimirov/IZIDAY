@@ -712,6 +712,7 @@ function attTray() {
   const t = $("#att-tray"); if (!t) return
   const bar = t.closest(".chat-bar"), inp = $("#chat-in")
   if (bar) bar.classList.toggle("has-att", !!chatAtt)
+  setBusyUI()
   if (inp && !voice) inp.placeholder = chatAtt ? (chatAtt.length > 1 ? "Подпись ко всем…" : "Добавьте подпись…") : "Напишите или скажите…"
   if (!chatAtt) { t.classList.remove("show"); setTimeout(() => { if (!chatAtt) t.innerHTML = "" }, 260); return }
   const n = chatAtt.length, c = chatAtt[0], a = c.att, doc = a.type === "document"
@@ -1736,7 +1737,7 @@ const talkPinned = () => !!(TALK && TALK.pin)
 // Кнопка справа от поля: есть текст — ➤; Изи пишет или говорит ответ — рабочий «стоп»; иначе (закончил или ждёт ответа на вопрос) — микрофон «ответить голосом»
 function setBusyUI() {
   const b = $(".chat-bar .send"); if (!b) return
-  const inp = $("#chat-in"), st = inp && inp.value.trim() ? "send" : chatBusy && !askWait ? "stop" : "talk"   // talk — справа шар Изи
+  const inp = $("#chat-in"), st = inp && inp.value.trim() || chatAtt ? "send" : chatBusy && !askWait ? "stop" : "none"   // none — справа ничего
   const bar = b.closest(".chat-bar")
   b.classList.toggle("stop", st === "stop"); if (bar) bar.classList.toggle("busy", st === "stop")
   if (b.dataset.ic !== st) { b.innerHTML = st === "stop" ? ICO.stop : ICO.send; b.dataset.ic = st }
@@ -2248,7 +2249,7 @@ function renderTop() {
   if (tab === "today") { const d = new Date(); $("#top-title").innerHTML = `${esc(core.cap(WDF[d.getDay()]))}<span class="dt">${d.getDate()} ${MONTHS_GEN[d.getMonth()]}</span>` }
   else $("#top-title").textContent = tab === "chat" ? iziName() : TITLES[tab]
   iziPaint()
-  const fl = $("#fab span"); if (fl && fl.textContent !== iziName()) { fl.textContent = iziName(); $("#fab").setAttribute("aria-label", `${iziName()}: нажмите — чат, держите — голосовая команда`) }
+  const fl = $("#fab span"); if (fl && fl.textContent !== iziName()) { fl.textContent = iziName(); $("#fab").setAttribute("aria-label", `${iziName()}: чат`) }
   let sub = ""
   if (!D.conn) sub = window.FRIEND && FRIEND.on() ? "Войдите через Google" : "Не подключено к виджету"
   else if (D.sync.error) sub = D.sync.error
@@ -2379,7 +2380,7 @@ function renderChatHTML() {
   return `<div class="chat-tools"><button data-do="talk" class="tk-chip"><b class="mini-orb"></b>Поговорить</button><button data-brief="morning">${ei("sun")}Утренняя сводка</button><button data-brief="evening">${ei("moon")}Вечерняя</button><button data-do="memory">${ei("brain")}Память</button><button data-do="chat-clear">${ei("eraser")}Очистить</button></div>
     <div class="chat-list" id="chat-list">${chatItems()}</div>
     <div class="chat-bar"><div class="att-tray" id="att-tray"></div><div class="cb-pill"><button class="cam plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
-    <button class="dict" aria-label="Диктовать текст">${CB_MIC}</button><button class="send" aria-label="Отправить">${ICO.send}</button><button class="izi-talk" aria-label="Живой разговор с ${esc(iziName())}"><b class="mini-orb"></b></button>
+    <button class="dict" aria-label="Диктовать текст">${CB_MIC}</button><button class="send" aria-label="Отправить">${ICO.send}</button>
     <div class="cb-rec" aria-hidden="true"><button class="rx" aria-label="Отменить запись">${CB_X}</button><canvas></canvas><button class="rstop" aria-label="Остановить и поправить текст">${CB_STOP}</button><button class="rgo" aria-label="Отправить сразу">${ICO.send}</button></div></div></div>`
 }
 // Строка ввода как в ChatGPT: «+», поле, микрофон-диктовка, справа шар Изи (живой разговор) или зелёная стрелка
@@ -2388,7 +2389,7 @@ const CB_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 const CB_STOP = '<svg viewBox="0 0 24 24"><rect x="7.5" y="7.5" width="9" height="9" rx="1.8" fill="currentColor"/></svg>'
 const linkify = s => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`)
 function chatItems() {
-  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я — ${esc(iziName())}, ${iziG("ваш помощник", "ваша помощница")}: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Пишите в строке внизу, микрофон в ней — надиктовать текст, шар справа — живой разговор голосом. «${esc(iziName())}» в меню можно держать, как рацию. Например: «завтра в 10 встреча с Олей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
+  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я — ${esc(iziName())}, ${iziG("ваш помощник", "ваша помощница")}: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Пишите в строке внизу или нажмите микрофон в ней и говорите, потом — зелёную стрелку. Например: «завтра в 10 встреча с Олей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
   const last = D.chat.length - 1
   return D.chat.slice(-60).map((m, i, arr) => {
     const isLast = i === arr.length - 1 && askWait
@@ -2700,19 +2701,17 @@ function bindChatBar(v) {
   if (inp) {
     inp.oninput = () => grow(inp)
     inp.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (voice) return voiceSendNow(); const t = inp.value; inp.value = ""; grow(inp); voiceSent(); chatSend(t) } }
-    $(".chat-bar .send", v).onclick = () => { if (voice) return voiceSendNow(); if (!inp.value.trim()) return chatBusy && !askWait ? chatStop() : micStart(); const t = inp.value; inp.value = ""; grow(inp); voiceSent(); chatSend(t) }
+    $(".chat-bar .send", v).onclick = () => { if (voice) return voiceSendNow(); if (!inp.value.trim() && !chatAtt) return chatBusy && !askWait ? chatStop() : null; const t = inp.value; inp.value = ""; grow(inp); voiceSent(); chatSend(t) }
     setBusyUI()
     // тронули текст во время записи — не отправлять по паузе: можно поправить и нажать ➤
     inp.addEventListener("focus", () => { if (voice) { const t = inp.value, r = rec; voiceReset(); try { r && r.stop() } catch (e) {} inp.value = t; grow(inp); toast("✎ Поправьте и нажмите ➤") } })
     if (voice) { inp.placeholder = "Слушаю… ➤ — отправить сразу"; if (voice.text) { inp.value = voice.text; grow(inp) } }
-    // голос — одна кнопка: большая «Изи» внизу (держать — как рация, ещё раз нажать — разговор); справа только ➤, когда есть текст
+    // голос — микрофон в строке; справа зелёная ➜ только когда есть что отправить (текст, вложение), ⏹ — пока Изи отвечает
     $(".chat-bar .cam", v).onclick = e => plusMenu(e.currentTarget)
     const bar = $(".chat-bar", v)
     // кнопки строки не забирают фокус у поля — клавиатура остаётся открытой, как в ChatGPT
     bar.addEventListener("mousedown", e => { if (e.target.closest("button")) e.preventDefault() })
     $(".dict", bar).onclick = () => { if (!voice) micStart(false, { bar: true }) }
-    $(".izi-talk", bar).onclick = () => { inp.blur(); talkOpen() }
-    const orb = $(".izi-talk .mini-orb", bar); if (orb && !orb.firstChild) { const c = document.createElement("canvas"); orb.append(c); silkCanvas(c, "orb") }
     silkCanvas($(".cb-rec canvas", bar), "bars")
     $(".cb-rec .rx", bar).onclick = () => voiceCancel()
     $(".cb-rec .rstop", bar).onclick = () => { if (!voice || voice.finishing) return; voice.keep = true; voiceFinish(); pttShow(voice ? voice.text || "" : null) }
@@ -4002,8 +4001,6 @@ function iziOrbs(root) {
 }
 iziOrbs(document)
 new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && n.tagName !== "CANVAS") iziOrbs(n) }).observe(document.body, { childList: true, subtree: true })
-// Зелёная кнопка с волной: нажатие — чат с помощником; держите — сразу запись голосовой команды,
-// отпустили — команда уходит помощнику (как рация). Меню «Добавить» — кнопка «+» вверху
 const PTT = { holding: false }
 function pttShow(text) {
   const fab = $("#fab"), on = text !== null && !!voice
@@ -4013,73 +4010,8 @@ function pttShow(text) {
   if (!inBar) SILK.hist = null
   silkShow(on && !inBar ? text : null)
 }
-// Нажатие — onTap; держите дольше 280 мс — запись, пока держите; отпустили — ушло; увели палец влево — отмена
-function holdToTalk(btn, onTap) {
-  let lp = null, long = false, id = null, x0 = 0, y0 = 0, locked = false
-  btn.addEventListener("pointerdown", e => {
-    long = false; locked = false; id = e.pointerId; x0 = e.clientX; y0 = e.clientY
-    try { btn.setPointerCapture(e.pointerId) } catch (err) {}
-    try { if (window.STT && STT.on()) STT.prime() } catch (err) {}   // iPhone: звук запускается только в самом касании
-    clearTimeout(lp)
-    lp = setTimeout(() => {
-      long = true
-      if (navigator.vibrate) navigator.vibrate(15)
-      if (TALK) { locked = true; return talkPin(false) }   // разговор уже закреплён — держать «Изи» = раскрыть его
-      PTT.holding = true
-      if (voice) voiceReset()
-      micStart(true)
-      pttShow("")
-      pinHint(0)
-    }, 280)
-  })
-  btn.addEventListener("pointermove", e => {
-    if (!long || locked || e.pointerId !== id || !voice) return
-    const up = y0 - e.clientY
-    pinHint(Math.max(0, up))
-    if (up > 70) { locked = true; PTT.holding = false; pinHint(null); return pttPin() }   // смахнули вверх — закрепить разговор
-    if (e.clientX - x0 > -90) return
-    PTT.holding = false; pinHint(null); voiceCancel()
-  })
-  const up = e => {
-    if (e && id !== null && e.pointerId !== id) return
-    clearTimeout(lp); id = null
-    pinHint(null)
-    if (!long || locked) return
-    PTT.holding = false
-    if (voice) { voice.ptt = false; pttShow(voice.text || ""); voiceFinish() } else pttShow(null)
-  }
-  btn.addEventListener("pointerup", up); btn.addEventListener("pointercancel", up)
-  btn.addEventListener("contextmenu", e => e.preventDefault())
-  btn.onclick = () => { if (long) { long = false; return } onTap() }
-}
-// Нажатие на «Изи» — чат (клавиатура сама не открывается: только по касанию поля); в чате ещё раз — живой разговор
-holdToTalk($("#fab"), () => chatOn() ? talkOpen() : setTab("chat"))
-// Подсказка над кнопкой, пока держат «Изи»: «вверх — закрепить»; тянется за пальцем. null — убрать
-function pinHint(up) {
-  let h = $("#pin-hint")
-  if (up === null) { if (h) { h.classList.remove("on"); setTimeout(() => { if (!h.classList.contains("on")) h.remove() }, 260) } return }
-  if (!h) {
-    h = document.createElement("div"); h.id = "pin-hint"
-    h.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 14l6-6 6 6"/></svg><span>Вверх — закрепить</span>`
-    document.body.append(h); void h.offsetWidth
-  }
-  h.classList.add("on")
-  const k = Math.min(1, up / 70)
-  h.style.setProperty("--k", k.toFixed(3)); h.style.transform = `translateX(-50%) translateY(${-up * .45}px)`
-}
-// Удержание «Изи» + вверх: запись рации переходит в живой разговор, закреплённый над меню
-function pttPin() {
-  const v = voice, r = rec
-  if (v && v.w) {   // Whisper: сказанное до «вверх» сначала распознать, потом — в разговор
-    const h = v.h; v.sent = true; voiceReset(); const i = $("#chat-in"); if (i) { i.value = v.base || ""; grow(i) }
-    if (!h || (h.close(), h.voiced < .25)) return talkOpen({ pin: true })
-    return STT.transcribe(h.wav()).then(say => talkOpen({ pin: true, say }), e => { sttFail(e); talkOpen({ pin: true }) })
-  }
-  let say = v ? String(v.text || "").trim() : ""
-  if (v && v.base && say.startsWith(v.base)) say = say.slice(v.base.length).trim()   // то, что уже было в поле чата, не отправляем
-  if (v) { v.sent = true; voiceReset(); try { r && r.stop() } catch (e) {}; const i = $("#chat-in"); if (i) { i.value = v.base || ""; grow(i) } }
-  talkOpen({ pin: true, say })
-}   // Изи ещё раз на экране чата — живой разговор голосом
+// «Изи» в меню — только открыть чат. Голос — микрофоном в строке ввода (запись по удержанию кнопки убрана)
+$("#fab").onclick = () => { if (!chatOn()) setTab("chat") }
 // Полоса записи «Шёлк»: сверху текст, ниже волна с яркой точкой, «‹ отмена» и секунды.
 // Нажать на текст — поправить его в поле; на волну или секунды — отправить сразу; смахнуть влево — отмена
 {

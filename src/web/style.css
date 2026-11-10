@@ -580,7 +580,7 @@ body.kb #tabs #fab { visibility: hidden; }
 .goal-open { border: 0; background: none; padding: 0; text-align: left; color: inherit; min-width: 0; }
 
 /* ── «Шёлк»: полоса записи, меню «+» (голос — большая кнопка «Изи», у поля только ➤) ── */
-.chat-bar:not(.typed):not(.busy) .send { display: none; }
+.chat-bar:not(.typed):not(.busy):not(.has-att) .send { display: none; }
 .chat-bar .send.mic-on { background: linear-gradient(150deg, var(--izi2, #18b98a), var(--izi1, #0b8f5c)); padding: 9px; }   /* ответить голосом */
 .chat-bar .send.mic-on svg { stroke: #fff; }
 .chat-bar .cam.plus { background: var(--card); color: var(--text); padding: 10px; box-shadow: 0 1px 2px rgba(0, 0, 0, .06); transition: background .25s, color .25s; }
@@ -1152,7 +1152,7 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
   box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--izi1, #0b8f5c) 85%, transparent); animation: cbPop .28s cubic-bezier(.2, .9, .25, 1.3); }
 .chat-bar .cb-pill .send svg, .chat-bar .cb-rec .rgo svg { stroke: #fff; }
 @keyframes cbPop { from { transform: scale(.6); opacity: 0 } to { transform: none; opacity: 1 } }
-.chat-bar:not(.typed):not(.busy) .send { display: none; }
+.chat-bar:not(.typed):not(.busy):not(.has-att) .send { display: none; }
 .chat-bar.typed .izi-talk, .chat-bar.busy .izi-talk { display: none; }
 /* запись диктовки: ✕ · волна · ■ · ➜ поверх строки */
 .chat-bar .cb-rec { position: absolute; inset: 0; display: flex; align-items: center; gap: 6px; padding: 0 6px; border-radius: 26px; background: var(--card);
