@@ -28,7 +28,23 @@
   // ── Запись: микрофон → моно 16 кГц → WAV; громкость — для пауз и для волны ──
   // Один звуковой контекст на всё время: iPhone разрешает его запустить только по касанию — поэтому
   // он создаётся синхронно в первом нажатии и дальше живёт (в разговоре микрофон включается и без касания)
-  let CTX = null, ACTIVE = 0
+  let CTX = null, ACTIVE = 0, STREAM = null, SRC = null
+  // Один микрофон на весь живой разговор. iPhone: если отпустить микрофон и через пару секунд (после голоса Изи)
+  // взять заново, новый поток в том же звуковом контексте часто отдаёт тишину — одни нули. Поэтому пока
+  // разговор открыт, поток держим и только подключаем/отключаем запись; отпускаем — release() при закрытии
+  const alive = st => !!st && st.getAudioTracks().some(t => t.readyState === "live" && t.enabled)
+  async function getStream(ctx) {
+    if (alive(STREAM) && SRC && SRC.context === ctx) return { stream: STREAM, src: SRC }
+    release()
+    STREAM = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } })
+    SRC = null
+    return { stream: STREAM, src: null }
+  }
+  function release() {
+    try { SRC && SRC.disconnect() } catch (e) {}
+    try { STREAM && STREAM.getTracks().forEach(t => t.stop()) } catch (e) {}
+    STREAM = null; SRC = null
+  }
   function prime() {
     const AC = window.AudioContext || window.webkitAudioContext
     if (!CTX || CTX.state === "closed") CTX = new AC()
@@ -37,20 +53,21 @@
   }
   async function record(opts = {}) {
     const ctx = prime()
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } })
+    const got = await getStream(ctx), stream = got.stream
     try { if (ctx.state !== "running") await ctx.resume() } catch (e) {}
     // iPhone после голоса Изи может оставить звук «прерванным»: ещё раз попробовать, иначе — честно сказать, что не пишется
     if (ctx.state !== "running") { await new Promise(r => setTimeout(r, 300)); try { await ctx.resume() } catch (e) {} }
-    if (ctx.state !== "running") { try { stream.getTracks().forEach(t => t.stop()) } catch (e) {}; const e = new Error("audio context " + ctx.state); e.name = "CtxDown"; throw e }
-    const src = ctx.createMediaStreamSource(stream)
+    if (ctx.state !== "running") { release(); const e = new Error("audio context " + ctx.state); e.name = "CtxDown"; throw e }
+    const src = got.src || (SRC = ctx.createMediaStreamSource(stream))
     const node = ctx.createScriptProcessor(4096, 1, 1)
     const ratio = ctx.sampleRate / RATE
-    const h = { parts: [], len: 0, level: 0, noise: .004, voiced: 0, lastVoice: 0, t0: Date.now(), stopped: false, stream, ctx, frames: 0, opts }
+    const h = { parts: [], len: 0, level: 0, noise: .004, voiced: 0, lastVoice: 0, t0: Date.now(), stopped: false, stream, ctx, frames: 0, peak: 0, opts }
     let carry = 0
     node.onaudioprocess = ev => {
       if (h.stopped) return
       h.frames++
       const x = ev.inputBuffer.getChannelData(0)
+      if (h.peak < 1e-6) for (let i = 0; i < x.length; i += 16) { const a = Math.abs(x[i]); if (a > h.peak) h.peak = a }   // живой микрофон никогда не отдаёт ровные нули
       // уровень (RMS) и простая граница речи: заметно громче фонового шума
       let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * x[i]
       const rms = Math.sqrt(s / x.length)
@@ -82,8 +99,9 @@
     }
     h.close = () => {
       if (h.stopped) return; h.stopped = true
-      try { node.disconnect(); src.disconnect() } catch (e) {}
-      try { stream.getTracks().forEach(t => t.stop()) } catch (e) {}   // микрофон отпускаем, контекст оставляем
+      try { src.disconnect(node) } catch (e) {}
+      try { node.disconnect() } catch (e) {}
+      if (!window.TALK) release()   // вне живого разговора микрофон отпускаем сразу; в разговоре — при закрытии
       if (--ACTIVE <= 0) { ACTIVE = 0; setTimeout(() => { if (!ACTIVE && !window.TALK) try { ctx.suspend() } catch (e) {} }, 400) }   // в живом разговоре не усыплять: iPhone не разбудит его без касания, и после ответа Изи микрофон оглохнет   // звук не держим, когда никто не пишет
     }
     return h
@@ -169,5 +187,5 @@
     }
   }
 
-  window.STT = { row, sheetOpen, on, prime, record, transcribe, clean, key, prompt, JUNK }
+  window.STT = { row, sheetOpen, on, prime, record, release, transcribe, clean, key, prompt, JUNK }
 })()

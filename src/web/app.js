@@ -5755,7 +5755,7 @@ function talkClose() {
   const sh = $(".tk-sheet", t.el); sh.style.transition = ""; sh.style.transform = ""; sh.style.opacity = ""
   t.el.classList.remove("on"); t.el.classList.add("off")
   document.body.classList.remove("talk-pin")
-  requestAnimationFrame(() => setTimeout(() => { ttsStop(); try { r && r.abort() } catch (e) {} }, 0))
+  requestAnimationFrame(() => setTimeout(() => { ttsStop(); try { r && r.abort() } catch (e) {}; try { !TALK && window.STT && STT.release && STT.release() } catch (e) {} }, 0))
   setTimeout(() => { t.el.remove(); if (chatOn() && !TALK) renderChat() }, 470)
 }
 function talkState(s, izi, you) {
@@ -5823,6 +5823,7 @@ function talkListen(first, keep) {
     // залипший синтез (пустая фраза «разбудить», недоговорённый ответ) держит звук iPhone в режиме
     // воспроизведения — распознавание тогда молча не слышит
     try { const S = window.speechSynthesis; if (S && (S.speaking || S.pending)) { S.cancel(); tdbg("голос снят") } } catch (e) {}
+    try { window.STT && STT.release && STT.release() } catch (e) {}   // Safari-распознаванию микрофон нужен свободным
     const r = new SR(); r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
     let cur = "", err = ""
     tdbg("Safari старт" + (tries ? " #" + (tries + 1) : ""))
@@ -5904,9 +5905,12 @@ function talkListenW(first, keep) {
       tdbg("Whisper запись, звук " + (h.ctx && h.ctx.state))
       // сторож: микрофон «включён», а звук не идёт (iPhone после голоса Изи) — дальше слушает Safari, без касаний
       setTimeout(() => {
-        if (!live() || t.rec !== h || h.frames !== 0) { if (live() && t.rec === h) tdbg("Whisper звук ✓"); return }
-        tdbg("Whisper звук 0 — Safari")
-        clearInterval(t.poll); h.close(); t.rec = null; sttOffUntil = Date.now() + 60e3
+        if (!live() || t.rec !== h) return
+        const dead = h.frames === 0 || (h.frames > 0 && h.peak === 0)   // кадров нет или одни нули — микрофон «глухой»
+        if (!dead) { t.wtry = 0; tdbg("Whisper звук ✓ " + (h.peak || 0).toFixed(3)); return }
+        clearInterval(t.poll); h.close(); t.rec = null; STT.release && STT.release()
+        if (!t.wtry) { t.wtry = 1; tdbg("Whisper нули — новый микрофон"); if (t.state === "listen") talkListenW(false, t.done); return }
+        t.wtry = 0; tdbg("Whisper нули — Safari"); sttOffUntil = Date.now() + 60e3
         if (t.state === "listen") talkListen(false, t.done)
       }, 1800)
       let busy = false, doneAt = -1, txt = "", vAtSend = 0
