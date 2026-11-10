@@ -6121,12 +6121,12 @@ function silkTalk(c, T, d) {
   const x = c.getContext("2d"), W = c.width, H = c.height, st = TALK ? TALK.state : SILK.demo || ""   // demo — знакомство (onb.js) «говорит» без разговора
   const syl = .55 + .45 * Math.sin(T * 2.3) * Math.sin(T * .9 + 1)
   // цель для волн: «слоги» качают размах неглубоко (раньше почти до нуля — волна дёргалась)
-  const ti = st === "say" ? (.6 + .4 * syl) * Math.max(.4, SILK.ie) : st === "think" ? .1 + .06 * Math.sin(T * 1.6) : 0
-  const ty = st === "listen" ? (.25 + .75 * syl) * Math.max(.15, SILK.ye) : 0
-  // два мягких фильтра подряд — уровень меняется без углов, как на iPhone: подъём ~0,4 с, спад ~0,8 с
-  SILK.i1 = (SILK.i1 || 0) + (ti - (SILK.i1 || 0)) * silkK(ti > (SILK.i1 || 0) ? .05 : .028)
-  SILK.y1 = (SILK.y1 || 0) + (ty - (SILK.y1 || 0)) * silkK(ty > (SILK.y1 || 0) ? .05 : .028)
-  SILK.il += (SILK.i1 - SILK.il) * silkK(.1); SILK.yl += (SILK.y1 - SILK.yl) * silkK(.1)
+  const ti = st === "say" ? (.5 + .5 * syl) * Math.max(.4, SILK.ie) : st === "think" ? .1 + .06 * Math.sin(T * 1.6) : 0
+  const ty = st === "listen" ? (.2 + .8 * syl) * Math.max(.15, SILK.ye) : 0
+  // два мягких фильтра подряд — уровень меняется без углов, как на iPhone: подъём ~0,3 с, спад ~0,7 с
+  SILK.i1 = (SILK.i1 || 0) + (ti - (SILK.i1 || 0)) * silkK(ti > (SILK.i1 || 0) ? .07 : .034)
+  SILK.y1 = (SILK.y1 || 0) + (ty - (SILK.y1 || 0)) * silkK(ty > (SILK.y1 || 0) ? .07 : .034)
+  SILK.il += (SILK.i1 - SILK.il) * silkK(.14); SILK.yl += (SILK.y1 - SILK.yl) * silkK(.14)
   SILK.ie *= Math.pow(.985, SILK.f); SILK.ye *= Math.pow(.985, SILK.f)
   // «думаю» — облака внутри кружатся быстрее; плавно, без скачка
   SILK.tk += ((st === "think" ? 1 : 0) - SILK.tk) * silkK(.04)
@@ -6135,13 +6135,13 @@ function silkTalk(c, T, d) {
   const bi = SILK.il * (1 - .4 * SILK.yl) + .14 * SILK.yl, by = SILK.yl * (1 - .4 * SILK.il) + .14 * SILK.il
   // фаза копится по времени кадра: скорость меняется с голосом, а волна не прыгает (раньше T·скорость давало рывки)
   const wp = SILK.wp || (SILK.wp = [0, 0]), dts = (SILK.f || 1) * .0333
-  wp[0] += dts * .8 * (1 + bi * .35); wp[1] += dts * .66 * (1 + by * .35)
+  wp[0] += dts * .8 * (1 + bi * .5); wp[1] += dts * .66 * (1 + by * .5)
   const lv = Math.max(SILK.il, SILK.yl), ph = SILK.ph
   const P = iziCol(), ci = P[0] === "em" ? "95,185,255" : P[3], cy2 = P[0] === "em" ? "80,245,190" : P[4]
   const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .33
   x.clearRect(0, 0, W, H)
   // сфера «дышит»: в покое еле заметно, с голосом чуть растёт (масштаб вокруг центра)
-  const k = 1 + .012 * Math.sin(T * 1.2) + .03 * lv, s = x
+  const k = 1 + .012 * Math.sin(T * 1.2) + .038 * lv, s = x
   x.setTransform(k, 0, 0, k, cx - cx * k, cy - cy * k)
   iziSphere(s, W, H, R, R * 1.12, P, () => {
     // облака света внутри — медленно плывут по кругу
@@ -6156,7 +6156,7 @@ function silkTalk(c, T, d) {
     const len = R * 1.95
     // [цвет, уровень, смещение, размах, фаза, скорость, толщина]
     ;[[ci, bi, .04, .17, 2.1, wp[0], .028], [cy2, by, -.04, .19, 0, wp[1], .032]].forEach(([rgb, l, dy, am, f0, tp, lw]) => {
-      const amp = R * am * (1 + l * 1.25), jit = l * .025
+      const amp = R * am * (1 + l * 1.5), jit = l * .035
       const g = s.createLinearGradient(cx - len / 2, 0, cx + len / 2, 0)
       g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(.28, `rgba(${rgb},1)`); g.addColorStop(.72, `rgba(${rgb},1)`); g.addColorStop(1, `rgba(${rgb},0)`)
       s.strokeStyle = g; s.lineCap = "round"; s.lineJoin = "round"
