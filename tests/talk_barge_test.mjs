@@ -56,7 +56,7 @@ await page.evaluate(() => talkClose()); await page.waitForTimeout(600)
 
 // 2. шум без слов — договаривает с прерванной фразы
 await page.evaluate(() => { LVL = .02; HS.length = 0; SAID.length = 0; window.agentTurn = async () => "Раз два три. Четыре пять шесть. Семь восемь девять."; talkOpen() }); await page.waitForTimeout(400)
-await page.evaluate(() => hear("посчитай")); await page.waitForTimeout(2400)
+await page.evaluate(() => hear("посчитай")); await page.waitForTimeout(2100)   // одно слово — пауза 2 с (TALK_SILENCE 1,5 с + 0,5 с)
 await page.evaluate(() => { LVL = .03 }); await page.waitForTimeout(900)
 await page.evaluate(() => { LVL = .2 }); await page.waitForTimeout(400)
 await page.evaluate(() => { LVL = .02 })
