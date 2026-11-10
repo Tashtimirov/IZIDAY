@@ -187,5 +187,5 @@
     }
   }
 
-  window.STT = { row, sheetOpen, on, prime, record, release, transcribe, clean, key, prompt, JUNK }
+  window.STT = { row, sheetOpen, on, prime, record, release, live: () => alive(STREAM), transcribe, clean, key, prompt, JUNK }
 })()
