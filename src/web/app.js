@@ -1779,6 +1779,7 @@ async function chatSend(text, opts = {}) {
   const thumbs = (opts.attach || []).map(a => a.thumb).filter(Boolean)
   if (thumbs.length === 1) item.thumb = thumbs[0]; else if (thumbs.length) item.thumbs = thumbs
   D.chat.push(item)
+  if (TALK) talkLog()
   chatBusy = true
   chatLinks = []
   chatCC = []
@@ -2529,6 +2530,7 @@ function chatItems() {
   }).join("") + (chatBusy && !askWait ? `<div class="typing"><i></i><i></i><i></i>${chatStatus ? `<span class="st">${esc(chatStatus)}</span>` : ""}</div>` : "") + (last < 0 ? "" : "")
 }
 function renderChat() {
+  if (TALK) talkLog()
   const list = $("#chat-list")
   if (!list) return
   list.innerHTML = chatItems()
@@ -5823,12 +5825,14 @@ function talkOpen(o = {}) {
   el.innerHTML = `<div class="tk-sheet"><div class="grab"></div>
     <div class="tk-top"><b>${esc(iziName())}</b><span class="tk-st"></span></div>
     <button class="tk-orb" aria-label="Шар: перебить, отправить или продолжить"><canvas></canvas></button>
+    <div class="tk-log" aria-live="polite"><div class="tk-msgs"></div><div class="tk-live"></div></div>
     <div class="tk-cap"><p class="tk-izi"></p><p class="tk-you"></p></div>
     <div class="tk-bar"><button class="tk-btn tk-mic" aria-label="Пауза">${ICO.mic}</button><button class="tk-btn tk-chat" aria-label="Перейти в чат">${ICO.chat}</button></div>
     <div class="tk-hint">Вниз — закончить · вверх — закрепить</div><div class="tk-dbg"></div></div>`
   document.body.append(el)
   TALK = { el, state: "", rec: null, timer: null, heard: "", n: 0, pin: false, t0: performance.now() }
   if (o.pin) talkPin(true, true)
+  talkLog()
   silkCanvas($("canvas", el), "talk")
   requestAnimationFrame(() => el.classList.add("on"))
   $(".tk-orb", el).onclick = () => talkTap()
@@ -5839,7 +5843,7 @@ function talkOpen(o = {}) {
   // Закреплённая панель: вниз — закончить, вверх — снова на весь экран
   const sh = $(".tk-sheet", el); let y0 = null, dy = 0, t0 = 0, vy = 0, yl = 0, tl = 0
   const back = () => { sh.style.transform = ""; sh.style.opacity = ""; el.style.removeProperty("--fade") }
-  el.addEventListener("touchstart", e => { y0 = yl = e.touches[0].clientY; dy = vy = 0; t0 = tl = performance.now(); sh.style.transition = "none" }, { passive: true })
+  el.addEventListener("touchstart", e => { const lg = TALK && !TALK.pin && e.target.closest && e.target.closest(".tk-log"); if (lg && lg.scrollHeight > lg.clientHeight + 2) { y0 = null; return } y0 = yl = e.touches[0].clientY; dy = vy = 0; t0 = tl = performance.now(); sh.style.transition = "none" }, { passive: true })
   el.addEventListener("touchmove", e => {
     if (y0 == null || !TALK) return
     const y = e.touches[0].clientY, now = performance.now()
@@ -5899,9 +5903,37 @@ function talkState(s, izi, you) {
   t.state = s; t.el.dataset.st = s
   $(".tk-st", t.el).textContent = { listen: "Слушаю", think: "Думаю…", say: "Говорит", pause: "Пауза" }[s] || ""
   if (izi != null) { const p = $(".tk-izi", t.el); p.textContent = izi; p.classList.toggle("ph", !!izi && izi.startsWith("·")) }
-  if (you != null) $(".tk-you", t.el).textContent = you
+  if (you != null) { const p = $(".tk-you", t.el); p.textContent = you; p.classList.toggle("lv", !!you && (s === "think" || you === t.heard || you === t.done)) }   // сказанное — уже пузырём в переписке
   $(".tk-mic", t.el).classList.toggle("off", s === "pause")
   $(".tk-mic", t.el).setAttribute("aria-label", s === "pause" ? "Продолжить" : "Пауза")
+  talkLog()
+}
+// Переписка прямо в окне разговора: те же сообщения, что в чате, — видно, о чём уже говорили.
+// Пока человек говорит — его фраза растёт пузырём внизу; пока Изи отвечает — подсвечена фраза, которую она произносит.
+// Сообщения перерисовываются, только когда в чате что-то поменялось, — распознавание обновляет лишь нижний пузырь
+function talkLog() {
+  const t = TALK; if (!t) return
+  const log = $(".tk-log", t.el); if (!log) return
+  const end = !t.logKey || log.scrollHeight - log.scrollTop - log.clientHeight < 90   // читают старое — не дёргаем вниз
+  const arr = D.chat.slice(-40), last = arr[arr.length - 1], say = t.state === "say" && last && last.role === "assistant"
+  const key = D.chat.length + ":" + (last ? last.at : 0) + ":" + (say ? t.sayI : -1)
+  if (key !== t.logKey) {
+    t.logKey = key
+    const now = Math.max(0, (t.sayI || 0) - 1), fresh = t.logN != null ? Math.max(0, D.chat.length - t.logN) : 0
+    t.logN = D.chat.length
+    $(".tk-msgs", log).innerHTML = arr.map((m, i) => {
+      const cur = say && i === arr.length - 1
+      const body = cur ? sentences(m.text).map((x, k) => `<span class="${k < now ? "was" : k === now ? "now" : "next"}">${esc(x)}</span>`).join(" ") : deEmo1(linkify(m.text))
+      const img = m.thumb || (m.thumbs && m.thumbs[0])
+      return `<div class="tk-m ${m.role === "user" ? "u" : "a"}${cur ? " say" : ""}${i >= arr.length - fresh ? " new" : ""}">${img ? `<img src="${esc(img)}" alt="">` : ""}${body}</div>`
+    }).join("")
+  }
+  const sent = t.state === "think" && t.sent && !(last && last.role === "user" && last.text === t.sent) ? t.sent : ""
+  const heard = t.state === "listen" ? String(t.heard || "").trim() : sent
+  const lv = $(".tk-live", log)
+  lv.innerHTML = (heard ? `<div class="tk-m u live">${esc(heard)}</div>` : "") + (t.state === "think" ? `<div class="tk-m a dots"><i></i><i></i><i></i></div>` : "")
+  t.el.classList.toggle("has-log", arr.length > 0 || !!lv.innerHTML)
+  if (end) log.scrollTop = log.scrollHeight
 }
 function talkTap() {
   const t = TALK; if (!t) return
