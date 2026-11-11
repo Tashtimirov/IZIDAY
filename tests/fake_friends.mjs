@@ -5,7 +5,7 @@ import path from "path"
 import crypto from "crypto"
 import { execFileSync } from "child_process"
 export const CLIENT = "123-test.apps.googleusercontent.com"
-export function friendsServer() {
+export function friendsServer(opt = {}) {
   const ROOT = new URL("..", import.meta.url).pathname
   const tmp = path.join(os.tmpdir(), "friends_" + process.pid + ".gs")
   execFileSync("python3", [path.join(ROOT, "build_friends.py"), tmp, CLIENT])
@@ -49,10 +49,10 @@ export function friendsServer() {
     old: { aud: CLIENT, iss: "accounts.google.com", exp: String(Date.now() / 1000 - 10 | 0), email_verified: "true", sub: "444", email: "y@example.com" },
   }
   const tzFmt = (d, tz, f) => {
-    const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23", weekday: "short" })
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", weekday: "short" })
       .formatToParts(d).map(x => [x.type, x.value]))
     const u = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[p.weekday]
-    return f.replace("yyyy", p.year).replace("MM", p.month).replace("dd", p.day).replace("HH", p.hour).replace("mm", p.minute).replace("'T'", "T").replace(/^H$/, String(+p.hour)).replace(/^u$/, String(u))
+    return f.replace("yyyy", p.year).replace("MM", p.month).replace("dd", p.day).replace("HH", p.hour).replace("mm", p.minute).replace("ss", p.second).replace("'T'", "T").replace("'Z'", "Z").replace(/^H$/, String(+p.hour)).replace(/^u$/, String(u))
   }
   const g = {
     SpreadsheetApp: { create: n => book(n), openById: id => { if (!books[id]) throw new Error("нет таблицы"); return books[id] } },
@@ -72,7 +72,8 @@ export function friendsServer() {
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = String(v) }, deleteProperty: k => { delete props[k] }, getKeys: () => Object.keys(props) }) },
     ContentService: { createTextOutput: s => ({ setMimeType: () => JSON.parse(s) }), MimeType: { JSON: 1 } },
     ScriptApp: { getProjectTriggers: () => [{ getHandlerFunction: () => "pushTick" }], newTrigger: () => ({ timeBased: () => ({ everyMinutes: () => ({ create() {} }) }) }) },
-    UrlFetchApp: { fetch: (url, o = {}) => {
+    UrlFetchApp: { fetchAll: reqs => reqs.map(q => g.UrlFetchApp.fetch(q.url, q)), fetch: (url, o = {}) => {
+      if (opt.google) { const r = opt.google(url, o); if (r) return { getResponseCode: () => r.code || 200, getContentText: () => r.body == null ? "" : typeof r.body === "string" ? r.body : JSON.stringify(r.body) } }
       if (/tokeninfo/.test(url)) { const k = decodeURIComponent(url.split("id_token=")[1]); const t = tokens[k]
         return { getResponseCode: () => t ? 200 : 400, getContentText: () => JSON.stringify(t || { error: "invalid_token" }) } }
       if (/anthropic/.test(url)) { aiCalls.push({ key: o.headers["x-api-key"], body: JSON.parse(o.payload) }); return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ content: [{ type: "text", text: "Привет!" }] }) } }

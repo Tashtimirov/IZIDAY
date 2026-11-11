@@ -103,6 +103,47 @@ window.FRIEND = (() => {
         : "Ваши записи снова здесь.") + mail)
   }
 
+  // ── Google Календарь друга: по желанию, отдельной кнопкой (вход по-прежнему просит только имя и почту) ──
+  const GCAL_SCOPES = "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly"
+  const home = () => location.origin + location.pathname.replace(/index\.html$/, "")
+  async function gcalConnect() {
+    const m = me()
+    if (!m || !on()) return
+    const b = await ui.confirm("Подключить Google Календарь", `<div class="msg">Ваши встречи из Google Календаря появятся в IZIDAY, а то, что вы добавите здесь или через ${esc(iziName())}, — в Google Календаре на всех устройствах.<br><br>Google спросит разрешение. Если он напишет «Приложение не проверено» — нажмите «Дополнительно» → «Перейти на iziday.pages.dev»: проверка IZIDAY у Google ещё идёт.</div>`, ["Позже", "Подключить"])
+    if (b !== "Подключить") return
+    const state = rnd()
+    try { localStorage.setItem("izi-gcstate", JSON.stringify({ state, at: Date.now() })) } catch (e) {}
+    const q = new URLSearchParams({ client_id: CFG.client, redirect_uri: home(), response_type: "code", scope: GCAL_SCOPES, access_type: "offline", prompt: "consent",
+      include_granted_scopes: "true", state, login_hint: m.email || "" })
+    location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + q
+  }
+  // Google вернул на сайт: ?code=…&state=… (или ?error=…) — код уходит на сервер и меняется там на постоянный доступ
+  async function gcalFinish(search) {
+    const p = new URLSearchParams(String(search || "").replace(/^\?/, ""))
+    let st = {}
+    try { st = JSON.parse(localStorage.getItem("izi-gcstate") || "{}") || {}; localStorage.removeItem("izi-gcstate") } catch (e) {}
+    if (!me()) return
+    if (p.get("error")) { if (p.get("error") !== "access_denied") toast("Google не дал доступ: " + p.get("error")); return }
+    if (!p.get("code") || !st.state || st.state !== p.get("state")) return ui.info("Календарь не подключён", "Google вернул ответ не на это нажатие. Нажмите «Подключить Google Календарь» ещё раз.")
+    if (!/calendar\.events/.test(p.get("scope") || "calendar.events")) return ui.info("Календарь не подключён", "Без галочки «Календарь» IZIDAY не увидит ваши встречи. Подключите ещё раз и оставьте её включённой.")
+    const wait = sheet(`<h3>Подключаю Google Календарь…</h3><div class="msg">Это несколько секунд.</div>`)
+    const r = await post({ secret: D.conn.secret, gcal: { code: p.get("code"), redirect_uri: home() } }, 90000)
+    wait.close()
+    if (!r.ok) return ui.info("Календарь не подключён", (r.error || "сервер не ответил") + "\n\nНажмите «Подключить Google Календарь» ещё раз.")
+    if (r.me) D.conn.friend = r.me
+    D.gcal = null; calForce = true; save(false); render(); sync()
+    ui.info("Google Календарь подключён", `Встречи из ${r.me && r.me.gcal || "Google"} теперь в IZIDAY.` + (r.moved ? ` ${r.moved} ${plural(r.moved, "событие", "события", "событий")} из IZIDAY ${r.moved % 10 === 1 && r.moved % 100 !== 11 ? "перенесено" : "перенесены"} в Google Календарь.` : ""))
+  }
+  async function gcalOff() {
+    const b = await ui.confirm("Отключить Google Календарь?", `<div class="msg">IZIDAY перестанет видеть ваши встречи и потеряет доступ к календарю. Сами события останутся в Google Календаре.</div>`, ["Отмена", "Отключить"])
+    if (b !== "Отключить") return
+    const r = await post({ secret: D.conn.secret, gcal: { off: 1 } })
+    if (!r.ok) return ui.info("Не получилось", r.error || "сервер не ответил")
+    if (r.me) D.conn.friend = r.me
+    D.gcal = null; calForce = true; save(false); render(); sync()
+    toast("Google Календарь отключён")
+  }
+
   async function logout() {
     const b = await ui.confirm("Выйти?", `<div class="msg">Записи останутся на сервере IZIDAY: войдите снова той же почтой Google — и всё вернётся.</div>`, ["Отмена", "Выйти"])
     if (b !== "Выйти") return
@@ -141,7 +182,9 @@ window.FRIEND = (() => {
     setTimeout(refresh, 50)
     return `<div class="card"><h2>Аккаунт</h2>
       <div class="set"><span>${esc(m.name || "Вы")}</span><span class="ok">✓ ${esc(m.email || "")}</span></div>
-      <div class="set"><span>Календарь</span><span>${gcalOn() ? `<span class="ok">✓ IZIDAY</span>` : "загружается"}</span></div>
+      <div class="set"><span>Календарь</span><span>${m.gcal ? `<span class="ok">✓ Google · ${esc(m.gcal)}</span>` : gcalOn() ? `<span class="ok">✓ внутри IZIDAY</span>` : "загружается"}</span></div>
+      ${D.gcal && D.gcal.error ? `<div class="msg exp small">${esc(D.gcal.error)}</div>` : ""}
+      <div class="btns" style="margin-top:6px">${m.gcal ? `<button class="btn small" data-gc="off">Отключить Google Календарь</button>` : `<button class="btn small" data-gc="on">${GICO}Подключить Google Календарь</button>`}</div>
       <div class="set"><span>${esc(iziName())} сегодня</span><span>${m.left != null ? `ещё ${m.left} ${plural(m.left, "запрос", "запроса", "запросов")}` : "на связи"}</span></div>
       <div class="set"><span>Последний обмен</span><span>${esc(ago(D.sync.at))}</span></div>
       ${D.sync.error ? `<div class="msg exp small">${esc(D.sync.error)}</div>` : ""}
@@ -153,12 +196,16 @@ window.FRIEND = (() => {
   // вернулись от Google: index.html положил ответ в sessionStorage
   let pending = null
   try { pending = sessionStorage.getItem("izi-glogin"); sessionStorage.removeItem("izi-glogin") } catch (e) {}
+  let gcPending = null
+  try { gcPending = sessionStorage.getItem("izi-gcal"); sessionStorage.removeItem("izi-gcal") } catch (e) {}
   document.addEventListener("click", e => { const b = e.target.closest && e.target.closest("[data-fw]"); if (b) { e.stopPropagation(); widget() } }, true)
-  if (pending) setTimeout(() => finish(pending), 300)
+  document.addEventListener("click", e => { const b = e.target.closest && e.target.closest("[data-gc]"); if (b) { e.stopPropagation(); if (b.dataset.gc === "hide") { D.gcHide = Date.now(); save(false); render() } else b.dataset.gc === "off" ? gcalOff() : gcalConnect() } }, true)
+  if (gcPending) setTimeout(() => gcalFinish(gcPending), 300)
+  else if (pending) setTimeout(() => finish(pending), 300)
   // владелец по ошибке вошёл через Google (пустой аккаунт друзей) — при запуске предлагаем вернуться к своему виджету
   else setTimeout(async () => {
     try { if (me() && !sessionStorage.getItem("izi-own") && await isOwner(me().email)) { sessionStorage.setItem("izi-own", "1"); if (await ownerAsk() === "Подключить виджет") widget(false) } } catch (e) {}
   }, 1500)
 
-  return { on, me, login, logout, finish, ai, ask, banner, card, widget, gico: GICO }
+  return { on, me, login, logout, finish, ai, ask, banner, card, widget, gcalConnect, gcalFinish, gico: GICO }
 })()

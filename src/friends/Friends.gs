@@ -3,11 +3,12 @@
 // Выше этого блока — код личной таблицы (src/sheet/Code.gs), пересобранный build_friends.py:
 //   активная таблица → SS_()  (таблица того, кто прислал запрос)
 //   свойства скрипта → UP_() (свойства этого человека)
-//   служба Календаря → FCAL_ (календарь внутри таблицы друга), служба Почты → NOGMAIL_ (почты нет)
+//   служба Календаря → FCAL_ (календарь внутри таблицы друга или его Google Календарь, если он его подключил), служба Почты → NOGMAIL_ (почты нет)
 // Почта, Google Календарь, банк и Claude Code владельца этому скрипту недоступны вовсе: их служб нет в коде,
 // поэтому Google и не спрашивает владельца о доступе к ним (build_friends.py это проверяет).
 //
-// Свойства скрипта (задаёт владелец): ANTHROPIC_KEY — ключ Claude для Изи, GOOGLE_CLIENT — номер входа Google; необязательно: MODEL, ALLOW (почты через запятую:
+// Свойства скрипта (задаёт владелец): ANTHROPIC_KEY — ключ Claude для Изи, GOOGLE_CLIENT — номер входа Google, GOOGLE_SECRET — его секрет
+// (для подключения Google Календаря друга); необязательно: MODEL, ALLOW (почты через запятую:
 // войти смогут только они), AI_DAY (запросов к Claude в день на человека).
 
 const FR = { client: "__GOOGLE_CLIENT__", max: 30, aiDay: 80, aiAll: 1500, model: "claude-haiku-5-5", maxTokens: 4000,
@@ -79,6 +80,7 @@ function doPost(e) {
   if (body.ai) return out_(ai_(u, body.ai));
   if (body.me) return out_({ ok: true, me: meOut_(u) });
   if (body.logout) { logout_(u, body.secret); return out_({ ok: true }); }
+  if (body.gcal) return out_(gcalLink_(u, body.gcal));
   if (!body.hub) return out_({ ok: false, error: "нужно обновить приложение" });
   const h = body.hub, mail = h.mail, fire = h.fire;
   delete h.mail; delete h.fire; delete h.snap;   // почты, Claude Code и iPhone-виджета у друзей нет
@@ -163,7 +165,7 @@ function logout_(u, secret) {
   u.tokens = (u.tokens || []).filter(x => x !== hash);
   userPut_(u);
 }
-function meOut_(u) { return { id: u.id, name: u.name, email: u.email, pic: u.pic, left: aiLeft_(u) }; }
+function meOut_(u) { const g = gcalGet_(u); return { id: u.id, name: u.name, email: u.email, pic: u.pic, left: aiLeft_(u), gcal: g ? g.email || "Google" : "" }; }
 
 // ── Изи: запросы к Claude через ключ владельца, с дневным лимитом ──
 const aiLimit_ = () => Number(GP_().getProperty("AI_DAY")) || FR.aiDay;
@@ -227,7 +229,8 @@ function calExpand_(list, from, to) {
   }
   return out.sort((x, y) => x.start < y.start ? -1 : 1);
 }
-function cal_(c) {
+function cal_(c) { return gcalGet_() ? calG_(c) : calLocal_(c); }   // подключил Google Календарь — события там
+function calLocal_(c) {
   const a = c.action || "list", list = calAll_(), now = Date.now();
   const nowWall = fd_(Utilities.formatDate(new Date(), SS_().getSpreadsheetTimeZone(), "yyyy-MM-dd'T'HH:mm")).t;
   if (a === "list") {
@@ -285,11 +288,213 @@ const FCAL_ = (() => {
   const real = s => Utilities.parseDate(s.replace("T", " ") + (/T/.test(s) ? "" : " 00:00"), tz(), "yyyy-MM-dd HH:mm");
   const wrap = x => ({ getId: () => x.id, getTitle: () => x.title, getLocation: () => x.location, isAllDayEvent: () => x.all_day,
     getStartTime: () => real(x.start), getEndTime: () => real(x.end) });
-  const events = (a, b) => calExpand_(calAll_(), wall(a), wall(b)).map(wrap);
+  const fmt = d => Utilities.formatDate(d, tz(), "yyyy-MM-dd'T'HH:mm");
+  const google = (a, b) => { try { return calG_({ action: "list", from: fmt(a), to: fmt(b) }).events; } catch (e) { return []; } };   // Google не ответил — остальные подсказки всё равно уходят
+  const events = (a, b) => (gcalGet_() ? google(a, b) : calExpand_(calAll_(), wall(a), wall(b))).map(wrap);
   const cal = { isHidden: () => false, getName: () => FCAL_NAME, getId: () => "iziday", getEvents: events,
     getEventsForDay: d => { const s = new Date(d); s.setHours(0, 0, 0, 0); return events(s, new Date(+s + 864e5)); } };
   return { getDefaultCalendar: () => cal, getAllCalendars: () => [cal], getCalendarById: () => cal };
 })();
+
+// ── Google Календарь друга (по желанию) ──
+// Друг сам нажимает «Подключить Google Календарь»: Google спрашивает его согласие и возвращает на сайт разовый код,
+// сервер меняет его на ключ обновления (refresh token) и дальше читает и пишет события в его Google Календаре.
+// Ключ хранится только здесь, в свойствах скрипта, под приставкой этого человека; «Отключить» отзывает его у Google.
+// Нужно свойство скрипта GOOGLE_SECRET — секрет того же входа Google (GOOGLE_CLIENT).
+const GC = { api: "https://www.googleapis.com/calendar/v3", token: "https://oauth2.googleapis.com/token",
+  scope: "https://www.googleapis.com/auth/calendar.events", lists: "https://www.googleapis.com/auth/calendar.calendarlist.readonly" };
+const gcalKey_ = u => "p:" + (u || CUR).id + ":GCAL";
+function gcalGet_(u) { if (!u && !CUR) return null; try { return JSON.parse(GP_().getProperty(gcalKey_(u)) || "null"); } catch (e) { return null; } }
+const gcalPut_ = (g, u) => g ? GP_().setProperty(gcalKey_(u), JSON.stringify(g)) : GP_().deleteProperty(gcalKey_(u));
+const gform_ = o => Object.keys(o).map(k => encodeURIComponent(k) + "=" + encodeURIComponent(o[k])).join("&");
+
+function gcalLink_(u, q) {
+  if (q.off) {
+    const g = gcalGet_(u);
+    if (g && g.rt) try { UrlFetchApp.fetch("https://oauth2.googleapis.com/revoke", { method: "post", contentType: "application/x-www-form-urlencoded", payload: gform_({ token: g.rt }), muteHttpExceptions: true }); } catch (e) {}
+    gcalPut_(null, u);
+    return { ok: true, me: meOut_(u) };
+  }
+  const client = GP_().getProperty("GOOGLE_CLIENT") || FR.client, secret = GP_().getProperty("GOOGLE_SECRET");
+  if (!secret) return { ok: false, error: "Google Календарь ещё не настроен на сервере — напишите тому, кто прислал приложение" };
+  const redirect = String(q.redirect_uri || "");
+  if (!q.code || !/^(https:\/\/[a-z0-9.-]+|http:\/\/localhost(:\d+)?)\//.test(redirect)) return { ok: false, error: "Google не прислал код — попробуйте ещё раз" };
+  const r = UrlFetchApp.fetch(GC.token, { method: "post", contentType: "application/x-www-form-urlencoded", muteHttpExceptions: true,
+    payload: gform_({ code: String(q.code), client_id: client, client_secret: secret, redirect_uri: redirect, grant_type: "authorization_code" }) });
+  let t; try { t = JSON.parse(r.getContentText()); } catch (e) { t = {}; }
+  if (r.getResponseCode() !== 200 || !t.access_token) return { ok: false, error: "Google не выдал доступ (" + (t.error || r.getResponseCode()) + ") — попробуйте ещё раз" };
+  const scopes = String(t.scope || "").split(" ");
+  if (scopes.indexOf(GC.scope) < 0) return { ok: false, error: "без галочки «Календарь» IZIDAY не увидит события — подключите ещё раз и оставьте её включённой" };
+  if (!t.refresh_token) return { ok: false, error: "Google не выдал постоянный доступ — отключите IZIDAY в myaccount.google.com/permissions и подключите снова" };
+  // чей это календарь: Google сам говорит, для какой почты и для какого входа выдан доступ
+  let email = "";
+  const ti = UrlFetchApp.fetch("https://oauth2.googleapis.com/tokeninfo?access_token=" + encodeURIComponent(t.access_token), { muteHttpExceptions: true });
+  try { const j = JSON.parse(ti.getContentText()); if (j.aud && j.aud !== client) return { ok: false, error: "доступ выдан не IZIDAY" }; email = String(j.email || "").toLowerCase(); } catch (e) {}
+  const old = gcalGet_(u);
+  if (old && old.rt && old.rt !== t.refresh_token) try { UrlFetchApp.fetch("https://oauth2.googleapis.com/revoke", { method: "post", contentType: "application/x-www-form-urlencoded", payload: gform_({ token: old.rt }), muteHttpExceptions: true }); } catch (e) {}
+  gcalPut_({ rt: t.refresh_token, at: t.access_token, exp: Date.now() + (Number(t.expires_in) || 3600) * 1000 - 120e3, email, lists: scopes.indexOf(GC.lists) >= 0, since: Date.now() }, u);
+  // события, которые друг уже завёл в IZIDAY, переезжают в его Google Календарь (копия остаётся в таблице: cal_events_local)
+  let moved = 0, failed = 0;
+  CUR = u; CUR_SS = null;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    const local = calAll_();
+    if (local.length) {
+      hubSet_("cal_events_local", local);
+      const keep = [];
+      for (const e of local) {
+        if (e.until && fd_(e.until).t < Date.now() - 864e5) continue;
+        try { gcalCreate_({ title: e.title, start: e.start, end: e.end, all_day: e.all_day, location: e.location, notes: e.notes, repeat: e.repeat, until: e.until, ex: e.ex }); moved++; }
+        catch (x) { failed++; keep.push(e); }
+      }
+      calSave_(keep);
+    }
+  } finally { lock.releaseLock(); }
+  return { ok: true, moved, failed, me: meOut_(u) };
+}
+
+// Доступ на час: берём сохранённый или обновляем по ключу обновления
+function gcalAccess_(force) {
+  const g = gcalGet_();
+  if (!g) throw new Error("Google Календарь не подключён");
+  if (!force && g.at && g.exp > Date.now()) return g.at;
+  const r = UrlFetchApp.fetch(GC.token, { method: "post", contentType: "application/x-www-form-urlencoded", muteHttpExceptions: true,
+    payload: gform_({ client_id: GP_().getProperty("GOOGLE_CLIENT") || FR.client, client_secret: GP_().getProperty("GOOGLE_SECRET") || "", refresh_token: g.rt, grant_type: "refresh_token" }) });
+  let t; try { t = JSON.parse(r.getContentText()); } catch (e) { t = {}; }
+  if (t.error === "invalid_grant") { gcalPut_(null); throw new Error("доступ к Google Календарю отозван — подключите его снова: Настройки → Аккаунт"); }
+  if (!t.access_token) throw new Error("Google Календарь не ответил (" + (t.error || r.getResponseCode()) + ")");
+  g.at = t.access_token; g.exp = Date.now() + (Number(t.expires_in) || 3600) * 1000 - 120e3;
+  gcalPut_(g);
+  return g.at;
+}
+// Запрос к API Календаря; просроченный доступ обновляется один раз
+function gapi_(method, path, body) {
+  const go = tok => UrlFetchApp.fetch(GC.api + path, { method, muteHttpExceptions: true, headers: { Authorization: "Bearer " + tok },
+    contentType: body ? "application/json" : undefined, payload: body ? JSON.stringify(body) : undefined });
+  let r = go(gcalAccess_());
+  if (r.getResponseCode() === 401) r = go(gcalAccess_(true));
+  const code = r.getResponseCode(), txt = r.getContentText();
+  if (code === 204 || code === 410 && method === "delete") return {};
+  let j; try { j = txt ? JSON.parse(txt) : {}; } catch (e) { j = {}; }
+  if (code >= 300) {
+    if (code === 404) throw new Error("нет события в Google Календаре");
+    if (code === 403 && /insufficient/i.test(txt)) throw new Error("Google Календарь не дал доступ — подключите его снова и оставьте галочку «Календарь»");
+    throw new Error("Google Календарь: " + ((j.error && j.error.message) || code));
+  }
+  return j;
+}
+// id события для приложения: календарь «основной» — просто id Google, иначе id@@календарь
+const gid_ = (cal, id) => cal === "primary" ? id : id + "@@" + cal;
+const gsplit_ = s => { s = String(s || ""); const i = s.indexOf("@@"); return i < 0 ? { cal: "primary", id: s } : { cal: s.slice(i + 2), id: s.slice(0, i) }; };
+const gtz_ = () => SS_().getSpreadsheetTimeZone();
+const gparse_ = v => { const m = String(v || "").match(/^(\d{4})-(\d\d)-(\d\d)(?:[T ](\d\d):(\d\d))?/); if (!m) throw new Error("нет даты: " + v);
+  return { d: Utilities.parseDate(`${m[1]}-${m[2]}-${m[3]} ${m[4] || "00"}:${m[5] || "00"}`, gtz_(), "yyyy-MM-dd HH:mm"), day: `${m[1]}-${m[2]}-${m[3]}`, timed: m[4] != null,
+    wall: `${m[1]}-${m[2]}-${m[3]}T${m[4] || "00"}:${m[5] || "00"}:00` }; };
+const gday_ = (day, n) => { const d = new Date(Date.UTC(+day.slice(0, 4), +day.slice(5, 7) - 1, +day.slice(8, 10)) + n * 864e5); return d.toISOString().slice(0, 10); };
+const gwhen_ = (v, all) => all ? { date: gparse_(v).day, dateTime: null } : { dateTime: gparse_(v).wall, timeZone: gtz_(), date: null };
+function gout_(e, cal, calName) {
+  const all = !!(e.start && e.start.date), tz = gtz_();
+  const f = x => all ? x.date : Utilities.formatDate(new Date(x.dateTime), tz, "yyyy-MM-dd'T'HH:mm");
+  return { id: gid_(cal, e.id), title: e.summary || "(без названия)", start: f(e.start), end: all ? gday_(e.end.date, -1) : f(e.end), all_day: all,
+    location: e.location || "", notes: String(e.description || "").slice(0, 300), calendar: calName || "", recurring: !!(e.recurringEventId || e.recurrence) };
+}
+function gcals_() {
+  const g = gcalGet_();
+  if (g && g.lists) try {
+    const j = gapi_("get", "/users/me/calendarList?minAccessRole=reader&maxResults=50");
+    const list = (j.items || []).filter(k => !k.hidden && k.selected !== false && !k.deleted)
+      .map(k => ({ id: k.primary ? "primary" : k.id, name: k.summaryOverride || k.summary || "Календарь", primary: !!k.primary }));
+    if (list.length) return list;
+  } catch (e) { if (!gcalGet_()) throw e; }   // доступ отозван — не прятать ошибку
+  return [{ id: "primary", name: (g && g.email) || "Google", primary: true }];
+}
+function gcalCreate_(c) {
+  const cals = c.calendar ? gcals_() : null, k = (cals && cals.find(x => x.name === c.calendar)) || { id: "primary", name: "" };
+  const all = !!c.all_day || !gparse_(c.start).timed, s = gparse_(c.start);
+  const end = all ? { date: gday_(c.end ? gparse_(c.end).day : s.day, 1) } : c.end ? gwhen_(c.end, false) : { dateTime: Utilities.formatDate(new Date(+s.d + 3600e3), gtz_(), "yyyy-MM-dd'T'HH:mm:ss"), timeZone: gtz_() };
+  const body = { summary: String(c.title || "").slice(0, 300), location: String(c.location || ""), description: String(c.notes || ""), start: all ? { date: s.day } : { dateTime: s.wall, timeZone: gtz_() }, end };
+  if (c.repeat && c.repeat.freq) {
+    const F = { daily: "DAILY", weekly: "WEEKLY", monthly: "MONTHLY", yearly: "YEARLY" }[c.repeat.freq] || "WEEKLY";
+    const days = (c.repeat.days || []).filter(d => /^(MO|TU|WE|TH|FR|SA|SU)$/.test(d));
+    let rule = "RRULE:FREQ=" + F + (F === "WEEKLY" && days.length ? ";BYDAY=" + days.join(",") : "");
+    if (c.until) rule += ";UNTIL=" + gparse_(c.until).day.replace(/-/g, "") + (all ? "" : "T235959Z");
+    body.recurrence = [rule];
+    if ((c.ex || []).length) body.recurrence.push("EXDATE" + (all ? ";VALUE=DATE:" : ";TZID=" + gtz_() + ":") + c.ex.map(x => all ? gparse_(x).day.replace(/-/g, "") : gparse_(x).wall.replace(/[-:]/g, "")).join(","));
+  }
+  const e = gapi_("post", "/calendars/" + encodeURIComponent(k.id) + "/events", body);
+  return gout_(e, k.id, k.name);
+}
+// Событие по id из приложения; у повторяющегося — нужное повторение (по occurrence_start)
+function gfind_(c) {
+  const p = gsplit_(c.id), base = "/calendars/" + encodeURIComponent(p.cal) + "/events/";
+  let e = gapi_("get", base + encodeURIComponent(p.id));
+  if (e.recurrence && c.occurrence_start) {
+    const o = gparse_(c.occurrence_start), from = new Date(+o.d - 6e4).toISOString(), to = new Date(+o.d + (o.timed ? 6e4 : 864e5)).toISOString();
+    const j = gapi_("get", base + encodeURIComponent(p.id) + "/instances?maxResults=5&timeMin=" + encodeURIComponent(from) + "&timeMax=" + encodeURIComponent(to));
+    if ((j.items || [])[0]) e = j.items[0];
+  }
+  return { e, cal: p.cal, base };
+}
+function calG_(c) {
+  const a = c.action || "list";
+  if (a === "list") {
+    const from = c.from ? gparse_(c.from).d : new Date(Date.now() - 2 * 864e5);
+    const to = c.to ? (gparse_(c.to).timed ? gparse_(c.to).d : new Date(+gparse_(c.to).d + 864e5)) : new Date(Date.now() + 45 * 864e5);
+    const cals = gcals_(), out = [];
+    const all = tok => UrlFetchApp.fetchAll(cals.map(k => ({ url: GC.api + "/calendars/" + encodeURIComponent(k.id) + "/events?singleEvents=true&orderBy=startTime&maxResults=400&timeMin=" +
+      encodeURIComponent(from.toISOString()) + "&timeMax=" + encodeURIComponent(to.toISOString()), headers: { Authorization: "Bearer " + tok }, muteHttpExceptions: true })));
+    let res = all(gcalAccess_());   // все календари разом
+    if (res.some(r => r.getResponseCode() === 401)) res = all(gcalAccess_(true));
+    if (!res.some(r => r.getResponseCode() === 200)) throw new Error("Google Календарь не отдал события (" + res[0].getResponseCode() + ")");
+    res.forEach((r, i) => {
+      if (r.getResponseCode() !== 200) return;
+      for (const e of JSON.parse(r.getContentText()).items || []) {
+        if (e.status === "cancelled" || !e.start) continue;
+        if ((e.attendees || []).some(x => x.self && x.responseStatus === "declined")) continue;   // отказался — не показываем
+        out.push(gout_(e, cals[i].id, cals[i].name));
+      }
+    });
+    out.sort((x, y) => x.start < y.start ? -1 : 1);
+    return { events: out.slice(0, 600), calendars: cals.map(k => ({ name: k.name, primary: k.primary })), source: "google" };
+  }
+  if (a === "create") {
+    if (!c.title || !c.start) throw new Error("нужны название и время");
+    return { ok: true, event: gcalCreate_(c) };
+  }
+  if (a === "update") {
+    const f = gfind_(c), e = f.e, body = {};
+    if (c.title) body.summary = String(c.title).slice(0, 300);
+    if (c.location != null) body.location = String(c.location);
+    if (c.notes != null) body.description = String(c.notes);
+    if (c.start) {
+      const wasAll = !!e.start.date, all = wasAll && !gparse_(c.start).timed;
+      const dur = wasAll ? (Date.parse(e.end.date) - Date.parse(e.start.date)) : (Date.parse(e.end.dateTime) - Date.parse(e.start.dateTime));
+      body.start = gwhen_(c.start, all);
+      if (c.end) body.end = all ? { date: gday_(gparse_(c.end).day, 1), dateTime: null } : gwhen_(c.end, false);
+      else if (all) body.end = { date: gday_(gparse_(c.start).day, Math.max(1, Math.round(dur / 864e5))), dateTime: null };
+      else body.end = { dateTime: Utilities.formatDate(new Date(+gparse_(c.start).d + (wasAll ? 3600e3 : dur)), gtz_(), "yyyy-MM-dd'T'HH:mm:ss"), timeZone: gtz_(), date: null };
+    }
+    const r = gapi_("patch", f.base + encodeURIComponent(e.id), body);
+    return { ok: true, event: gout_(r, f.cal, "") };
+  }
+  if (a === "delete") {
+    const f = gfind_(c), e = f.e, master = e.recurringEventId || (e.recurrence ? e.id : "");
+    if (c.all_future && master) {
+      const m = gapi_("get", f.base + encodeURIComponent(master)), all = !!m.start.date;
+      const occ = c.occurrence_start ? gparse_(c.occurrence_start).d : new Date(e.start.dateTime || gparse_(e.start.date).d);
+      const first = all ? gparse_(m.start.date).d : new Date(m.start.dateTime);
+      if (+occ <= +first + 6e4) { gapi_("delete", f.base + encodeURIComponent(master)); return { ok: true, deleted: "series" }; }
+      const until = all ? Utilities.formatDate(new Date(+occ - 864e5), gtz_(), "yyyyMMdd") : Utilities.formatDate(new Date(+occ - 6e4), "UTC", "yyyyMMdd'T'HHmmss'Z'");
+      const recurrence = (m.recurrence || []).map(r => /^RRULE:/.test(r) ? r.replace(/;(UNTIL|COUNT)=[^;]*/g, "") + ";UNTIL=" + until : r);
+      gapi_("patch", f.base + encodeURIComponent(master), { recurrence });
+      return { ok: true, deleted: "from", until };
+    }
+    gapi_("delete", f.base + encodeURIComponent(e.id));
+    return { ok: true };
+  }
+  throw new Error("неизвестное действие календаря: " + a);
+}
 
 // ── Подсказки пушем: тот же обход, что в личной таблице, по очереди для каждого, у кого включены уведомления ──
 function pushTick() {

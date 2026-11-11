@@ -5374,6 +5374,9 @@ function renderCal() {
   html += `<div class="chips pf cal-l">${["me", "olya", "kids"].map(k => `<button class="chip ly ${S.layers[k] ? "on" : ""}" data-ly="${k}" style="--c:${LAYER_C[k]}">${k === "me" ? "<i>Я</i>" : `<em></em>${esc(layerName(k))}`}</button>`).join("")}
     <button class="chip ly tz ${S.tzOn ? "on" : ""}" data-ly="tz">${tdIco("globe", 15)} ${S.tzOn ? "" : "+ "}${esc(tzInfo()[1])}</button><button class="chip ly cog" data-do="cal-set" aria-label="Слои и календари">${tdIco("layers", 16)}</button></div>`
   if (!gcalOn() && D.gcal && D.gcal.error) html += `<div class="banner"><b>Google Календарь не ответил</b>${esc(D.gcal.error)}</div>`
+  // друг без своего Google Календаря: события пока живут внутри IZIDAY — предлагаем подключить (можно скрыть)
+  if (window.FRIEND && FRIEND.me() && !FRIEND.me().gcal && !D.gcHide) html += `<div class="banner"><b>Ваш Google Календарь</b>Подключите — и встречи из него появятся здесь, а новые попадут в Google на всех устройствах.
+    <div class="btns" style="margin-top:8px"><button class="btn primary small" data-gc="on">${FRIEND.gico}Подключить</button><button class="btn small" data-gc="hide">Не сейчас</button></div></div>`
   if (S.view === "m") {
     const m0 = new Date(calStart.getFullYear(), calStart.getMonth(), 1)
     html += `<div class="month wnav cal-nav"><button data-cs="-1" aria-label="Назад">${tdIco("back", 16)}</button><b>${esc(core.cap(core.MONTH_NOM[m0.getMonth()]))} ${m0.getFullYear()}</b><button data-cs="1" aria-label="Вперёд">${tdIco("chev", 16)}</button><button class="today-btn" data-do="cal-today" ${m0.getMonth() === now.getMonth() && m0.getFullYear() === now.getFullYear() ? "hidden" : ""}>Сегодня</button></div>`
