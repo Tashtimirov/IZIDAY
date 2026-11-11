@@ -381,8 +381,8 @@ await page.waitForTimeout(300)
 check(await page.evaluate(() => tab === "chat" && !voice), "зелёная кнопка: нажатие — чат, без записи")
 check(await page.evaluate(() => !$(".chat-bar .mic")), "в чате одна кнопка голоса — большая «Изи», маленькой волны у поля нет")
 await page.evaluate(() => micStart()); await page.waitForTimeout(300)
-check(await page.evaluate(() => !!voice && !$("#silk").hidden), "диктовка — сразу слушает, видна полоса записи")
-await page.click("#silk .tm")
+check(await page.evaluate(() => !!voice && !$("#silk") && $(".chat-bar").classList.contains("rec")), "диктовка — сразу слушает, волна прямо в строке ввода, отдельной полосы «Слушаю…» нет")
+await page.click(".chat-bar .rgo")
 await page.waitForSelector("text=Сегодня 0,5 л", { timeout: 5000 }).catch(() => {})
 check(claudeSeen.length === sentBefore + 1 && JSON.stringify(claudeSeen.at(-1).body.messages).includes("сколько я выпил воды"), "➤ отправил услышанное сразу", claudeSeen.length - sentBefore)
 await page.waitForTimeout(3000)
@@ -392,7 +392,7 @@ await page.click('[data-tab="today"]')
 const fb = await page.locator("#fab").boundingBox()
 await page.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2); await page.mouse.down()
 await page.waitForTimeout(700)
-check(await page.evaluate(() => !voice && $("#silk").hidden && !document.querySelector("#pin-hint")), "держу «Изи» — записи нет")
+check(await page.evaluate(() => !voice && !$("#silk") && !document.querySelector("#pin-hint")), "держу «Изи» — записи нет")
 await page.mouse.up(); await page.waitForTimeout(300)
 check(await page.evaluate(() => tab === "chat" && !voice), "отпустил — просто открылся чат")
 await page.click("#fab"); await page.waitForTimeout(400)
@@ -411,8 +411,14 @@ check(await page.evaluate(() => !$(".plus-menu") && !$(".chat-bar .cam").classLi
 // отмена записи: «‹ отмена» — ничего не ушло, поле пустое
 await page.evaluate(() => micStart()); await page.waitForTimeout(200)
 const sentCancel = claudeSeen.length
-await page.click("#silk .x"); await page.waitForTimeout(1500)
-check(await page.evaluate(() => !voice && $("#silk").hidden && $("#chat-in").value === "") && claudeSeen.length === sentCancel, "«‹ отмена» — запись выброшена, ничего не отправлено")
+await page.click(".chat-bar .rx"); await page.waitForTimeout(1500)
+check(await page.evaluate(() => !voice && !$("#silk") && $("#chat-in").value === "") && claudeSeen.length === sentCancel, "«‹ отмена» — запись выброшена, ничего не отправлено")
+// нажали на подсказку в уведомлении или микрофон в виджете: запись идёт только в строке ввода, полосы «Слушаю… ‹ отмена 0:10» нет
+for (const h of ["reply=Тест подсказки", "voice"]) {
+  await page.evaluate(h => { location.hash = h; return hashAction() }, h); await page.waitForTimeout(600)
+  check(await page.evaluate(() => !!voice && voice.bar && !$("#silk") && $(".chat-bar").classList.contains("rec") && !document.body.classList.contains("voice")), `#${h.split("=")[0]} — запись в строке ввода, без полосы`, await page.evaluate(() => [!!voice, !!$("#silk")]))
+  await page.click(".chat-bar .rx"); await page.waitForTimeout(800)
+}
 // как Safari: пока прошлая запись не закончилась, новая не стартует; после ➤ микрофон снова работает
 await page.evaluate(() => {
   window.__busy = false; window.__starts = 0
@@ -422,9 +428,9 @@ await page.evaluate(() => {
 })
 await page.evaluate(() => micStart()); await page.waitForTimeout(100)
 await page.evaluate(() => { const r = window.__sr; r.onresult({ results: [Object.assign([{ transcript: "привет" }], { isFinal: true })] }) })
-check(await page.evaluate(() => $("#silk .tx").textContent === "привет"), "слова видны в полосе записи", await page.evaluate(() => $("#silk .tx").textContent))
+check(await page.evaluate(() => voice && voice.text === "привет" && !$("#silk")), "слова услышаны, полосы записи нет", await page.evaluate(() => voice && voice.text))
 claudeQueue.push({ content: [{ type: "text", text: "Привет!" }], stop_reason: "end_turn" })
-await page.click("#silk .tm")
+await page.click(".chat-bar .rgo")
 await page.evaluate(() => window.__sr.onresult({ results: [Object.assign([{ transcript: "привет" }], { isFinal: true })] }))   // Safari присылает итог уже после stop()
 check(await page.evaluate(() => $("#chat-in").value === ""), "после ➤ поле пустое: поздний итог распознавания не возвращает текст", await page.evaluate(() => $("#chat-in").value))
 await page.evaluate(() => micStart()); await page.waitForTimeout(900)

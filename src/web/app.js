@@ -1838,7 +1838,7 @@ function micStart(auto, o = {}) {
   if (!SR) { if (inp) inp.focus(); toast("Нажмите 🎤 на клавиатуре и говорите"); return }
   if (voice) return voiceFinish()
   if (window.STT && STT.on() && Date.now() > sttOffUntil) return micWhisper(auto, o)
-  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: !!PTT.holding, bar: !!o.bar }
+  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: false, bar: true }   // запись видна только в строке ввода — отдельной полосы «Слушаю…» больше нет
   const v = voice
   lastVoice = v
   const show = (extra = "") => { SILK.en = 1; v.text = [v.base, v.done, extra].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); const i = $("#chat-in"); if (i) { i.value = v.text; grow(i) }; pttShow(v.text) }
@@ -1911,7 +1911,7 @@ function sttFail(e) {
 function micWhisper(auto, o = {}) {
   const inp = $("#chat-in")
   try { STT.prime() } catch (e) {}
-  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: !!PTT.holding, bar: !!o.bar, w: true, text: inp ? inp.value.trim() : "" }
+  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: false, bar: true, w: true, text: inp ? inp.value.trim() : "" }
   const v = voice
   lastVoice = v
   v.t0 = Date.now()
@@ -3966,17 +3966,6 @@ function silkComet(c, T, d) {
     x.shadowColor = "#bff"; x.shadowBlur = glow; x.stroke(); x.shadowBlur = 0
   })
 }
-let silkHide = null
-function silkShow(text) {
-  const el = $("#silk"); if (!el) return
-  clearTimeout(silkHide)
-  document.body.classList.toggle("voice", text !== null)
-  if (text === null) { el.classList.remove("on"); silkHide = setTimeout(() => { el.hidden = true }, 320); return }
-  const tx = $(".tx span", el)
-  tx.textContent = text || "Слушаю…"; tx.classList.toggle("ph", !text)
-  if (el.hidden) { el.hidden = false; void el.offsetWidth }
-  el.classList.add("on"); silkLoop()
-}
 // «+» в чате: плюс поворачивается, из него раскрывается короткий список. Закрыть — смахнуть вниз или нажать мимо
 let plusClose = null
 function plusMenu(btn) {
@@ -4077,26 +4066,12 @@ const PTT = { holding: false }
 function pttShow(text) {
   const fab = $("#fab"), on = text !== null && !!voice
   if (fab) fab.classList.toggle("rec", !!(on && (PTT.holding || voice.ptt)))
-  const inBar = !!(on && voice.bar)   // диктовка из строки ввода: волна прямо в строке, без полосы «Шёлк»
+  const inBar = on   // любая запись — только волна прямо в строке ввода; полосы «Слушаю… ‹ отмена 0:10» нет совсем
   $$(".chat-bar").forEach(b => { b.classList.toggle("rec", inBar); b.classList.toggle("wait", inBar && !!voice.finishing) })
   if (!inBar) SILK.hist = null
-  silkShow(on && !inBar ? text : null)
 }
 // «Изи» в меню: первое касание — чат, второе (уже в чате) — живой голосовой разговор. Удержание ничего не записывает
 $("#fab").onclick = () => chatOn() ? talkOpen() : setTab("chat")
-// Полоса записи «Шёлк»: сверху текст, ниже волна с яркой точкой, «‹ отмена» и секунды.
-// Нажать на текст — поправить его в поле; на волну или секунды — отправить сразу; смахнуть влево — отмена
-{
-  const el = $("#silk")
-  silkCanvas($("canvas", el), "comet")
-  $(".x", el).onclick = e => { e.stopPropagation(); voiceCancel() }
-  $(".tx", el).onclick = e => { e.stopPropagation(); const i = $("#chat-in"); if (voice && i && chatOn()) i.focus() }
-  el.onclick = () => { if (voice && !PTT.holding) voiceSendNow() }
-  let sx = null
-  el.addEventListener("pointerdown", e => { sx = e.clientX })
-  el.addEventListener("pointermove", e => { if (sx != null && e.clientX - sx < -70) { sx = null; voiceCancel() } })
-  el.addEventListener("pointerup", () => { sx = null })
-}
 $("#add").innerHTML = ICO.add
 $("#add").onclick = () => tab === "cal" ? calQuick() : addMenu()
 $("#sync").innerHTML = ICO.sync
