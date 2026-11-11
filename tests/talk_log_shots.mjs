@@ -24,11 +24,15 @@ await page.waitForTimeout(600)
 await page.evaluate(() => talkOpen()); await page.waitForTimeout(700)
 const vis = await page.evaluate(() => [...document.querySelectorAll("#talk .tk-msgs .tk-m")].map(e => e.textContent))
 if (vis.length !== 4 || !vis[1].includes("Padel")) fail.push("история не видна: " + JSON.stringify(vis))
+const note = await page.evaluate(() => { const n = document.querySelector("#talk .tk-note"); return n && !n.classList.contains("gone") && n.textContent })
+if (!/Живой разговор/.test(note || "")) fail.push("нет подсказки о живом разговоре")
+await page.waitForTimeout(700); await page.screenshot({ path: `${out}/7-podskazka${sfx}.png` })
 // говорите вы
 await page.evaluate(() => { TALK.heard = "Перенеси падел на субботу на десять утра"; talkState("listen", null, TALK.heard) })
 for (let k = 0; k < 30; k++) { await page.evaluate(() => { SILK.ye = 1.2 }); await page.waitForTimeout(40) }
 await page.screenshot({ path: `${out}/1-vy-govorite${sfx}.png` })
 if (!(await page.$("#talk .tk-live .tk-m.u.live"))) fail.push("нет пузыря с тем, что говорят")
+if (!(await page.evaluate(() => document.querySelector("#talk .tk-note").classList.contains("gone")))) fail.push("подсказка не ушла после первой фразы")
 if (await page.evaluate(() => getComputedStyle(document.querySelector("#talk .tk-you")).display !== "none")) fail.push("фраза дублируется подписью")
 // думает: фраза ушла в чат
 await page.evaluate(() => { TALK.sent = TALK.heard; talkState("think", "·  ·  ·", TALK.heard); D.chat.push({ role: "user", text: TALK.sent, at: Date.now(), voice: true }); talkLog() })
