@@ -70,6 +70,7 @@ function doPost(e) {
   CUR = null; CUR_SS = null;
   if (body.login) return out_(login_(body.login));
   if (body.metrics) return out_(metrics_(body.metrics, body.secret ? userBySecret_(body.secret) : null));   // журнал действий — без доступа к данным
+  if (body.bug) return out_(bug_(body.bug, body.secret));   // недочёты: можно и без входа
   // Лиги и семьи общие для всех: хранятся в общей таблице и общих свойствах
   if (body.league && !body.secret) return out_(league_(body.league, false));
   if (body.family && !body.secret) return out_(family_(body.family, false));
@@ -596,4 +597,82 @@ function metrics_(m, u) {
     if (last > MT.keep && sh.deleteRows) sh.deleteRows(2, 10000);   // старые строки — прочь, таблица не разрастается
   } finally { lock.releaseLock(); }
   return { ok: true, n: rows.length };
+}
+
+// ═════════════ Недочёты от фокус-группы ═════════════
+// Форма iziday.pages.dev/bug (и кнопка в Настройках приложения) присылает {bug:{…}}.
+// Вход не нужен: друг может сообщить, даже если приложение не открывается. Если есть ключ телефона — подписываем именем друга.
+// Всё складывается в таблицу «IZIDAY — Недочёты» в папке «IZIDAY Друзья», скриншоты — в соседнюю папку, владельцу приходит письмо.
+const BUG = { sheet: "IZIDAY — Недочёты", shots: "IZIDAY — Недочёты (скриншоты)", hour: 40, maxShots: 3, maxShot: 2.5e6,
+  head: ["№", "Когда", "Кто", "Почта", "Что случилось", "Где", "Насколько мешает", "Как повторить / что ожидали", "Скриншоты", "Устройство", "Версия", "Ошибки приложения", "Статус", "Заметка"] };
+
+function bugSheet_() {
+  const p = GP_(), id = p.getProperty("BUGS_SHEET");
+  if (id) { try { return SpreadsheetApp.openById(id).getSheets()[0]; } catch (e) {} }
+  const ss = SpreadsheetApp.create(BUG.sheet);
+  try { DriveApp.getFileById(ss.getId()).moveTo(folder_()); } catch (e) {}
+  try { ss.setSpreadsheetTimeZone("Asia/Bangkok"); } catch (e) {}
+  const sh = ss.getSheets()[0];
+  sh.setName("Недочёты");
+  sh.getRange(1, 1, 1, BUG.head.length).setValues([BUG.head]).setFontWeight("bold").setBackground("#eef2ff");
+  sh.setFrozenRows(1);
+  [40, 120, 130, 170, 360, 110, 120, 280, 160, 220, 110, 260, 110, 200].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  sh.getRange("E:E").setWrap(true); sh.getRange("H:H").setWrap(true); sh.getRange("L:L").setWrap(true);
+  sh.getRange(2, 13, 999, 1).setDataValidation(SpreadsheetApp.newDataValidation()
+    .requireValueInList(["новый", "в работе", "исправлено", "не повторяется", "не баг"], true).build());
+  p.setProperty("BUGS_SHEET", ss.getId());
+  return sh;
+}
+function bugShots_() {
+  const p = GP_(), id = p.getProperty("BUGS_SHOTS");
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
+  const f = folder_().createFolder(BUG.shots);
+  p.setProperty("BUGS_SHOTS", f.getId());
+  return f;
+}
+const bugTxt_ = (s, n) => String(s == null ? "" : s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").slice(0, n).replace(/^[=+\-@]/, "'$&");   // без формул в таблице
+
+function bug_(q, secret) {
+  if (!q || typeof q !== "object") return { ok: false, error: "пустой отчёт" };
+  const what = String(q.what || "").trim();
+  if (what.length < 3) return { ok: false, error: "напишите, что случилось" };
+  // защита от потока: не больше BUG.hour отчётов в час на весь сервер
+  const cache = CacheService.getScriptCache(), hk = "bugs:" + Utilities.formatDate(new Date(), "UTC", "yyyyMMddHH");
+  const cnt = Number(cache.get(hk) || 0);
+  if (cnt >= BUG.hour) return { ok: false, error: "слишком много отчётов за час — попробуйте позже" };
+  cache.put(hk, String(cnt + 1), 3700);
+  const u = secret ? userBySecret_(secret) : null;
+  const who = u ? u.name : bugTxt_(q.name, 60) || "не представился";
+  const mail = u ? u.email : bugTxt_(q.email, 100);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  let n, sh, links = [];
+  try {
+    sh = bugSheet_();
+    n = Math.max(0, sh.getLastRow() - 1) + 1;
+    const shots = Array.isArray(q.shots) ? q.shots.slice(0, BUG.maxShots) : [];
+    if (shots.length) {
+      const dir = bugShots_();
+      shots.forEach((s, i) => {
+        const m = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(s || ""));
+        if (!m || m[2].length > BUG.maxShot * 1.37) return;
+        const blob = Utilities.newBlob(Utilities.base64Decode(m[2]), "image/" + m[1], `№${n}-${i + 1} ${who}.${m[1] === "jpeg" ? "jpg" : m[1]}`);
+        links.push(dir.createFile(blob).getUrl());
+      });
+    }
+    const d = q.dev || {};
+    const dev = [bugTxt_(d.model, 80), bugTxt_(d.os, 60), bugTxt_(d.browser, 60), d.w && d.h ? `${Number(d.w) | 0}×${Number(d.h) | 0}` : "",
+      d.pwa ? "значок на экране" : "в браузере", d.lang ? bugTxt_(d.lang, 12) : ""].filter(Boolean).join(" · ");
+    const errs = (Array.isArray(q.errors) ? q.errors : []).slice(-8).map(x => bugTxt_(x, 300)).join("\n");
+    sh.appendRow([n, new Date(), who, mail, bugTxt_(what, 4000), bugTxt_(q.where, 60), bugTxt_(q.level, 40), bugTxt_(q.steps, 3000),
+      links.join("\n"), dev, bugTxt_(q.ver, 40), errs, "новый", ""]);
+    SpreadsheetApp.flush();
+  } finally { lock.releaseLock(); }
+  const url = sh.getParent().getUrl();
+  try {
+    MailApp.sendEmail(Session.getEffectiveUser().getEmail(), `IZIDAY: недочёт №${n} — ${who}`,
+      `${who}${mail ? " (" + mail + ")" : ""} сообщает:\n\n${what}\n\nГде: ${q.where || "—"}\nНасколько мешает: ${q.level || "—"}\n` +
+      (q.steps ? `Как повторить: ${q.steps}\n` : "") + (links.length ? `Скриншоты: ${links.join(" ")}\n` : "") + `\nВсе недочёты: ${url}`);
+  } catch (e) {}
+  return { ok: true, n };
 }
