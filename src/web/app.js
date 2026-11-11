@@ -5995,10 +5995,12 @@ function talkEcho(heard, said) {
 }
 // Журнал микрофона в окне разговора (мелко внизу): что делает распознавание на iPhone — чтобы по скриншоту
 // было видно, где обрыв: «Safari: старт → звук ✓ → слова ✓ → конец» или «Whisper: звук 0 кадров»
+// Видно только для отладки: открыть приложение с #dbg (выключить — #nodbg); друзьям и в обычной работе строки нет
+const talkDbgOn = () => { try { if (/#dbg$/.test(location.hash)) localStorage.setItem("izi-dbg", "1"); if (/#nodbg$/.test(location.hash)) localStorage.removeItem("izi-dbg"); return localStorage.getItem("izi-dbg") === "1" } catch (e) { return false } }
 function tdbg(m) {
   const t = TALK; if (!t) return
   t.log = (t.log || []).concat(`${((performance.now() - (t.t0 || 0)) / 1000).toFixed(1)} ${m}`).slice(-5)
-  const el = $(".tk-dbg", t.el); if (el) el.textContent = t.log.join(" · ")
+  const el = talkDbgOn() && $(".tk-dbg", t.el); if (el) el.textContent = t.log.join(" · ")
 }
 function talkListen(first, keep) {
   const t = TALK; if (!t) return
