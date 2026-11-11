@@ -66,7 +66,7 @@ if FRIENDS_HOOK and FRIENDS_HOOK == _sec.get("sheet_hook"):
     sys.exit("friends_hook совпадает с личной таблицей — так нельзя")
 
 if "--no-minify" not in sys.argv:
-    for name in ["core.js", "app.js", "friends.js", "gami.js", "quest.js", "onb.js", "health.js", "fast.js", "family.js", "album.js", "mem.js", "design.js", "order.js", "undo.js", "tablet.js", "stt.js", "docread.js", "style.css", "gami.css", "quest.css", "onb.css", "health.css", "fast.css", "family.css", "album.css", "mem.css", "design.css", "order.css", "undo.css", "tablet.css"]:
+    for name in ["core.js", "app.js", "friends.js", "gami.js", "quest.js", "onb.js", "health.js", "fast.js", "family.js", "album.js", "mem.js", "design.js", "order.js", "undo.js", "tablet.js", "stt.js", "docread.js", "bug.js", "style.css", "gami.css", "quest.css", "onb.css", "health.css", "fast.css", "family.css", "album.css", "mem.css", "design.css", "order.css", "undo.css", "tablet.css"]:
         if not minify(OUT / name):
             break
 
@@ -115,6 +115,16 @@ h = hashlib.sha256()
 for p in sorted(OUT.rglob("*")):
     if p.is_file() and p.name != "sw.js":
         h.update(p.read_bytes())
+# Оболочка для кэша = всё, что подключает index.html, + страница, манифест и значки. Каждый файл
+# должен быть в сборке: если хоть одного нет, новая версия не установится на телефоне вовсе
+html = (OUT / "index.html").read_text()
+shell = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"]
+for f in re.findall(r'<(?:script|link)[^>]+(?:src|href)="([^"?#:]+)', html):
+    if f not in shell:
+        shell.append(f)
+missing = [f for f in shell if f != "./" and not (OUT / f).is_file()]
+if missing:
+    sys.exit(f"sw.js: в сборке нет файлов оболочки: {missing}")
 sw = OUT / "sw.js"
-sw.write_text(sw.read_text().replace("__VERSION__", h.hexdigest()[:10]))
+sw.write_text(sw.read_text().replace("__VERSION__", h.hexdigest()[:10]).replace('"__SHELL__"', ", ".join(f'"{f}"' for f in shell)))
 print("Готово: dist/web/ —", ", ".join(sorted(p.name for p in OUT.iterdir())))

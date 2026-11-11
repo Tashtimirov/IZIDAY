@@ -2246,7 +2246,23 @@ function setTab(t) {
 // Перерисовка: если ничего не поменялось — экран не трогаем (иначе при каждом обмене с таблицей он «моргает»);
 // плавное появление карточек — только при смене вкладки
 let lastHTML = "", lastTab = ""
+// Ошибка в одном разделе (например, странная запись из таблицы) не должна оставлять пустой или замёрзший экран:
+// показываем карточку с выходом, ошибка уходит в журнал недочётов (bug.js), остальные вкладки работают
 function render() {
+  try { return renderRaw() } catch (e) { renderFail(e) }
+}
+function renderFail(e) {
+  console.error("render", e)
+  try { window.IZIBUG && IZIBUG.note(`render ${tab}: ${e && e.message || e}${e && e.stack ? " | " + String(e.stack).split("\n").slice(1, 3).join(" ").replace(/\s+/g, " ").slice(0, 160) : ""}`) } catch (x) {}
+  const v = $("#view")
+  if (!v) return
+  lastHTML = ""; lastTab = tab
+  v.innerHTML = `<div class="card"><h2>Не получилось показать этот раздел</h2><div class="muted small">${esc(String(e && e.message || e).slice(0, 200))}</div>
+    <div class="btns" style="margin-top:12px">${tab === "today" ? "" : `<button class="btn primary" data-rf="today">На «Сегодня»</button>`}<button class="btn" data-rf="reload">Обновить</button>${window.IZIBUG ? `<button class="btn" data-rf="bug">Сообщить</button>` : ""}</div></div>`
+  v.querySelectorAll("[data-rf]").forEach(b => b.onclick = () => { const k = b.dataset.rf; k === "today" ? setTab("today") : k === "bug" ? IZIBUG.open() : location.reload() })
+  try { renderTop() } catch (x) {}
+}
+function renderRaw() {
   const fn = { today: renderToday, cal: renderCal, plans: renderPlans, chat: renderChatHTML, money: renderMoney, health: renderHealth, more: renderMore }[tab]
   const html = fn(), v = $("#view")
   if (html === lastHTML && tab === lastTab && v.firstChild) { renderTop(); return }

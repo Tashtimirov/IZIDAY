@@ -1,23 +1,27 @@
-// Приложение открывается мгновенно и без сети: оболочка (страница, код, значки) берётся из кэша,
-// а в фоне проверяется новая версия. Запросы к таблице и к Claude идут мимо кэша.
+// Приложение открывается мгновенно и без сети: оболочка (страница, код, стили, значки) лежит в кэше этой версии
+// и отдаётся сразу, без ожидания сети. Новая версия скачивается целиком в фоне (установка нового sw.js —
+// браузер сверяет его при каждом открытии), и только потом подменяет старую одним махом: файлы двух разных
+// версий никогда не смешиваются. Страница перезагружается сама (app.js, controllerchange).
+// Запросы к таблице и к Claude идут мимо кэша (другой адрес).
 const CACHE = "myday-__VERSION__"
-const SHELL = ["./", "index.html", "style.css", "core.js", "app.js", "friends.js", "gami.js", "gami.css", "quest.js", "quest.css", "onb.js", "onb.css", "health.js", "health.css", "fast.js", "fast.css", "family.js", "family.css", "album.js", "album.css", "mem.js", "mem.css", "design.js", "design.css", "order.js", "order.css", "undo.js", "undo.css", "tablet.js", "tablet.css", "stt.js", "docread.js", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"]
-self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())) })
+const SHELL = ["__SHELL__"]   // build_web.py подставляет список файлов из index.html
+self.addEventListener("install", e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()))
+})
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== "myday-conn").map(k => caches.delete(k)))).then(() => self.clients.claim()))
 })
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url)
   if (e.request.method !== "GET" || url.origin !== location.origin) return
-  e.respondWith(caches.open(CACHE).then(async c => {
-    // Сначала сеть (чтобы значок на «Домой» сразу получал новую версию), кэш — если сети нет или она тормозит
-    const net = fetch(e.request, { cache: "no-store" }).then(r => { if (r.ok) c.put(e.request, r.clone()); return r })
-    const slow = new Promise(res => setTimeout(res, 3000))
-    const r = await Promise.race([net.catch(() => null), slow])
-    if (r) return r
-    const hit = await c.match(e.request, { ignoreSearch: true })
-    return hit || net
-  }))
+  e.respondWith((async () => {
+    const c = await caches.open(CACHE)
+    // файл оболочки — сразу из кэша (запуск со значка — сама страница «./» с любым ?… после адреса)
+    const hit = await c.match(e.request.mode === "navigate" && /\/(index\.html)?$/.test(url.pathname) ? "./" : e.request, { ignoreSearch: true })
+    if (hit) return hit
+    // остальное (w.json, bug.html, privacy.html, PDF) — из сети; в кэш версии не кладём
+    return fetch(e.request, { cache: "no-store" })
+  })())
 })
 
 // ── Пуш-уведомления: подсказки присылает таблица (расписание у помощника). Пуш пустой — текст забираем из «исходящих» ──
