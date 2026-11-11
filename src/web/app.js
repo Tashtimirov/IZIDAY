@@ -1711,8 +1711,8 @@ setInterval(() => {   // долгое ожидание — показать, с�
 const cacheTools = tools => tools.map((t, i) => i === tools.length - 1 ? Object.assign({}, t, { cache_control: { type: "ephemeral" } }) : t)
 // Прогрев кэша, когда открыли живой разговор: пока человек говорит первую фразу, Claude уже прочитал инструкции,
 // память и историю чата (max_tokens 0 — без ответа, платится только запись кэша) — первый ответ приходит быстрее
-// Быстрый режим только со своим ключом (семейный и общий ключ идут через таблицу); выключить: D.izi.fast = false
-const talkFastOK = () => { const k = aiKey(); return !!k && k !== "fam" && k !== "srv" && !(D.izi && D.izi.fast === false) }
+// Быстрый режим (до 2,5× быстрее, но ×2 цена) — только если включён: D.izi.fast = true, и только со своим ключом
+const talkFastOK = () => { const k = aiKey(); return !!k && k !== "fam" && k !== "srv" && !!(D.izi && D.izi.fast === true) }
 function talkWarm() {
   const k = aiKey(); if (!k || k === "fam" || k === "srv" || chatBusy || !TALK) return
   const msgs = chatContext(); while (msgs.length && msgs[msgs.length - 1].role !== "user") msgs.pop()
