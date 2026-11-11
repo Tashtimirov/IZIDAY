@@ -9,7 +9,7 @@ let fails = 0
 const ok = (c, m) => { if (c) console.log("✓", m); else { fails++; console.log("✗", m) } }
 await page.evaluate(() => {
   const base = Date.now(), p0 = performance.now(); Date.now = () => base + performance.now() - p0
-  D.myKey = "sk-test"; D.chat = [{ role: "user", text: "привет", at: Date.now() - 6e4 }, { role: "assistant", text: "Привет!", at: Date.now() - 5e4 }]
+  D.myKey = "sk-test"; D.izi = Object.assign({}, D.izi, { fast: true }); D.chat = [{ role: "user", text: "привет", at: Date.now() - 6e4 }, { role: "assistant", text: "Привет!", at: Date.now() - 5e4 }]
   window.SpeechSynthesisUtterance = class { constructor(t) { this.text = t } }
   window.SAID = []; window.SAIDAT = []
   speechSynthesis.speak = u => { SAID.push(u.text); SAIDAT.push(performance.now()); setTimeout(() => { u.onstart && u.onstart(); setTimeout(() => u.onend && u.onend(), 60) }, 10) }
@@ -100,6 +100,9 @@ ok(!r3.busy && r3.st === "listen", "ответ остановлен, Изи сл
 ok(r3.last[0].role === "user" && r3.last[0].text === "Что с бюджетом?" && r3.last[1].role === "assistant" && /^Расскажу про бюджет\./.test(r3.last[1].text), "вопрос и сказанное остались в переписке")
 await page.waitForTimeout(4200)
 ok(!(await page.evaluate(() => SAID.includes("Это никто не услышит."))), "остаток после перебивания не звучит")
+// без явного включения — обычная скорость (цена ключа та же)
+await page.evaluate(() => { D.izi.fast = undefined })
+ok(await page.evaluate(() => !talkFastOK()), "быстрый режим по умолчанию выключен")
 await page.evaluate(() => talkClose()); await page.waitForTimeout(500)
 // 4. обычный чат — без потока и быстрого режима
 await page.evaluate(() => chatSend("сколько я потратил")); await page.waitForTimeout(800)
