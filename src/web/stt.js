@@ -85,17 +85,26 @@
         out[i] = b > a ? m / (b - a) : x[a] || 0
       }
       carry = carry + n * ratio - x.length; if (carry < 0) carry = 0
+      if (loud && h.firstAt == null) h.firstAt = h.len   // где началась речь: тишину до неё в Whisper не шлём
       h.parts.push(out); h.len += out.length
     }
     src.connect(node); node.connect(ctx.destination); ACTIVE++
-    h.wav = () => wav(h.parts, h.len)
+    // В Whisper — от 0,3 с до начала речи: в живом разговоре микрофон открыт заранее, и секунда-две тишины
+    // в начале каждой фразы впустую грузились в сеть при каждом распознавании (16 кГц — 32 КБ в секунду)
+    h.wav = () => {
+      const from = h.firstAt == null ? 0 : Math.max(0, h.firstAt - Math.round(RATE * .3))
+      if (!from) return wav(h.parts, h.len)
+      let skip = from; const parts = []
+      for (const p of h.parts) { if (skip >= p.length) { skip -= p.length; continue } parts.push(skip ? p.subarray(skip) : p); skip = 0 }
+      return wav(parts, h.len - from)
+    }
     h.abort = h.stop = () => h.close()   // как у распознавания Safari: старый код просто «обрывает» запись
     h.secs = () => h.len / RATE
     // оставить только последние sec секунд (запись передаётся дальше — например, с момента, когда человек перебил Изи)
     h.keepLast = sec => {
       let need = Math.round(sec * RATE), out = []
       for (let i = h.parts.length - 1; i >= 0 && need > 0; i--) { const p = h.parts[i]; out.unshift(p.length > need ? p.slice(p.length - need) : p); need -= p.length }
-      h.parts = out; h.len = out.reduce((a, p) => a + p.length, 0)
+      h.parts = out; h.len = out.reduce((a, p) => a + p.length, 0); h.firstAt = 0
     }
     h.close = () => {
       if (h.stopped) return; h.stopped = true

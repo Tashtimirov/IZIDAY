@@ -242,6 +242,9 @@ async function hubPost(h, timeout = 30000) {
   }
 }
 async function hubPostOnce(h, timeout) {
+  // Запросы помощника (календарь, почта, дорога, чтение листа) — без списков: иначе таблица каждый раз присылала все
+  // записи с нуля (сотни КБ), а сейф памяти расшифровывал их заново. Списки забирает только обмен sync()
+  if (h && h.since == null && !h.push) h = Object.assign({ since: 9e15, snapAt: 9e15 }, h)
   const ctl = new AbortController()
   const t = setTimeout(() => ctl.abort(), timeout)
   try {
@@ -267,7 +270,10 @@ function sync() {
         const started = Date.now(), lists = {}
         for (const k of Object.keys(LISTS)) lists[k] = D[k].filter(x => (x.u || 0) > D.sync.pushedAt - 60000)
         const ops = D.ops.filter(o => o.state === "local").map(o => ({ id: o.id, tool: o.tool, input: o.input }))
-        const res = await hubPost({ since: D.sync.since, snapAt: D.sync.snapAt, lists, ops }, 60000)
+        // Google Календарь устарел — тем же запросом (таблица обслуживает запросы по одному: два подряд ждали бы друг друга)
+        const wantCal = !calBusy && (calForce || !D.gcal || Date.now() - (D.gcal.at || 0) > 120e3)
+        const res = await hubPost(Object.assign({ since: D.sync.since, snapAt: D.sync.snapAt, lists, ops }, wantCal ? { cal: calListReq() } : {}), 60000)
+        if (wantCal && res.cal) { calForce = false; calTake(res.cal) }
         for (const k of Object.keys(LISTS)) mergeIn(k, res.lists && res.lists[k])
         if (res.snap) { D.snap = res.snap; D.sync.snapAt = res.snap.at }
         migrateRems()
@@ -301,13 +307,17 @@ function sync() {
   return state.p
 }
 let calForce = false, calBusy = false
+const calListReq = () => ({ action: "list", from: dayKey(addDays(sod(new Date()), -21)) })
+function calTake(r) {
+  if (r) D.gcal = r.events ? { ok: true, at: Date.now(), events: r.events, calendars: r.calendars || [] } : { ok: !!(D.gcal && D.gcal.ok), at: Date.now(), events: (D.gcal && D.gcal.events) || [], error: r.error || "" }
+  if (r && r.events) calReflow()
+}
 async function calRefresh() {
   if (calBusy || !D.conn || !(calForce || !D.gcal || Date.now() - (D.gcal.at || 0) > 120e3)) return
   calBusy = true; calForce = false
   try {
-    const r = (await hubPost({ cal: { action: "list", from: dayKey(addDays(sod(new Date()), -21)) } }, 60000)).cal
-    if (r) D.gcal = r.events ? { ok: true, at: Date.now(), events: r.events, calendars: r.calendars || [] } : { ok: !!(D.gcal && D.gcal.ok), at: Date.now(), events: (D.gcal && D.gcal.events) || [], error: r.error || "" }
-    if (r && r.events) calReflow()
+    const r = (await hubPost({ cal: calListReq() }, 60000)).cal
+    calTake(r)
     save(false)
     if (!stack.length && tab !== "chat") render()
   } catch (e) {} finally { calBusy = false }
@@ -530,14 +540,18 @@ async function claude(body, timeout = 90000, opts = {}) {
     if (aiKey() === "srv") return await FRIEND.ai(b, ctl.signal)   // друзья: Изи через общий сервер, ключ у владельца
     const headers = { "x-api-key": aiKey(), "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-dangerous-direct-browser-access": "true" }
     if (beta) headers["anthropic-beta"] = beta
+    if (opts.onText) b = Object.assign({}, b, { stream: true })   // поток: первые слова приходят сразу, не ждём весь ответ
     const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: ctl.signal, headers, body: JSON.stringify(b) })
-    return await r.json()
+    if (!opts.onText || !r.ok || !/event-stream/.test(r.headers.get("content-type") || "")) return await r.json()
+    return await claudeStream(r, opts.onText)
   }
   try {
     const base = Object.assign({ model: opts.model || core.CONFIG.agentModel || "claude-sonnet-5-5" }, body)
     if (!opts.smart) return await send(base)
     // Помощник в чате: самая сильная модель с размышлением; если отказ фильтра — сервер сам переспросит другую модель
     let res = await send(Object.assign({}, base, { fallbacks: "default" }), "server-side-fallback-2026-07-01")
+    // быстрый режим (живой разговор) недоступен или исчерпан лимит — тот же запрос обычной скоростью
+    if (base.speed && res && res.error && (res.error.type === "rate_limit_error" || /speed|fast/i.test(res.error.message || ""))) { delete base.speed; res = await send(Object.assign({}, base, { fallbacks: "default" }), "server-side-fallback-2026-07-01") }
     if (res && res.error && /fallback|beta/i.test(res.error.message || "")) res = await send(base)
     if (res && res.error && /model/i.test(res.error.message || "") && res.error.type !== "overloaded_error")   // модель недоступна ключу — обычная модель виджета
       res = await send(Object.assign({}, body, { model: core.CONFIG.agentModel || "claude-sonnet-5-5", output_config: undefined }))
@@ -548,6 +562,47 @@ async function claude(body, timeout = 90000, opts = {}) {
   } finally { clearTimeout(t) }
 }
 const CHAT_MODEL = "claude-opus-5-5"
+// Ответ потоком (SSE): собираем то же сообщение, что вернул бы обычный запрос (текст, размышления с подписью, вызовы
+// инструментов), а каждый кусок текста сразу отдаём onText — в живом разговоре Изи начинает говорить с первой фразы
+async function claudeStream(r, onText) {
+  const rd = r.body.getReader(), dec = new TextDecoder()
+  let buf = "", msg = null, err = null
+  const js = {}
+  const on = e => {
+    if (e.type === "message_start") { msg = Object.assign({}, e.message, { content: [] }); return }
+    if (e.type === "error") { err = e.error || { message: "ошибка потока" }; return }
+    if (!msg) return
+    if (e.type === "content_block_start") { const c = Object.assign({}, e.content_block); msg.content[e.index] = c; if (c.type === "text" && c.text) onText(c.text); return }
+    const c = msg.content[e.index]
+    if (e.type === "content_block_delta" && c) {
+      const d = e.delta || {}
+      if (d.type === "text_delta") { c.text = (c.text || "") + d.text; onText(d.text) }
+      else if (d.type === "input_json_delta") js[e.index] = (js[e.index] || "") + (d.partial_json || "")
+      else if (d.type === "thinking_delta") c.thinking = (c.thinking || "") + d.thinking
+      else if (d.type === "signature_delta") c.signature = d.signature
+      else if (d.type === "citations_delta") (c.citations = c.citations || []).push(d.citation)
+    } else if (e.type === "content_block_stop" && c && js[e.index] != null) {
+      try { c.input = js[e.index] ? JSON.parse(js[e.index]) : {} } catch (x) { c.input = {} }
+    } else if (e.type === "message_delta") {
+      Object.assign(msg, e.delta || {}); if (e.usage) msg.usage = Object.assign({}, msg.usage, e.usage)
+    }
+  }
+  for (;;) {
+    const { done, value } = await rd.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    let k
+    while ((k = buf.indexOf("\n\n")) >= 0) {
+      const data = buf.slice(0, k).split("\n").filter(l => l.startsWith("data:")).map(l => l.slice(5).trimStart()).join("\n")
+      buf = buf.slice(k + 2)
+      if (data) { let e; try { e = JSON.parse(data) } catch (x) { continue } on(e) }
+    }
+  }
+  if (err) return { error: err }
+  if (!msg) return { error: { message: "пустой ответ" } }
+  msg.content = msg.content.filter(Boolean)
+  return msg
+}
 
 // ── Еда по фото ──
 const FOOD_SCHEMA = { type: "object", additionalProperties: false, properties: {
@@ -1656,21 +1711,26 @@ setInterval(() => {   // долгое ожидание — показать, с�
 const cacheTools = tools => tools.map((t, i) => i === tools.length - 1 ? Object.assign({}, t, { cache_control: { type: "ephemeral" } }) : t)
 // Прогрев кэша, когда открыли живой разговор: пока человек говорит первую фразу, Claude уже прочитал инструкции,
 // память и историю чата (max_tokens 0 — без ответа, платится только запись кэша) — первый ответ приходит быстрее
+// Быстрый режим только со своим ключом (семейный и общий ключ идут через таблицу); выключить: D.izi.fast = false
+const talkFastOK = () => { const k = aiKey(); return !!k && k !== "fam" && k !== "srv" && !(D.izi && D.izi.fast === false) }
 function talkWarm() {
   const k = aiKey(); if (!k || k === "fam" || k === "srv" || chatBusy || !TALK) return
   const msgs = chatContext(); while (msgs.length && msgs[msgs.length - 1].role !== "user") msgs.pop()
   if (!msgs.length) return
-  claude({ max_tokens: 0, system: chatSystem(), tools: cacheTools(chatTools()), messages: msgs, output_config: { effort: "low" }, cache_control: { type: "ephemeral" } }, 30000, { smart: true, model: CHAT_MODEL })
+  claude(Object.assign({ max_tokens: 0, system: chatSystem(), tools: cacheTools(chatTools()), messages: msgs, output_config: { effort: "low" }, cache_control: { type: "ephemeral" } }, talkFastOK() ? { speed: "fast" } : {}), 30000, { smart: true, model: CHAT_MODEL })
     .then(r => { const u = r && r.usage; if (u) tdbg("кэш " + Math.round(((u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0)) / 1000) + "k") }, () => {})
 }
-async function agentTurn(messages, system, tools) {
+async function agentTurn(messages, system, tools, live) {
   const stopSig = chatStopCtl && chatStopCtl.signal
   const ctools = cacheTools(tools)
-  // живой разговор: думать коротко (effort low) — ответ голосом в 1–3 предложения, а ждать «думаю…» долго неприятно
+  // живой разговор: думать коротко (effort low) — ответ голосом в 1–3 предложения, а ждать «думаю…» долго неприятно;
+  // быстрый режим Opus (до 2,5× быстрее пишет) и ответ потоком — Изи начинает говорить с первой готовой фразы
   const effort = TALK ? "low" : "high"
-  const ask = () => claude({ max_tokens: 16000, system, tools: ctools, messages, output_config: { effort }, cache_control: { type: "ephemeral" } }, 150000, { smart: true, model: CHAT_MODEL, signal: stopSig })
+  const fast = TALK && talkFastOK() ? { speed: "fast" } : {}
+  const ask = () => claude(Object.assign({ max_tokens: 16000, system, tools: ctools, messages, output_config: { effort }, cache_control: { type: "ephemeral" } }, fast), 150000, { smart: true, model: CHAT_MODEL, signal: stopSig, onText: live ? live.text : null })
   for (let step = 0; step < 14; step++) {
     let res
+    if (step && live) live.step()
     setStatus(step ? "готовлю ответ…" : "думаю…")
     try {
       res = await ask()
@@ -1735,11 +1795,18 @@ async function chatSend(text, opts = {}) {
   }
   chatStopCtl = new AbortController()
   setBusyUI(true)
-  try { reply = await agentTurn(ctx, chatSystem(), chatTools()) } catch (e) { reply = `Ошибка: ${e.message || e}` }
+  const live = TALK && opts.voice && aiKey() && aiKey() !== "fam" && aiKey() !== "srv" ? talkLiveNew() : null
+  TLIVE = live
+  try { reply = await agentTurn(ctx, chatSystem(), chatTools(), live) } catch (e) { reply = `Ошибка: ${e.message || e}` }
   const stopped = chatStopCtl.signal.aborted
   chatStopCtl = null
   chatBusy = false
+  TLIVE = null
   setBusyUI(false)
+  // перебили, когда Изи уже говорила начало ответа: вопрос и сказанное остаются в переписке (Изи знает, что успела сказать)
+  if (stopped && TALK && live && live.said.trim()) {
+    D.chat.push({ role: "assistant", text: live.said.trim() + " …", at: Date.now() }); save(false); if (chatOn()) renderChat(); return
+  }
   if (stopped && TALK) { const i = D.chat.lastIndexOf(item); if (i >= 0) D.chat.splice(i); save(false); return talkAborted() }
   if (stopped) {   // «Стоп»: вопрос возвращается в строку ввода — поправить и отправить заново
     const i = D.chat.lastIndexOf(item)
@@ -1752,8 +1819,8 @@ async function chatSend(text, opts = {}) {
   }
   D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice(), cc: chatCC.length ? chatCC.slice() : undefined, draft: chatDraft || undefined, mem: window.memUsed ? memUsed() : undefined })
   chatDraft = null
-  if (TALK && TALK.sentAt && TALK.state === "think") tdbg("ответ за " + ((Date.now() - TALK.sentAt) / 1000).toFixed(1) + " с")
-  talkHear(reply)
+  if (TALK && TALK.sentAt && (TALK.state === "think" || live)) talkLat("total", Date.now() - TALK.sentAt)
+  if (live) talkLiveEnd(live, reply); else talkHear(reply)
   if (!TALK && opts.voice) speak(reply)   // спросили голосом в чате — ответ и вслух (если «Читать ответы вслух» включено)
   if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
   D.chat.filter(m => m.thumb || m.thumbs).slice(0, -12).forEach(m => { delete m.thumb; delete m.thumbs })   // миниатюры только у последних фото — память телефона
@@ -5709,16 +5776,20 @@ function sayable(t) {
 // Разбить на предложения: iPhone обрывает длинные фразы, а подпись на экране меняется по предложению
 function sentences(t) { return (sayable(t).match(/[^.!?…\n]+[.!?…]*["»)]?\s*|\n+/g) || []).map(s => s.trim()).filter(s => s.length > 1) }
 var TTS = { keep: [], token: 0 }
-function speak(text, { onSentence, onEnd, force } = {}) {
+// live: ответ ещё пишется — фразы досылаются push(), конец — end(); пока новой фразы нет, синтез ждёт (TTS.wait)
+function speak(text, { onSentence, onEnd, force, live } = {}) {
   ttsStop()
-  if (!force && !IZX().aloud) { if (onEnd) setTimeout(onEnd, 0); return }   // «Читать ответы вслух» выключено — Изи отвечает текстом
+  const none = { push() {}, end() {} }
+  if (!force && !IZX().aloud) { if (onEnd) setTimeout(onEnd, 0); return none }   // «Читать ответы вслух» выключено — Изи отвечает текстом
   const S = window.speechSynthesis, parts = sentences(text)
-  if (!S || !parts.length) { if (onEnd) setTimeout(onEnd, 0); return }
+  if (!S || (!parts.length && !live)) { if (onEnd) setTimeout(onEnd, 0); return none }
   const my = ++TTS.token, z = IZX(), v = iziVoice()
   TTS.keep = []   // ссылки держим, иначе Safari выбрасывает фразу и onend не приходит
-  let i = 0
+  let i = 0, ended = !live, waiting = false
   const next = () => {
     if (my !== TTS.token) return
+    if (i >= parts.length && !ended) { waiting = TTS.wait = true; return }
+    waiting = TTS.wait = false
     if (i >= parts.length) { TTS.speaking = false; if (onEnd) onEnd(); return }
     const s = parts[i++], u = new SpeechSynthesisUtterance(s)
     u.lang = "ru-RU"; try { if (v) u.voice = v } catch (e) {}; u.rate = z.rate || 1; u.pitch = 1
@@ -5729,8 +5800,12 @@ function speak(text, { onSentence, onEnd, force } = {}) {
     TTS.keep.push(u); S.speak(u)
   }
   next()
+  return {
+    push(more) { if (my !== TTS.token) return; parts.push(...sentences(more)); if (waiting) next() },
+    end(more) { if (my !== TTS.token) return; if (more) parts.push(...sentences(more)); ended = true; if (waiting) next() },
+  }
 }
-function ttsStop() { TTS.token++; TTS.speaking = false; try { window.speechSynthesis && speechSynthesis.cancel() } catch (e) {} }
+function ttsStop() { TTS.token++; TTS.speaking = false; TTS.wait = false; try { window.speechSynthesis && speechSynthesis.cancel() } catch (e) {} }
 // Safari разрешает говорить только после касания — «разбудить» синтез пустой фразой в момент нажатия
 function ttsUnlock() { try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u) } catch (e) {} }
 
@@ -5809,7 +5884,7 @@ function talkPin(on, quiet) {
 // а чат перерисовываем, когда окно уже скрылось: раньше всё это шло до анимации, и окно замирало на полпути
 function talkClose() {
   const t = TALK; if (!t) return
-  TALK = null
+  TALK = null   // ответ, если ещё пишется, не останавливаем — он целиком придёт в чат
   clearTimeout(t.timer); clearTimeout(t.idle); clearInterval(t.poll); clearInterval(t.wd); talkBargeOff(t, true)
   const r = t.rec; t.rec = null; t.n++
   // палец оставил окну сдвиг прямо в style — он перекрывал «уехать вниз» из CSS, и окно висело на полпути до удаления
@@ -5830,11 +5905,11 @@ function talkState(s, izi, you) {
 }
 function talkTap() {
   const t = TALK; if (!t) return
-  if (t.state === "say") { ttsStop(); t.cut = talkCutOf(t); return talkListen() }       // перебить
+  if (t.state === "say") { ttsStop(); talkLiveCut(); t.cut = talkCutOf(t); return talkListen() }       // перебить
   if (t.state === "listen") { if (t.w && t.rec && t.rec.wav && (t.heard || t.rec.voiced)) { t.force = true; return } if (!t.heard) { tdbg("касание — микрофон заново"); talkWake(); return talkListen(false, t.done) } return talkSendNow() }   // сказали всё — отправить сразу (Whisper: сперва дораспознать)
   if (t.state === "pause") { tdbg("касание — слушаю"); talkWake(); return talkListen() }
 }
-function talkPause(msg) { const t = TALK; if (!t) return; ttsStop(); talkBargeOff(t, true); clearTimeout(t.timer); clearTimeout(t.idle); t.n++; const r = t.rec; t.rec = null; try { r && r.abort() } catch (e) {}; talkState("pause", null, typeof msg === "string" ? msg : "Нажмите на шар, чтобы продолжить") }
+function talkPause(msg) { const t = TALK; if (!t) return; ttsStop(); talkLiveCut(); talkBargeOff(t, true); clearTimeout(t.timer); clearTimeout(t.idle); t.n++; const r = t.rec; t.rec = null; try { r && r.abort() } catch (e) {}; talkState("pause", null, typeof msg === "string" ? msg : "Нажмите на шар, чтобы продолжить") }
 // Касание — единственное, что iPhone точно разрешает: в нём заново будим звук и берём свежий микрофон
 function talkWake() { try { ttsUnlock(); if (window.STT && STT.on()) { STT.release && STT.release(); STT.prime() } } catch (e) {} }
 // Дослушивать: Изи ждёт, пока человек договорит. Пауза для отправки — 2,6 с; если фраза повисла
@@ -5988,9 +6063,9 @@ function talkListenW(first, keep) {
       let busy = false, doneAt = -1, txt = "", vAtSend = 0
       const glue = () => [t.done, txt].filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
       const run = () => {
-        busy = true; const mark = h.lastVoice
+        busy = true; const mark = h.lastVoice, t1 = Date.now()
         STT.transcribe(h.wav()).then(r => {
-          busy = false
+          busy = false; if (live()) talkLat("stt", Date.now() - t1)
           if (!live() || t.rec !== h) return
           txt = r; doneAt = mark
           if (t.state === "listen") { t.heard = glue(); talkState("listen", null, t.heard || "") }
@@ -6036,7 +6111,7 @@ function talkSendNow() {
   clearTimeout(t.timer); clearTimeout(t.idle)
   if (!text) return talkListen()
   // микрофон не выключаем: если человек продолжит говорить в первые секунды — дослушаем
-  t.sent = text; t.sentAt = Date.now(); t.resumed = false; t.canResume = !askWait   // ответ на вопрос Изи не отменяем
+  t.sent = text; t.sentAt = t.latAt = Date.now(); t.resumed = false; t.canResume = !askWait   // ответ на вопрос Изи не отменяем
   const cut = t.cut; t.cut = null; t.cutSent = cut
   talkState("think", "·  ·  ·", text)
   tdbg("отправила"); chatSend(text, { voice: true, cut })
@@ -6057,12 +6132,12 @@ function talkResume(all) {
 // Отменённый ответ в живом разговоре: если человек продолжил — уже слушаем, иначе слушать заново
 function talkAborted() { const t = TALK; if (!t) return; if (t.resumed) { t.resumed = false; return } talkListen() }
 // Ответ или вопрос Изи пришёл в чат — прочитать вслух, потом снова слушать
-function talkHear(text, opts) {
-  const t = TALK; if (!t) return
+function talkHear(text, opts, live) {
+  const t = TALK; if (!t) return null
   clearTimeout(t.timer); clearTimeout(t.idle)
   const r = t.rec; t.rec = null; t.n++; try { r && r.abort() } catch (e) {}   // Safari: микрофон и голос вместе не работают
   const yn = opts && opts.length === 2 && opts[0] === "Да" && opts[1] === "Нет"   // подтверждение: просто вопрос, ответить «да» или «нет» голосом
-  const say = String(text || "") + (opts && opts.length && !yn ? " " + (opts.length === 2 ? `${opts[0]} или ${opts[1]}?` : opts.slice(0, 4).join(", ") + "?") : "")
+  let say = String(text || "") + (opts && opts.length && !yn ? " " + (opts.length === 2 ? `${opts[0]} или ${opts[1]}?` : opts.slice(0, 4).join(", ") + "?") : "")
   t.said = say; t.saidAt = Date.now() + 6e4
   talkBargeOff(t, true); t.cut = null
   t.sayParts = sentences(say); t.sayI = 0
@@ -6070,11 +6145,18 @@ function talkHear(text, opts) {
   // в живом разговоре Изи всегда отвечает голосом — настройка «Читать ответы вслух» только для обычного чата
   const my = t.n, back = why => { if (TALK === t && t.n === my && t.state === "say") { clearInterval(t.wd); tdbg(why || "договорила"); t.saidAt = Date.now(); talkBargeHand(t, 0); talkListen() } }
   tdbg("говорит")
-  let armed = false
+  let armed = false, ctl = null, first = true
+  // ответ ещё пишется (поток): L.push досылает готовые фразы, L.end — последний кусок
+  const L = live ? { ended: false, fwd: null, alive: () => !L.ended && TALK === t && t.n === my && t.state === "say" } : null
+  if (L) {
+    L.push = more => { if (L.fwd) return L.fwd.push(more); if (!more) return; say += " " + more; t.said = say; t.sayParts.push(...sentences(more)); if (ctl) ctl.push(more) }
+    L.end = more => { if (L.fwd) return L.fwd.end(more); if (more) L.push(more); L.ended = true; capAt(); if (ctl) ctl.end() }
+  }
   const go = pre => {
     if (TALK !== t || t.n !== my || t.state !== "say") return
-    speak(say, { force: true, onSentence: s => {
+    ctl = speak(say, { force: true, live: !!L && !L.ended, onSentence: s => {
       if (TALK !== t) return
+      if (first && t.n === my) { first = false; if (t.latAt) { talkLat("voice", Date.now() - t.latAt); t.latAt = 0 } }
       t.sayI++; talkState("say", s, null)
       if (!armed && t.n === my) { armed = true; setTimeout(() => talkBarge(my), 250) }   // голос пошёл — включаем «ухо», чтобы можно было перебить
     }, onEnd: () => back() })
@@ -6083,7 +6165,8 @@ function talkHear(text, opts) {
       if (armed || TALK !== t || t.n !== my || t.state !== "say") return
       tdbg("голос не пошёл с микрофоном — без уха"); t.noEar = true
       ttsStop(); try { STT.release() } catch (e) {}
-      talkHear(text, opts)
+      const L2 = talkHear(L ? say : text, L ? null : opts, !!L && !L.ended)
+      if (L && L2) L.fwd = L2
     }, 2500)
   }
   // iPhone: микрофон нельзя брать, когда голос уже звучит (iOS обрывает речь). Поэтому «ухо» готовим ДО речи:
@@ -6098,10 +6181,12 @@ function talkHear(text, opts) {
   }
   // Safari иногда не присылает конец речи — тогда Изи «зависала» и больше не слушала. Сторож: речь давно стихла — слушаем дальше
   // iPhone бывает и «вечно говорит» (speaking не сбрасывается) — предел по длине текста: ~85 мс на букву + 5 с
-  clearInterval(t.wd); let quiet = 0
-  const cap = performance.now() + say.length * 85 / (IZX().rate || 1) + 5000, t0s = performance.now()
+  clearInterval(t.wd); let quiet = 0, cap = 0, t0s = performance.now()
+  const capAt = () => { cap = performance.now() + say.length * 85 / (IZX().rate || 1) + 5000; t0s = performance.now() }
+  capAt()
   t.wd = setInterval(() => {
     if (TALK !== t || t.n !== my || t.state !== "say") return clearInterval(t.wd)
+    if (L && !L.ended) { quiet = 0; if (TTS.wait) capAt(); return }   // ответ ещё пишется: ждём следующую фразу, сторож не мешает
     if (performance.now() > cap) { ttsStop(); return back("предел речи") }
     // голос замер: ни начала фразы, ни нового слова 8 с (iOS оборвал речь и не сказал) — дальше слушаем
     if (performance.now() - Math.max(t0s, TTS.tick || 0) > 8000) { ttsStop(); return back("голос замер") }
@@ -6109,6 +6194,56 @@ function talkHear(text, opts) {
     quiet = busy ? 0 : quiet + 1
     if (quiet >= 6) back("тишина синтеза")   // ~3 с тишины синтеза
   }, 500)
+  return L
+}
+// ── Ответ потоком в живом разговоре ──
+// Claude пишет ответ кусками; как только готова первая фраза — Изи её говорит, остальное досылается по мере готовности.
+// Текст до вызова инструмента («Сейчас посмотрю календарь») тоже звучит сразу, пока инструмент работает
+var TLIVE = null
+function talkLiveNew() {
+  const L = { buf: "", step: "", stepSaid: "", said: "", h: null, dead: false }
+  const out = chunk => {
+    if (L.dead || !sayable(chunk).trim()) return
+    L.said += chunk; L.stepSaid += chunk
+    if (L.h && L.h.alive()) return L.h.push(chunk)
+    const t = TALK; if (!t || t.state === "listen" || t.state === "pause") return   // человек говорит — не перебиваем, скажем в конце
+    L.h = talkHear(chunk, null, true)
+  }
+  L.text = d => {
+    if (L.dead) return
+    L.buf += d; L.step += d
+    let k = -1; const re = /[.!?…]["»)]?\s+|\n+/g; let m
+    while ((m = re.exec(L.buf))) k = m.index + m[0].length
+    if (k > 0) { const c = L.buf.slice(0, k); L.buf = L.buf.slice(k); out(c) }
+  }
+  // новый шаг (после инструмента): недописанный хвост прошлого шага — договорить, дальше считать заново
+  const step = () => { if (L.buf.trim()) out(L.buf); L.buf = ""; L.step = ""; L.stepSaid = "" }
+  return { get said() { return L.said }, text: L.text, step, L }
+}
+function talkLiveEnd(live, reply) {
+  const L = live.L
+  if (L.dead) return
+  const rest = L.step.trim() ? L.buf : String(reply || "")   // модель ничего не написала потоком (ошибка, «Готово.») — весь ответ
+  if (L.h && L.h.alive()) return L.h.end(rest)
+  if (!L.stepSaid) return talkHear(reply)                    // из последнего шага ничего не сказано — как раньше, целиком
+  if (rest.trim()) talkHear(rest)
+}
+// Перебили (голосом, касанием или паузой), а ответ ещё пишется — остановить его: сказанное останется в переписке
+function talkLiveCut() {
+  const L = TLIVE && TLIVE.L
+  if (!L || L.dead || !chatBusy || askWait || !L.said) return
+  L.dead = true
+  chatStop()
+}
+// Замеры скорости разговора: последние 30 ответов (с — секунды): voice — от отправки до первого слова Изи,
+// stt — распознавание фразы Whisper, total — до полного ответа. Видны в серой строке и в D.talkLat (для журнала)
+function talkLat(kind, ms) {
+  tdbg((kind === "voice" ? "голос через " : kind === "stt" ? "Whisper " : "ответ за ") + (ms / 1000).toFixed(1) + " с")
+  const a = D.talkLat = Array.isArray(D.talkLat) ? D.talkLat : []
+  const cur = a.length && a[a.length - 1]
+  if (kind === "stt" || !cur || cur[kind] != null || Date.now() - cur.at > 120e3) a.push({ at: Date.now() })
+  a[a.length - 1][kind] = Math.round(ms)
+  if (a.length > 30) a.splice(0, a.length - 30)
 }
 // ── Перебить голосом ──
 // Пока Изи говорит, микрофон слушает громкость (запись с эхоподавлением). Первые 0,7 с — мерим, насколько громко
@@ -6163,7 +6298,7 @@ function talkBarge(my) {
 function talkBargeIn(t, rms, thr) {
   if (TALK !== t || t.state !== "say") return
   tdbg(`перебили ${rms.toFixed(3)} > ${thr.toFixed(3)}`)
-  clearInterval(t.wd); ttsStop()
+  clearInterval(t.wd); ttsStop(); talkLiveCut()
   const cut = talkCutOf(t)
   if (navigator.vibrate) navigator.vibrate(8)
   talkBargeHand(t, .45)   // с Whisper: последние 0,45 с — начало слов человека
