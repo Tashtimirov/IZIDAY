@@ -67,7 +67,7 @@ await page.click(".tk-orb"); await page.waitForTimeout(100)
 ok(await page.evaluate(c0 => TALK.state === "listen" && CANCELS > c0, c0), "касание шара перебивает и слушает")
 await page.evaluate(() => { window.HOLD = false })
 // пауза и продолжение
-await page.click(".tk-mic"); ok(await page.evaluate(() => TALK.state === "pause"), "пауза")
+await page.click("#talk .tk-in .tk-dict"); ok(await page.evaluate(() => TALK.state === "pause"), "пауза")
 await page.click(".tk-orb"); ok(await page.evaluate(() => TALK.state === "listen"), "касание шара на паузе — снова слушает")
 // смахнуть вниз — закончить
 const box = await page.$eval(".tk-sheet", e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + 300 } })

@@ -965,6 +965,80 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 #talk.pin .tk-dbg { display: none; }
 #talk .tk-izi { transition: opacity .35s ease, font-size .35s ease; }
 #talk[data-st="listen"] .tk-izi, #talk[data-st="think"] .tk-izi:not(.ph) { opacity: .45; font-size: 19px; }
+/* Переписка в разговоре: шар поднимается и становится меньше, под ним — сообщения чата стеклянными пузырями.
+   Изи — слева, человек — справа (мятный); фраза, которую Изи сейчас произносит, светится, сказанное — гаснет */
+#talk .tk-orb { transition: width .55s cubic-bezier(.32,.72,0,1), margin .55s cubic-bezier(.32,.72,0,1); }
+#talk .tk-log { display: none; }
+#talk.has-log:not(.pin) .tk-orb { width: min(54vw, 34vh, 240px); margin-top: 0; }
+#talk.has-log:not(.pin) .tk-log { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; width: calc(100% + 8px); max-width: 540px; margin: 2px -4px 0;
+  padding: 18px 4px 10px; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30px, #000 calc(100% - 10px), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 30px, #000 calc(100% - 10px), transparent 100%); }
+#talk .tk-log::-webkit-scrollbar { display: none; }
+#talk .tk-msgs { margin-top: auto; }
+#talk .tk-msgs, #talk .tk-live { display: flex; flex-direction: column; gap: 8px; }
+#talk .tk-live:not(:empty) { margin-top: 8px; }
+#talk .tk-m { max-width: 84%; padding: 9px 14px 10px; border-radius: 20px; font: 400 16px/1.38 system-ui, -apple-system, sans-serif; overflow-wrap: anywhere; white-space: pre-line;
+  border: .5px solid rgba(255,255,255,.14); -webkit-backdrop-filter: blur(16px) saturate(150%); backdrop-filter: blur(16px) saturate(150%); }
+#talk .tk-m.a { align-self: flex-start; background: rgba(255,255,255,.1); border-bottom-left-radius: 7px; color: rgba(255,255,255,.94); }
+#talk .tk-m.u { align-self: flex-end; background: rgba(140,240,205,.2); border-color: rgba(166,255,224,.22); border-bottom-right-radius: 7px; color: #ecfff7; }
+#talk .tk-m.new { animation: tk-msg .42s cubic-bezier(.2,.9,.25,1) both; }
+#talk .tk-m.u.new { transform-origin: 100% 100%; }
+#talk .tk-m.a.new { transform-origin: 0 100%; }
+@keyframes tk-msg { from { opacity: 0; transform: translateY(10px) scale(.96); } }
+#talk .tk-m.live { background: rgba(140,240,205,.12); border-style: dashed; border-color: rgba(166,255,224,.35); color: rgba(225,255,242,.9); animation: tk-msg .3s ease both; }
+#talk .tk-m.say span { transition: opacity .4s ease, color .4s ease, text-shadow .4s ease; }
+#talk .tk-m.say .was { opacity: .6; }
+#talk .tk-m.say .now { color: #fff; text-shadow: 0 0 14px rgba(159,216,255,.55); }
+#talk .tk-m.say .next { opacity: .38; }
+#talk .tk-m.say { border-color: rgba(159,216,255,.35); background: rgba(159,216,255,.12); }
+#talk .tk-m img { display: block; max-width: 150px; max-height: 150px; border-radius: 13px; margin: 1px 0 7px; object-fit: cover; }
+#talk .tk-m a { color: #9fd8ff; }
+#talk .tk-m.dots { display: flex; gap: 5px; padding: 14px 16px; }
+#talk .tk-m.dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.7); animation: tk-dot 1.2s ease-in-out infinite; }
+#talk .tk-m.dots i:nth-child(2) { animation-delay: .15s; }
+#talk .tk-m.dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes tk-dot { 0%, 80%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+#talk.has-log:not(.pin) .tk-cap { flex: none; gap: 0; min-height: 0; }
+#talk.has-log:not(.pin) .tk-izi { display: none; }
+#talk.has-log:not(.pin)[data-st="pause"] .tk-izi[data-at="pause"]:not(:empty) { display: block; font-size: 17px; margin-top: 6px; }
+#talk.has-log:not(.pin) .tk-you { font-size: 14px; margin-top: 6px; }
+#talk.has-log:not(.pin) .tk-you.lv, #talk.has-log:not(.pin) .tk-you:empty { display: none; }
+#talk.has-log:not(.pin) .tk-bar { margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) { #talk .tk-m.new, #talk .tk-m.live { animation: none; } }
+/* Внизу разговора — обычная строка ввода (как в чате) вместо двух круглых кнопок; в закреплённой панели кнопки остаются */
+#talk .tk-in { display: none; }
+#talk:not(.pin) .tk-bar { display: none; }
+#talk:not(.pin) .tk-in { display: flex; align-items: flex-end; gap: 2px; width: calc(100% + 20px); max-width: 560px; margin: 10px -10px 8px; min-height: 52px; padding: 6px; border-radius: 26px; flex: none;
+  background: rgba(255,255,255,.12); border: .5px solid rgba(255,255,255,.2); -webkit-backdrop-filter: blur(24px) saturate(170%); backdrop-filter: blur(24px) saturate(170%);
+  box-shadow: 0 10px 28px -14px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.12); }
+#talk .tk-in textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: none; color: #fff; font: 400 17px/1.3 system-ui, -apple-system, sans-serif; padding: 9px 6px; min-height: 40px; max-height: 120px; }
+#talk .tk-in textarea::placeholder { color: rgba(255,255,255,.5); }
+#talk .tk-in button { width: 40px; height: 40px; border-radius: 50%; border: 0; flex: none; padding: 9px; display: grid; place-items: center; background: none; color: #fff; transition: background .25s, color .25s, transform .15s; }
+#talk .tk-in button:active { transform: scale(.9); }
+#talk .tk-in button svg { width: 22px; height: 22px; display: block; }
+#talk .tk-in .tk-plus { padding: 8px; }
+#talk .tk-in .tk-plus svg { width: 24px; height: 24px; }
+#talk .tk-in .tk-dict.live { color: #a6ffe0; background: rgba(166,255,224,.16); }
+#talk .tk-in .tk-dict.off { color: rgba(255,255,255,.55); }
+#talk .tk-in .tk-send { display: none; background: linear-gradient(150deg, var(--izi2, #18b98a), var(--izi1, #0b8f5c)); }
+#talk .tk-in .tk-send svg { stroke: #fff; }
+#talk .tk-in.txt .tk-send { display: grid; animation: tk-msg .25s ease both; }
+#talk .tk-in.txt .tk-dict { display: none; }
+/* Голос Изи вкл/выкл — справа вверху; выключен — отвечает только текстом */
+#talk .tk-snd { position: absolute; top: calc(14px + env(safe-area-inset-top)); right: 16px; width: 44px; height: 44px; border-radius: 50%; border: .5px solid rgba(255,255,255,.2); color: #fff; display: grid; place-items: center; padding: 0;
+  background: rgba(255,255,255,.12); -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%); transition: background .25s, color .25s, transform .15s; }
+#talk .tk-snd:active { transform: scale(.9); }
+#talk .tk-snd svg { width: 22px; height: 22px; }
+#talk .tk-snd .x, #talk .tk-snd.off .w { display: none; }
+#talk .tk-snd.off .x { display: inline; }
+#talk .tk-snd.off { background: rgba(255,255,255,.88); color: #0b4a33; }
+#talk.pin .tk-snd { display: none; }
+#talk .tk-opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+#talk .tk-opts button { border: .5px solid rgba(255,255,255,.28); background: rgba(255,255,255,.14); color: #fff; font: 600 15px/1 system-ui, -apple-system, sans-serif; padding: 9px 14px; border-radius: 16px; }
+#talk .tk-opts button:active { transform: scale(.95); }
+body.kb #talk:not(.pin) .tk-sheet { padding-bottom: calc(var(--kb) + 8px); }
+body.kb #talk:not(.pin) .tk-orb { width: min(30vw, 120px); }
+body.kb #talk:not(.pin) .tk-hint, body.kb #talk:not(.pin) .tk-dbg { display: none; }
 /* Закреплённый разговор: стеклянная панель над меню — шар, кто говорит, последняя фраза, пауза и чат.
    Приложение под ней живое: вкладки, прокрутка, кнопки. Вниз — закончить, вверх или касание текста — на весь экран */
 #talk.pin { pointer-events: none; }
