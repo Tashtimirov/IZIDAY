@@ -6685,15 +6685,55 @@ document.addEventListener("visibilitychange", () => {
   runWidgetAt = 0
   sync().then(() => { if (back) { render(); toast(pendingOps().length ? "Ещё не всё внесено — откройте виджет ещё раз" : "✓ Внесено в iPhone") } })
 })
-if ("serviceWorker" in navigator && location.protocol === "https:") {
-  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => r.update()).catch(() => {})
-  // Пришла новая версия: в первые секунды после запуска — перезагрузиться сразу; если уже пользуетесь —
-  // тихо перезагрузиться, когда приложение уйдёт в фон (перезагрузка заново спрашивает микрофон у iOS)
-  const had = !!navigator.serviceWorker.controller, born = Date.now()
-  let reloaded = false, pending = false
-  const reload = () => { if (!reloaded) { reloaded = true; location.reload() } }
-  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!had) return; if (Date.now() - born < 4000) reload(); else pending = true })
-  document.addEventListener("visibilitychange", () => { if (pending && document.visibilityState === "hidden") reload() })
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {}) })
+// ── Обновления сами: новая версия скачивается целиком в фоне (sw.js) и применяется в безопасный момент ──
+// Проверяем при запуске, при каждом возврате в приложение и раз в 20 минут, пока оно открыто.
+// Применяем (перезагрузка из кэша — доля секунды) сразу после запуска или возврата, а если вы уже пользуетесь —
+// когда руки свободны: ничего не печатаете, не говорите с Изи, не открыто окно, 40 секунд без касаний; или когда
+// приложение уйдёт в фон. Раздел и место на экране сохраняются, после перезагрузки — короткая подсказка «Обновлено».
+const UPD_KEY = "izi-upd"
+function updBusy() {
+  if (typeof TALK !== "undefined" && TALK) return true                     // разговор с Изи
+  if (chatBusy || rec || voice) return true                                 // Изи отвечает, идёт запись
+  if (stack.length || ($("#layer") && $("#layer").children.length) || $("#onb")) return true   // открыто окно или знакомство
+  const a = document.activeElement
+  if (a && (a.matches("input, textarea, select") || a.isContentEditable)) return true   // печатаете
+  if ([...document.querySelectorAll("#chat-in, textarea")].some(t => t.value && t.value.trim())) return true   // недописанное сообщение
+  return false
+}
+function updRestore() {
+  let u = null; try { u = JSON.parse(sessionStorage.getItem(UPD_KEY) || "null"); sessionStorage.removeItem(UPD_KEY) } catch (e) {}
+  if (!u || Date.now() - u.t > 60e3) return
+  if (u.tab && u.tab !== "today" && u.tab !== "chat") { try { setTab(u.tab) } catch (e) {} }
+  if (u.y) requestAnimationFrame(() => { const m = $("#view"); if (m) m.scrollTop = u.y })
+  setTimeout(() => toast("IZIDAY обновлён"), 400)
+}
+updRestore()
+if ("serviceWorker" in navigator && (location.protocol === "https:" || window.SW_TEST)) {   // SW_TEST — только в тесте на localhost
+  const sw = navigator.serviceWorker
+  const check = () => sw.getRegistration().then(r => r && r.update()).catch(() => {})
+  sw.register("sw.js", { updateViaCache: "none" }).then(r => r.update()).catch(() => {})
+  const had = !!sw.controller
+  let shownAt = Date.now(), touchAt = 0, pending = false, reloaded = false
+  const reload = () => {
+    if (reloaded) return; reloaded = true
+    try { const m = $("#view"); sessionStorage.setItem(UPD_KEY, JSON.stringify({ t: Date.now(), tab: side ? sideFrom : tab, y: m ? m.scrollTop : 0 })) } catch (e) {}
+    location.reload()
+  }
+  // безопасный момент: только что открыли/вернулись и ещё ничего не трогали (или трогали давно) — сразу; иначе ждём паузы
+  const tryApply = () => {
+    if (!pending || reloaded) return
+    if (document.visibilityState === "hidden") return reload()
+    if (updBusy()) return
+    const idle = Date.now() - touchAt
+    if (Date.now() - shownAt < 20e3 ? idle > 1500 : idle > 40e3) reload()
+  }
+  sw.addEventListener("controllerchange", () => { if (!had) return; pending = true; tryApply() })
+  for (const ev of ["pointerdown", "keydown", "touchstart", "wheel"]) addEventListener(ev, () => { touchAt = Date.now() }, { capture: true, passive: true })
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") return tryApply()
+    shownAt = Date.now(); touchAt = 0; check()
+  })
+  setInterval(tryApply, 2000)
+  setInterval(() => { if (document.visibilityState === "visible") check() }, 20 * 60e3)
 }
 
