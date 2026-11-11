@@ -5801,6 +5801,7 @@ function talkOpen(o = {}) {
     <div class="tk-top"><b>${esc(iziName())}</b><span class="tk-st"></span></div>
     <button class="tk-snd" aria-label="Голос Изи">${TK_SND}</button>
     <button class="tk-orb" aria-label="Шар: перебить, отправить или продолжить"><canvas></canvas></button>
+    <div class="tk-note"><i></i><span></span></div>
     <div class="tk-log" aria-live="polite"><div class="tk-msgs"></div><div class="tk-live"></div></div>
     <div class="tk-cap"><p class="tk-izi"></p><p class="tk-you"></p></div>
     <div class="tk-bar"><button class="tk-btn tk-mic" aria-label="Пауза">${ICO.mic}</button><button class="tk-btn tk-chat" aria-label="Перейти в чат">${ICO.chat}</button></div>
@@ -5897,6 +5898,7 @@ function talkInput(t) {
     if (TALK !== t) return
     const z = D.izi || (D.izi = {}); z.mute = !z.mute; save(false); sndUi()
     toast(z.mute ? "Голос выключен — отвечаю текстом" : "Голос включён")
+    talkLog()
     if (z.mute && t.state === "say") { ttsStop(); t.said = ""; talkListen() }   // замолчать сразу
   }
   // варианты ответа на вопрос Изи — кнопками в переписке (без голоса их не слышно)
@@ -5927,6 +5929,8 @@ function talkLog() {
   const t = TALK; if (!t) return
   const log = $(".tk-log", t.el); if (!log) return
   if (!t.inB) { t.inB = true; talkInput(t) }
+  // подсказка под шаром: это живой разговор — пока человек не сказал или не написал первое
+  const nt = $(".tk-note", t.el); if (nt) { if (t.heard || t.sent) t.noteOff = true; nt.classList.toggle("gone", !!t.noteOff); $("span", nt).textContent = talkMute() ? "Живой разговор: говорите сразу — отвечу текстом" : "Живой разговор: говорите сразу — отвечу голосом" }
   const dc = $(".tk-dict", t.el); if (dc) { dc.classList.toggle("off", t.state === "pause"); dc.classList.toggle("live", t.state === "listen"); dc.setAttribute("aria-label", t.state === "pause" ? "Слушать" : "Пауза") }
   const end = !t.logKey || log.scrollHeight - log.scrollTop - log.clientHeight < 90   // читают старое — не дёргаем вниз
   const arr = D.chat.slice(-40), last = arr[arr.length - 1], say = t.state === "say" && last && last.role === "assistant"
