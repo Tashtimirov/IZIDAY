@@ -8,7 +8,7 @@ import path from "path"
 import { friendsServer, CLIENT } from "./fake_friends.mjs"
 import { fakeGoogle } from "./fake_gcal.mjs"
 
-const ROOT = new URL("../dist/web/", import.meta.url).pathname
+const ROOT = process.env.SITE || new URL("../dist/web/", import.meta.url).pathname
 const SHOTS = process.argv[2] || new URL("../build/web-shots/", import.meta.url).pathname
 fs.mkdirSync(SHOTS, { recursive: true })
 const server = http.createServer((req, res) => {
