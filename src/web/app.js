@@ -2040,7 +2040,8 @@ function voiceSend(v) {
 // Зелёная ➤ во время записи: отправить то, что уже услышано, не дожидаясь паузы
 function voiceSendNow() {
   const v = voice, i = $("#chat-in")
-  if (v && v.w) return voiceFinish()   // Whisper: дослушали — распознать и отправить
+  if (!v) return   // запись уже закончилась (двойное касание «отправить») — не падать
+  if (v.w) return voiceFinish()   // Whisper: дослушали — распознать и отправить
   const t = ((i && i.value) || v.text || "").trim()
   const r = rec
   voiceSent()
