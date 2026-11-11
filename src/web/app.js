@@ -5904,7 +5904,7 @@ function talkState(s, izi, you) {
   const t = TALK; if (!t) return
   t.state = s; t.el.dataset.st = s
   $(".tk-st", t.el).textContent = { listen: "Слушаю", think: "Думаю…", say: "Говорит", pause: "Пауза" }[s] || ""
-  if (izi != null) { const p = $(".tk-izi", t.el); p.textContent = izi; p.classList.toggle("ph", !!izi && izi.startsWith("·")) }
+  if (izi != null) { const p = $(".tk-izi", t.el); p.textContent = izi; p.dataset.at = s; p.classList.toggle("ph", !!izi && izi.startsWith("·")) }
   if (you != null) { const p = $(".tk-you", t.el); p.textContent = you; p.classList.toggle("lv", !!you && (s === "think" || you === t.heard || you === t.done)) }   // сказанное — уже пузырём в переписке
   $(".tk-mic", t.el).classList.toggle("off", s === "pause")
   $(".tk-mic", t.el).setAttribute("aria-label", s === "pause" ? "Продолжить" : "Пауза")

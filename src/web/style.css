@@ -1000,7 +1000,7 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 @keyframes tk-dot { 0%, 80%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
 #talk.has-log:not(.pin) .tk-cap { flex: none; gap: 0; min-height: 0; }
 #talk.has-log:not(.pin) .tk-izi { display: none; }
-#talk.has-log:not(.pin)[data-st="pause"] .tk-izi:not(:empty) { display: block; font-size: 17px; margin-top: 6px; }
+#talk.has-log:not(.pin)[data-st="pause"] .tk-izi[data-at="pause"]:not(:empty) { display: block; font-size: 17px; margin-top: 6px; }
 #talk.has-log:not(.pin) .tk-you { font-size: 14px; margin-top: 6px; }
 #talk.has-log:not(.pin) .tk-you.lv, #talk.has-log:not(.pin) .tk-you:empty { display: none; }
 #talk.has-log:not(.pin) .tk-bar { margin-top: 12px; }
