@@ -18,6 +18,8 @@ h1{font-size:28px;margin:0 0 6px}h2{font-size:19px;margin:26px 0 6px}p,li{color:
 <p>Ваши записи (дела, события, траты, здоровье, разговоры с Изи) хранятся в отдельной таблице на сервере IZIDAY (Google Apps Script) и на вашем телефоне. Сокровенная память Изи шифруется на телефоне. Записи не продаются и не передаются третьим лицам.</p>
 <h2>Помощник Изи</h2>
 <p>Сообщения Изи обрабатывает модель Claude (Anthropic) — только чтобы ответить вам. Anthropic не использует эти данные для обучения моделей.</p>
+<h2>Статистика использования</h2>
+<p>Чтобы улучшать приложение, IZIDAY отправляет обезличенную статистику: какие разделы открываются, какие виды действий выполняются (например, «напоминание добавлено»), сколько длятся загрузки и ответы Изи, какие ошибки случаются, модель телефона. Тексты записей, суммы, фото, разговоры и календарь в статистику не попадают. Выключить: Настройки → «Улучшение приложения».</p>
 <h2>Удаление</h2>
 <p>Напишите автору приложения — ваша таблица и данные будут удалены. Выход из аккаунта: Настройки → Аккаунт → «Выйти».</p>
 <h2>Контакт</h2><p>realtashtimirov@gmail.com</p>
@@ -27,6 +29,7 @@ h1{font-size:28px;margin:0 0 6px}h2{font-size:19px;margin:26px 0 6px}p,li{color:
 <p>Signing in with Google gives IZIDAY only your name, email and profile picture (openid, email, profile). The app gets no access to your Gmail, Drive or contacts.</p>
 <p><b>Google Calendar (optional).</b> Only if you tap “Connect Google Calendar”, IZIDAY requests access to your calendar events (calendar.events) and your calendar list (calendar.calendarlist.readonly). It is used to show your events in the app, to create, move and delete events when you ask for it yourself or through the assistant (deletion only after your confirmation), and to send schedule-based hints (morning summary, “time to leave”). The access token is stored only on the IZIDAY server and never on your phone; events are read when needed and cached only on your phone so the calendar opens offline. When you ask the assistant about your schedule, the relevant events are sent to Claude (Anthropic) solely to answer you. Calendar data is never sold, used for advertising or to train AI models, and is not read by humans. You can disconnect at any time in Settings → Account → “Disconnect Google Calendar” or at myaccount.google.com/permissions.</p>
 <p>IZIDAY’s use and transfer of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+<p><b>Usage statistics.</b> To improve the app, IZIDAY sends anonymous usage statistics: which sections are opened, which kinds of actions are taken, load and reply times, errors and the device type. Entry texts, amounts, photos, conversations and calendar data are never included. Turn it off in Settings → “Improve the app”.</p>
 <p> Your entries are stored in a separate spreadsheet on the IZIDAY server (Google Apps Script) and on your phone; private memory is encrypted on the phone. Data is never sold or shared. Assistant messages are processed by Claude (Anthropic) only to answer you. To delete your data, email realtashtimirov@gmail.com.</p>
 </section>
 </main></body></html>
