@@ -62,6 +62,9 @@ _f = OUT / "friends.js"
 # предлагает владельцу вернуться к своему виджету вместо пустого аккаунта на сервере друзей
 OWNER_HASHES = ",".join(hashlib.sha256(e.strip().lower().encode()).hexdigest() for e in _sec.get("owner_emails", []) if e.strip())
 _f.write_text(_f.read_text().replace("__FRIENDS_HOOK__", FRIENDS_HOOK).replace("__GOOGLE_CLIENT__", _sec.get("google_client", "")).replace("__OWNER_HASHES__", OWNER_HASHES))
+# форма недочётов шлёт отчёт на тот же общий сервер друзей
+_b = OUT / "bug.html"
+_b.write_text(_b.read_text().replace("__FRIENDS_HOOK__", FRIENDS_HOOK))
 if FRIENDS_HOOK and FRIENDS_HOOK == _sec.get("sheet_hook"):
     sys.exit("friends_hook совпадает с личной таблицей — так нельзя")
 
