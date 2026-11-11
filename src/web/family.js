@@ -780,6 +780,7 @@ function wrap() {
   renderPlans = function () {
     const html = plans0.apply(this, arguments)
     if (plansF === "fam") { const i = html.indexOf("</div>") + 6; return html.slice(0, i) + famPage() }
+    if (plansF === "all") { try { return html + famPage() } catch (e) { console.error("fam", e) } }   // семья и в общем списке, в конце
     return html
   }
   const top0 = todayTop

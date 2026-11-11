@@ -28,7 +28,7 @@ check(!sheet.post(JSON.stringify({ family: { op: "put", code: "00000000000000", 
 const ask = async (v) => { await page.waitForSelector("#ask-v"); await page.fill("#ask-v", String(v)); await page.click('.sheet [data-a="ok"]'); await page.waitForTimeout(350) }
 // взрослый: «Планы → Семья» → создать
 await page.evaluate(() => { setTab("plans"); plansF = "fam"; render() }); await page.waitForTimeout(200)
-check(await page.evaluate(() => !!$(".pf [data-pf=fam].on") && !!$('[data-f="new"]')), "в «Планах» есть «Семья» с кнопкой «Создать семью»")
+check(await page.evaluate(() => plansF === "fam" && !!$(".pf-back") && !!$('[data-f="new"]')), "в «Планах» есть «Семья» с кнопкой «Создать семью»")
 await page.click('[data-f="new"]'); await ask("Папа"); await ask("Ташимировы"); await page.waitForTimeout(600)
 check(await page.evaluate(() => D.fam && D.fam.code && D.fam.role === "adult" && !!$(".fhero")), "семья создана, у взрослого — счёт семьи")
 check(await page.evaluate(() => D.fam.key === true && /Один ключ Claude на семью/.test($("#view").textContent) && !JSON.stringify(D.fam.data).includes("sk-test")), "общий ключ Claude включён, в данных семьи ключа нет")

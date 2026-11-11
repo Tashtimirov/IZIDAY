@@ -3339,12 +3339,14 @@ let plansF = "all"
 const PLAN_F = [["all", "Всё"], ["lists", "Списки"], ["habits", "Привычки"], ["again", "Снова пора"], ["goals", "Цели"]]
 function renderPlans() {
   const f = plansF, all = f === "all"
-  let html = `<div class="chips pf">${PLAN_F.map(([k, t]) => `<button class="chip ${f === k ? "on" : ""}" data-pf="${k}">${t}</button>`).join("")}</div>`
+  // Без полосы вкладок: «Всё» — одним списком, подстраница (из карточки) — с кнопкой «Все планы».
+  // Первый </div> в начале разметки обязателен: альбом и семья вставляют свою страницу сразу после него
+  let html = all ? `<div class="pf-none"></div>` : `<div class="pf-back"><button data-pf="all"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>Все планы</button></div>`
   if (all || f === "again") html += choresCard(all ? 4 : 0)
   if (all || f === "lists") html += listsCard()
   if (all || f === "habits") html += habitsWeek()
   if (all || f === "goals") html += goalsCard(true)
-  if (f === "goals") html += goalsMore()
+  if (all || f === "goals") html += goalsMore()
   if (all || f === "goals") html += pomoCard()
   return html
 }

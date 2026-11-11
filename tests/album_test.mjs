@@ -66,7 +66,7 @@ check(await page.evaluate(() => { const n = live(D.goals).find(g => g.kind === "
 // Альбом в «Планах»
 await page.evaluate(() => ALBUM.openAlbum("cards")); await page.waitForTimeout(500)
 await shot(page, `${SHOTS}al-album.png`)
-r = await page.evaluate(() => ({ chip: !!$(".pf [data-pf=album].on"), open: $$(".al-wk.open").length, miss: $$(".al-wk.miss").length, cur: !!$(".al-week") }))
+r = await page.evaluate(() => ({ chip: plansF === "album" && !!$(".pf-back [data-pf=all]"), open: $$(".al-wk.open").length, miss: $$(".al-wk.miss").length, cur: !!$(".al-week") }))
 check(r.chip && r.open === 2 && r.miss === 1 && r.cur, "альбом: 2 карточки открыты, 1 неделя не собрана, текущая — кружками", r)
 
 // карточка недели

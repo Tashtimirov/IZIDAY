@@ -51,7 +51,7 @@ check(await page.evaluate(() => live(D.goals).filter(g => g.kind === "ach").leng
 
 // «Мой путь» в «Планах»
 for (const seg of ["path", "ach", "rew", "lg"]) { await page.evaluate(s => GAMI.openGame(s), seg); await page.waitForTimeout(150); await shot(page, `${SHOTS}gm-${seg}.png`) }
-check(await page.evaluate(() => tab === "plans" && $$(".gseg button").length === 5 && !!$(".pf [data-pf=game].on")), "«Мой путь»: Путь · Квесты · Ачивки · Награды · Лига")
+check(await page.evaluate(() => tab === "plans" && $$(".gseg button").length === 5 && plansF === "game" && !!$(".pf-back")), "«Мой путь»: Путь · Квесты · Ачивки · Награды · Лига")
 
 // награды: покупка списывает баланс, ранг не падает
 const buy = await page.evaluate(async () => {
@@ -127,7 +127,7 @@ const offT = await page.evaluate(() => ({ strip: !!$(".gstrip"), gp: $$(".gp").l
 check(!offT.strip && !offT.gp && !offT.clean, "на «Сегодня» нет ранга, «+20» и «Чистого дня»", offT)
 await shot(page, `${SHOTS}gm-off-today.png`)
 await page.evaluate(() => { setTab("plans"); plansF = "game"; render() }); await page.waitForTimeout(200)
-check(await page.evaluate(() => !$(".pf [data-pf=game]") && !$(".gseg") && !$(".gstrip")), "в «Планах» нет «Мой путь»")
+check(await page.evaluate(() => !$(".gseg") && !$(".gstrip")), "в «Планах» нет «Мой путь»")
 await shot(page, `${SHOTS}gm-off-plans.png`)
 const offI = await page.evaluate(async () => ({ tools: AGENT_TOOLS.map(t => t.name), p: await runTool("get_progress", {}), sys: agentSystem() }))
 check(!offI.tools.includes("get_progress") && !offI.tools.includes("add_reward") && offI.p.error && /выключил/.test(offI.sys), "Изи не видит игру и не говорит о баллах", offI.tools)

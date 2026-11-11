@@ -85,7 +85,7 @@ check(await page.evaluate(() => !!$("#fab .orb canvas") && $("#fab").dataset.tab
 await page.click("#gear"); await page.waitForTimeout(300)
 check(await page.evaluate(() => tab === "more" && $("#top-title").textContent === "Настройки"), "шестерёнка — настройки")
 await page.click('[data-tab="plans"]'); await page.waitForTimeout(300)
-check(await page.evaluate(() => tab === "plans" && $("#top-title").textContent === "Планы" && $$(".pf .chip").length === 7), "«Планы» с фильтрами (и «Семья»)")
+check(await page.evaluate(() => tab === "plans" && $("#top-title").textContent === "Планы" && !$(".pf .chip") && !!$(".pf-none") && !!$("#lists") && !!$("#habits-week")), "«Планы» одним списком, без полосы вкладок", await page.evaluate(() => ({ chip: !!$(".pf .chip"), none: !!$(".pf-none"), lists: !!$("#lists"), hw: !!$("#habits-week"), n: PLAN_F.length })))
 
 // снова пора
 let r = await page.evaluate(() => runTool("add_chore", { title: "Полить цветы", every_days: 3, last_done: dayKey(addDays(new Date(), -2)) }))
@@ -141,9 +141,9 @@ await page.evaluate(() => $("#view").scrollTop = 640); await page.waitForTimeout
 await page.screenshot({ path: SHOTS + "p-plans-2.png" })
 await page.evaluate(() => $("#view").scrollTop = 99999); await page.waitForTimeout(200)
 await page.screenshot({ path: SHOTS + "p-plans-3.png" })
-await page.evaluate(() => $("#view").scrollTop = 0); await page.click('[data-pf="habits"]'); await page.waitForTimeout(300)
+await page.evaluate(() => $("#view").scrollTop = 0); await page.evaluate(() => { plansF = "habits"; render() }); await page.waitForTimeout(300)
 check(await page.evaluate(() => !!$("#habits-week") && !$("#lists")), "фильтр «Привычки»")
-await page.click('[data-pf="again"]'); await page.waitForTimeout(200)
+await page.evaluate(() => { plansF = "again"; render() }); await page.waitForTimeout(200)
 await page.click(`[data-chore-done]`); await page.waitForTimeout(500)
 check(await page.evaluate(() => chores().find(c => c.title === "Помыть машину").last > Date.now() - 60e3 && /через 14 дней/i.test($("#chores").textContent)), "машину помыл — снова через 14 дней")
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close(); listSheet(listFind("На выходные").id) }); await page.waitForTimeout(2600)

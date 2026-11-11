@@ -1185,3 +1185,6 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 .wgrp > .wg-b { overflow: hidden; padding-left: 4px; }
 .wgrp > .wg-b > div { overflow: hidden; visibility: hidden; transition: visibility 0s .36s; }
 .wgrp.open > .wg-b > div { visibility: visible; transition: visibility 0s; }
+
+/* Планы без полосы вкладок: кнопка «Все планы» на подстраницах */
+.pf-none{display:none}.pf-back{margin:0 0 10px}.pf-back button{display:inline-flex;align-items:center;gap:4px;border:0;background:none;color:var(--accent);font:inherit;font-weight:600;font-size:16px;padding:6px 2px;cursor:pointer}.pf-back svg{width:20px;height:20px}

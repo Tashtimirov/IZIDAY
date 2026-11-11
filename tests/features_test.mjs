@@ -237,7 +237,7 @@ await page.click('#g-y [data-y="1.5"]')
 check(await page.evaluate(() => $("#g-d").value) === y3, "кнопка «1,5 года» ставит срок через полтора года")
 await page.screenshot({ path: SHOTS + "f-goals.png" })
 await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await page.waitForTimeout(300)
-await page.click('[data-tab="plans"]'); await page.click('[data-pf="goals"]'); await page.waitForTimeout(300)
+await page.click('[data-tab="plans"]'); await page.evaluate(() => { plansF = "goals"; render() }); await page.waitForTimeout(300)
 check((await today()).includes("Цели и мечты") && (await today()).includes("100 желаний"), "«Планы» → Цели: цели и мечты")
 
 // 12б. шаги мечты

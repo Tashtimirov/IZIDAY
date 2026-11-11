@@ -381,6 +381,7 @@ function init() {
   PLAN_F.push(["album", "Альбом"])
   const plans0 = renderPlans
   renderPlans = function () {
+    if (plansF === "all") { let x = ""; try { x = albumPage() } catch (e) { console.error("album", e) } return plans0.apply(this, arguments) + x }   // альбом и в общем списке, в конце
     if (plansF !== "album") return plans0.apply(this, arguments)
     const html = plans0.apply(this, arguments), i = html.indexOf("</div>") + 6
     return html.slice(0, i) + albumPage()

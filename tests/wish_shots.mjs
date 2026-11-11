@@ -84,7 +84,7 @@ await settle(); await page.evaluate(() => sync()); await settle()
 const recs = JSON.parse(fs.readFileSync(process.argv[2], "utf8"))
 const OUT = process.argv[3]
 await page.evaluate(list => { for (const r of list) upsert("goals", Object.assign({}, r, { u: Date.now() })); goalToggle(list.find(x => /Поездка в Китай/.test(x.title)).id, true); goalToggle(list.find(x => /MacBook/.test(x.title)).id, true) }, recs)
-await page.click('[data-tab="plans"]'); await page.click('[data-pf="goals"]'); await page.waitForTimeout(400)
+await page.click('[data-tab="plans"]'); await page.evaluate(() => { plansF = "goals"; render() }); await page.waitForTimeout(400)
 await page.screenshot({ path: OUT + "/1-plany.png" })
 await page.evaluate(() => goalsForm("wish")); await page.waitForTimeout(700)
 await page.screenshot({ path: OUT + "/2-razdely.png" })
