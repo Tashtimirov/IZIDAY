@@ -207,5 +207,5 @@ window.FRIEND = (() => {
     try { if (me() && !sessionStorage.getItem("izi-own") && await isOwner(me().email)) { sessionStorage.setItem("izi-own", "1"); if (await ownerAsk() === "Подключить виджет") widget(false) } } catch (e) {}
   }, 1500)
 
-  return { on, me, login, logout, finish, ai, ask, banner, card, widget, gcalConnect, gcalFinish, gico: GICO }
+  return { on, hook: () => CFG.hook, me, login, logout, finish, ai, ask, banner, card, widget, gcalConnect, gcalFinish, gico: GICO }
 })()

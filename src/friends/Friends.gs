@@ -69,6 +69,7 @@ function doPost(e) {
   try { body = JSON.parse(e.postData.contents); } catch (err) { return out_({ ok: false, error: "bad json" }); }
   CUR = null; CUR_SS = null;
   if (body.login) return out_(login_(body.login));
+  if (body.metrics) return out_(metrics_(body.metrics, body.secret ? userBySecret_(body.secret) : null));   // журнал действий — без доступа к данным
   // Лиги и семьи общие для всех: хранятся в общей таблице и общих свойствах
   if (body.league && !body.secret) return out_(league_(body.league, false));
   if (body.family && !body.secret) return out_(family_(body.family, false));
@@ -513,4 +514,86 @@ function friendsList() {
   const list = users_().map(u => `${u.name} <${u.email}> · с ${new Date(u.at).toLocaleDateString("ru-RU")} · был ${u.seen ? new Date(u.seen).toLocaleString("ru-RU") : "—"}`);
   Logger.log(list.join("\n") || "пока никого");
   return list;
+}
+
+// ── Журнал действий (метрики теста на друзьях) ──
+// Приложение (metrics.js) присылает пачки событий: какой экран открыт, какое действие сделано, сколько длились загрузки
+// и ответы Изи, какие ошибки случились. Содержимого (тексты, суммы, записи) в событиях нет. Всё пишется в отдельную
+// таблицу владельца «IZIDAY — журнал действий» (папка «IZIDAY Друзья»): лист «События» и лист «Сводка» с формулами.
+// Ключ друга нужен только чтобы подписать строку его именем; без ключа строка подписана «без входа» или «владелец».
+const MT = { book: "IZIDAY — журнал действий", maxEv: 60, perDev: 40, dayAll: 40000, keep: 80000,
+  types: ["экран", "действие", "скорость", "ошибка", "сбой", "сеанс", "разговор", "настройка"],
+  head: ["Время", "Кто", "Устройство", "Версия", "Тип", "Что", "Мс", "Раз", "Подробности"] };
+const mtStr_ = (v, n) => { const s = String(v == null ? "" : v).replace(/[\u0000-\u001f]/g, " ").trim().slice(0, n); return /^[=+\-@]/.test(s) ? "'" + s : s; };
+function metricsBook_() {
+  const id = GP_().getProperty("METRICS");
+  if (id) { try { return SpreadsheetApp.openById(id); } catch (e) {} }
+  const ss = SpreadsheetApp.create(MT.book);
+  try { DriveApp.getFileById(ss.getId()).moveTo(folder_()); } catch (e) {}
+  try { ss.setSpreadsheetTimeZone("Asia/Bangkok"); } catch (e) {}
+  const ev = ss.insertSheet("События");
+  ev.getRange(1, 1, 1, MT.head.length).setValues([MT.head]).setFontWeight("bold");
+  ev.setFrozenRows(1);
+  ev.getRange("A2:A").setNumberFormat("dd.MM HH:mm:ss");
+  const sm = ss.insertSheet("Сводка");
+  metricsSummary_(sm);
+  try { const l = ss.getSheetByName("Лист1") || ss.getSheetByName("Sheet1"); if (l) ss.deleteSheet(l); } catch (e) {}
+  try { ss.setActiveSheet(sm); ss.moveActiveSheet(1); } catch (e) {}
+  GP_().setProperty("METRICS", ss.getId());
+  return ss;
+}
+// Сводка за 7 дней — формулами (всегда свежая, считать ничего не нужно)
+function metricsSummary_(sm) {
+  const E = "События!", W = (cond) => "FILTER(" + E + "A2:I," + E + "A2:A>=TODAY()-7" + (cond ? "," + cond : "") + ")";
+  const Q = (cond, q) => '=IFERROR(QUERY(' + W(cond) + ',"' + q + '",0),"пока пусто")';
+  sm.getRange(1, 1).setValue("Сводка теста за 7 дней").setFontWeight("bold").setFontSize(14);
+  sm.getRange(2, 1).setValue("Все строки — на листе «События». Тексты, суммы и записи людей сюда не попадают.");
+  const kpi = [
+    ["Людей сегодня", '=IFERROR(COUNTUNIQUE(FILTER(' + E + 'B2:B,INT(' + E + 'A2:A)=TODAY())),0)'],
+    ["Людей за 7 дней", '=IFERROR(COUNTUNIQUE(FILTER(' + E + 'B2:B,' + E + 'A2:A>=TODAY()-7)),0)'],
+    ["Запусков за 7 дней", '=COUNTIFS(' + E + 'E2:E,"сеанс",' + E + 'F2:F,"открыт",' + E + 'A2:A,">="&(TODAY()-7))'],
+    ["Ошибок и сбоев за 7 дней", '=SUMIFS(' + E + 'H2:H,' + E + 'E2:E,"ошибка",' + E + 'A2:A,">="&(TODAY()-7))+SUMIFS(' + E + 'H2:H,' + E + 'E2:E,"сбой",' + E + 'A2:A,">="&(TODAY()-7))'],
+  ];
+  kpi.forEach((k, i) => { sm.getRange(4 + i, 1).setValue(k[0]); sm.getRange(4 + i, 2).setFormula(k[1]); });
+  const blocks = [
+    [1, "Люди", Q("", "select Col2, count(Col1), max(Col1) group by Col2 order by max(Col1) desc label Col2 'Кто', count(Col1) 'Событий', max(Col1) 'Последний раз'")],
+    [5, "Экраны", Q(E + 'E2:E="экран"', "select Col6, count(Col1) group by Col6 order by count(Col1) desc label Col6 'Экран', count(Col1) 'Открытий'")],
+    [8, "Действия", Q(E + 'E2:E="действие"', "select Col6, sum(Col8) group by Col6 order by sum(Col8) desc label Col6 'Действие', sum(Col8) 'Раз'")],
+    [11, "Скорость, секунды", Q(E + 'E2:E="скорость"', "select Col6, avg(Col7)/1000, max(Col7)/1000, sum(Col8) group by Col6 order by avg(Col7)/1000 desc label Col6 'Что', avg(Col7)/1000 'В среднем', max(Col7)/1000 'Хуже всего', sum(Col8) 'Раз' format avg(Col7)/1000 '0.0', max(Col7)/1000 '0.0'")],
+    [16, "Ошибки и сбои (последние)", Q("(" + E + 'E2:E="ошибка")+(' + E + 'E2:E="сбой")', "select Col1, Col2, Col3, Col5, Col6, Col8, Col9 order by Col1 desc limit 50 label Col1 'Когда', Col2 'Кто', Col3 'Устройство', Col5 'Тип', Col6 'Что', Col8 'Раз', Col9 'Где'")],
+  ];
+  for (const [c, title, f] of blocks) { sm.getRange(9, c).setValue(title).setFontWeight("bold"); sm.getRange(10, c).setFormula(f); }
+  sm.getRange("C10:C").setNumberFormat("dd.MM HH:mm");
+  sm.getRange("P10:P").setNumberFormat("dd.MM HH:mm");
+  sm.setFrozenRows(2);
+}
+function metrics_(m, u) {
+  if (!m || !Array.isArray(m.ev) || !m.ev.length) return { ok: false, error: "нет событий" };
+  if (GP_().getProperty("METRICS_OFF") === "1") return { ok: true, off: true };   // владелец выключил сбор свойством скрипта
+  const dev = String(m.dev || "").replace(/[^0-9a-f]/g, "").slice(0, 6) || "?";
+  if (typeof CacheService !== "undefined") {   // от одного телефона — не чаще 40 пачек за 10 минут; на всех — не больше 40 тыс. строк в день
+    const c = CacheService.getScriptCache(), k = "mt:" + dev, n = +(c.get(k) || 0), kd = "mt:" + FDAY_(), all = +(c.get(kd) || 0);
+    if (n >= MT.perDev) return { ok: false, error: "slow down" };
+    if (all >= MT.dayAll) return { ok: true, skipped: true };
+    c.put(k, String(n + 1), 600); c.put(kd, String(all + m.ev.length), 21600);
+  }
+  const who = u ? (String(u.name || "друг").split(/\s+/)[0].slice(0, 24) + " · " + String(u.id).slice(1, 5)) : m.who === "owner" ? "владелец" : "без входа";
+  const plat = mtStr_(m.plat, 40) + " · " + dev, ver = mtStr_(m.ver, 12), now = Date.now();
+  const rows = [];
+  for (const e of m.ev.slice(0, MT.maxEv)) {
+    if (!Array.isArray(e) || MT.types.indexOf(e[1]) < 0) continue;
+    let t = +e[0]; if (!(t > now - 30 * 864e5 && t < now + 864e5)) t = now;
+    const ms = e[3] === "" || e[3] == null ? "" : Math.max(0, Math.min(36e5, Math.round(+e[3] || 0)));
+    rows.push([new Date(t), who, plat, ver, e[1], mtStr_(e[2], 80), ms, Math.max(1, Math.min(9999, Math.round(+e[4] || 1))), mtStr_(e[5], 160)]);
+  }
+  if (!rows.length) return { ok: true, n: 0 };
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) return { ok: false, error: "занято" };
+  try {
+    const sh = metricsBook_().getSheetByName("События");
+    const last = sh.getLastRow();
+    sh.getRange(last + 1, 1, rows.length, MT.head.length).setValues(rows);
+    if (last > MT.keep && sh.deleteRows) sh.deleteRows(2, 10000);   // старые строки — прочь, таблица не разрастается
+  } finally { lock.releaseLock(); }
+  return { ok: true, n: rows.length };
 }
