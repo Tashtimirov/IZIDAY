@@ -26,7 +26,7 @@ const hmToMin = s => { const m = String(s || "").match(/(\d{1,2})[:.](\d{2})/); 
 const minToHm = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return `${z2h(Math.floor(m / 60))}:${z2h(m % 60)}` }
 const hTxt = h => { const m = Math.round(h * 60); return `${Math.floor(m / 60)} ч${m % 60 ? " " + (m % 60) + " мин" : ""}` }
 const hShort = h => { const m = Math.round(h * 60); return `${Math.floor(m / 60)}:${z2h(m % 60)}` }
-const dec = (n, d = 1) => (Math.round(n * 10 ** d) / 10 ** d).toString().replace(".", ",")
+const dec = (n, d = 1) => (Math.round(n * 10 ** d) / 10 ** d).toString().replace(".", window.L && L.en ? "." : ",")
 const fdate = s => { const [y, m, d] = String(s).split("-").map(Number); return `${d} ${MON_GEN[m - 1]}${y !== new Date().getFullYear() ? " " + y : ""}` }
 const addMonths = (s, n) => { const [y, m, d] = s.split("-").map(Number); return dayKey(new Date(y, m - 1 + n, Math.min(d, 28))) }
 const monthsAgo = s => { const [y, m] = s.split("-").map(Number), n = new Date(); return (n.getFullYear() - y) * 12 + n.getMonth() - (m - 1) }

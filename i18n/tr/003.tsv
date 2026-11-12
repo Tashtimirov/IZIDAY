@@ -1,0 +1,349 @@
+950	Dreams
+951	Wishes
+952	goal for
+953	done {0} of {1}
+954	· in calendar
+955	Break it into steps: what to do first, second… Each step can get a date and go into the calendar. Not sure where to start? Use “Plan with the assistant”.
+956	+ Next step
+957	+ First step: check prices, sign up…
+958	Add plan to calendar · {0}
+959	Plan with the assistant
+960	Done!
+961	Came true!
+962	All steps done!
+963	the goal as achieved
+964	as come true
+965	“{0}” — mark {1}?
+966	Not yet
+967	Goal achieved
+968	Came true!
+969	Focus {0} minutes: {1}
+970	When? For example: “tomorrow”, “Saturday at 10”, “November 15”
+971	Didn't get the date
+972	Add to calendar?
+973	Date only
+974	To calendar
+975	Added to calendar
+976	Adding…
+977	Added {0}, error: {1}
+978	step
+979	steps
+980	In calendar: {0} {1}
+981	monthly goal “{0}”
+982	dream “{0}” ({1})
+983	; steps already exist: {0}
+984	Type a step
+985	Focus
+986	🍅 Pomodoro done
+987	{0} minutes on “{1}”. Now {2} minutes of rest — get up, drink some water.
+988	today {0}
+989	Pomodoro{0}
+990	Stop
+991	{0} minutes of focus today.
+992	Focus {0} minutes
+993	{0}Start with a dream step or tell the assistant “pomodoro on the report”.
+994	🍅 Focus 25 minutes
+995	What are you working on?
+996	Start
+997	🍅 {0} minutes. You'll get a notification when it ends
+998	{0} of {1}
+999	+ Set
+1000	Goals for the month
+1001	. {0} left over from last month.
+1002	New month — 3–5 goals for it. You can tell the assistant: “goals for the month: …”{0}
+1003	· next:
+1004	break into steps ›
+1005	done
+1006	came true
+1007	· slots {0}
+1008	{0} {1} of {2}{3}
+1009	Write everything you want: big and small
+1010	Big ones: for a year, two, three
+1011	3–5 goals for this month
+1012	Goals and dreams
+1013	· came true {0}
+1014	in goals
+1015	To goals
+1016	Steps
+1017	Goals for
+1018	Write everything you want — big and small. Stuck? Tap “Hint” or “Help me come up with ideas”.
+1019	Up to 10 big dreams for up to 2 years. Each can be broken into steps.
+1020	3–5 goals for this month.
+1021	Carry over from last month ({0})
+1022	All {0} slots are taken — mark what came true or remove extras.
+1023	New goal
+1024	Wish #{0}
+1025	Dream #{0}
+1026	Run 50 km, read a book…
+1027	Section
+1028	Auto-detect
+1029	six months
+1030	1 year
+1031	1.5 years
+1032	2 years
+1033	Deadline
+1034	Hint
+1035	Help me come up with ideas
+1036	✨ Came true!
+1037	Now it's a goal for the month
+1038	“{0}”. Break it into dated steps and add the plan to the calendar?
+1039	Later
+1040	Break into steps
+1041	Help me add to my “100 wishes” (now {0}{1}). Ask one question at a time about different areas of life and record my answers.
+1042	(already have: {0})
+1043	Help me set 3–5 goals for this month{0}. Consider my dreams and what I didn't finish last month.
+1044	Type what you want
+1045	✨ Wish #{0}
+1046	Already there
+1047	All
+1048	Lists
+1049	Time again
+1050	All plans
+1051	overdue by {0} {1}
+1052	in {0} {1}
+1053	every day
+1054	once a week
+1055	every 2 weeks
+1056	once a month
+1057	every {0} {1}
+1058	not done yet
+1059	done today
+1060	was yesterday
+1061	was {0} {1} ago
+1062	+ Task
+1063	Recurring tasks: water the plants every 3 days, wash the car every 2 weeks, change the bedding weekly. Check it off — the app will figure out when it's due again.
+1064	All tasks · {0}
+1065	{0} · again {1}
+1066	2 weeks
+1067	Last time
+1068	Yesterday
+1069	Don't remember
+1070	What to do
+1071	How often
+1072	Every N days
+1073	Delete task?
+1074	“{0}” will no longer remind you.
+1075	Type what to do
+1076	From 1 to 365 days
+1077	Time again: {0}
+1078	+ List
+1079	Empty — say “buy milk”
+1080	came true {0}
+1081	Everything you want — big and small
+1082	Big ones for up to 2 years, with steps
+1083	{0} of 10
+1084	all checked
+1085	Empty list
+1086	Checked · {0}
+1087	Add the first item
+1088	Unpin
+1089	Pin
+1090	Delete list?
+1091	“{0}” and all its items.
+1092	{0} to buy
+1093	Tell the assistant “buy milk and bread” or add here
+1094	New list
+1095	Name
+1096	Create
+1097	Name the list
+1098	What you want to do every day (exercise, reading) or quit (sweets, alcohol). Check it off — you'll see your streak and the whole week.
+1099	today {0} of {1}
+1100	streak {0}
+1101	Recurring payments
+1102	done
+1103	no deadline
+1104	{0} · {1} kcal
+1105	{0} days in a row
+1106	Chat
+1107	You:
+1108	Search
+1109	Searches money, reminders, calendar, food, habits and chat. You can search by amount.
+1110	Nothing found
+1111	Connect the app first
+1112	This browser doesn't support site notifications. Open IZIDAY in Google Chrome and install the app (⋮ → “Install app”).
+1113	This phone can't receive site notifications: iOS 16.4 or later is required.
+1114	First add IZIDAY to the Home Screen (Share → Add to Home Screen) and open it from there — notifications only work that way.
+1115	Notifications are off
+1116	Allow them: Phone Settings → Apps → IZIDAY (or Chrome) → Notifications.
+1117	Allow them: Settings → Notifications → IZIDAY.
+1118	the sheet didn't provide a key — update the sheet script
+1119	🔔 Notifications on
+1120	Couldn't turn on
+1121	🔔 Sent — it'll arrive now
+1122	no subscription
+1123	Didn't arrive: {0}
+1124	✓ On
+1125	off
+1126	Test
+1127	Turn on notifications
+1128	the code has no sheet link
+1129	Wrong code
+1130	Copy the connection code in the widget again.
+1131	Connecting…
+1132	✓ Connected
+1133	✓ Connected. The calendar will arrive with the widget update
+1134	The sheet didn't respond
+1135	Check that the new Code.gs is in the sheet and the web app is redeployed (new version).
+1136	🔗 Connection
+1137	The code was copied into Scriptable. Tap “Paste” — that's it.
+1138	{0}Paste
+1139	✓ Added to iPhone
+1140	✓ Marked as done
+1141	⏰ Moved by an hour
+1142	You're nearby: {0}.
+1143	Reminder
+1144	Couldn't find it — it may already be done or deleted.
+1145	✓ Already done
+1146	✅ Done
+1147	✓ Great!
+1148	⏰ In an hour
+1149	🌆 This evening at 19:00
+1150	📅 Tomorrow at 10:00
+1151	💬 Didn't do it — because…
+1152	What got in the way?
+1153	“{0}”. The assistant will take it into account and suggest a better time.
+1154	(due {0})
+1156	Due: {0}. Done?
+1157	Done?
+1158	🎤 Tell the assistant
+1159	Tap and speak
+1160	Swipe down to close
+1161	Allow the camera: Phone Settings → Apps → Chrome (or IZIDAY) → Permissions → Camera.
+1162	Allow the camera for the site: Settings → Safari → Camera → “Allow”.
+1163	Camera unavailable
+1164	{0} For now you can use the system camera — one shot at a time.
+1165	System camera
+1166	Done · {0}
+1167	Up to {0} shots at a time. Tap “Done”
+1168	The second camera is unavailable
+1169	📷 Photo or file
+1170	Food — I'll count calories. Bill — from whom, amount and due date, I'll remind you to pay. Receipt — what was bought and for how much, I'll log the expense.
+1171	Take a photo
+1172	From photos
+1173	File / document
+1174	Describe food in words
+1175	Camera
+1176	One shot or a burst
+1177	Photos and videos
+1178	From the gallery, several allowed
+1179	File
+1180	PDF, Word, Excel, text and more
+1181	IZIDAY is installed — open it from the icon
+1182	Install app
+1183	In Chrome tap ⋮ at the top right → “Install app” (or “Add to Home screen”).
+1184	Press “Back” again to exit
+1185	Olga
+1186	January
+1187	February
+1188	March
+1189	April
+1190	May
+1191	June
+1192	July
+1193	August
+1194	September
+1195	October
+1196	November
+1197	December
+1198	January
+1199	February
+1200	March
+1201	April
+1202	May
+1203	June
+1204	July
+1205	August
+1206	September
+1207	October
+1208	November
+1209	December
+1210	Currency
+1211	All amounts, “Money” and “Savings jars”, summaries and Izi's answers will use it. Amounts already logged aren't converted.
+1212	Currency: {0} {1}
+1213	Russian
+1214	Language
+1215	Language of menus, tips and Izi's answers. Currency is chosen separately.
+1216	menus, tips and Izi's answers
+1217	all amounts, “Money”, “Savings jars”, summaries and Izi — {0}
+1218	· in {0} +{1}
+1219	saved {0}{1}
+1220	by {0}{1}
+1221	collected — you can spend it as planned
+1222	months
+1223	months
+1224	behind by {0} {1} — add {2} {3} in {4}?
+1225	{1} saved in {0} — on track{2}
+1226	{0}save {1} {2} per month · on track
+1227	Fixed payments
+1228	rent, school, phone — from recurring payments
+1229	Savings jars for goals
+1230	split between jars according to their plan
+1231	Emergency fund
+1232	a reserve of 6 months of expenses
+1233	Investments
+1234	long-term, for capital
+1235	Pay off debts early
+1236	on top of the required payment
+1237	Charity
+1238	Education
+1239	courses, books, yours and the kids'
+1240	doctors, tests, sport
+1241	clubs, clothes, toys
+1242	Helping parents
+1243	Gifts and holidays
+1244	Leisure and hobbies
+1245	Living expenses
+1246	food, transport, cafes — everything that's left
+1247	usual share
+1248	{0} per month: {1}
+1249	add recurring payments
+1250	{0} per month so the jars reach their deadlines
+1251	no jars yet — 10%
+1252	emergency fund first
+1253	topping up
+1254	have {0} of 6 months — {1}
+1255	6 months already saved — you can stop
+1256	10% until you have an emergency fund
+1257	+{0} per month on the loan — you'll pay it off sooner
+1258	no loans
+1259	10% — the usual share for capital
+1260	3% — you can do more
+1261	was {0}%, trimmed to cover living costs
+1262	usually ≈ {0} per month goes beyond payments
+1263	everything that's left
+1264	— less is left than usual: reduce jars or extend the deadline
+1265	Customize
+1266	This is the default suggestion. Tap “Customize”, choose your items — Izi will pick the percentages.
+1267	How I split income
+1268	How to split income
+1269	Choose items — Izi will suggest percentages for your payments, jars and usual spending. Any percentage can be adjusted; “Living expenses” recalculates itself.
+1270	Suggest the best split
+1271	Over 100% — reduce something
+1272	your percentage
+1273	Suggested based on your numbers
+1274	Over 100%
+1275	Plan saved
+1276	Account or card
+1277	Deposit
+1278	Real estate
+1279	Car
+1280	the payment doesn't cover the interest — increase the payment
+1281	enter the monthly payment — I'll calculate the term
+1282	· +{0} {1} per month → {2} {3} sooner
+1283	{0} per month · paid off in {1} {2}{3}
+1284	{0} owes you
+1285	promised by {0} — overdue
+1286	promised by {0}
+1287	You owe: {0}
+1288	return by {0} — overdue
+1289	return by {0}
+1290	on day {0} of each month
+1291	Cancel subscription: {0}
+1292	Not a single expense logged this week. Either you're a saint or you forgot to log them.
+1293	No expenses logged in 7 days.
+1294	A week without spending — or without records. If it's the former, you're a hero.
+1295	goal
+1296	(a week earlier −{0}, {1}{2}%)
+1297	Week: −{0}{1}.
+1298	Most of all: {0} — {1}.
+1299	“{0}” as planned

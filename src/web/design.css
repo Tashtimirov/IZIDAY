@@ -143,3 +143,6 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   .ds-empty, .ds-ex button, .check.ds-pop, .check.on::after, .ds-empty .ds-orb, .skel::after { animation: none !important; }
   .sheet.morph { clip-path: none !important; transform: none; }
 }
+
+/* английский интерфейс: английские кавычки у примеров */
+html[lang="en"] .ds-ex button::before, html[lang="en"] .ds-say::before { content: "“"; } html[lang="en"] .ds-ex button::after, html[lang="en"] .ds-say::after { content: "”"; }

@@ -131,7 +131,7 @@
     const f = new FormData()
     f.append("file", blob, "speech.wav")
     f.append("model", MODEL)
-    f.append("language", "ru")
+    f.append("language", (window.L && L.lang) || "ru")
     f.append("temperature", "0")
     f.append("response_format", "verbose_json")
     f.append("prompt", prompt())

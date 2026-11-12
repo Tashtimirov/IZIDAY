@@ -1,0 +1,328 @@
+620	Apply now
+621	Google Calendar didn't respond
+622	{0}Turn on notifications
+623	Tips about water, “time to leave” and reminders will arrive as push notifications.
+624	Turn on
+625	Today
+626	{0} Calendar
+627	ev.
+628	event
+629	events
+630	events
+631	No events
+632	+ Event
+633	until
+634	Nothing planned
+635	Loading Google Calendar…
+636	Reminders
+637	+ Add
+638	All done
+639	No reminders for this day
+640	pay {0}
+641	Paid
+642	place
+643	places
+644	places
+645	will remind nearby: {0} · {1} {2}
+646	Not added to iPhone
+647	This week
+648	Next week
+649	Last week
+650	Talk
+651	{0}Morning summary
+652	{0}Evening
+653	{0}Memory
+654	{0}Clear
+655	your assistant
+656	your assistant
+657	I'm {0}, {1}: meetings, reminders, money, food — or just a chat.
+658	Type in the bar below or tap the microphone in it and speak, then tap the green arrow. For example: “meeting with Olga tomorrow at 10”, “spent 300 on a taxi in cash”, “what's on this week?”
+659	{0}Claude Code session
+660	over the last
+661	days
+662	only since connecting
+663	No watch data for this day: the widget keeps it {0}.
+664	Day summary
+665	{0} L
+666	water of {0}
+667	kcal eaten
+668	expenses{0}
+669	steps
+670	active kcal
+671	exercise min
+672	{0} min
+673	Workouts and walks
+674	P {0} · F {1} · C {2}
+675	💵 cash
+676	💳 transfer
+677	Expenses and income
+678	Nothing logged for this day
+679	{0}Weekly report
+680	This month
+681	This year
+682	Activity
+683	Activity today
+684	watch: {0}
+685	Watch data comes through the widget after the “My day - health” Shortcut.
+686	No watch data for this day.
+687	+ Workout without a watch
+688	active kcal of {0}
+689	L
+690	of
+691	+ Glass {0} ml
+692	{0} · {1} ml
+693	No water logged
+694	Water
+695	{0}From photo
+696	Food{0}
+697	Protein
+698	{0} of {1} g
+699	fat
+700	{0} g
+701	· carbs
+702	Week: calories
+703	Week: water
+704	No expenses
+705	Expenses today
+706	Tap the button — IZIDAY will appear among your apps and open on its own, instantly.
+707	In Chrome tap ⋮ at the top right → “Install app” (or “Add to Home screen”). IZIDAY will open on its own, instantly.
+708	Install IZIDAY
+709	Install the app
+710	Add to Home Screen
+711	Tap “Share” ⎋ at the bottom of Safari → “Add to Home Screen”. The app will open on its own, instantly.
+712	Widget connection
+713	connected
+714	{0} scheduled
+715	old widget version — update MyDay.js
+716	loading
+717	✓ Yes
+718	no
+720	In queue {0}: {1}. The widget will apply them on update; “Apply now” opens Scriptable for a second.
+721	Sheet
+722	Last sync
+723	iPhone notifications
+724	Claude key
+725	Claude Code routes
+726	{0}Sync now
+727	Reconnect
+728	Connect
+729	Disconnect
+730	The connection code comes from the widget: in Scriptable menu → 📱 “My day” app. It contains the Claude key and the sheet key — stored only on this phone.
+731	✓ linked
+732	not linked
+733	Link again
+734	Link Google sign-in
+735	Sign in with Google
+736	This sheet
+737	Sign in once with your Google account — then on any phone the “Sign in with Google” button is enough: this sheet opens with all records, no Scriptable needed.
+738	Notifications
+739	Tips and reminders
+740	Assistant tips, reminders, water and “time to leave” come straight from IZIDAY: the sheet sends them on schedule (every 5 minutes). For “time to leave”, allow the app to use your location.
+741	Goals
+742	Water per day, ml
+743	Protein per day, g
+744	Glass, ml
+745	Calories per day, kcal
+746	Weight, kg (for workouts)
+747	Widget buttons
+748	🎤 and 💬 open the assistant, 📷 — food from a photo, {0} — expense, 💧 — glass of water. Links from the widget open in Safari — the data there is the same, via the sheet.
+749	My day · web app
+750	Jan
+751	Feb
+752	Mar
+753	Apr
+754	May
+755	Jun
+756	Jul
+757	Aug
+758	Sep
+759	Oct
+760	Nov
+761	Dec
+762	{0} year
+763	Month
+764	kcal/day
+765	steps/day
+766	workouts
+767	expenses
+768	Day
+769	water, L
+770	steps
+771	workouts
+772	week
+773	year
+774	Total {0}
+775	{0} min · −{1} kcal
+776	No workouts logged
+777	No expenses
+778	{0}cash {1} · {2}transfer {3}
+779	By month
+780	By day
+781	Steps available for {0} of {1} days: the widget sends watch history for recent days. Water goal — {2} L.
+782	Report: {0}
+783	Expenses {0} · income {1}
+784	Food on average {0} · water {1} · steps {2} per day
+785	, {0} min
+786	Workouts {0}{1}
+787	Expenses by category:
+788	Week
+789	Year
+790	Send as text
+791	Copied
+792	✓ Done
+793	Removed {0} ml
+794	💧 How much did you drink?
+795	In milliliters
+796	Saved
+797	Color “{0}”
+798	Male
+799	Female
+800	Bought
+801	Fasting: {0}
+802	⏱ The window opens at {0}
+803	🎯 Done!
+804	Done. Again — {0}
+805	days
+806	days
+807	Streak {0} {1}
+808	🍅 Done
+809	Pomodoro stopped
+810	🔥 {0} {1} in a row
+811	✎ Edit and tap ➤
+812	Updated
+813	no connection
+814	Connect to the widget
+815	Paste the code from the widget: Scriptable → menu → 📱 “My day” app → “Copy connection code”.
+816	Disconnect?
+817	Keys will be removed from this phone. Records will stay in the sheet and the widget.
+818	🧠 Assistant memory
+819	Empty for now. The assistant remembers important things from conversations on its own; you can say “remember that…”.
+820	fact
+821	facts
+822	facts
+823	conversation
+824	conversations
+825	conversations
+826	{0} {1} · {2} {3} in summaries. Tap a fact to forget it.
+827	Forget?
+828	Forget
+829	Clear chat?
+830	The chat screen will be cleared. The assistant will save a short summary of the conversation to memory and can find it later.
+831	Clear
+832	⚠️ {0}: limit exceeded by {1}
+833	⚠️ {0}: {1} of {2}
+834	Monthly limits
+835	How much you're ready to spend per month in each category. Empty — no limit. The assistant warns you at 80%.
+836	Limits saved
+837	✓ paid this month
+838	overdue since {0} {1}
+839	Recurring payment
+840	🔁 New recurring payment
+841	Amount, {0}
+842	Day of each month
+843	{0}Cash
+844	{0}Transfer / card
+845	Delete payment?
+846	{0} will no longer remind you. Past transactions will remain.
+847	Type what the payment is
+848	A number from 1 to 31
+849	🔁 Saved
+850	💵 cash
+851	{0} · {1} · {2} · on day {3} of each month
+852	✓ Paid
+853	without
+854	not
+855	quitting
+856	quit
+857	Habits
+858	Check off every day what you want to do (exercise, reading) or quit (alcohol, smoking) — the app will count your streak.
+859	slipped
+860	{0} {1} without
+861	{0} {1} in a row
+862	not yet today
+863	none
+864	want to do
+865	No habits yet
+866	New habit
+867	Icon
+868	Want to do
+869	Want to quit
+870	Remove habit?
+871	“{0}” will disappear from the screen. Check-offs stay in history.
+872	Type a habit
+873	Added
+874	Weight
+875	+ Log
+876	Weigh yourself every few days — a chart will appear here. You can tell the assistant “I weigh 78.5”.
+877	· over 30 days {0}{1} kg
+878	{0} kg
+879	⚖️ Weight
+880	In kilograms, e.g. 78.5
+881	Didn't get the weight
+882	⚖️ {0} kg
+883	Shopping
+884	Remind me at:
+885	Tell the assistant “remind me about shopping at Big C” — I'll send the list when you're nearby.
+886	🛒 Buy
+887	Milk, bread, eggs
+888	🛒 On the list: {0}
+889	Already on the list
+890	picks up
+891	bring:
+892	Kids
+893	· bring:
+894	Clubs, classes, who picks up, what to take to school — a push for the day arrives in the morning
+895	Kids' activities
+896	What
+897	At what time
+898	Which child
+899	Who picks up
+900	What to bring
+901	Type what the activity is
+902	Choose weekdays
+903	{0} h {1} min
+904	Fasting
+905	Previous: {0}
+906	Tap after your last meal — you'll get a push when the window opens.
+907	of {0} h · window at {1}
+908	window open — you can eat
+909	Stop
+910	Ate — finish
+911	This month
+912	100 wishes
+913	10 dreams
+914	wish
+915	wishes
+916	wishes
+917	Where do I want to travel?
+918	What do I want to learn?
+919	What do I want to try for the first time?
+920	What do I want to do with my kids?
+921	What do I want for my family and home?
+922	How do I want my body to feel?
+923	How much do I want to earn and save?
+924	Who do I want to meet or befriend?
+925	What adventure do I want to have?
+926	What do I want to do for others?
+927	Which books and films do I want to discover?
+928	What do I want to make with my own hands?
+929	Which work skill do I want to level up?
+930	What do I want to buy myself for joy?
+931	What celebration do I want to throw?
+932	What do I want to be free of?
+933	Where do I want to watch a sunrise?
+934	Which sport do I want to take up?
+935	What do I want to do for my parents?
+936	What did I dream of as a child?
+937	A big trip
+938	House, apartment, car
+939	My own project or business
+940	Savings balance
+941	Fitness and health
+942	A new level at work
+943	Something important for the family
+944	A skill that takes a year
+946	by {0} {1}
+947	steps {0} of {1}
+948	the step has no date
+949	Step toward the goal “{0}”

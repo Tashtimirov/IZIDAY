@@ -452,7 +452,7 @@ function kidIzi() {
     if (recK) return recK.finish()
     if (!SR) { inp.focus(); return toast("Нажми микрофон на клавиатуре и говори") }
     try { if (typeof TTS !== "undefined" && TTS.speaking && typeof ttsStop === "function") ttsStop() } catch (e) {}
-    const r = new SR(); r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
+    const r = new SR(); r.lang = ((window.L && L.loc) || "ru-RU"); r.interimResults = true; r.continuous = true
     let txt = "", t = null, done = false
     const stopNow = () => { clearTimeout(t); try { r.stop() } catch (e) {} ; t = setTimeout(end, 1500) }   // Safari не прислал onend — закончим сами
     const end = () => { if (done) return; done = true; clearTimeout(t); try { r.abort() } catch (e) {}

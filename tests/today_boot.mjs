@@ -3,7 +3,7 @@ const { chromium } = createRequire(import.meta.url)("playwright")
 import http from "http"; import fs from "fs"; import path from "path"
 import { sheetScript } from "./fake_sheet.mjs"
 // opts: root, time (Date), lists(fn(t,day)) → extra hub lists, events(fn) → snap events
-export async function boot2({ root, time, lists = () => ({}), events = () => [], dark = false, h = 844, ctxOpts = {} }) {
+export async function boot2({ root, time, lists = () => ({}), events = () => [], dark = false, h = 844, ctxOpts = {}, init = null }) {
   const server = http.createServer((req, res) => {
     const p = path.join(root, decodeURIComponent(req.url.split(/[?#]/)[0]).replace(/\/$/, "/index.html"))
     if (!fs.existsSync(p)) { res.writeHead(404); return res.end() }
@@ -29,6 +29,7 @@ export async function boot2({ root, time, lists = () => ({}), events = () => [],
   const browser = await chromium.launch()
   const ctx = await browser.newContext({ viewport: { width: 390, height: h }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "ru-RU", timezoneId: "Asia/Bangkok",
     colorScheme: dark ? "dark" : "light", geolocation: { latitude: 7.84, longitude: 98.33 }, permissions: ["geolocation"], ...ctxOpts })
+  if (init) await ctx.addInitScript(init)
   const page = await ctx.newPage()
   const errors = []
   page.on("pageerror", e => errors.push(String(e)))

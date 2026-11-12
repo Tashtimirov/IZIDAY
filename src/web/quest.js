@@ -10,7 +10,7 @@ const Q_PTS = 15, Q_ALL = 30, BOSS_HIT = 15, BOSS_WIN = 150, STEP_PTS = 10
 const COMBO_GAP = 15 * 60e3                       // дела «подряд» — если между отметками не больше 15 минут
 const multOf = n => n >= 5 ? 2 : n >= 3 ? 1.5 : 1   // 3-е дело подряд — ×1,5, с 5-го — ×2
 const FAM_RE = /мам|пап|родител|бабуш|дедуш/i
-const ml = n => String(n).replace(".", ",")
+const ml = n => String(n).replace(".", window.L && L.en ? "." : ",")
 let G = null, loadAt = Date.now()
 const off = () => !G || G.off()
 const ico = (n, s, w) => G.svgI(n, s, w)

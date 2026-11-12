@@ -12,7 +12,7 @@
   function note(m) {
     try {
       const a = JSON.parse(localStorage.getItem(LOG) || "[]") || []
-      const t = new Date().toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+      const t = new Date().toLocaleString(((window.L && L.loc) || "ru-RU"), { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
       m = String(m || "").slice(0, 240)
       if (a.length && a[a.length - 1].m === m) return
       a.push({ t, tab, m }); localStorage.setItem(LOG, JSON.stringify(a.slice(-15)))

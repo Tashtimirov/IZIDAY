@@ -1,0 +1,348 @@
+1300	“{0}” is behind by {1} mo.
+1301	Savings jars: {0}
+1302	You can spend: {0} per day.
+1303	Well then: “{0}” cost {1} more than a week ago.
+1304	Spent {0}% more than last week.
+1305	Spent {0}. Hardly anything to nitpick, but I'll try.
+1306	Savings jar “{0}” is behind by {1} {2}.
+1307	Leader of the week — {0}: {1}.
+1308	No heroics needed: one less cafe a week — and you'll catch up.
+1309	Next week will show whether this was chance or character.
+1310	Well done: “{0}” is {1} less than a week ago
+1311	Well done: spent {0}% less than a week ago
+1312	A week under control: {0} in total
+1313	, and the savings jar “{0}” is growing as planned.
+1314	One more week like this — and {0} is in your pocket.
+1315	You can still spend {0} today.
+1316	After payments and jars, {2} is left until {0} {1}
+1317	The month's budget is already overspent by {0}
+1318	· already −{0} today
+1319	You can spend today
+1320	Log this month's income — I'll calculate how much you can spend per day after payments and jars
+1321	≈ {0} {1} per day
+1322	Izi suggested this based on your payments and jars. Your own items — charity, investments, education — in “Plan”.
+1323	{0} came in — shall we split it?
+1324	Plan
+1325	Split like this
+1326	Not now
+1327	All
+1328	Mine
+1329	Shared with {0}
+1330	Expenses
+1331	Income
+1332	Cash −{0} · card −{1}
+1333	Balance {0}{1}
+1334	expense
+1335	expenses
+1336	expenses
+1337	, last month — {0}
+1338	Remembered: {0} → {1}
+1339	From now on I'll set it myself. “Other” this month: {0} {1}{2}.
+1340	Savings jars
+1341	+ New
+1342	Vacation, a six-month cushion, a new car: a jar with a deadline calculates how much to save per month and whether you're on track.
+1343	Where the money went
+1344	Limits
+1345	of {0}
+1346	exceeded by {0}
+1347	No expenses yet. “Limits” — how much you're ready to spend per month by category.
+1348	paid
+1349	not paid
+1350	on the {0} · {1}
+1351	Per month: {0}
+1352	Rent, internet, subscriptions: they appear in “Today” on time, and payment is logged as an expense with one tap.
+1353	{0} · {1} / mo
+1354	kept · {0} per year
+1355	{0} · {1} per year — still needed?
+1356	Keep
+1357	Looks like subscriptions
+1358	+ Account
+1359	Net worth{0}
+1360	{0} In jars
+1361	already inside accounts
+1362	{0} Debts
+1363	{0} Account
+1364	Accounts, cash, deposits, apartment and debts — in one total with a monthly chart. Currencies are converted at the current rate.
+1365	Debts and loans
+1366	Remind them
+1367	Who owes whom and by when. For a loan — a payoff plan: how much sooner you'll close it by adding a little every month.
+1368	Praise
+1369	Scold
+1370	Dry
+1371	Week in money
+1372	Transactions
+1373	Tell the assistant “spent 300 on a taxi” or “gift for mom 5000 rubles” — the currency converts itself
+1374	cash
+1375	card / transfer
+1376	Report
+1377	Family
+1378	as a family
+1381	Kept: {0}
+1382	Task for today: cancel {0}
+1383	Saved {0} · living ≈ {1} per day
+1384	Split
+1385	How it's calculated
+1386	Already spent today: {0}
+1387	Income this month {0}
+1388	− already spent {0}
+1389	− unpaid payments {0}
+1390	− jars this month {0}
+1391	= {0} for {1} {2}, i.e. {3} per day{4}.
+1392	Savings jar
+1393	New savings jar
+1394	Target, {0}
+1395	Already saved
+1396	Collect by
+1397	Delete savings jar?
+1398	“{0}” and its history will be gone. Money in accounts won't be touched.
+1399	Type what you're saving for
+1400	Enter a target
+1401	Savings jar “{0}”: {1} per month
+1402	{0} of {1} · {2}
+1403	Save now
+1404	Withdraw
+1405	Save
+1406	“{0}” is complete!
+1407	+{0} to “{1}”
+1408	Withdrawn from “{0}”
+1409	Account
+1410	New account
+1411	Current balance
+1412	Update balances once a month — the net worth chart is built from them.
+1413	Net worth updated
+1414	Debt
+1415	New debt
+1416	Make a payment
+1417	Owed to me
+1418	I owe
+1419	Loan
+1420	Due date
+1421	Monthly payment
+1422	Rate, % per year
+1423	Left to pay, {0}
+1424	Debt closed
+1425	Partly repaid
+1426	Payment
+1427	How much was returned
+1428	How much you paid — I'll log it as an expense
+1429	Loans
+1430	Debts
+1431	{0}: payment
+1432	Returned: {0}
+1433	{0} left
+1434	Debt fully closed
+1435	Type who or what
+1436	, agreed by {0} {1}
+1437	Hi! Just a reminder about {0}{1}. When would be convenient to pay back?
+1438	Text copied — paste it into a messenger
+1439	Nothing yet
+1440	Learned categories
+1441	Correct a category once — from then on Izi sets it automatically, for bank transactions too.
+1442	Family budget
+1443	Shared expenses and jars are marked in the form. The “Shared” filter shows only them. When {0} connects IZIDAY to the same sheet, they'll see the shared items, but not your personal ones.
+1444	Name
+1445	downpour
+1446	rain
+1447	, after {0} {1}
+1448	, rain
+1449	ongoing · until {0}
+1450	in {0} min
+1451	Now
+1452	, {0} km
+1453	time to leave
+1454	leave at {0} — in {1} min
+1455	{0} Focus {1} min
+1456	tasks
+1457	water
+1458	protein
+1459	g
+1460	allowed
+1461	Top three
+1462	Choose
+1463	A minute in the morning: pick three tasks that will make the day a success. They'll go to the top.
+1464	No open tasks
+1465	Top three for today
+1466	Mark up to three tasks. The rest — if there's time left.
+1467	No more than three
+1468	and {0} more
+1469	The day is overloaded
+1470	About {0} h of tasks, {1} h free. Move {2}{3} to tomorrow?
+1471	Moved to tomorrow: {0}
+1472	min
+1473	{0} h{1}
+1474	{0} travel {1} min · leave at {2}
+1475	· add “{0}”?
+1476	+ Free {0}–{1} · {2}{3}
+1477	Free {0}–{1}
+1478	What to put in this slot?
+1479	+ New task
+1480	New task
+1481	“{0}” — at {1}
+1482	{1} left until the “{0}” limit
+1483	“{0}”: limit exceeded by {1}
+1484	Spent {0} of {1} this month
+1485	Recurring payment — tap “Paid” in reminders once you've paid
+1486	{0} h without water
+1487	Drank {0} of {1} L — have a glass now
+1488	Save a typical day as a template — “Workday”, “Weekend with kids”, “Trip” — and add all its tasks with one tap.
+1489	Day template
+1490	+ Custom
+1491	task
+1492	tasks
+1493	“{0}”: added {1} {2}
+1494	All template tasks are already there
+1495	New day template
+1496	One task per line. Time at the start is optional: “9:00 Exercise”.
+1497	Tasks
+1498	Name the template
+1499	Add at least one task
+1500	Template saved
+1501	Day closed
+1502	Close the day
+1503	Top: {0} of {1}.
+1504	, steps {0}
+1505	Sum up in a minute →
+1506	{0}Water {1} L{2}.{3}
+1507	Tomorrow
+1508	Not done — move to tomorrow or remove:
+1509	All of today's tasks are done.
+1510	One line about the day
+1511	Day closed. Have a nice evening
+1512	tasks done
+1513	streak “{0}”
+1514	no habits
+1515	on
+1516	% less
+1517	% more
+1518	expenses, {0}
+1519	expenses this week
+1520	steps on average
+1521	Week summary
+1522	Plan for next week
+1523	Preparation:
+1524	Make a plan for next week with me: look at my calendar, tasks, monthly goals and this week's results. Suggest three main goals for the week and spread them across the days.
+1525	Moscow
+1526	Msk
+1527	Ufa
+1528	Dubai
+1529	Dub
+1530	London
+1531	Lon
+1532	New York
+1533	NY
+1534	Me
+1535	(between “{0}” and “{1}”)
+1536	(after “{0}”)
+1537	(before “{0}”)
+1538	task moved
+1539	tasks moved
+1540	tasks moved
+1541	The meeting moved — {0} {1} after it
+1542	won't make it
+1543	travel
+1544	{0} {1} {2} min
+1545	protected
+1546	{0} rain
+1547	{0} they have {1}
+1548	mtg.
+1549	overloaded
+1550	overloaded
+1551	meeting
+1552	meetings
+1553	meetings
+1554	{0} {1}{2} {3} {4}: {5} {6}. Move some?
+1555	Load {0}
+1556	suggest {0} {1}{2}
+1557	no free slots for 3 days
+1558	OK
+1559	No time
+1560	will place in free slots
+1561	No free slots
+1562	No free time for this task in the next 4 days
+1563	When to schedule?
+1564	“{0}” — {1} at {2}
+1565	Your Google Calendar
+1566	Connect it — meetings from it will appear here, and new ones will go to Google on all devices.
+1567	{0}Connect
+1568	Duration, address, reminder and “bring along”
+1569	Sport, kids, an evening with your partner — the assistant won't take it
+1570	When I'm free
+1571	Free slots as text — for a client or friend in a messenger
+1572	Event templates
+1573	Protected time
+1574	From {0} to {1} my calendar is overloaded. Look at these days and suggest which meetings to move and where, without touching protected time. Don't move anything without my “yes”.
+1575	Travel {0} min
+1576	The previous meeting ends later — you won't make it. Move one of the meetings.
+1577	To “{0}”{1}: leave at {2}.{3}
+1578	{0} at {1}
+1579	Done
+1580	Another time
+1581	Remove time
+1582	a day before
+1583	hour
+1584	h
+1585	{0} before
+1586	{0} min before
+1587	{0}, {1} — if you don't say a time
+1588	New event
+1589	{0} Templates
+1590	{0} Type however you like — the event appears here before saving
+1591	Start
+1592	Remind before, min
+1593	Place
+1594	Bring along
+1595	when? add a time
+1596	· {0} leave at {1}
+1597	{0} remind at {1}
+1598	{0} at {1} {2} — umbrella
+1599	{0} bring: {1}
+1600	from template “{0}”
+1601	This time is protected
+1602	“{0}” {1} {2}–{3}. Schedule anyway or find another time?
+1603	Anyway
+1604	{0} Make a template
+1605	No free slot this week
+1606	I suggest {0} {1}
+1607	Time is protected — choose
+1608	Saving…
+1609	Bring along:
+1610	{0} at {1}{2}
+1611	{0} — {1} at {2}
+1612	New event template
+1613	Dentist
+1614	Type “{0} tomorrow at 3pm” — duration, place and reminder fill in automatically.
+1615	Duration, min
+1616	Template “{0}” saved
+1617	remind
+1618	Empty for now. “Property viewing”, “Dentist”, “Workout” — fill in once.
+1619	Tap a template — a new event opens with it. The icon on the right — edit.
+1620	+ New template
+1621	on weekdays
+1622	on weekends
+1623	Family dinner
+1624	Time with kids
+1625	Sport
+1626	Evening with partner
+1627	Nothing protected yet
+1628	Quick add
+1629	During these hours the assistant won't schedule tasks and will warn you if a meeting lands there.
+1630	+ Custom time
+1631	Protect time
+1632	What it is
+1633	Days
+1634	From
+1635	To
+1636	Name the time
+1637	Choose days
+1638	End must be after start
+1639	“{0}” protected
+1640	after {0}
+1641	No free slots in the next two weeks.
+1642	Hello! I can show the property:
+1643	What time works for you?
+1644	Hi! I'm free:
+1645	When works for you?
+1646	I'll send it as text — no links or sign-ups. Protected time and travel are taken into account.
+1647	Client
+1648	Friend
+1649	evening too
