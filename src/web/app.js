@@ -173,7 +173,7 @@ function load() {
 let saveT = null
 function save(push = true) {
   try { localStorage.setItem(STORE, JSON.stringify(D)) } catch (e) { toast("Не удалось сохранить на телефоне: " + e.message) }
-  if (push) { clearTimeout(saveT); saveT = setTimeout(() => sync(), 900) }
+  if (push) { clearTimeout(saveT); saveT = setTimeout(() => syncSoon(), 900) }
 }
 // Личные настройки виджета (категории, календари, цели) приходят с кодом подключения
 function applyCfg() {
@@ -257,6 +257,11 @@ async function hubPostOnce(h, timeout) {
     return j
   } finally { clearTimeout(t) }
 }
+// Фоновый обмен, пока Изи выполняет задание, ждёт конца ответа: таблица обслуживает запросы по одному,
+// и обмен (5–15 с) задерживал каждый запрос помощника — дорогу, календарь, почту
+let syncLater = false
+function syncSoon() { if (typeof chatBusy !== "undefined" && chatBusy) { syncLater = true; return Promise.resolve(false) } return sync() }
+function syncFlush() { if (syncLater) { syncLater = false; setTimeout(() => sync(), 0) } }
 function sync() {
   if (!D.conn || !D.conn.hook) return Promise.resolve(false)
   if (syncing) { syncing.again = true; return syncing.p }
@@ -329,7 +334,7 @@ async function calDo(action, input) {
   try { res = await hubPost({ cal: Object.assign({ action }, input) }, 25000) }
   catch (e) { return { error: e.name === "AbortError" ? "Google Календарь не ответил за 25 секунд — проверьте календарь, возможно, изменение всё же прошло" : String(e.message || e) } }
   const r = res.cal || { error: "таблица не знает календарь — нужно обновить скрипт" }
-  if (!r.error) { calForce = true; sync() }
+  if (!r.error) { calForce = true; syncSoon() }
   return r
 }
 // Напоминания приложения: { id, date, title, due, notes, repeat, done, doneAt }
@@ -395,7 +400,21 @@ const distM = (a, b) => {
   return 2 * R * Math.asin(Math.sqrt(h))
 }
 const nearest = (here, list) => list.slice().sort((a, b) => distM(here, a) - distM(here, b))[0] || null
+let whereAt = 0, whereLast = null
 function whereAmI() {
+  if (whereLast && Date.now() - whereAt < 3 * 60e3) return Promise.resolve(whereLast)   // та же точка 3 минуты — не ждём GPS заново
+  return whereAmI0().then(p => { if (p && p.src === "сейчас") { whereLast = p; whereAt = Date.now() } return p })
+}
+// Поиск места по названию — 30 минут из памяти (рядом с той же точкой): места не переезжают
+const GEO_C = new Map(), ROUTE_C = new Map()
+async function geoCached(q) {
+  const k = [q.query, q.near ? q.near.lat.toFixed(2) + "," + q.near.lng.toFixed(2) : "", q.km].join("|"), c = GEO_C.get(k)
+  if (c && Date.now() - c.at < 30 * 60e3) return c.g
+  const g = await hubPost({ geo: q }, 30000)
+  if (g && g.geo && !g.geo.error && (g.geo.results || []).length) GEO_C.set(k, { at: Date.now(), g })
+  return g
+}
+function whereAmI0() {
   const fromWidget = () => { const l = D.snap && D.snap.loc; return l && l.lat != null ? { lat: l.lat, lng: l.lng, src: `по виджету, ${ago(l.at)}` } : null }
   if (!navigator.geolocation) return Promise.resolve(fromWidget())
   return new Promise(res => {
@@ -1202,11 +1221,14 @@ async function runTool(name, x) {
       if (!here) return { error: "не знаю, где пользователь: разрешите приложению доступ к геопозиции или обновите виджет" }
       try {
         let to = x.to
-        const g = await hubPost({ geo: { query: x.to, near: here, km: 60 } }, 30000)
+        const g = await geoCached({ query: x.to, near: here, km: 60 })
         const best = nearest(here, (g.geo && g.geo.results) || [])
         if (best) to = { lat: best.lat, lng: best.lng }
-        const res = await hubPost({ route: { from: here, to, mode: x.mode || "driving" } }, 30000)
+        // тот же путь за последние 5 минут — без нового запроса (Изи часто спрашивает дорогу дважды)
+        const rk = [here.lat.toFixed(3), here.lng.toFixed(3), JSON.stringify(to), x.mode || "driving"].join("|"), rc = ROUTE_C.get(rk)
+        const res = rc && Date.now() - rc.at < 5 * 60e3 ? rc.res : await hubPost({ route: { from: here, to, mode: x.mode || "driving" } }, 30000)
         if (!res.route) return { error: "скрипт таблицы старый: разверните новую версию Code.gs" }
+        if (!res.route.error) ROUTE_C.set(rk, { at: Date.now(), res })
         return Object.assign({ place: best ? best.name : x.to, from_location: here.src }, res.route)
       } catch (e) { return { error: String(e.message || e) } }
     }
@@ -1743,6 +1765,15 @@ async function agentTurn(messages, system, tools, live) {
     if (!uses.length || res.stop_reason !== "tool_use") return (res.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim() || "Готово."
     const results = []
     if (stopSig && stopSig.aborted) return null
+    // несколько запросов на чтение сразу (календарь, дорога, почта, история мест) — параллельно, а не по очереди
+    const PAR = /^(get_|search_|read_|list_|where_was_i$|route_to$|recall$|mail_search$|mail_read$)/
+    if (uses.length > 1 && uses.every(u => PAR.test(u.name))) {
+      setStatus((TOOL_STATUS[uses[0].name] || "работаю") + "…")
+      const outs = await Promise.all(uses.map(u => runTool(u.name, u.input || {}).catch(e => ({ error: String(e.message || e) }))))
+      uses.forEach((u, i) => results.push({ type: "tool_result", tool_use_id: u.id, content: JSON.stringify(outs[i]) }))
+      messages.push({ role: "user", content: results })
+      continue
+    }
     for (const u of uses) {
       let out
       setStatus((TOOL_STATUS[u.name] || "работаю") + "…")
@@ -1802,6 +1833,7 @@ async function chatSend(text, opts = {}) {
   const stopped = chatStopCtl.signal.aborted
   chatStopCtl = null
   chatBusy = false
+  syncFlush()
   TLIVE = null
   setBusyUI(false)
   // перебили, когда Изи уже говорила начало ответа: вопрос и сказанное остаются в переписке (Изи знает, что успела сказать)
@@ -6675,7 +6707,7 @@ setTimeout(memorize, 8000)   // прошлый разговор закончил
 setTimeout(autoPlan, 15000)   // первый раз за день — план подсказок
 window.addEventListener("hashchange", hashAction)
 sync()
-setInterval(() => { if (document.visibilityState === "visible") sync() }, 60000)
+setInterval(() => { if (document.visibilityState === "visible" && !(TALK && TALK.state !== "pause")) syncSoon() }, 60000)   // в живом разговоре — после него
 setInterval(() => { if (document.visibilityState === "visible") { iziWhenCheck(); iziProactive() } }, 60000)   // Изи пишет первым и «напомни, когда…»
 setTimeout(() => { iziWhenCheck(); iziProactive() }, 20000)
 document.addEventListener("visibilitychange", () => {

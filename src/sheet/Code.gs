@@ -128,6 +128,9 @@ function doPost(e) {
   if (body.league) return out_(league_(body.league, true));
   if (body.family) return out_(family_(body.family, true));
 
+  // Запрос помощника (дорога, место, календарь, почта, чтение листа) без обмена списками — сразу, без очереди
+  // и без чтения всех списков: раньше он ждал общий замок за обменом (до 10–20 с) и заново читал весь _hub
+  if (body.hub && hubToolOnly_(body.hub)) return out_(hubTool_(body.hub));
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -181,6 +184,19 @@ function routeToken_(url) {
   try { const r = JSON.parse(PropertiesService.getScriptProperties().getProperty("ROUTES") || "[]").find(z => z && z.url === url); return r ? String(r.token || "") : ""; } catch (e) { return ""; }
 }
 
+function hubToolOnly_(h) {
+  if (h.lists || h.ops || h.done || h.snap || h.push || h.fire || !(Number(h.since) > 1e15)) return false;
+  return !!(h.route || h.geo || h.read || h.cal || h.mail);
+}
+function hubTool_(h) {
+  const out = { ok: true, now: Date.now(), lists: {} }, ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (h.route) out.route = route_(h.route);
+  if (h.geo) out.geo = geo_(h.geo);
+  if (h.read) out.read = readSheet_(ss, h.read);
+  if (h.cal) { try { out.cal = cal_(h.cal); } catch (e) { out.cal = { error: String(e.message || e) }; } }
+  if (h.mail) { try { out.mail = mail_(h.mail); } catch (e) { out.mail = { error: String(e.message || e) }; } }
+  return out;
+}
 function hub_(h) {
   if (h.push) { try { return { ok: true, push: push_(h.push, h.from) }; } catch (e) { return { ok: true, push: { error: String(e.message || e) } }; } }
   const now = Date.now(), since = Number(h.since) || 0, out = { ok: true, now, lists: {} };
