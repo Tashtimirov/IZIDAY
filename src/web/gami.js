@@ -351,7 +351,7 @@ function tick() {
     else if (tt > lastToday && Date.now() - bornAt > 6000 && !stack.length) {
       const it = st.today.items.filter(isNew).sort((a, b) => b.p - a.p)[0]
       const clean = st.today.clean.ok && !lastTop.includes("clean") && !told.has("clean"), ex = st.today.extra.find(isNew)
-      if (clean || ex || it) gToast(tt - lastToday, clean ? "Чистый день — баллы ×2" : ex ? ex.t : it.t + (it.mult > 1 ? ` · комбо ×${String(it.mult).replace(".", ",")}` : ""), clean || !!ex)
+      if (clean || ex || it) gToast(tt - lastToday, clean ? "Чистый день — баллы ×2" : ex ? ex.t : it.t + (it.mult > 1 ? ` · комбо ×${String(it.mult).replace(".", window.L && L.en ? "." : ",")}` : ""), clean || !!ex)
     }
     ids.forEach(i => told.add(i)); if (st.today.clean.ok) told.add("clean"); toldSet(st.today.k, told)
     lastToday = tt; lastIds = ids; lastTop = st.today.clean.ok ? "clean" : ""

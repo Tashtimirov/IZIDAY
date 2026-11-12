@@ -1,0 +1,169 @@
+3370	Keys and access
+3371	Claude Code routine key
+3372	Memory and log in the sheet
+3373	cipher only
+3374	Face ID for private notes
+3375	Vault
+3376	Private notes lock
+3377	Tips
+3378	Google 2-Step Verification
+3379	the sheet is the main storage — turn on sign-in with confirmation
+3380	the vault is no more secure than the phone itself
+3381	Private notes locked
+3382	Face ID connected
+3383	Another device
+3384	Open IZIDAY in Safari on a Mac or a new iPhone with the same Apple ID and connect the app with the code from the widget. The vault opens with Face ID or Touch ID: the key comes via iCloud “Passwords”. Without iCloud — with the recovery code.
+3385	Memory
+3386	undone
+3387	{0} Undo
+3388	did
+3389	did
+3390	Empty for now
+3391	what {0} {1} on its own · 90 days
+3392	The log is stored in the app with a copy in the sheet (the “Log” sheet, encrypted). Entries older than 90 days are deleted automatically.
+3393	Undone
+3394	Private notes weren't exported: the vault was locked
+3395	IZIDAY memory
+3396	{0} {1} along: {2}
+3397	other
+3398	· app
+3399	· browser
+3400	speed
+3401	· failures
+3402	max {0} s{1}
+3403	no text
+3404	repeats
+3405	money
+3406	places
+3407	reminders
+3408	budgets
+3409	recurring payments
+3410	habits
+3411	habit check-offs
+3412	weight
+3413	shopping
+3414	kids' activities
+3415	fasting
+3416	goals and wishes
+3417	focus
+3418	tips
+3419	Izi: chat
+3446	Improve the app
+3447	Send statistics
+3448	Which sections open, how long loading and {0}'s answers take, which errors happen. Texts, amounts, records, photos and conversations are not sent.
+3449	setting
+3450	statistics off
+3451	statistics on
+3459	What do you do most of the day?
+3460	I'll tune tips to your rhythm
+3461	Work in an office
+3462	Work from home
+3463	Own business
+3464	Study
+3465	Home and family
+3466	Flexible schedule
+3467	Your usual schedule
+3468	When to send the morning summary and remind you about sleep
+3469	I usually get up
+3470	before 6
+3471	after 9
+3472	I usually go to bed
+3473	before 22
+3474	after 24
+3475	What do you want to sort out first?
+3476	You can choose several
+3477	Getting organized
+3478	Less stress
+3479	Time with loved ones
+3480	Learning and growth
+3481	Which habits do you want to start?
+3482	I'll add them to “Plans” — extra ones are easy to remove later
+3483	Drink water
+3484	Exercise
+3485	Read
+3486	Go to bed on time
+3487	Meditation
+3488	Less phone
+3489	Walk more
+3490	Learn a language
+3491	Keep a diary
+3492	Main goal for the coming months
+3493	I'll help break it into steps
+3494	Save for a big purchase
+3495	Lose weight or get stronger
+3496	Grow at work
+3497	Start my own business
+3498	Learn something new
+3499	Rest more
+3500	How should I talk to you?
+3501	You can change it in settings
+3502	Like a friend
+3503	Briefly
+3504	Write first
+3505	Yes, when it fits
+3506	Only when I ask
+3507	What do you like?
+3508	Choose everything you love
+3509	Drawing
+3510	Games
+3511	Music
+3512	Building sets
+3513	Animals
+3514	Experiments and science
+3515	What do you want to do every day?
+3516	I'll add it to your tasks — stars for each
+3517	Brush teeth
+3518	Read for 15 minutes
+3519	Tidy my room
+3520	Homework right after school
+3521	What do you dream about?
+3522	I'll help you save up
+3523	A toy or gadget
+3524	A bike or scooter
+3525	A trip
+3526	A pet
+3527	A gift for someone
+3528	How should I talk to you?
+3529	Fun, like a friend
+3530	Short
+3531	or write your own
+3532	or in your own words
+3533	Question {0} of {1}
+3534	daytime:
+3535	at 6–7
+3536	at 7–8
+3537	at 8–9
+3538	after 9
+3539	at 22–23
+3540	at 23–24
+3541	after midnight
+3550	Adult
+3551	full version
+3552	Child
+3553	kids version
+3554	Hi! I'm {0}
+3555	I'll remind you about tasks, praise you for what you've done and help you save for a dream. Who will use it?
+3556	Hi! I'm
+3557	I'll help keep your day under control: tasks, money, health. Who will use it?
+3558	Let's get acquainted
+3559	A couple of questions about you
+3560	{0} short questions so I can understand you better{1}.
+3561	{0} short questions about habits and goals — so advice will be more accurate. Nothing personal: no name, no address.
+3562	Any question can be skipped
+3563	Any question can be skipped, answers are visible only on this phone
+3564	Tell me
+3565	Tap the microphone in the bar below and speak. I'll write everything down myself{0}.
+3566	“Football tomorrow at five”
+3567	“I brushed my teeth”
+3568	“I want to save for a scooter”
+3569	Do tasks
+3570	Collect stars
+3571	Get rewards
+3572	Every task done brings stars. Stars get you rewards you come up with together with your parents.
+3573	tomorrow, 10:00 — to calendar
+3574	Taxi · 350
+3575	expense, Transport
+3576	Just say it
+3577	Hold the orb below and speak like you would to a person. {0} will figure out what it is: a task, an expense or water.
+3578	“Dentist tomorrow at 10, and log a taxi for 350”
+3579	events, tasks, day rings

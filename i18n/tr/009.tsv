@@ -1,0 +1,200 @@
+3160	was {0}
+3161	no date
+3162	mo.
+3163	· every {0}
+3164	Book
+3165	{0} Monthly report
+3166	Weight, sleep, heart rate, steps, nutrition and medications on one page.
+3167	{0} Send to the coach
+3168	Sleep and well-being
+3169	sleep
+3170	resting heart rate
+3171	mood
+3172	logging sleep
+3173	logging mood
+3174	adding a medication
+3175	marking a dose
+3176	writing to the medical record
+3177	making a workout plan
+3178	changing settings
+3180	a push will come at each dose time
+3181	everything for today is already checked off
+3183	Make me a workout plan for the week. First ask about the goal if you don't know it, then save the plan and put the workouts in the calendar.
+3184	In calendar: {0}
+3185	The time is taken by a protected block — change the time
+3186	Nothing to add
+3187	Logged. A minute of breathing may help
+3188	Added to shopping
+3189	Today · readiness {0}
+3190	Sleep, water, medications, workouts
+3191	Google Password Manager
+3192	iPhone “Passwords”
+3193	IZIDAY memory vault
+3194	Face ID didn't provide the key: iOS 18 or later is required
+3195	vault not enabled
+3196	vault locked
+3197	Opened private notes
+3198	for {0} min
+3199	until exit
+3200	Face ID for the vault isn't set up
+3201	this Face ID doesn't match the vault
+3202	the code didn't work
+3203	This browser can't open the vault with Face ID — private notes will open with the code.
+3204	Face ID cancelled — private notes will open with the code for now, Face ID can be added later.
+3205	Face ID didn't connect:
+3206	Face ID isn't available here — private notes will open with the code.
+3207	Turned on the memory vault
+3208	open the vault with the code first
+3209	this browser can't use Face ID for the vault
+3210	Friends and acquaintances
+3211	Work
+3212	Values and rules
+3213	No area
+3214	password or code
+3215	card number
+3216	passport number
+3217	account number
+3218	income
+3219	expense
+3220	Logged {0} {1}{2}{3}
+3221	Fixed a transaction{0}
+3222	Deleted a transaction
+3223	Created event “{0}”
+3224	Changed an event{0}
+3225	Deleted an event
+3226	Set reminder “{0}”
+3227	Changed a reminder
+3228	Deleted a reminder
+3229	Logged food: {0}
+3230	Logged water {0} ml
+3231	Logged workout: {0}
+3232	Remembered: “{0}”
+3233	Forgot a fact
+3234	Handed a task to Claude Code: “{0}”
+3235	Sent an email{0}
+3236	Replied to an email
+3237	Saved an email draft
+3238	Sorted email ({0})
+3239	Added to shopping: {0}
+3240	Added a goal: {0}
+3241	Logged weight {0} kg
+3242	Checked off habit {0}
+3243	Planned the day's tips
+3244	Deleted a record
+3245	Declined to remember {0}
+3247	private
+3250	recalling
+3251	waiting for Face ID
+3253	private, encrypted
+3256	Done:
+3257	about a person
+3258	Remembered a private note{0} (encrypted)
+3261	Turn on the memory vault
+3262	Everything Izi knows about you will go to the sheet encrypted. 2 minutes.
+3263	Memory is encrypted
+3264	It's not on this device yet: open the vault with Face ID or the code.
+3265	{0} reads everything on this phone. The Google Sheet has only the cipher.
+3266	Private
+3267	on exit
+3268	{0} {1} · locks {2}
+3269	{0}psychology, conflicts, opinions about people, diary
+3270	{0} {1} {2} still encrypted on this device
+3271	Empty for now. {0} remembers important things from conversations on its own; you can say “remember that…”.
+3272	When you tell me about someone, a card will appear here.
+3273	What went into the last conversation
+3274	{0} shows which cards it took along
+3275	{0}'s log
+3276	what was done without you · can be undone
+3277	Vault and security
+3278	recovery code, Face ID, when to lock
+3279	vault off
+3280	Export everything
+3281	one file, decrypted, only for you
+3282	Forget…
+3283	a fact, a person, an area or everything
+3284	Areas
+3285	People
+3286	+ Person
+3287	Manage
+3288	people
+3289	What {0} knows
+3290	Last conversation
+3291	No conversations yet.
+3292	took
+3293	took
+3294	, on the topic:
+3295	{0} took {1} {2} {3} along {4} {5}{6}. The rest of memory didn't go into the conversation.
+3296	New person
+3297	What do you call them?
+3298	Olga, Mom, Michael
+3299	What to remember about them?
+3300	who they are to you, what matters to them, dates
+3301	· encrypted
+3302	Empty
+3303	{0} {1}{2} · tap to forget
+3304	Forgot at your request: “{0}”
+3305	{0} Your private notes about this person open with Face ID
+3306	person card
+3307	Forget everything about this person
+3308	Forget {0}?
+3309	All facts about this person will be deleted everywhere, including the sheet.
+3310	Forgot everything about: {0}
+3311	A whole area
+3312	Everything I know about you
+3313	Which area?
+3314	Forget “{0}”?
+3315	{0} {1} will be deleted everywhere.
+3316	Forgot the area “{0}”
+3317	Forget everything?
+3318	All of {0}'s memory about you will be deleted from the phone and the sheet, including private notes. This can't be undone.
+3319	Forget everything
+3320	Forgot everything at your request
+3321	{0} needs private notes
+3322	Open private notes
+3323	. These entries are encrypted.
+3324	Psychology, conflicts, opinions about people and the diary are encrypted.
+3325	{0} Open with Face ID
+3326	5 minutes
+3327	15 minutes
+3328	Until exit
+3329	Answer without it
+3330	Open with code
+3331	The code has 24 characters
+3332	Private notes opened
+3333	Face ID cancelled
+3334	Memory vault
+3335	once, 2 minutes
+3336	How it works
+3337	The key lives only on this phone
+3338	Neither Google, nor the widget, nor anyone who opens the sheet can see it
+3339	The sheet gets only the cipher
+3340	instead of “Olga loves peonies” — “d1:Qm9sYXI…”
+3341	Private notes are also behind Face ID
+3342	regular memory is always open to {0}, private notes — with your face. The Face ID key is stored in “Passwords” and is on all your Apple devices
+3343	Recovery code
+3344	If you lose both the phone and iCloud access, only this code will bring memory back. Without it nobody can read it, not even you.
+3345	Save…
+3346	Best option: “Passwords” → “+” → site “IZIDAY vault”, password — this code.
+3347	I saved the code — turn on
+3348	Code copied
+3349	Couldn't copy
+3350	IZIDAY recovery code
+3351	IZIDAY vault recovery code: {0}
+3352	Turning on…
+3353	Vault turned on
+3354	Private notes open with Face ID.
+3355	{0}'s memory now goes to the sheet encrypted.{1}
+3356	stored only in the sheet script's properties, not on the phone or in files
+3357	is still in the app — reconnect the app
+3358	on · key in “Passwords”, available on your Apple devices
+3359	not set up — opens with the code
+3360	5 min
+3361	15 min
+3362	On exit
+3363	Lock private notes now
+3364	Open on a Mac or a new phone
+3365	with Face ID / Touch ID via iCloud or with the recovery code
+3366	Screen lock: 6-digit PIN or fingerprint
+3367	iPhone passcode of 6 digits or more
+3368	Security
+3369	vault on {0}

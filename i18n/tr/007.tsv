@@ -1,0 +1,372 @@
+2380	To myself
+2381	Adult: points come from their IZIDAY app.
+2382	· hasn't signed in on their phone yet
+2383	· needs review
+2384	No tasks yet
+2385	Paid chore
+2386	Add a task
+2387	No dreams yet
+2388	on Mon
+2389	on Tue
+2390	on Wed
+2391	on Thu
+2392	on Fri
+2393	on Sat
+2394	on Sun
+2395	not set
+2396	Add money
+2397	Tasks this week
+2398	Lessons
+2399	In jars
+2400	Tasks and rewards
+2401	Split
+2402	Spend {0} · Save {1} · Share {2}
+2403	Purchases without asking
+2404	What the child sees
+2405	Their own tasks, dreams, jars and lessons, family goals and the shared score. Your spending, diary, health and calendar are hidden from them.
+2406	{0} Sign-in link
+2407	Remove from family
+2408	How much to add?
+2409	It will be split between jars by the child's split.
+2410	Added
+2411	Remove {0} from the family?
+2412	Tasks and stars will stay in the log, but {0} will no longer be in the family.
+2413	{0}: this week {1} hasn't checked off anything yet. You could pick one simple task for tomorrow together.
+2414	check-off
+2415	check-offs
+2416	check-offs
+2417	lesson
+2418	lessons
+2419	lessons
+2420	, didn't touch the “Save” jar
+2421	{0}: this week {1} {2}{3}{4}. A good reason for praise.
+2422	Already in your wishes
+2423	Added to your wishes
+2424	Water the garden
+2425	Brush teeth, pack the backpack…
+2426	How much we pay, {0}
+2427	Stars
+2428	When
+2429	Needs an adult's review
+2430	What to do
+2431	Let {0} suggest
+2432	Suggest 5 simple daily tasks for {0}{1} to earn stars in IZIDAY kids mode. Short, as a list, with the number of stars (5–20). I'll add them myself in “Family”.
+2433	Type what to do
+2434	Jar currency
+2435	Money · {0}
+2436	Pocket money, {0} (0 — no pocket money)
+2437	Split, %: Spend · Save · Share
+2438	Purchases without asking — up to, {0}
+2439	The split must add up to 100%
+2440	A goal is a shared reward the family gets for points: adults — from their tasks, kids — with stars ×{0}.
+2441	What we'll get
+2442	How many points
+2443	Deadline (optional)
+2444	Repeat every time (e.g. a movie every 1,000)
+2445	Set goal
+2446	At your pace ({0} per day) that's about {1} {2}.
+2447	Type what we'll get
+2448	· repeats
+2449	{0} of {1} points{2}. {3}
+2450	Remove goal
+2451	A sheet is needed
+2452	The family is stored in your Google Sheet. Connect the app to the widget first.
+2453	How should we sign you?
+2454	Everyone in the family will see this name.
+2455	For example: Dad or Ildar
+2456	Family name
+2457	Our family
+2458	Creating the family…
+2459	The family can't be created yet
+2460	Couldn't reach the sheet ({0}), even after three tries. Check the internet and tap again.
+2461	The sheet replied: {0}
+2462	The sheet still has an old script version — the family will work after it's updated.
+2463	No connection to the sheet. Try again later.
+2464	shared IZIDAY key
+2465	from the widget
+2466	your own, pasted manually
+2467	shared family key “{0}”
+2468	Connected
+2469	Not connected
+2470	without a key everything works except talking to {0} and calories from photos
+2471	The key is stored only on this phone. It's used by you and your family, if you created one — nobody else.
+2472	Your own Claude key
+2473	Three steps, about two minutes.
+2474	Open the Anthropic website and sign in (Google works).
+2475	Tap “Create Key”, name it “IZIDAY” and copy the key.
+2476	Paste it here — {0} will check that it works.
+2477	{0} Open the website
+2478	Key
+2479	Paste
+2480	Check and save
+2481	This doesn't look like a key: it starts with “sk-” and is quite long
+2482	Checking…
+2483	The key didn't work. Copy it again in full.
+2484	The key is valid, but the Anthropic account has no funds: top up the balance in Billing.
+2485	Anthropic replied:
+2486	No connection — try again.
+2487	Key connected
+2488	The shared key didn't turn on:
+2489	What's the child's name?
+2490	How old is {0}?
+2491	8–13 — kids mode, 14–17 — the regular app within the family.
+2492	{0}, this is your IZIDAY sign-in. Open the link on your phone: {1}
+2493	Join our family in IZIDAY: shared goals and points. Open the link: {0}
+2494	Family in IZIDAY
+2495	Link copied
+2496	Invite link
+2497	The family link is broken
+2498	Switch to another family?
+2499	You're now in the family “{0}”.
+2500	Switch
+2501	Join the family “{0}”?
+2502	For example: Olga
+2503	Join
+2504	Family: {0}
+2505	Paste the link mom or dad sent you.
+2506	Sign in
+2507	This isn't a family link
+2508	Leave the family?
+2509	Your points will stop counting toward the family score.
+2510	Key removed
+2511	task waiting
+2512	tasks waiting
+2513	tasks waiting
+2514	Family: {0} {1} for review
+2515	, dream “{0}”
+2516	{0}{1}: stars {2}, tasks {3}{4}
+2520	day
+2521	days
+2522	{0} h
+2523	{0} d {1} h
+2524	Digestion
+2525	The body is still digesting the last meal.
+2526	Blood sugar drops
+2527	Insulin falls, the body draws energy from liver stores.
+2528	Switching to fat
+2529	Sugar stores run out, the body starts burning fat.
+2530	Ketosis
+2531	Ketones rise — many people feel steady energy and a clear head at this point.
+2532	One day
+2533	The hardest part is usually behind you. Cell renewal (autophagy) increases.
+2534	Two days
+2535	Deep ketosis. Watch how you feel, drink water with a pinch of salt.
+2536	Long fast
+2537	This is a serious load — better under a doctor's supervision.
+2538	Drink water during the day — 2–2.5 L. If you feel dizzy or unwell — just eat, that's fine.
+2539	Drink 2–3 L of water a day, add a pinch of salt. No heavy workouts.
+2540	Stop if you feel weakness, dizziness or palpitations.
+2541	Don't fast longer than 2 days if you have diabetes, heart, kidney or liver disease, low weight, are pregnant or breastfeeding, have had eating disorders, or are under 18.
+2542	If you take medication — especially for blood pressure or sugar — ask your doctor first.
+2543	Stop immediately and eat if you feel severe weakness, fainting, palpitations or confusion.
+2544	From 3 days — better under a doctor's supervision.
+2545	Break the fast gently: broth, vegetables, small portions.
+2546	Long fasting — carefully
+2547	Fasting · water
+2548	, a pinch of salt is fine
+2549	Already {0} h. Drink a glass of water{1}.
+2550	One day done
+2551	{0} {1} done
+2552	{0} to go. How do you feel? Weakness or dizziness is a reason to calmly finish.
+2553	The fast ends in an hour
+2554	Start with something light: broth, an egg, vegetables. Small portions, nothing sweet or fatty.
+2555	The first meal should be light: protein and vegetables.
+2556	End
+2557	You did it. The first meal should be light and small.
+2558	Left
+2559	Goal
+2560	· about {0} L is worth it
+2561	water since the start{0}
+2562	+250 ml
+2563	More
+2564	Breaking the fast
+2565	You fasted {0}. Eat little by little today: broth, eggs, vegetables, dairy. Sweet and fatty — tomorrow.
+2566	Previous: {0}, {1}.
+2567	Tap after your last meal. When the time is up, you'll get a push.
+2568	24 hours
+2569	16 hours
+2570	18 hours
+2571	Custom
+2572	up to 7 days
+2573	{0} Fasting
+2574	hours
+2575	Last meal
+2576	Earlier
+2577	When you last ate
+2578	I'm healthy, over 18, and I've read the warning
+2579	I won't set more than 7 days — fasting that long is only safe under a doctor's supervision.
+2580	already passed
+2581	Duration
+2582	Check the warning box
+2583	Start for {0}
+2584	Fast started · ends {0}
+2585	h ·
+2586	Fasting · {0}
+2587	Started {0} · ends {1}
+2588	Stages are approximate — everyone is different.
+2589	Extend or shorten
+2590	Finish now
+2591	More than 2 days
+2592	I'm healthy, extend
+2593	Now {0} · ends {1}
+2594	The window opens {0}
+2600	Link Google sign-in?
+2601	Sign in once with Google using your email — then on a new phone or after reinstalling, one “Sign in with Google” button is enough: this sheet opens with all records.
+2602	Link
+2603	Connect my widget
+2604	Calendar, reminders and all records will come from your Scriptable widget. Scriptable opens and copies the code: come back with the “◀ IZIDAY” button at the top left and tap “Paste”.
+2605	This is your personal account
+2606	Your calendar and records live in the Scriptable widget. Google sign-in is for friends: you'll get a separate empty account here.
+2607	Google anyway
+2608	Connect widget
+2609	the server is taking too long
+2610	no connection to the server
+2611	Sign-in will work soon
+2612	Google sign-in is still being set up. Try a bit later.
+2613	Google didn't let you in:
+2614	Setting up IZIDAY…
+2615	Preparing your calendar, money, health and {0}. This takes 5–15 seconds.
+2616	Couldn't sign in
+2617	the server didn't respond
+2618	Tap “Sign in with Google” again.
+2619	Google sign-in linked
+2620	Now on any phone “Sign in with Google” with {0} is enough: your main sheet opens with all records.
+2621	This is a different account
+2622	{0} isn't your main email. If you switch, calendar and records will come from a separate friends account.
+2623	Keep my sheet
+2624	Account: {0}. Wrong one? Settings → Account → “Sign out” and sign in again with another email.
+2625	Done{0}!
+2626	Welcome back{0}!
+2627	Everything is set up: calendar, money, health and {0}. Tap {1} below and tell me what's on today.
+2628	Your records are back.
+2629	Connect Google Calendar
+2630	Your meetings from Google Calendar will appear in IZIDAY, and what you add here or via {0} will go to Google Calendar on all devices.
+2631	Google will ask for permission. If it says “App not verified” — tap “Advanced” → “Go to iziday.pages.dev”: Google's review of IZIDAY is still in progress.
+2632	Google didn't grant access:
+2633	Calendar not connected
+2634	Google's response wasn't for this tap. Tap “Connect Google Calendar” again.
+2635	Without the “Calendar” checkbox IZIDAY can't see your meetings. Connect again and leave it checked.
+2636	Connecting Google Calendar…
+2637	This takes a few seconds.
+2638	Tap “Connect Google Calendar” again.
+2639	Google Calendar connected
+2640	Meetings from {0} are now in IZIDAY.
+2641	moved
+2642	moved
+2643	{0} {1} from IZIDAY {2} to Google Calendar.
+2644	Disconnect Google Calendar?
+2645	IZIDAY will stop seeing your meetings and lose access to the calendar. The events themselves stay in Google Calendar.
+2646	Google Calendar disconnected
+2647	Sign out?
+2648	Records stay on the IZIDAY server: sign in again with the same Google email — and everything comes back.
+2649	sign-in expired — sign in with Google again (Settings → Account)
+2650	This way {0} knows it's you, and everything sets itself up: calendar, money, health. Just one button.
+2651	One button — and everything sets itself up: calendar, money, health and the assistant {0}. Nothing to install.
+2652	{0}Sign in with Google
+2653	Account
+2654	Sign in with Google: IZIDAY will set up your calendar, money, health and connect {0}.
+2655	I have a Scriptable widget
+2656	You
+2657	✓ inside IZIDAY
+2658	Disconnect Google Calendar
+2659	{0}Connect Google Calendar
+2660	request
+2661	requests
+2662	requests
+2663	{0} {1} left
+2664	connected
+2665	{0} today
+2666	I have my own Scriptable widget
+2667	Records are stored on the IZIDAY server in your personal space. Sign in with the same email on another phone — and everything will be there.
+2668	Newbie
+2669	Trainee
+2670	Practitioner
+2671	Pro
+2672	Master
+2673	Strategist
+2674	Mentor
+2675	Guru
+2676	Legend
+2677	Sage
+2678	Night ocean
+2679	Aurora
+2680	Gold
+2681	“Night ocean” theme
+2682	for the app
+2683	A second freeze per week
+2684	the streak won't burn twice
+2685	“Sunset” theme
+2686	warm colors
+2687	“Aurora” theme
+2688	purple glow
+2689	“Gold” theme
+2690	for Legends
+2691	No “{0}”
+2692	Water — daily goal
+2693	Steps — daily goal
+2694	Protein — daily goal
+2695	All expenses categorized
+2696	Monthly goal:
+2697	Came true:
+2698	Focus:
+2699	25 min
+2700	First step
+2701	first points
+2702	Early bird
+2703	3 top tasks before 10:00
+2704	Clean day
+2705	close all tasks and habits
+2706	Flawless
+2707	10 clean days
+2708	10 pomodoros of 25 minutes
+2709	Monthly goal
+2710	complete the monthly goal
+2711	Evening ritual
+2712	sum up the day 7 times
+2713	Week of fire
+2714	a habit 7 days in a row
+2715	Month of fire
+2716	a habit 30 days in a row
+2717	A hundred days
+2718	a habit 100 days in a row
+2719	Hydrated
+2720	water goal 7 days in a row
+2721	Marathoner
+2722	70,000 steps in a week
+2723	Athlete
+2724	10 workouts
+2725	Collector
+2726	5 habits at once
+2727	Within limits
+2728	a month without exceeding limits
+2729	Earned it
+2730	buy your first reward
+2731	Thousand
+2732	1,000 points
+2733	Ten thousand
+2734	10,000 points
+2735	Good son
+2736	tasks for parents 4 weeks
+2737	Dreamer
+2738	10 wishes and dreams
+2739	Champion of the week
+2740	first place in the league for the week
+2741	Special
+2742	Duelist
+2743	win a challenge
+2744	Night owl
+2745	secret
+2746	Perfect week
+2747	a task done after midnight
+2748	7 clean days in a row
+2749	My path
+2750	Game mode on — progress is intact
+2751	Game mode off. Data saved
+2752	Game off: no points, ranks, achievements, rewards or league, no celebrations or “+10” badges, and {0} doesn't mention them. Everything is saved — turn it on and progress returns.
+2753	Points for tasks and habits, ranks, achievements, your own rewards and a friends league. You can turn it off — nothing gets deleted.
+2754	Family points and goals work either way.
+2755	Game mode
+2756	Points and ranks
+2757	On
+2758	Off
+2759	The freeze saved your streak

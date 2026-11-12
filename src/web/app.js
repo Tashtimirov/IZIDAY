@@ -24,8 +24,8 @@ const iso = d => `${dayKey(d)}T${hm(d)}`
 const sod = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
 const sameDay = (a, b) => dayKey(new Date(a)) === dayKey(new Date(b))
-const num = n => Math.round(n || 0).toLocaleString("ru-RU").replace(/ /g, " ")
-const liters = ml => (Math.round((ml || 0) / 10) / 100).toString().replace(".", ",")
+const num = n => Math.round(n || 0).toLocaleString(((window.L && L.loc) || "ru-RU")).replace(/ /g, " ")
+const liters = ml => (Math.round((ml || 0) / 10) / 100).toString().replace(".", window.L && L.en ? "." : ",")
 const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const WD = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"]
@@ -186,7 +186,7 @@ function applyCfg() {
 }
 const H = () => Object.assign({ waterGoal: 2000, glass: 250, moveGoal: 500, exerciseGoal: 30, weight: 80, kcalGoal: 2000, proteinGoal: 0 }, core.CONFIG.health || {})
 // Имя и пол помощника — меняются в настройках и показываются как введены; по умолчанию «Изи» (у владельца с маршрутами в Claude Code — «ИЗИ»), мужской род
-const IZI = () => { const z = D.izi || {}; return { name: String(z.name || "").trim() || (routes().length ? "ИЗИ" : "Изи"), g: z.g === "f" ? "f" : "m" } }
+const IZI = () => { const z = D.izi || {}; return { name: String(z.name || "").trim() || (routes().length ? (window.L && L.en ? "IZI" : "ИЗИ") : (window.L && L.en ? "Izi" : "Изи")), g: z.g === "f" ? "f" : "m" } }
 const iziName = () => IZI().name
 const iziG = (m, f) => IZI().g === "f" ? f : m
 // Цвет Изи — выбирают в настройках (особенно дети): форма шара и волн та же, меняется только цвет. [id, название, фон, волна 1, волна 2]
@@ -625,7 +625,7 @@ async function claudeStream(r, onText) {
 
 // ── Еда по фото ──
 const FOOD_SCHEMA = { type: "object", additionalProperties: false, properties: {
-    title: { type: "string", description: "Короткое название приёма пищи по-русски, 2–5 слов" },
+    title: { type: "string", description: "Короткое название приёма пищи " + (window.L && L.en ? "по-английски" : "по-русски") + ", 2–5 слов" },
     items: { type: "array", items: { type: "object", properties: {
       name: { type: "string" }, grams: { type: "number" }, kcal: { type: "number" } }, required: ["name", "grams", "kcal"], additionalProperties: false } },
     kcal: { type: "number", description: "Всего ккал" },
@@ -656,7 +656,7 @@ async function estimateFood(dataUrl, hint) {
   content.push({ type: "text", text: (dataUrl ? "Оцени еду на фото." : "Оцени еду по описанию.") + (hint ? ` Уточнение от меня: ${hint}` : "") })
   const res = await claude({ max_tokens: 4000, output_config: { format: { type: "json_schema", schema: FOOD_SCHEMA } },
     system: "Ты нутрициолог. Определи блюда и продукты, оцени вес каждой части по размеру тарелки, приборов и упаковок, посчитай калории и БЖУ. " +
-      "Учитывай масло и соусы. Если есть уточнение от пользователя — оно важнее того, что видно. Названия по-русски.",
+      "Учитывай масло и соусы. Если есть уточнение от пользователя — оно важнее того, что видно. Названия " + (window.L && L.en ? "по-английски" : "по-русски") + ".",
     messages: [{ role: "user", content }] })
   if (!res || res.error) throw new Error(res && res.error ? res.error.message || res.error.type : "пустой ответ")
   if (res.stop_reason === "refusal") throw new Error("Claude отказался оценивать это фото")
@@ -1515,11 +1515,13 @@ function dayHealth(day = new Date()) {
     steps: h && h.steps != null ? h.steps : null })
 }
 
+// Английский интерфейс: правила ниже написаны по-русски, но Изи говорит с человеком по-английски
+const EN_RULE = "LANGUAGE: The app interface is in English. Always reply to the user in English (the instructions below are in Russian — follow them, but answer in English). If the user writes in another language, reply in that language. Write new event titles, reminders, notes and memory facts in the user's language. Speech is recognized as English.\n\n"
 function agentSystem() {
   const now = new Date(), c = core.CONFIG
   const cats = t => c.categories[t].map(x => x[0]).join(", ")
   const cals = c.calendars || []
-  return `Ты — личный ассистент в приложении «Мой день» на ${IS_DROID ? "Android-телефоне" : "iPhone"}. Тебя зовут ${iziName()}; ${iziG("о себе говори в мужском роде («я записал», «я понял»)", "ты девушка, о себе говори в женском роде («я записала», «я поняла»)")}. Пользователь часто говорит голосом по-русски; речь распознаётся с ошибками («падал», «падлу» = «падел»), восстанавливай смысл.
+  return `${window.L && L.en ? EN_RULE : ""}Ты — личный ассистент в приложении «Мой день» на ${IS_DROID ? "Android-телефоне" : "iPhone"}. Тебя зовут ${iziName()}; ${iziG("о себе говори в мужском роде («я записал», «я понял»)", "ты девушка, о себе говори в женском роде («я записала», «я поняла»)")}. Пользователь часто говорит голосом по-русски; речь распознаётся с ошибками («падал», «падлу» = «падел»), восстанавливай смысл.
 Сегодня ${dayKey(now)}, ${DAY_NAMES[now.getDay()].toLowerCase()}; точное время сейчас — в квадратных скобках в начале последнего сообщения пользователя. Используй местное время без смещения, формат YYYY-MM-DDTHH:MM.
 
 Как работать:
@@ -1638,7 +1640,7 @@ async function memorize(force) {
     const conv = msgs.slice(-80).map(m => `${m.role === "user" ? "Пользователь" : "Помощник"} (${iso(new Date(m.at)).replace("T", " ")}): ${String(m.text).slice(0, 1200)}`).join("\n")
     const res = await claude({ max_tokens: 3000, output_config: { format: { type: "json_schema", schema: MEM_SCHEMA } },
       system: "Ты ведёшь долговременную память личного помощника. По разговору составь краткую сводку и выпиши только новые устойчивые факты о пользователе " +
-        "(люди, предпочтения, цели, планы, здоровье, работа, договорённости, даты). Не записывай разовые мелочи (что выпил воды, разовую покупку). Пиши по-русски.",
+        "(люди, предпочтения, цели, планы, здоровье, работа, договорённости, даты). Не записывай разовые мелочи (что выпил воды, разовую покупку). Пиши " + (window.L && L.en ? "по-английски" : "по-русски") + ".",
       messages: [{ role: "user", content: `Память сейчас:\n${memFacts().map(f => `- ${f.text} [${f.id}]`).join("\n") || "- пусто"}\n\nРазговор:\n${conv}` }] }, 60000, { model: "claude-haiku-5-5" })
     const txt = res && res.content && (res.content.find(c => c.type === "text") || {}).text
     if (!txt) return
@@ -1949,7 +1951,7 @@ function micStart(auto, o = {}) {
   pttShow("")
   const run = first => {
     const r = new SR()
-    r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
+    r.lang = ((window.L && L.loc) || "ru-RU"); r.interimResults = true; r.continuous = true
     let fin = "", all = ""
     r.onresult = e => {
       if (v.sent) return   // уже отправлено: поздний итог после stop() не должен снова заполнить поле (а после касания поля — пусть дописывает)
@@ -2649,6 +2651,7 @@ function renderMore() {
     : `<div class="banner"><b>Поставьте на экран «Домой»</b>Нажмите «Поделиться» ⎋ внизу Safari → «На экран «Домой»». Приложение будет открываться отдельно и мгновенно.</div>`
   const z = IZI()
   html += iziCard()
+  html += langCard()
   html += curCard()
   if (c && c.friend) html += FRIEND.card()
   else if (!c && window.FRIEND && FRIEND.on()) html += FRIEND.card()
@@ -2905,7 +2908,7 @@ function bindChatBar(v) {
 }
 
 const DO = {
-  install: () => installApp(), talk: () => talkOpen(), "izi-voice": () => voicePicker(), "cur-pick": () => curPick(), stt: () => window.STT && STT.sheetOpen(),
+  install: () => installApp(), talk: () => talkOpen(), "izi-voice": () => voicePicker(), "cur-pick": () => curPick(), "lang-pick": () => langPick(), stt: () => window.STT && STT.sheetOpen(),
   event: () => eventForm(), reminder: () => reminderForm(), food: () => foodMenu(), workout: () => workoutForm(), photo: () => photoPrompt(),
   expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
   "push-on": () => pushEnable(),
@@ -3118,7 +3121,7 @@ function logWeight(kg, date = Date.now()) {
   }
   return rec
 }
-const kgs = n => (Math.round(n * 10) / 10).toString().replace(".", ",")
+const kgs = n => (Math.round(n * 10) / 10).toString().replace(".", window.L && L.en ? "." : ",")
 function weightCard() {
   const list = weights(), last = list[list.length - 1]
   let html = `<div class="card"><h2>Вес<button class="act" data-do="weight">+ Записать</button></h2>`
@@ -4269,6 +4272,9 @@ const curGuess = () => { let tz = ""; try { tz = Intl.DateTimeFormat().resolvedO
 const fromWidget = () => { const c = D.conn && D.conn.cfg && D.conn.cfg.currency; return c && (CURS.find(x => x[1] === c) || [])[0] }
 const baseCur = () => (D.cur && CUR[D.cur] && D.cur) || fromWidget() || curGuess()
 // Выбранная валюта → core.CONFIG (на ней держатся все суммы: core.money, тексты Изи, детские копилки)
+// Английский интерфейс: суммы по-английски — значок впереди, тысячи через запятую: «฿2,688», «$12.50»
+if (window.L && L.en) core.money = n => { const v = Math.abs(n), [i, d] = (Math.round(v * 100) / 100).toFixed(2).split(".")
+  return core.CONFIG.currency + i.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (d !== "00" ? "." + d : "") }
 function curApply() {
   const r = curRow(baseCur()); if (!r) return
   core.CONFIG.currency = r[1]; core.CONFIG.currencyIn = r[3]
@@ -4276,7 +4282,7 @@ function curApply() {
 const FX_DEF = Object.fromEntries(CURS.map(c => [c[0], c[5]]))   // единиц валюты за 1 бат, пока курса нет
 const fxRate = c => (D.fx && D.fx.r && D.fx.r[c]) || FX_DEF[c] || 1
 const fx = (n, from, to = baseCur()) => from === to ? n : n / fxRate(from) * fxRate(to)
-const fmtCur = (n, c) => PRE[c] ? `${CUR[c]}${num(n)}` : `${num(n)} ${CUR[c] || core.CONFIG.currency}`
+const fmtCur = (n, c) => PRE[c] || (window.L && L.en) ? `${CUR[c]}${num(n)}` : `${num(n)} ${CUR[c] || core.CONFIG.currency}`
 // Валюты для быстрого выбора в формах: своя + самые ходовые (до 4)
 const curOpts = () => [...new Set([baseCur(), "USD", "RUB", "THB", "EUR"])].slice(0, 4)
 async function fxLoad(force) {
@@ -4288,13 +4294,25 @@ async function fxLoad(force) {
   } catch (e) {}
 }
 const fxLine = () => { const b = baseCur(), o = curOpts().filter(c => c !== b).slice(0, 3)
-  return o.map(c => `${PRE[c] ? CUR[c] + "1" : "1 " + CUR[c]} = ${String(Math.round(fx(1, c, b) * 100) / 100).replace(".", ",")} ${CUR[b]}`).join(" · ") }
+  return o.map(c => `${PRE[c] ? CUR[c] + "1" : "1 " + CUR[c]} = ${String(Math.round(fx(1, c, b) * 100) / 100).replace(".", window.L && L.en ? "." : ",")} ${CUR[b]}`).join(" · ") }
 // Выбор валюты в Настройках
 async function curPick() {
   const b = baseCur(), i = await ui.choose("Валюта", "Все суммы, разделы «Деньги» и «Копилки», сводки и ответы Изи будут в ней. Уже записанные суммы не пересчитываются.",
     CURS.map(c => `${c[1]}  ${c[2]}${c[0] === b ? "  ✓" : ""}`))
   if (i < 0 || CURS[i][0] === b) return
   D.cur = CURS[i][0]; curApply(); save(false); fxLoad(true); pushCfgSend(); render(); toast(`Валюта: ${CURS[i][2].toLowerCase()} ${CURS[i][1]}`)
+}
+// Язык интерфейса — отдельно от валюты: «English + баты», «English + доллары» и т. д.
+const LANGS = [["ru", "Русский"], ["en", "English"]]
+async function langPick() {
+  const cur = (window.L && L.lang) || "ru"
+  const i = await ui.choose("Язык", "Язык меню, подсказок и ответов Изи. Валюта выбирается отдельно.", LANGS.map(l => `${l[1]}${l[0] === cur ? "  ✓" : ""}`))
+  if (i < 0 || LANGS[i][0] === cur) return
+  L.set(LANGS[i][0]); save(false); setTimeout(() => location.reload(), 150)
+}
+function langCard() {
+  const l = LANGS.find(x => x[0] === ((window.L && L.lang) || "ru")) || LANGS[0]
+  return `<div class="card"><h2>Язык</h2><button class="set voice-row" data-do="lang-pick"><span><b data-noi18n>${esc(l[1])}</b><small>меню, подсказки и ответы Изи</small></span><i class="chev">${ICO.chev || "›"}</i></button></div>`
 }
 function curCard() {
   const r = curRow(baseCur())
@@ -5027,7 +5045,7 @@ function loadCard(v, now = new Date()) {
   if (!l || l.need <= l.free + 30 || l.tasks.length < 3) return ""
   const keep = new Set(top3Ids(day)), move = l.tasks.filter(r => !keep.has(r.id)).slice(-Math.max(1, Math.ceil((l.need - l.free) / 30)))
   if (!move.length) return ""
-  const h = m => (m / 60).toFixed(m % 60 ? 1 : 0).replace(".", ",")
+  const h = m => (m / 60).toFixed(m % 60 ? 1 : 0).replace(".", window.L && L.en ? "." : ",")
   return `<div class="warn-card">${tdIco("alert", 22)}<div><b>День перегружен</b>Дел примерно на ${h(l.need)} ч, свободно ${h(l.free)} ч. Перенести ${move.slice(0, 2).map(r => `«${esc(r.title)}»`).join(" и ")}${move.length > 2 ? ` и ещё ${move.length - 2}` : ""} на завтра?
     <div class="chips"><button class="chip on" data-do="td-move" data-ids="${esc(move.map(r => r.id).join(","))}">Перенести</button><button class="chip" data-do="td-load-off">Оставить</button></div></div></div>`
 }
@@ -5260,7 +5278,7 @@ function layerName(k) {
   return c && c.length <= 12 ? c : "Семья"
 }
 const tzInfo = () => TZS.find(t => t[0] === calS().tz) || TZS[0]
-function tzHm(d, tz = calS().tz) { try { return new Intl.DateTimeFormat("ru-RU", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d) } catch (e) { return "" } }
+function tzHm(d, tz = calS().tz) { try { return new Intl.DateTimeFormat(((window.L && L.loc) || "ru-RU"), { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d) } catch (e) { return "" } }
 function evLayer(e) {
   const m = calS().map[e.calendar || ""]
   if (m) return m
@@ -5776,7 +5794,7 @@ function iziStyle() {
 // ── Голос: системные русские голоса iPhone ──
 var FEM_V = /milena|милена|katya|катя|alena|ал[её]на|irina|ирина|anna\b|анна|svetlana|светлана|elena|елена|daria|дарья|marina|марина|google русский/i
 var MAL_V = /yuri|юрий|maxim|максим|pavel|павел|dmitr|дмитр|ivan|иван|artem|арт[её]м|aleksandr|александр/i
-function ttsVoices() { try { return window.speechSynthesis ? speechSynthesis.getVoices().filter(v => /^ru/i.test(v.lang)) : [] } catch (e) { return [] } }
+function ttsVoices() { try { return window.speechSynthesis ? speechSynthesis.getVoices().filter(v => new RegExp("^" + ((window.L && L.lang) || "ru"), "i").test(v.lang)) : [] } catch (e) { return [] } }
 function voiceSex(v) { return FEM_V.test(v.name) ? "f" : MAL_V.test(v.name) ? "m" : "" }
 function voiceQ(v) { return (/premium|enhanced|улучш|siri/i.test(v.name) ? 2 : 0) + (v.localService ? 1 : 0) }
 function voiceLabel(v) { return v ? v.name.replace(/\s*\((enhanced|premium|улучшенн\S*|русский.*)\)/ig, (m, a) => /enh|prem|улучш/i.test(a) ? " · улучшенный" : "").trim() : "Нет русского голоса" }
@@ -5816,7 +5834,7 @@ function speak(text, { onSentence, onEnd, force, live } = {}) {
     waiting = TTS.wait = false
     if (i >= parts.length) { TTS.speaking = false; if (onEnd) onEnd(); return }
     const s = parts[i++], u = new SpeechSynthesisUtterance(s)
-    u.lang = "ru-RU"; try { if (v) u.voice = v } catch (e) {}; u.rate = z.rate || 1; u.pitch = 1
+    u.lang = ((window.L && L.loc) || "ru-RU"); try { if (v) u.voice = v } catch (e) {}; u.rate = z.rate || 1; u.pitch = 1
     u.onstart = () => { TTS.tick = performance.now(); if (my === TTS.token) { TTS.speaking = true; silkVoice("ie", .75); if (onSentence) onSentence(s) } }
     u.onboundary = () => { TTS.tick = performance.now(); silkVoice("ie", .8) }   // каждое слово мягко поддерживает волну Изи
     u.onend = next
@@ -6068,7 +6086,7 @@ function talkListen(first, keep) {
     // воспроизведения — распознавание тогда молча не слышит
     try { const S = window.speechSynthesis; if (S && (S.speaking || S.pending)) { S.cancel(); tdbg("голос снят") } } catch (e) {}
     try { window.STT && STT.release && STT.release() } catch (e) {}   // Safari-распознаванию микрофон нужен свободным
-    const r = new SR(); r.lang = "ru-RU"; r.interimResults = true; r.continuous = true
+    const r = new SR(); r.lang = ((window.L && L.loc) || "ru-RU"); r.interimResults = true; r.continuous = true
     let cur = "", err = ""
     tdbg("Safari старт" + (tries ? " #" + (tries + 1) : ""))
     r.onresult = e => {

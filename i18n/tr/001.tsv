@@ -1,0 +1,300 @@
+300	event not found
+301	Move “{0}”?
+302	moving the event…
+303	the event hadn't been added yet — cancelled
+304	and all following occurrences
+305	Delete “{0}”?
+306	deleting the event…
+307	text needed
+308	Saved in IZIDAY; the IZIDAY widget will notify you on time
+309	reminder not found
+310	Delete reminder “{0}”?
+311	amount needed
+312	Card payment {0} in the next {1} days won't count as an expense
+313	no such transaction
+314	category must be one of: {0}
+315	from now on I'll put “{0}” into “{1}” — mention this briefly
+316	amount must be greater than zero
+317	name and target needed
+318	no such savings jar
+319	who/what and amount needed
+320	no income this month
+321	no more than 92 days at a time
+322	steps and activity from the watch are only available for days sent by the widget (usually the last 14)
+323	no watch data
+324	the sheet script is outdated: deploy the new version of Code.gs
+325	“{0}” not found nearby — specify the address or area
+326	({0} km from you)
+327	the widget will remind you when you're within range; checked about every 15 minutes
+328	Cc: {0}
+329	Send the email?
+330	To: {0}{1}
+331	Subject: {0}
+332	all
+333	Reply{0}?
+334	Move to trash
+335	Mark as spam
+336	thread
+337	threads
+338	threads
+339	{0} {1} {2} emails?
+340	the sheet script is outdated: deploy the new version of Code.gs with email support
+341	no location history yet: the widget collects it (Scriptable needs location access “While Using the App or Widgets”)
+342	the nearest point is {0} h from the payment — location is approximate
+343	empty fact
+344	already remember
+345	no such fact
+347	no records found
+348	water
+349	food
+350	workouts
+351	{0} ml
+352	record
+353	records
+354	records
+355	Delete {0} {1} {2}? ({3})
+356	no such reminder
+357	transaction not found
+358	Delete transaction?
+359	calories must be greater than zero
+360	volume must be greater than zero
+361	limit removed
+362	amount > 0 and day of month 1–31 needed
+363	no such payment
+364	already marked as paid this month
+365	not in the list
+366	“{0}” not found nearby — specify the area
+367	the widget will send the shopping list when you're nearby (no more than once every 3 hours)
+368	weekdays needed: 1 — Mon … 7 — Sun
+369	not found
+370	a fast is already running
+371	no fast is running
+372	some already exist or there's no room left
+373	no pomodoro running
+374	name needed
+375	no such task
+376	no such list
+377	no such items
+378	no such wish
+379	didn't work
+380	couldn't find that dream or goal
+381	no such step
+382	couldn't find that goal
+383	not found
+384	protein goal — from 30 to 400 g
+385	weight in kg
+386	no such habit
+387	no watch data for today
+388	quitting
+389	doing
+390	no route “{0}”
+391	the result will arrive in this chat when the session finishes
+392	the result will stay in the session
+393	the sheet didn't start the task (update the sheet script)
+394	Android phone
+397	“{0}” (reminder list “{1}”)
+398	praise (warmly, with humor)
+399	scold (in a friendly, strict way)
+400	dry, numbers only
+401	the widget will set notifications on its next update (usually within 15 minutes)
+402	[{0}] Plan my day today with tips.
+403	- empty for now
+404	- none yet
+406	search words needed
+408	nothing found — try other words
+409	User
+410	Assistant
+412	- empty
+416	☀️ Morning summary
+419	🌙 Evening summary
+426	checking the calendar
+427	creating an event
+428	moving the event
+429	deleting the event
+430	checking reminders
+431	setting a reminder
+432	changing a reminder
+433	deleting a reminder
+434	logging an expense
+435	creating a savings jar
+436	adding to a savings jar
+437	logging a debt
+438	checking money
+439	deleting a transaction
+440	setting a limit
+441	adding a payment
+442	marking as paid
+443	logging food
+444	logging water
+445	logging a workout
+446	checking health
+447	checking history
+448	logging weight
+449	checking off a habit
+450	reading the sheet
+451	calculating the route
+452	looking for places
+453	checking where you've been
+454	searching email
+455	reading the email
+456	sending the email
+457	replying to the email
+458	saving a draft
+459	sorting email
+460	remembering
+461	recalling past conversations
+462	planning the day
+463	handing the task to Claude Code
+464	deleting the record
+465	· {0} s
+466	cache
+467	preparing a reply…
+468	thinking…
+469	No connection to Claude: {0}
+470	Claude returned an error: {0}
+471	I can't help with that — try phrasing it differently.
+472	Done.
+473	working
+474	Couldn't finish — try phrasing it more simply.
+475	{0} is still replying…
+476	This opens “Claude key” → “Connect”: three steps, about two minutes. If you're in a family with a shared key, it connects automatically.
+479	Error: {0}
+480	⏹ Stopped — edit and send
+481	replied
+482	replied
+483	Stop reply
+484	Send
+485	Yes
+486	No
+487	Tap 🎤 on the keyboard and speak
+488	Listening for an answer… or type
+489	Listening… ➤ — send now
+490	no network for recognition
+491	microphone is busy with another app
+492	language not available
+493	Microphone: {0}
+494	Microphone didn't start: {0}
+495	The Groq key didn't work — using {0} for now. Check the key in “Settings” → “Assistant”
+496	Groq: per-minute limit — using {0} for a minute
+497	Accurate recognition didn't respond — using {0} for now
+498	Recognizing…
+499	Didn't catch that — say it again
+500	Recording cancelled
+501	Edit
+502	Expense
+503	Income
+504	Delete
+505	This is income
+506	This is an expense
+507	Cash
+508	Transfer / card
+509	Category
+510	{0} Shared with {1}
+511	Date
+512	≈ {0} at today's rate
+513	rate: {0}
+514	I'll remember: “{0}” → {1}
+515	Enter an amount
+516	· remembered
+517	Food
+518	🍽 What did you eat?
+519	Recent — tap to add again
+520	P {0} · F {1} · C {2} g · {3}
+521	Calories, kcal
+522	+{0} kcal · {1}
+523	Enter calories
+524	Walking
+525	Running
+526	Cycling
+527	Swimming
+528	Gym
+529	Yoga
+530	Padel / tennis
+531	Dancing
+532	Workout
+533	🏃 Workout without a watch
+534	Minutes
+535	Burned, kcal (approx., at weight {0} kg)
+536	Enter minutes
+537	{0} {1} min
+538	⏰ New reminder
+539	When (can be empty)
+540	Type what to remind you about
+541	Didn't get when. For example: “tomorrow at 9”
+542	⏰ Reminder saved
+543	📅 Event
+544	Name and time in one phrase: “tomorrow at 3pm dentist”, “Saturday 12 to 2 lunch with parents”
+545	Next
+546	When? For example: “tomorrow at 15:00”, “Friday 7 to 9pm”
+547	Didn't get the time
+548	Add to calendar?
+549	Add
+550	Didn't work
+551	📅 Added to Google Calendar
+552	📅 Will be added to the iPhone calendar when the widget updates
+553	all day
+554	(untitled)
+555	🔁 repeats
+556	⏳ not yet added to iPhone
+557	Cancel
+558	Move
+559	Move “{0}” to when?
+560	Now: {0}, {1}. For example: “to 20:00”, “to Friday at 3pm”, “an hour later”
+562	Didn't get where to move it
+563	Didn't work: {0}
+564	↔️ {0}, {1} — will apply when the widget updates
+565	Repeating event
+566	Only this one
+567	This and all following
+568	🗑 Deleting…
+569	🗑 Deleted this and all following
+570	🗑 Deleted
+571	🗑 Will be deleted when the widget updates
+572	💬 Tell the assistant
+573	➖ Expense
+574	➕ Income
+575	📷 Photo: food, bill, receipt
+576	💧 Glass of water {0} ml
+577	🏃 Workout
+578	🛒 Purchase
+579	👧 Kids' activities
+580	🎯 Goal or wish
+581	🔁 Time again: a recurring task
+582	📋 New list
+583	⏱ Pomodoro — 25 min focus
+584	⏰ Reminder
+585	On “Today”
+586	Report
+587	Couldn't show this section
+588	Refresh
+589	Calendar
+590	Plans
+591	Money
+592	Health
+593	Settings
+594	{0}: chat
+595	Sign in with Google
+596	Not connected to the widget
+597	day
+598	3 days
+599	week
+600	month
+601	Updated {0}
+602	waiting for the widget
+603	· {0} in queue
+604	Sunday
+605	Monday
+606	Tuesday
+607	Wednesday
+608	Thursday
+609	Friday
+610	Saturday
+611	Connect the app to the widget
+612	Tap “Connect”: Scriptable opens and copies the code itself, then come back with the “◀ IZIDAY” button at the top left and tap “Paste”.
+613	Enter code
+614	🔗 Connect
+615	change waiting
+616	changes waiting
+617	changes waiting
+618	{0}{1} {2} to be added to iPhone
+619	iPhone calendar and reminders are changed only by Scriptable. Tap — it will apply them now and bring you back.

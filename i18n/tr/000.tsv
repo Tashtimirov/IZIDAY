@@ -1,0 +1,269 @@
+0	Mon
+1	Tue
+2	Wed
+3	Thu
+4	Fri
+5	Sat
+6	Sun
+7	Jan
+8	Feb
+9	March
+10	Apr
+11	May
+12	June
+13	July
+14	Aug
+15	Sep
+16	Oct
+17	Nov
+18	Dec
+19	January
+20	February
+21	March
+22	April
+23	May
+24	June
+25	July
+26	August
+27	September
+28	October
+29	November
+30	December
+31	no IndexedDB
+32	album: photos not read
+33	photo could not be read
+34	couldn't open the photo
+35	Photo of the day
+36	{0} Exactly a year ago · {1} {2} {3}
+37	Weekly card unlocked
+38	Weekly card
+39	{0} · 7 snapshots, no gaps
+40	Week complete — card unlocked
+41	Weekly card · {0} of 7
+42	This week's snapshots
+43	A day was missed this week — next week you'll make it
+44	snapshot
+45	snapshots
+46	snapshots
+47	{0} more {1} — and the card unlocks
+48	Change photo
+49	Photo is on another device
+50	One photo to remember the day
+51	Remove photo
+52	Stored only on this phone, never sent to the sheet
+53	Mood
+54	Snapshot of the day
+55	Line of the day
+56	Cancel
+57	Save
+58	Weekly card · {0} of 7 after this snapshot
+59	Photo not saved:
+60	7 of 7 · no gaps
+61	{0} of 7
+62	{0} · week {1}
+63	{0} A day was missed — the card isn't complete. Snapshots stay in the feed.
+64	{0} {1} more {2} — and the card unlocks
+65	A week with no gaps
+66	The weekly card is unlocked and added to the album {0}.
+67	{0} Save as image
+68	Close
+69	A missed day can't be filled in later
+70	No snapshot on this day
+71	{0} Edit
+72	7 of 7 · a week with no gaps
+73	IZIDAY · album {0}
+74	Week {0}
+75	Card saved
+76	Didn't work:
+77	card
+78	cards
+79	cards
+80	· a week with no gaps unlocks a card
+81	{0} Today's snapshot
+82	{0} Album {1}
+83	{0} {1} days{2}
+84	Cards
+85	Feed
+86	A day was missed — you'll make it next week
+87	A snapshot every day — and the card unlocks
+88	This week · {0} of 7
+89	7 of 7
+90	{0} of 7 · incomplete
+91	Seven days in a row — and the first card unlocks.
+92	Every week becomes a card.
+93	Your year will gather here
+94	In the evening, add a photo and a line in “Day summary”. {0}
+95	no line
+96	The feed is empty for now
+97	Your photos and lines will appear here day by day.
+98	{0} Photos are stored only on this phone and never go to the sheet. Lines of the day are in your sheet, as before.
+99	Album
+100	phone
+101	No microphone access: Phone Settings → Apps → Chrome (or IZIDAY) → Permissions → Microphone
+102	No microphone access: Settings → Safari → Microphone (and Siri & Dictation turned on)
+103	Sun
+104	Mon
+105	Tue
+106	Wed
+107	Thu
+108	Fri
+109	Sat
+110	Sunday
+111	Monday
+112	Tuesday
+113	Wednesday
+114	Thursday
+115	Friday
+116	Saturday
+117	January
+118	February
+119	April
+120	August
+121	September
+122	October
+123	November
+124	December
+125	today
+126	tomorrow
+127	yesterday
+128	Ruble
+129	in rubles
+130	ruble
+131	rubles
+132	rubles
+133	Baht
+134	in baht
+135	baht
+136	baht
+137	Tenge
+138	in tenge
+139	tenge
+140	US Dollar
+141	in dollars
+142	dollar
+143	dollars
+144	dollars
+145	Euro
+146	in euros
+147	euros
+148	Yuan
+149	in yuan
+150	yuan
+151	yuan
+152	yuan
+153	never
+154	just now
+155	{0} min ago
+156	at {0}
+157	Couldn't save on the phone:
+158	IZI
+159	Izi
+160	Emerald
+161	Space
+162	Sunset
+163	Lagoon
+164	Neon
+165	Night
+166	no connection to the sheet ({0})
+167	the sheet didn't return data — redeploy the script with access “Anyone”
+168	the sheet returned error {0}
+169	the sheet rejected the key — reconnect the app
+170	sheet error
+171	the sheet didn't respond
+172	Google Calendar didn't respond within 25 seconds — check the calendar, the change may have gone through
+173	the sheet doesn't know this calendar — update the script
+174	iPhone: didn't work — {0}
+175	now
+176	from the widget, {0}
+177	new event
+178	event change
+179	event deletion
+180	new reminder
+181	reminder change
+182	reminder deletion
+183	Got it
+184	Done
+185	no Claude key — connect it in “Settings” → “Claude key”
+186	Claude is taking too long
+187	no connection to Claude
+188	stream error
+189	empty response
+194	low
+195	medium
+196	high
+201	Claude declined to estimate this photo
+202	Claude didn't return an estimate
+203	💧 A glass was already logged {0} s ago
+204	Another glass?
+205	{0} ml was just added. Log another one?
+206	Log
+207	💧 +{0} ml · today {1} L
+208	Claude key needed
+209	Calories from photos are counted by Claude. Connect a key: gear → “Claude key” → “Connect”, it takes about two minutes.
+210	photo
+211	description
+212	🍽 Counting calories…
+213	Claude is looking at the {0}, this takes 5–15 seconds.
+214	Couldn't calculate
+215	Retry
+216	No food visible
+217	Try shooting the plate from above, fully in frame.
+218	• {0} — {1} g, {2} kcal
+219	Total ≈ {0} kcal
+220	P {0} · F {1} · C {2} g
+221	Accuracy: {0}
+222	Refine
+223	Calories
+224	Clarification
+225	For example: half a portion, no sauce, rice 150 g
+226	kcal
+227	✓ {0}: {1} kcal · today {2}
+228	🍽 Food
+229	📷 Take a photo
+230	🖼 Choose from photos
+231	⌨️ Describe in words
+232	✏️ Enter calories manually
+233	What did you eat?
+234	For example: a bowl of tom yum and rice
+235	Calculate
+236	Up to {0} attachments at a time. Send these, then add more
+237	Up to {0} attachments at a time, took the first {1}
+238	Preparing {0} photos…
+239	Photo
+241	couldn't read the file
+242	File is larger than 20 MB — shrink it or photograph the page you need
+243	document.pdf
+244	document
+246	🎬 Video
+247	📷 Photo
+248	Up to {0} attachments at a time
+249	video
+250	file
+251	files
+252	files
+253	and
+257	(said by voice)
+258	Caption for all…
+259	Add a caption…
+260	Type or speak…
+261	Remove
+262	Video
+263	The caption applies to all. Tap a frame to remove it
+264	Document
+265	{0} · ≈ {1} pages of text — add a caption or send as is
+266	Add a caption or send as is
+267	Attachments removed
+268	Attachment removed
+269	Couldn't open the video — send a photo or a screenshot
+272	Shopping & things
+273	Business & money
+274	Home & household
+275	Family & loved ones
+276	Health & sport
+277	Travel & experiences
+278	Learning & hobbies
+279	Other
+292	no description
+293	not yet added to iPhone
+295	Google Calendar
+296	calendar not loaded yet

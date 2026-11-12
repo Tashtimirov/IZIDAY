@@ -1,0 +1,398 @@
+2760	New rank: {0}
+2761	Achievement: {0}
+2762	Clean day — points ×2
+2763	· combo ×{0}
+2764	swipe down to close
+2765	{0} Unlocked
+2766	{0} Izi's orb
+2767	the waves in the orb got brighter
+2768	{0} League
+2769	Friends will see your new rank in the weekly league
+2770	New rank
+2771	Level {0} of {1} · {2} points
+2772	New achievements
+2773	New achievement
+2774	+{0} points
+2775	· +{0} points
+2776	New: points, ranks and rewards
+2777	Points for tasks, habits, water, steps and day summaries. Already counted: {0}, {1} points.
+2778	{0} more to “{1}”
+2779	top rank
+2780	All closed. {0} points today.
+2781	Clean day — ×2
+2782	Close all tasks and habits for today, and the day's points double. {0} left.
+2783	The “{0}” streak broke
+2784	There are many habits, and it's normal that not everything works out. Izi will help you keep what matters.
+2785	Discuss
+2786	“{0}” has held for {1} {2}
+2787	It has become a habit. Izi will pick the next one for your day: the first 3 days — double points.
+2788	Pick one
+2789	Add your first habit?
+2790	Izi will pick one simple habit for your day. Points for every day, more for a streak.
+2791	Path
+2792	Achievements
+2793	Rewards
+2794	League
+2795	next —
+2796	{0} freeze ×{1}
+2797	Level {0} of {1}
+2798	{0} {1} in the bank
+2799	{0} streak {1} {2}
+2800	Rank ladder
+2801	No points yet — check off a task or habit
+2802	Cap of {0} per day — points don't grow beyond it.
+2803	over the cap
+2804	{0} points
+2805	What earns points
+2806	The cap is {0} points per day, so there's no point splitting tasks. A clean day doubles everything for the day.
+2807	Appearance
+2808	Task
+2809	top three — 20, “Time again” — 10
+2810	Habit
+2811	×1.5 after a 5-day streak, ×2 after 21; new — ×2 for three days
+2812	Health goals
+2813	water, steps, protein; workout — 15
+2814	Day on budget
+2815	all expenses categorized
+2816	close the day in the evening
+2817	a wish or dream came true — 30
+2818	Focus 25 minutes
+2819	up to 4 per day
+2820	Achievement
+2821	for each
+2822	None yet — the closest are below
+2823	Soon
+2824	Earned
+2825	Coffee at a favorite place
+2826	Movie night with no tasks
+2827	Dinner at a restaurant
+2828	Something new for myself
+2829	A day off with no plans
+2830	Balance {0}
+2831	Spent them — the rank stays: it counts all points ever earned.
+2832	by {0} ·
+2833	available
+2834	falling behind: need {0} per day
+2835	on pace
+2836	Set yourself a reward and a deadline — Izi will suggest a fair price. For example:
+2837	My rewards
+2838	+ Custom
+2839	· have {0}
+2840	unlocked
+2841	in {0}
+2842	Rank prize
+2843	Streak freeze
+2844	missed a day — the streak doesn't burn · {0} per week{1}
+2845	Received
+2846	Izi's tip: {0} points — that's what you'll earn in {1} {2} at your pace ({3} per day).
+2847	Too easy: you already have enough points, and the deadline is {0} {1}. A reward feels good when earned — raise it to {2}.
+2848	The bar is a bit low: in {0} {1} you'll earn about {2}. Raise it to {3} so there's something to strive for.
+2849	Too high for this deadline: at your pace you need {0} {1}. Lower it to {2} or move the deadline to {3}.
+2850	by
+2851	— you need about {0} {1}
+2852	Just right: at your pace ({0} per day) you'll make it{1}{2}.
+2853	3 months
+2854	Reward
+2855	Custom reward
+2856	A SMART goal: what exactly, how many points and by when.
+2857	What exactly
+2858	By when
+2859	Price in points
+2860	Why I want this (optional)
+2861	Deadline {0}
+2862	Set {0}
+2863	Type what the reward is
+2864	{0} points short
+2865	Spend {0} points? Your rank won't change. You can take the reward again once you save up.
+2866	Claim
+2867	Earned. Enjoy.
+2868	No more than {0} per week
+2869	Freeze ready: missing one day won't burn your streak
+2870	the league didn't respond
+2871	Most points
+2872	points
+2873	Most steps
+2874	Most often hits the water goal
+2875	days on target
+2876	Ahead by {0} points.
+2877	Behind by {0} points — you can still catch up.
+2878	Last week isn't recorded yet — the comparison will appear in a week.
+2879	You vs. last week's you
+2880	this week
+2881	by {0}
+2882	last
+2883	Friends league
+2884	A week of points with Olga and friends. Friends see only your points, rank and streak — not tasks or spending. Your friend needs IZIDAY too.
+2885	{0} Create a league
+2886	Have a link from a friend? Just open it — you'll join right away.
+2887	only points are visible
+2888	· streak {0}
+2889	{0} Invite
+2890	{0} Challenge
+2891	Stake: {0}
+2892	until Sunday
+2893	Leave the league
+2894	Weak spot — water: {0} {1} of {2} below target.
+2895	The league is stored in your Google Sheet. Connect the app to the widget first.
+2896	Friends in the league will see this name.
+2897	For example: Ildar
+2898	League name
+2899	Family and friends
+2900	Creating the league…
+2901	The league can't be created yet
+2902	The sheet still has an old script version — the league will work after it's updated.
+2903	Let's compete in IZIDAY: league “{0}”. Open the link in IZIDAY: {1}
+2904	IZIDAY league
+2905	The league is part of game mode. Turn it on in Settings
+2906	The league link is broken
+2907	Join the league “{0}”?
+2908	Friends will see only your points, rank and streak. How should we sign you?
+2909	Your name
+2910	League: {0}
+2911	Nobody yet
+2912	Invite a friend with a link — then you can throw down a challenge.
+2913	Challenge until Sunday
+2914	With whom?
+2915	With everyone
+2916	Stake
+2917	Optional. For example: the loser cooks dinner.
+2918	What's the bet
+2919	Challenge sent
+2920	Leave the league?
+2921	Your points and rank stay. You can come back via a friend's link.
+2922	{0}: {1} ({2} of {3})
+2923	, by
+2925	checking points
+2926	adding a reward
+2928	Secret achievement
+2929	Unlocks by itself when it happens.
+2930	Earned {0} · +{1} points
+2931	Sleep {0}
+2932	(usually {0})
+2933	resting heart rate {0}{1}
+2934	yesterday was a heavy load
+2935	you can train at full strength
+2936	you can train, but no records
+2937	better a light workout or a walk
+2938	recovery day: a walk, water and early to bed
+2939	After nights shorter than 6 h you eat on average {0} kcal more
+2940	and skip workouts more often.
+2941	After a short night you work out on {0}% of days, after a normal one — on {1}%.
+2942	higher
+2943	lower
+2944	{0}: mood on average {1} by {2} points out of 5.
+2945	On days with 8,000+ steps
+2946	After 7+ hours of sleep
+2947	On workout days
+2948	When the water goal is met
+2949	bad
+2950	so-so
+2951	okay
+2952	good
+2953	great
+2954	Diary password
+2955	Diary locked
+2956	Entries will be encrypted on this phone; only the cipher goes to the sheet. The password isn't stored anywhere: if you forget it, entries can't be opened.
+2957	Enter the diary password
+2958	Lock with a password
+2959	Open
+2960	At least 4 characters
+2961	Passwords don't match
+2962	Wrong password
+2963	The entry didn't open
+2964	Locked with a password — only the cipher is in the sheet. Izi doesn't read it.
+2965	Unlocked. Izi doesn't read it.
+2966	Remove password
+2967	No entries yet. A couple of lines a day — and in a month you'll see what helps and what drains you.
+2968	Diary
+2969	Write a couple of words
+2970	Saved to the diary
+2971	Remove password?
+2972	Entries will be decrypted and stored in the sheet as plain text.
+2973	Remove
+2974	Diary locked with a password
+2975	Password removed
+2976	Breathing · 1 minute
+2977	Inhale 4 seconds, exhale 6. Shoulders down.
+2978	Inhale
+2979	Exhale
+2980	How are you now?
+2981	in the morning
+2982	in the afternoon
+2983	in the evening
+2984	at bedtime
+2985	Morning
+2986	Afternoon
+2987	Evening
+2988	Bedtime
+2989	Medication
+2990	Medication or vitamin
+2991	Dose
+2992	Pills left
+2993	You'll get a push at the right time. Mark “taken” by tapping the circle or telling Izi.
+2994	Choose a time
+2995	Removed
+2996	Type a name
+2997	Medications
+2998	Bedtime soon
+2999	To wake up rested at {0}, better go to bed before {1}. In 30 minutes — put the screen away.
+3000	Medical record
+3001	It's time: {0}{1}. Book today?
+3002	Complete blood count
+3003	Blood chemistry
+3004	General practitioner
+3005	Eye doctor
+3006	Vaccination
+3007	Pediatrician
+3008	Chest X-ray
+3009	Check-up
+3010	Medical record entry
+3011	No thanks
+3012	Every six months
+3013	Once a year
+3014	Done today
+3015	Who
+3016	+ Other
+3017	When was the last time
+3018	Repeat
+3019	Next time (if already known)
+3020	Marked. I'll remind you when it's due again
+3021	Type what it is
+3022	Book: {0}{1}
+3023	Added to today's reminders
+3024	Workout plan
+3025	+ Day
+3026	{0} Izi will make it
+3027	Add days or ask Izi to make a plan for your goal
+3028	for the goal:
+3029	Make me a workout plan for the week{0}. Consider my weight, steps and readiness, increase the load gradually. Save the plan and put the workouts in the calendar.
+3030	{0} Weight
+3031	Weigh yourself every few days — I'll show a smooth trend line without jumps and when you'll reach your goal. You can tell Izi “I weigh 91.5”.
+3032	Weight is holding steady
+3033	Trend {0}{1} kg per week
+3034	Goal {0} kg — approximately
+3035	Goal {0} kg reached.
+3036	deficit
+3037	surplus
+3038	At this pace you won't reach {0} kg — you need a calorie {1}.
+3039	Weight goal
+3040	In kilograms — I'll estimate the date from the trend
+3041	Goal saved
+3042	Sleep
+3043	Went to bed
+3044	Woke up
+3045	Log last night's sleep
+3046	Schedule
+3047	I wake up at
+3048	Sleep needed, hours
+3049	“Bedtime soon” push
+3050	Sleep and resting heart rate come from Apple Health automatically if you add two steps to the “My day - health” Shortcut.
+3051	How to add
+3052	Enter the time
+3053	Sleep logged
+3054	Sleep and heart rate from Apple Health
+3055	Open Shortcuts → “My day - health”. Before the “Run script” step add:
+3056	Find Health Samples
+3057	: type “Sleep Analysis”, start date — “in the last 1 day”, value — “Asleep”. Then
+3058	Calculate Statistics
+3059	→ “Sum” by duration.
+3060	: “Resting Heart Rate”, sort “Latest first”, limit 1.
+3061	In the dictionary sent to Scriptable, add the keys
+3062	(total sleep, in hours or minutes) and
+3063	(resting heart rate). You can also add
+3064	— bedtime and wake-up time.
+3065	Not set up yet — you can log sleep manually or tell Izi “slept from 23:40 to 6:50”.
+3066	({0}{1} this month)
+3067	{0} kg{1}
+3068	Resting heart rate
+3069	{0} bpm
+3070	, nights shorter than 6 h: {0}
+3071	{0} on average{1}
+3072	Steps per day
+3073	Workouts
+3074	{0}, {1} min
+3075	Calories per day
+3076	Protein per day
+3077	Water per day
+3078	taken {0} of {1} ({2}%)
+3079	Not logged
+3080	{0} of 5 ({1} check-ins)
+3081	was
+3082	next
+3083	Tests and doctors
+3084	Health · {0}
+3085	Summary from IZIDAY · {0} days
+3086	Body
+3087	Movement
+3088	Nutrition
+3089	Medications and vitamins
+3090	Well-being
+3091	Weight {0} kg{1}
+3092	Sleep on average {0}
+3093	Resting heart rate {0}
+3094	Steps per day {0}
+3095	Workouts {0}, {1} min
+3096	Nutrition {0} kcal, protein {1} g per day
+3097	Water {0} L per day
+3098	{0}: taken {1} of {2}
+3099	Mood {0} of 5
+3100	{0} For the coach
+3101	{0} PDF for the doctor
+3102	Couldn't open printing
+3103	Readiness today
+3104	Last night's sleep is needed. Log it with a tap or connect Apple Health — I'll calculate readiness from sleep, resting heart rate and yesterday's load.
+3105	{0} Log sleep
+3106	{0} wake-up {1}
+3107	{0} {1} bpm
+3108	out of 100
+3109	{0} sleep {1}
+3110	{0} Sleep
+3111	No sleep data yet. It will come from Apple Health via the Shortcut; for now, log it manually.
+3112	How to connect
+3113	You go to bed at different times (±{0} h) — a steady schedule gives more than an extra hour of sleep.
+3114	Steady schedule — keep it up.
+3115	, sleep debt this week {0} h
+3116	On average {0}{1}. {2}Tonight better go to bed before
+3117	, to wake up at {0}.
+3118	Another pattern
+3119	Pattern
+3120	About {0} more {1} with sleep and mood are needed — then I'll show personal insights.
+3121	No clear connections yet — that's a good sign too.
+3122	Looking for patterns
+3123	Comparing sleep, food, steps, workouts and mood. {0}
+3124	How are you now?
+3125	{0} Breathing 1 min
+3126	{0} Diary
+3127	Steps are there, but calories and minutes aren't — the “Active Energy” and “Exercise Time” steps in the Shortcut got mixed up.
+3128	Activity{0}
+3129	water goal met
+3130	{0} Water
+3131	of {0} L
+3132	+ {0} ml
+3133	ml
+3134	Delete {0} ml?
+3135	Logged at {0}
+3136	{0} Medications and vitamins
+3137	Vitamins, pills, a course of antibiotics — I'll send a push at the right time and tell you when it's time to buy more. You can tell Izi “I take omega with lunch”.
+3138	· {0} left — already on the shopping list
+3139	· {0} left
+3140	→ to shopping
+3141	taken
+3142	skipped
+3143	From photo
+3144	goal: {0}
+3145	{0} Workout plan
+3146	Tell me the goal — “minus 6 kg and strength, 3 times a week” — Izi will make a plan, gradually increase the load and put workouts in the calendar.
+3147	Make it myself
+3148	skipped
+3149	today, in calendar
+3150	in calendar
+3151	not in calendar
+3152	{0} min{1} · {2}
+3153	{0} To calendar ({1})
+3154	{0} Family medical record
+3155	+ Entry
+3156	Tests, doctors, kids' vaccinations. Mark when you last went — I'll remind you when it's due again.
+3157	was{0} {1} mo. ago — it's time
+3158	it's time
+3159	next time {0}
