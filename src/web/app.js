@@ -3723,11 +3723,27 @@ async function pushTest() {
   catch (e) { toast("Не получилось: " + e.message) }
 }
 // Раз в день обновить подписку у таблицы (на случай, если iPhone выдал новую)
+// Уведомления включены всегда: если разрешение есть, а подписку iPhone молча снял (так бывает после обновления iOS
+// или «тихих» пушей) — подписываемся заново сами, при каждом запуске и возвращении в приложение, без кнопок
+let keepBusy = false
 async function pushKeep() {
-  if (!D.conn || !pushAble() || Notification.permission !== "granted" || Date.now() - (D.pushAt || 0) < 864e5) return
-  try { const sub = await pushSub(); if (!sub) return
-    await pushConn(); await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: pushCfg() } }); D.pushAt = Date.now(); save(false) } catch (e) {}
+  if (keepBusy || !D.conn || !pushAble() || Notification.permission !== "granted") return
+  keepBusy = true
+  try {
+    let sub = await pushSub()
+    if (!sub) {
+      await pushConn()
+      const key = ((await hubPost({ push: { action: "key" } })).push || {}).key
+      if (!key) return
+      sub = await (await navigator.serviceWorker.ready).pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(key) })
+      D.pushKey = key; D.pushAt = 0
+      try { window.METRICS && METRICS.act("уведомления: подписка восстановлена") } catch (e) {}
+    }
+    if (Date.now() - (D.pushAt || 0) < 864e5) return
+    await pushConn(); await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: pushCfg() } }); D.pushAt = Date.now(); save(false)
+  } catch (e) {} finally { keepBusy = false }
 }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") setTimeout(pushKeep, 3000) })
 // Где я — для «пора выезжать» (только если место уже разрешено; не чаще раза в 10 минут, пока приложение открыто)
 let hereAt = 0
 async function pushHere(force) {
