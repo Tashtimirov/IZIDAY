@@ -47,16 +47,21 @@ self.addEventListener("push", e => e.waitUntil((async () => {
   try {
     const c = await connRead("conn")
     if (c && c.hook) {
-      const r = await fetch(c.hook, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, credentials: "omit", cache: "no-store",
-        body: JSON.stringify({ secret: c.secret, hub: { from: "app", push: { action: "outbox" } } }) })
-      items = ((await r.json()).push || {}).items || []
+      // iPhone даёт на пуш считаные секунды: не успели показать уведомление — пуш считается «тихим», и после
+      // нескольких таких iPhone молча отзывает подписку (уведомления пропадают совсем). Поэтому ждём таблицу не дольше 6 с
+      const ab = new AbortController(), tm = setTimeout(() => ab.abort(), 6000)
+      try {
+        const r = await fetch(c.hook, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, credentials: "omit", cache: "no-store", signal: ab.signal,
+          body: JSON.stringify({ secret: c.secret, hub: { from: "app", push: { action: "outbox" } } }) })
+        items = ((await r.json()).push || {}).items || []
+      } finally { clearTimeout(tm) }
     }
   } catch (err) {}
   const shown = (await connRead("shown").catch(() => null)) || []
   // старше 40 минут — уже не новость (например, после обновления приложения): не показываем повторно пачкой
   let fresh = items.filter(x => x && x.id && !shown.includes(x.id) && !(x.at && Date.now() - x.at > 40 * 60e3))
   // iPhone требует показать уведомление на каждый пуш: нечего нового — повторяем последнее с тем же tag (оно просто заменит прежнее)
-  if (!fresh.length) fresh = items.length ? [items[items.length - 1]] : [{ id: "x" + Date.now(), title: "IZIDAY", body: "Есть подсказка — откройте приложение", url: "./" }]
+  if (!fresh.length) fresh = items.length ? [items[items.length - 1]] : [{ id: "x" + Date.now(), title: "IZIDAY", body: "Есть напоминание — нажмите, чтобы открыть", url: "./" }]
   for (const x of fresh.slice(-4)) { const p = pretty(x)
     // подсказка помощника: нажатие открывает чат с этой подсказкой и сразу микрофон — ответить голосом
     const url = /#chat$/.test(x.url || "") ? "./#reply=" + encodeURIComponent((p.t + "\n" + p.b).trim()) : x.url
