@@ -1929,7 +1929,7 @@ function brief(kind) {
 // ── Голос: распознавание речи Safari, иначе — диктовка с клавиатуры ──
 // Слушает, пока человек говорит: отправляет только после паузы тишины (SILENCE_MS).
 // Повторное нажатие на 🎤 — отправить сразу. Если Safari сам обрывает распознавание раньше паузы — слушаем дальше.
-const SILENCE_MS = 2500, FIRST_WORD_MS = 8000
+const SILENCE_MS = 2500, FIRST_WORD_MS = 8000, REPLY_WAIT_MS = 12000   // REPLY_WAIT_MS — сколько фоном ждать ответа на подсказку из уведомления
 let rec = null, voice = null, lastVoice = null   // lastVoice — последняя запись: её итоги, пришедшие после отправки, не нужны
 const voiceSent = () => { if (lastVoice) lastVoice.sent = true }
 function micStart(auto, o = {}) {
@@ -1938,14 +1938,14 @@ function micStart(auto, o = {}) {
   if (!SR) { if (inp) inp.focus(); toast("Нажмите 🎤 на клавиатуре и говорите"); return }
   if (voice) return voiceFinish()
   if (window.STT && STT.on() && Date.now() > sttOffUntil) return micWhisper(auto, o)
-  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: false, bar: true }   // запись видна только в строке ввода — отдельной полосы «Слушаю…» больше нет
+  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: false, bar: true, reply: !!o.reply }   // запись видна только в строке ввода — отдельной полосы «Слушаю…» больше нет
   const v = voice
   lastVoice = v
   const show = (extra = "") => { SILK.en = 1; v.text = [v.base, v.done, extra].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); const i = $("#chat-in"); if (i) { i.value = v.text; grow(i) }; pttShow(v.text) }
-  const arm = ms => { clearTimeout(v.timer); if (!v.ptt && !v.bar) v.timer = setTimeout(voiceFinish, ms) }   // диктовка из строки ввода — до «стоп» или «отправить», без паузы   // пока кнопку держат — пауза не обрывает запись
+  const arm = ms => { clearTimeout(v.timer); if (!v.ptt && (!v.bar || v.reply)) v.timer = setTimeout(voiceFinish, ms) }   // ответ на уведомление: договорил — уходит сам, промолчал — слушать перестаём   // диктовка из строки ввода — до «стоп» или «отправить», без паузы   // пока кнопку держат — пауза не обрывает запись
   v.t0 = Date.now()
   $(".chat-bar .mic") && $(".chat-bar .mic").classList.add("on")
-  if (inp) inp.placeholder = "Слушаю… ➤ — отправить сразу"
+  if (inp) inp.placeholder = v.reply ? "Слушаю ответ… или напишите" : "Слушаю… ➤ — отправить сразу"
   pttShow("")
   const run = first => {
     const r = new SR()
@@ -1960,6 +1960,7 @@ function micStart(auto, o = {}) {
     }
     r.onerror = e => {
       if (e.error === "no-speech" || e.error === "aborted") return
+      if ((e.error === "not-allowed" || e.error === "service-not-allowed") && v.reply) { voiceReset(); return }   // фоном не дали микрофон — просто открытый чат, без окон
       if (first && auto && e.error === "not-allowed") { voiceReset(); return micPrompt() }
       if (e.error === "not-allowed" || e.error === "service-not-allowed") { voiceReset(); toast(MIC_HELP); if (inp) inp.focus(); return }
       v.err = e.error   // сеть, занят микрофон и т. п. — не перезапускаем по кругу, отправляем услышанное
@@ -1975,10 +1976,11 @@ function micStart(auto, o = {}) {
     r.start()
     return r
   }
-  const fail = e => { voiceReset(); if (auto) return micPrompt(); toast(`Микрофон не запустился: ${e && (e.message || e.name) || e}`); if (inp) inp.focus() }
-  try { rec = run(true); arm(FIRST_WORD_MS) }
+  const fail = e => { voiceReset(); if (v.reply) return; if (auto) return micPrompt(); toast(`Микрофон не запустился: ${e && (e.message || e.name) || e}`); if (inp) inp.focus() }
+  const first = v.reply ? REPLY_WAIT_MS : FIRST_WORD_MS
+  try { rec = run(true); arm(first) }
   catch (e) {   // прошлая запись ещё не отпустила микрофон (например, сразу после ➤) — пробуем ещё раз чуть позже
-    setTimeout(() => { if (voice !== v) return; try { rec = run(true); arm(FIRST_WORD_MS) } catch (e2) { fail(e2) } }, 500)
+    setTimeout(() => { if (voice !== v) return; try { rec = run(true); arm(first) } catch (e2) { fail(e2) } }, 500)
   }
 }
 // Safari на iPhone в непрерывном режиме иногда присылает следующим куском ту же фразу целиком
@@ -2011,28 +2013,28 @@ function sttFail(e) {
 function micWhisper(auto, o = {}) {
   const inp = $("#chat-in")
   try { STT.prime() } catch (e) {}
-  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: false, bar: true, w: true, text: inp ? inp.value.trim() : "" }
+  voice = { done: "", base: inp ? inp.value.trim() : "", timer: null, finishing: false, ptt: false, bar: true, reply: !!o.reply, w: true, text: inp ? inp.value.trim() : "" }
   const v = voice
   lastVoice = v
   v.t0 = Date.now()
   $(".chat-bar .mic") && $(".chat-bar .mic").classList.add("on")
-  if (inp) inp.placeholder = "Слушаю… ➤ — отправить сразу"
+  if (inp) inp.placeholder = v.reply ? "Слушаю ответ… или напишите" : "Слушаю… ➤ — отправить сразу"
   pttShow("")
   STT.record({ onVoice: l => { SILK.en = Math.max(SILK.en, Math.min(1, l * 28)) } }).then(h => {
     if (voice !== v) return h.close()
     v.h = h; rec = h
     v.timer = setInterval(() => {
       if (voice !== v || v.finishing || v.ptt) return
-      if (v.bar) { if (h.secs() > 180) voiceFinish(); return }
+      if (v.bar && !v.reply) { if (h.secs() > 180) voiceFinish(); return }
       const now = Date.now()
-      if (!h.voiced && now - v.t0 > FIRST_WORD_MS) return voiceFinish()        // так ничего и не сказали
+      if (!h.voiced && now - v.t0 > (v.reply ? REPLY_WAIT_MS : FIRST_WORD_MS)) return voiceFinish()        // так ничего и не сказали
       if (h.voiced > .25 && now - h.lastVoice > SILENCE_MS) return voiceFinish()  // договорили — пауза
       if (h.secs() > 180) voiceFinish()
     }, 150)
   }).catch(e => {
     if (voice !== v) return
     voiceReset()
-    if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) { if (auto) return micPrompt(); toast(MIC_HELP); return }
+    if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) { if (v.reply) return; if (auto) return micPrompt(); toast(MIC_HELP); return }
     sttOffUntil = Date.now() + 60e3; micStart(auto, o)   // запись не пошла — распознаёт Safari
   })
 }
@@ -2868,14 +2870,20 @@ function bindChatBar(v) {
     $(".chat-bar .send", v).onclick = () => { if (voice) return voiceSendNow(); if (!inp.value.trim() && !chatAtt) return chatBusy && !askWait ? chatStop() : null; const t = inp.value; inp.value = ""; grow(inp); voiceSent(); chatSend(t) }
     setBusyUI()
     // тронули текст во время записи — не отправлять по паузе: можно поправить и нажать ➤
-    inp.addEventListener("focus", () => { if (voice) { const t = inp.value, r = rec; voiceReset(); try { r && r.stop() } catch (e) {} inp.value = t; grow(inp); toast("✎ Поправьте и нажмите ➤") } })
+    inp.addEventListener("focus", () => { if (voice) { const t = inp.value, r = rec, quiet = voice.reply && t === (voice.base || ""); if (quiet) voice.sent = true; if (voice.h) voice.h.close(); voiceReset(); try { r && r.stop() } catch (e) {} inp.value = t; grow(inp); if (!quiet) toast("✎ Поправьте и нажмите ➤") } })
     if (voice) { inp.placeholder = "Слушаю… ➤ — отправить сразу"; if (voice.text) { inp.value = voice.text; grow(inp) } }
     // голос — микрофон в строке; справа зелёная ➜ только когда есть что отправить (текст, вложение), ⏹ — пока Изи отвечает
     $(".chat-bar .cam", v).onclick = e => plusMenu(e.currentTarget)
     const bar = $(".chat-bar", v)
     // кнопки строки не забирают фокус у поля — клавиатура остаётся открытой, как в ChatGPT
     bar.addEventListener("mousedown", e => { if (e.target.closest("button")) e.preventDefault() })
-    $(".dict", bar).onclick = () => { if (!voice) micStart(false, { bar: true }) }
+    $(".dict", bar).onclick = () => {
+      if (!voice) return micStart(false, { bar: true })
+      if (voice.reply) {   // фоном слушал ответ на уведомление, а человек нажал микрофон — обычная запись голосового с волной
+        const r = rec, h = voice.h; voice.sent = true; if (h) h.close(); voiceReset(); try { r && r.stop() } catch (e) {}
+        setTimeout(() => { if (!voice) micStart(false, { bar: true }) }, 350)
+      }
+    }
     silkCanvas($(".cb-rec canvas", bar), "bars")
     $(".cb-rec .rx", bar).onclick = () => voiceCancel()
     $(".cb-rec .rstop", bar).onclick = () => { if (!voice || voice.finishing) return; voice.keep = true; voiceFinish(); pttShow(voice ? voice.text || "" : null) }
@@ -3799,10 +3807,15 @@ async function hashAction() {
   const eq = h.indexOf("="), a = eq < 0 ? h : h.slice(0, eq), arg = eq < 0 ? "" : h.slice(eq + 1)
   if (a === "voice") { setTab("chat"); return micStart(true) }
   if (a === "chat" || a === "note") return setTab("chat")
-  if (a === "reply") {   // нажали на подсказку в уведомлении: она — в чате, микрофон сразу слушает ответ
+  if (a === "reply") {   // нажали на подсказку в уведомлении: открывается обычный чат со строкой ввода, без окон и панелей.
+    // Если подсказка спрашивает (есть «?»), Изи фоном слушает ответ в строке ввода: ответить можно голосом или текстом,
+    // а если человек молчит — через REPLY_WAIT_MS слушать перестаём, чат просто остаётся открытым
     const t = String(arg || "").trim(), last = D.chat[D.chat.length - 1]
     if (t && !(last && last.role === "assistant" && last.text === t)) { D.chat.push({ role: "assistant", text: t, at: Date.now(), push: true }); save(false) }
-    setTab("chat"); return setTimeout(() => micStart(true), 250)
+    if (TALK) talkClose()
+    setTab("chat")
+    if (/\?/.test(t)) setTimeout(() => { if (!voice && !TALK && chatOn()) micStart(true, { reply: true }) }, 250)
+    return
   }
   if (a === "brief") { setTab("chat"); return brief(arg) }
   if (a === "money") return moneyForm("expense")
@@ -4186,8 +4199,9 @@ const PTT = { holding: false }
 function pttShow(text) {
   const fab = $("#fab"), on = text !== null && !!voice
   if (fab) fab.classList.toggle("rec", !!(on && (PTT.holding || voice.ptt)))
-  const inBar = on   // любая запись — только волна прямо в строке ввода; полосы «Слушаю… ‹ отмена 0:10» нет совсем
-  $$(".chat-bar").forEach(b => { b.classList.toggle("rec", inBar); b.classList.toggle("wait", inBar && !!voice.finishing) })
+  const inBar = on && !voice.reply   // любая запись — только волна прямо в строке ввода; полосы «Слушаю… ‹ отмена 0:10» нет совсем
+  const bg = on && !!voice.reply      // ответ на уведомление: обычная строка ввода остаётся, фоном слушает — светится только микрофон
+  $$(".chat-bar").forEach(b => { b.classList.toggle("rec", inBar); b.classList.toggle("wait", inBar && !!voice.finishing); b.classList.toggle("listen", bg) })
   if (!inBar) SILK.hist = null
 }
 // «Изи» в меню: первое касание — чат, второе (уже в чате) — живой голосовой разговор. Удержание ничего не записывает
@@ -5839,18 +5853,17 @@ function talkOpen(o = {}) {
     <div class="tk-cap"><p class="tk-izi"></p><p class="tk-you"></p></div>
     <div class="tk-bar"><button class="tk-btn tk-mic" aria-label="Пауза">${ICO.mic}</button><button class="tk-btn tk-chat" aria-label="Перейти в чат">${ICO.chat}</button></div>
     <div class="tk-in"><button class="tk-plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea><button class="tk-dict" aria-label="Пауза">${CB_MIC}</button><button class="tk-send" aria-label="Отправить">${ICO.send}</button></div>
-    <div class="tk-hint">Вниз — закончить · вверх — закрепить</div><div class="tk-dbg"></div></div>`
+    <div class="tk-hint">Вниз — закончить</div><div class="tk-dbg"></div></div>`
   document.body.append(el)
   TALK = { el, state: "", rec: null, timer: null, heard: "", n: 0, pin: false, t0: performance.now() }
-  if (o.pin) talkPin(true, true)
   talkLog()
   silkCanvas($("canvas", el), "talk")
   requestAnimationFrame(() => el.classList.add("on"))
   $(".tk-orb", el).onclick = () => talkTap()
   $(".tk-mic", el).onclick = () => TALK.state === "pause" ? talkListen() : talkPause()
-  $(".tk-chat", el).onclick = () => { talkPin(true); setTab("chat") }   // в чат — разговор не прерывается, окно закрепляется над меню
+  $(".tk-chat", el).onclick = () => { talkClose(); setTab("chat") }   // в чат — разговор заканчивается: панели «Изи · Пауза» над строкой ввода больше нет
   $(".tk-cap", el).onclick = () => { if (TALK && TALK.pin) talkPin(false) }
-  // Полный экран: вниз — закончить, вверх — закрепить панелью над меню.
+  // Вниз — закончить. Закрепления панелью над меню больше нет (по просьбе пользователя 2026-11-12)
   // Закреплённая панель: вниз — закончить, вверх — снова на весь экран
   const sh = $(".tk-sheet", el); let y0 = null, dy = 0, t0 = 0, vy = 0, yl = 0, tl = 0
   const back = () => { sh.style.transform = ""; sh.style.opacity = ""; el.style.removeProperty("--fade") }
@@ -5871,7 +5884,6 @@ function talkOpen(o = {}) {
     y0 = null; sh.style.transition = ""
     const lim = TALK.pin ? 40 : 110, fast = performance.now() - tl < 120 ? vy : 0
     if (dy > lim || (dy > 24 && fast > .45)) return talkClose()
-    if (dy < -lim || (dy < -24 && fast < -.45)) { back(); return talkPin(!TALK.pin) }
     back()
   }
   el.addEventListener("touchend", up, { passive: true })
@@ -5880,13 +5892,14 @@ function talkOpen(o = {}) {
   const last = D.chat[D.chat.length - 1]
   if (o.say) { talkState("think", "·  ·  ·", o.say); setTimeout(() => chatSend(o.say, { voice: true }), 30) }
   else if (askWait && last && last.role === "assistant") talkHear(last.text, last.opts)
-  else if (o.pin) { talkState("listen", null, "Говорите — я слушаю"); setTimeout(() => { if (TALK && TALK.state === "listen" && !TALK.rec) talkListen(true) }, 450) }   // микрофон рации успевает освободиться
+  else if (false) { talkState("listen", null, "Говорите — я слушаю"); setTimeout(() => { if (TALK && TALK.state === "listen" && !TALK.rec) talkListen(true) }, 450) }   // микрофон рации успевает освободиться
   else talkListen(true)
   if (!o.say) setTimeout(talkWarm, 50)
 }
 // Закрепить разговор компактной панелью над меню (можно ходить по вкладкам и говорить дальше) или раскрыть обратно
 function talkPin(on, quiet) {
   const t = TALK; if (!t) return
+  on = false   // панель над меню убрана навсегда: разговор только на весь экран
   t.pin = !!on
   t.el.classList.toggle("pin", t.pin)
   document.body.classList.toggle("talk-pin", t.pin)
@@ -5953,7 +5966,7 @@ function talkInput(t) {
   ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }
   $(".tk-send", box).onclick = send
   $(".tk-dict", box).onclick = () => { if (TALK !== t) return; ta.blur(); t.state === "pause" ? (talkWake(), talkListen()) : talkPause() }
-  $(".tk-plus", box).onclick = () => { talkPin(true); setTab("chat"); setTimeout(() => { const b = $(".chat-bar .cam"); if (b) plusMenu(b) }, 380) }   // вложения — в чате, разговор остаётся панелью
+  $(".tk-plus", box).onclick = () => { talkClose(); setTab("chat"); setTimeout(() => { const b = $(".chat-bar .cam"); if (b) plusMenu(b) }, 380) }   // вложения — в чате, разговор остаётся панелью
 }
 // Переписка прямо в окне разговора: те же сообщения, что в чате, — видно, о чём уже говорили.
 // Пока человек говорит — его фраза растёт пузырём внизу; пока Изи отвечает — подсвечена фраза, которую она произносит.

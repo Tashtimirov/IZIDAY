@@ -1229,6 +1229,9 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 .chat-bar .cb-pill .cam.plus svg { width: 24px; height: 24px; }
 .chat-bar .cb-pill .cam.plus.open { background: var(--accent); color: #fff; }
 .chat-bar .cb-pill .dict { background: none; color: var(--text); }
+/* ответ на уведомление: строка ввода обычная, Изи фоном слушает — микрофон мягко светится зелёным */
+.chat-bar.listen .cb-pill .dict { color: var(--izi1, #0b8f5c); animation: cbListen 1.6s ease-in-out infinite; }
+@keyframes cbListen { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--izi2, #18b98a) 45%, transparent); } 60% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--izi2, #18b98a) 0%, transparent); } }
 .chat-bar .cb-pill .izi-talk { padding: 0; background: none; transition: transform .25s cubic-bezier(.2, .9, .25, 1.3); }
 .chat-bar .cb-pill .izi-talk:active { transform: scale(.9); }
 .chat-bar .cb-pill .izi-talk .mini-orb { width: 40px; height: 40px; margin: 0; vertical-align: 0; box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--izi2, #18b98a) 80%, transparent); }

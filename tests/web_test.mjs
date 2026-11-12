@@ -413,12 +413,47 @@ await page.evaluate(() => micStart()); await page.waitForTimeout(200)
 const sentCancel = claudeSeen.length
 await page.click(".chat-bar .rx"); await page.waitForTimeout(1500)
 check(await page.evaluate(() => !voice && !$("#silk") && $("#chat-in").value === "") && claudeSeen.length === sentCancel, "«‹ отмена» — запись выброшена, ничего не отправлено")
-// нажали на подсказку в уведомлении или микрофон в виджете: запись идёт только в строке ввода, полосы «Слушаю… ‹ отмена 0:10» нет
-for (const h of ["reply=Тест подсказки", "voice"]) {
-  await page.evaluate(h => { location.hash = h; return hashAction() }, h); await page.waitForTimeout(600)
-  check(await page.evaluate(() => !!voice && voice.bar && !$("#silk") && $(".chat-bar").classList.contains("rec") && !document.body.classList.contains("voice")), `#${h.split("=")[0]} — запись в строке ввода, без полосы`, await page.evaluate(() => [!!voice, !!$("#silk")]))
-  await page.click(".chat-bar .rx"); await page.waitForTimeout(800)
-}
+// микрофон в виджете: запись идёт только в строке ввода, полосы «Слушаю… ‹ отмена 0:10» нет
+await page.evaluate(() => { location.hash = "voice"; return hashAction() }); await page.waitForTimeout(600)
+check(await page.evaluate(() => !!voice && voice.bar && !$("#silk") && $(".chat-bar").classList.contains("rec") && !document.body.classList.contains("voice")), "#voice — запись в строке ввода, без полосы", await page.evaluate(() => [!!voice, !!$("#silk")]))
+await page.click(".chat-bar .rx"); await page.waitForTimeout(800)
+// уведомление: обычный чат со строкой ввода, никаких окон и панелей разговора
+await page.evaluate(() => {
+  class QuietSR { start() { window.__sr = this } stop() { setTimeout(() => this.onend && this.onend(), 10) } abort() {} }
+  window.SpeechRecognition = window.webkitSpeechRecognition = QuietSR
+})
+const noPanels = () => page.evaluate(() => !$("#silk") && !document.querySelector("#talk") && !document.body.classList.contains("talk-pin") && !document.querySelector(".sheet, .layer-sheet, #layer > *"))
+await page.evaluate(() => { location.hash = "reply=" + encodeURIComponent("Вода: выпито 0,5 л из 2 л. Не забудь стакан"); return hashAction() }); await page.waitForTimeout(700)
+check(await page.evaluate(() => tab === "chat" && !voice && !!$("#chat-in")) && await noPanels(), "уведомление без вопроса — просто открытый чат, микрофон не включён")
+await page.screenshot({ path: SHOTS + "reply-open.png" })
+// вопрос в уведомлении: Изи фоном слушает ответ в строке ввода; «да» — уходит само после паузы
+claudeQueue.push({ content: [{ type: "text", text: "Отлично, записал." }], stop_reason: "end_turn" })
+const sentReply = claudeSeen.length
+await page.evaluate(() => { location.hash = "reply=" + encodeURIComponent("Сегодня обед 300 ฿ — это кафе?"); return hashAction() }); await page.waitForTimeout(700)
+check(await page.evaluate(() => tab === "chat" && !!voice && voice.reply && $(".chat-bar").classList.contains("listen") && !$(".chat-bar").classList.contains("rec") && !!$("#chat-in").offsetParent) && await noPanels(), "вопрос в уведомлении — чат открыт, фоном слушает ответ, без окон")
+await page.waitForTimeout(1500); await page.screenshot({ path: SHOTS + "reply-listen.png" })
+await page.evaluate(() => window.__sr.onresult({ results: [Object.assign([{ transcript: "да" }], { isFinal: true })] }))
+await page.waitForTimeout(4500)
+check(claudeSeen.length === sentReply + 1 && JSON.stringify(claudeSeen.at(-1).body.messages).includes("да") && await page.evaluate(() => !voice), "ответил «да» голосом — ушло само после паузы", claudeSeen.length - sentReply)
+// вопрос, но человек начал печатать — слушать перестаёт тихо, текст пишется как обычно
+await page.evaluate(() => { location.hash = "reply=" + encodeURIComponent("Купить молоко завтра?"); return hashAction() }); await page.waitForTimeout(700)
+check(await page.evaluate(() => !!voice && voice.reply), "второй вопрос — снова слушает")
+await page.focus("#chat-in"); await page.waitForTimeout(300)
+check(await page.evaluate(() => !voice && document.activeElement === $("#chat-in") && !/Поправьте/.test(document.body.textContent)), "коснулся поля — слушать перестал, можно писать, без подсказок")
+await page.keyboard.type("нет, послезавтра"); await page.evaluate(() => $("#chat-in").blur())
+check(await page.evaluate(() => $("#chat-in").value === "нет, послезавтра"), "текст набран как обычно")
+await page.fill("#chat-in", "")
+// вопрос, человек молчит — через REPLY_WAIT_MS слушать перестаёт, чат остаётся открытым, ничего не ушло
+const sentQuiet = claudeSeen.length
+await page.evaluate(() => { location.hash = "reply=" + encodeURIComponent("Как самочувствие?"); return hashAction() }); await page.waitForTimeout(700)
+check(await page.evaluate(() => !!voice && voice.reply), "третий вопрос — слушает")
+await page.waitForTimeout(await page.evaluate(() => REPLY_WAIT_MS) + 2500)
+check(await page.evaluate(() => !voice && tab === "chat" && !$(".chat-bar").classList.contains("listen") && $("#chat-in").placeholder === "Напишите или скажите…") && claudeSeen.length === sentQuiet && await noPanels(), "промолчал — слушать перестал, чат открыт, ничего не отправлено")
+// фоном слушает, а человек нажал микрофон — обычная запись голосового с волной
+await page.evaluate(() => { location.hash = "reply=" + encodeURIComponent("Перенести тренировку?"); return hashAction() }); await page.waitForTimeout(700)
+await page.click(".chat-bar .dict"); await page.waitForTimeout(800)
+check(await page.evaluate(() => !!voice && !voice.reply && $(".chat-bar").classList.contains("rec") && !$(".chat-bar").classList.contains("listen")), "нажал микрофон — обычная запись голосового")
+await page.click(".chat-bar .rx"); await page.waitForTimeout(800)
 // как Safari: пока прошлая запись не закончилась, новая не стартует; после ➤ микрофон снова работает
 await page.evaluate(() => {
   window.__busy = false; window.__starts = 0

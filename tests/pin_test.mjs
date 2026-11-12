@@ -1,4 +1,4 @@
-// Закрепление голосового окна: держать «Изи» и смахнуть вверх → разговор панелью над меню, вкладки работают.
+// Панели разговора над меню («Изи · Пауза — Не слышу…») больше нет: ни кнопкой чата, ни «+», ни смахиванием вверх.
 // node tests/pin_test.mjs <папка для снимков> [dark]
 import { boot2 } from "./today_boot.mjs"
 import fs from "fs"
@@ -17,26 +17,12 @@ await page.evaluate(() => {
 })
 await page.evaluate(() => setTab("today")); await page.waitForTimeout(700)
 const fab = await page.$eval("#fab", e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })
-// 1. разговор закреплён панелью (удержание «Изи» убрано — открываем напрямую)
-await page.evaluate(() => talkOpen({ pin: true, say: "напомни купить воду завтра в девять" })); await page.waitForTimeout(500)
-ok(await page.evaluate(() => TALK && TALK.pin && document.body.classList.contains("talk-pin")), "разговор закреплён панелью")
-ok(await page.evaluate(() => tab === "today"), "остались на вкладке «Сегодня»")
-ok(await page.evaluate(() => D.chat.some(m => m.role === "user" && /купить воду/.test(m.text))), "услышанное ушло Изи сразу")
-await page.waitForTimeout(700)
-ok(await page.evaluate(() => TALK.state === "say" || TALK.state === "listen"), "Изи отвечает голосом, вкладка та же: " + await page.evaluate(() => TALK.state + " / " + tab))
-await page.evaluate(() => talkState("say", "Записал: купить воду завтра в девять.", "")); await page.waitForTimeout(900)
-await page.screenshot({ path: `${out}/2-pinned-today${sfx}.png` })
-// 2. ходим по вкладкам
-await page.click('#tabs [data-tab="money"]'); await page.waitForTimeout(700)
-ok(await page.evaluate(() => tab === "money" && TALK && TALK.pin), "вкладка «Деньги» открылась, разговор остался")
-await page.evaluate(() => talkState("listen", null, "запиши расход триста батов на такси")); await page.waitForTimeout(900)
-await page.screenshot({ path: `${out}/3-pinned-money${sfx}.png` })
-await page.click('#tabs [data-tab="health"]'); await page.waitForTimeout(700)
-await page.evaluate(() => talkState("think", "·  ·  ·", "сколько воды я сегодня выпил?")); await page.waitForTimeout(900)
-await page.screenshot({ path: `${out}/4-pinned-health${sfx}.png` })
-await page.evaluate(() => setTab("chat")); await page.waitForTimeout(700)
-await page.evaluate(() => talkState("listen", null, "Говорите — я слушаю")); await page.waitForTimeout(900)
-await page.screenshot({ path: `${out}/5-pinned-chat${sfx}.png` })
+const pinned = () => page.evaluate(() => !!(TALK && TALK.pin) || document.body.classList.contains("talk-pin") || !!document.querySelector("#talk.pin"))
+// 1. даже если кто-то просит закрепить — разговор на весь экран
+await page.evaluate(() => talkOpen({ pin: true })); await page.waitForTimeout(500)
+ok(await page.evaluate(() => !!TALK) && !(await pinned()), "talkOpen({pin}) — без панели, на весь экран")
+await page.evaluate(() => talkPin(true)); await page.waitForTimeout(300)
+ok(!(await pinned()), "talkPin(true) — панели нет")
 const swipe = async (dy) => {
   const box = await page.$eval("#talk .tk-sheet", e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + Math.min(r.height / 2, 300) } })
   await page.evaluate(({ x, y, dy }) => {
@@ -47,16 +33,22 @@ const swipe = async (dy) => {
   }, { ...box, dy })
   await page.waitForTimeout(550)
 }
-// 3. панель вверх — на весь экран; там вверх — снова панель; вниз — закончить
-await swipe(-80)
-ok(await page.evaluate(() => TALK && !TALK.pin), "панель вверх — разговор на весь экран")
-await page.evaluate(() => talkState("say", "Готово. Что-нибудь ещё?", "")); await page.waitForTimeout(700)
-await page.screenshot({ path: `${out}/6-full${sfx}.png` })
-await swipe(-160)
-ok(await page.evaluate(() => TALK && TALK.pin), "полный экран вверх — снова панель")
-await swipe(80)
-ok(await page.evaluate(() => !TALK && !document.body.classList.contains("talk-pin")), "панель вниз — разговор закончен")
-// 4. удержание «Изи» больше не записывает
+// 2. смахнуть вверх — панели нет, разговор открыт
+await swipe(-200)
+ok(await page.evaluate(() => !!TALK) && !(await pinned()), "вверх — панели нет, разговор на весь экран")
+// 3. кнопка чата в разговоре — разговор закончен, открыт чат, панели нет
+await page.evaluate(() => $("#talk .tk-chat").click()); await page.waitForTimeout(700)
+ok(await page.evaluate(() => !TALK && tab === "chat" && !document.querySelector("#talk")) && !(await pinned()), "кнопка «чат» — разговор закончен, чат без панели")
+await page.screenshot({ path: `${out}/chat-no-panel${sfx}.png` })
+// 4. «+» в разговоре — тоже без панели
+await page.evaluate(() => talkOpen()); await page.waitForTimeout(500)
+await page.evaluate(() => { const t = document.querySelector("#talk .tk-plus"); t && t.click() }); await page.waitForTimeout(900)
+ok(await page.evaluate(() => !TALK && tab === "chat") && !(await pinned()), "«+» в разговоре — чат, панели нет")
+// 5. вниз — закончить
+await page.evaluate(() => talkOpen()); await page.waitForTimeout(500)
+await swipe(200); await page.waitForTimeout(300)
+ok(await page.evaluate(() => !TALK), "вниз — разговор закончен")
+// 6. держать «Изи» — записи нет
 await page.evaluate(() => setTab("today")); await page.waitForTimeout(500)
 const n0 = await page.evaluate(() => D.chat.length)
 await page.mouse.move(fab.x, fab.y); await page.mouse.down(); await page.waitForTimeout(450)
