@@ -603,7 +603,7 @@ function metrics_(m, u) {
 // Форма iziday.pages.dev/bug (и кнопка в Настройках приложения) присылает {bug:{…}}.
 // Вход не нужен: друг может сообщить, даже если приложение не открывается. Если есть ключ телефона — подписываем именем друга.
 // Всё складывается в таблицу «IZIDAY — Недочёты» в папке «IZIDAY Друзья», скриншоты — в соседнюю папку, владельцу приходит письмо.
-const BUG = { sheet: "IZIDAY — Недочёты", shots: "IZIDAY — Недочёты (скриншоты)", hour: 40, maxShots: 3, maxShot: 2.5e6, maxAudio: 4e6,
+const BUG = { sheet: "IZIDAY — Недочёты", shots: "IZIDAY — Недочёты (скриншоты)", hour: 40, maxShots: 3, maxShot: 2.5e6, maxAudio: 4e6, voiceCol: "Голос текстом",
   head: ["№", "Когда", "Кто", "Почта", "Что случилось", "Где", "Насколько мешает", "Как повторить / что ожидали", "Скриншоты", "Устройство", "Версия", "Ошибки приложения", "Статус", "Заметка"] };
 
 function bugSheet_() {
@@ -644,6 +644,14 @@ function bug_(q, secret) {
   const u = secret ? userBySecret_(secret) : null;
   const who = u ? u.name : bugTxt_(q.name, 60) || "не представился";
   const mail = u ? u.email : bugTxt_(q.email, 100);
+  // голосовое → текст: расшифровку присылает приложение (Whisper на Groq, если у человека есть ключ);
+  // нет — расшифровываем здесь тем же Whisper, если в свойствах скрипта есть GROQ_KEY
+  const am = /^data:audio\/(mp4|x-m4a|aac|mpeg|webm|ogg|wav)(?:;[^,]*)?;base64,([A-Za-z0-9+/=]+)$/.exec(String(q.audio || ""));
+  const aok = !!am && am[2].length <= (BUG.maxAudio || 4e6) * 1.37;
+  const aext = am ? { mp4: "m4a", "x-m4a": "m4a", aac: "aac", mpeg: "mp3", webm: "webm", ogg: "ogg", wav: "wav" }[am[1]] : "";
+  let vt = bugTxt_(q.voiceText, 4000);
+  if (!vt && aok) vt = bugWhisper_(Utilities.newBlob(Utilities.base64Decode(am[2]), "audio/" + am[1], "voice." + aext));
+  const whatTxt = what === "(голосовое сообщение)" && vt ? vt : what;
   const lock = LockService.getScriptLock();
   lock.waitLock(25000);
   let n, sh, links = [];
@@ -661,25 +669,34 @@ function bug_(q, secret) {
       });
     }
     // голосовое сообщение (до 3 минут): файл рядом со скриншотами, ссылка — в той же колонке
-    const am = /^data:audio\/(mp4|x-m4a|aac|mpeg|webm|ogg|wav)(?:;[^,]*)?;base64,([A-Za-z0-9+/=]+)$/.exec(String(q.audio || ""));
-    if (am && am[2].length <= (BUG.maxAudio || 4e6) * 1.37) {
-      const ext = { mp4: "m4a", "x-m4a": "m4a", aac: "aac", mpeg: "mp3", webm: "webm", ogg: "ogg", wav: "wav" }[am[1]];
-      const f = bugShots_().createFile(Utilities.newBlob(Utilities.base64Decode(am[2]), "audio/" + am[1], `№${n}-голос ${who}.${ext}`));
+    if (aok) {
+      const f = bugShots_().createFile(Utilities.newBlob(Utilities.base64Decode(am[2]), "audio/" + am[1], `№${n}-голос ${who}.${aext}`));
       links.push("Голос" + (q.sec ? " " + (Number(q.sec) | 0) + " с" : "") + ": " + f.getUrl());
     }
     const d = q.dev || {};
     const dev = [bugTxt_(d.model, 80), bugTxt_(d.os, 60), bugTxt_(d.browser, 60), d.w && d.h ? `${Number(d.w) | 0}×${Number(d.h) | 0}` : "",
       d.pwa ? "значок на экране" : "в браузере", d.lang ? bugTxt_(d.lang, 12) : ""].filter(Boolean).join(" · ");
     const errs = (Array.isArray(q.errors) ? q.errors : []).slice(-8).map(x => bugTxt_(x, 300)).join("\n");
-    sh.appendRow([n, new Date(), who, mail, bugTxt_(what, 4000), bugTxt_(q.where, 60), bugTxt_(q.level, 40), bugTxt_(q.steps, 3000),
-      links.join("\n"), dev, bugTxt_(q.ver, 40), errs, "новый", ""]);
+    if (sh.getRange(1, 15).getValue() !== (BUG.voiceCol || "Голос текстом")) sh.getRange(1, 15).setValue(BUG.voiceCol || "Голос текстом").setFontWeight("bold").setBackground("#eef2ff");
+    sh.appendRow([n, new Date(), who, mail, bugTxt_(whatTxt, 4000), bugTxt_(q.where, 60), bugTxt_(q.level, 40), bugTxt_(q.steps, 3000),
+      links.join("\n"), dev, bugTxt_(q.ver, 40), errs, "новый", "", vt]);
     SpreadsheetApp.flush();
   } finally { lock.releaseLock(); }
   const url = sh.getParent().getUrl();
   try {
     MailApp.sendEmail(Session.getEffectiveUser().getEmail(), `IZIDAY: недочёт №${n} — ${who}`,
-      `${who}${mail ? " (" + mail + ")" : ""} сообщает:\n\n${what}\n\nГде: ${q.where || "—"}\nНасколько мешает: ${q.level || "—"}\n` +
+      `${who}${mail ? " (" + mail + ")" : ""} сообщает:\n\n${whatTxt}\n\nГде: ${q.where || "—"}\nНасколько мешает: ${q.level || "—"}\n` +
       (q.steps ? `Как повторить: ${q.steps}\n` : "") + (links.length ? `Скриншоты и голос: ${links.join(" ")}\n` : "") + `\nВсе недочёты: ${url}`);
   } catch (e) {}
-  return { ok: true, n };
+  return { ok: true, n, voiceText: vt || undefined };
+}
+// Whisper large-v3 на Groq (тот же, что в приложении). Ключ — свойство скрипта GROQ_KEY; нет ключа или ошибка — пусто
+function bugWhisper_(blob) {
+  const key = GP_().getProperty("GROQ_KEY") || "";
+  if (!key) return "";
+  try {
+    const r = UrlFetchApp.fetch("https://api.groq.com/openai/v1/audio/transcriptions", { method: "post", muteHttpExceptions: true,
+      headers: { Authorization: "Bearer " + key }, payload: { file: blob, model: "whisper-large-v3", language: "ru", response_format: "text" } });
+    return r.getResponseCode() === 200 ? bugTxt_(String(r.getContentText()).trim(), 4000) : "";
+  } catch (e) { return ""; }
 }
