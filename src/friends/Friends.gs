@@ -603,7 +603,7 @@ function metrics_(m, u) {
 // Форма iziday.pages.dev/bug (и кнопка в Настройках приложения) присылает {bug:{…}}.
 // Вход не нужен: друг может сообщить, даже если приложение не открывается. Если есть ключ телефона — подписываем именем друга.
 // Всё складывается в таблицу «IZIDAY — Недочёты» в папке «IZIDAY Друзья», скриншоты — в соседнюю папку, владельцу приходит письмо.
-const BUG = { sheet: "IZIDAY — Недочёты", shots: "IZIDAY — Недочёты (скриншоты)", hour: 40, maxShots: 3, maxShot: 2.5e6,
+const BUG = { sheet: "IZIDAY — Недочёты", shots: "IZIDAY — Недочёты (скриншоты)", hour: 40, maxShots: 3, maxShot: 2.5e6, maxAudio: 4e6,
   head: ["№", "Когда", "Кто", "Почта", "Что случилось", "Где", "Насколько мешает", "Как повторить / что ожидали", "Скриншоты", "Устройство", "Версия", "Ошибки приложения", "Статус", "Заметка"] };
 
 function bugSheet_() {
@@ -660,6 +660,13 @@ function bug_(q, secret) {
         links.push(dir.createFile(blob).getUrl());
       });
     }
+    // голосовое сообщение (до 3 минут): файл рядом со скриншотами, ссылка — в той же колонке
+    const am = /^data:audio\/(mp4|x-m4a|aac|mpeg|webm|ogg|wav)(?:;[^,]*)?;base64,([A-Za-z0-9+/=]+)$/.exec(String(q.audio || ""));
+    if (am && am[2].length <= BUG.maxAudio * 1.37) {
+      const ext = { mp4: "m4a", "x-m4a": "m4a", aac: "aac", mpeg: "mp3", webm: "webm", ogg: "ogg", wav: "wav" }[am[1]];
+      const f = bugShots_().createFile(Utilities.newBlob(Utilities.base64Decode(am[2]), "audio/" + am[1], `№${n}-голос ${who}.${ext}`));
+      links.push("Голос" + (q.sec ? " " + (Number(q.sec) | 0) + " с" : "") + ": " + f.getUrl());
+    }
     const d = q.dev || {};
     const dev = [bugTxt_(d.model, 80), bugTxt_(d.os, 60), bugTxt_(d.browser, 60), d.w && d.h ? `${Number(d.w) | 0}×${Number(d.h) | 0}` : "",
       d.pwa ? "значок на экране" : "в браузере", d.lang ? bugTxt_(d.lang, 12) : ""].filter(Boolean).join(" · ");
@@ -672,7 +679,7 @@ function bug_(q, secret) {
   try {
     MailApp.sendEmail(Session.getEffectiveUser().getEmail(), `IZIDAY: недочёт №${n} — ${who}`,
       `${who}${mail ? " (" + mail + ")" : ""} сообщает:\n\n${what}\n\nГде: ${q.where || "—"}\nНасколько мешает: ${q.level || "—"}\n` +
-      (q.steps ? `Как повторить: ${q.steps}\n` : "") + (links.length ? `Скриншоты: ${links.join(" ")}\n` : "") + `\nВсе недочёты: ${url}`);
+      (q.steps ? `Как повторить: ${q.steps}\n` : "") + (links.length ? `Скриншоты и голос: ${links.join(" ")}\n` : "") + `\nВсе недочёты: ${url}`);
   } catch (e) {}
   return { ok: true, n };
 }

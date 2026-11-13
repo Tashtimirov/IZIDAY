@@ -42,6 +42,16 @@ details[open] summary{margin-bottom:10px}
 .send{width:100%;border:0;border-radius:16px;padding:16px;font:inherit;font-weight:600;font-size:17px;color:#fff;background:var(--navy);cursor:pointer;transition:transform .15s cubic-bezier(.2,.8,.2,1),opacity .2s}
 .send:active{transform:scale(.98)}
 .send[disabled]{opacity:.45}
+.voice{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.rec{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:999px;padding:9px 15px 9px 12px;font:inherit;font-weight:600;font-size:15px;background:rgba(10,159,110,.12);color:var(--navy);cursor:pointer;transition:transform .15s cubic-bezier(.2,.8,.2,1),background .2s}
+.rec svg{width:18px;height:18px}
+.rec:active{transform:scale(.96)}
+.rec.on{background:rgba(215,71,58,.14);color:var(--red)}
+.rec.on .dot{width:10px;height:10px;border-radius:50%;background:var(--red);animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.25}}
+.voice audio{height:36px;max-width:100%;flex:1 1 180px}
+.voice .del{border:0;background:none;color:var(--red);font:inherit;font-size:15px;cursor:pointer;padding:6px}
+.scr{color:var(--sub);font-size:14px;margin:10px 2px 0}
 .err{color:var(--red);font-size:15px;margin:10px 2px 0;min-height:1em}
 .done{text-align:center;padding:40px 8px 10px;animation:pop .4s cubic-bezier(.2,.8,.2,1)}
 .done .ok{width:72px;height:72px;margin:0 auto 14px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center}
@@ -61,12 +71,14 @@ details[open] summary{margin-bottom:10px}
 
 <div class="card">
   <label class="h" for="what">Что случилось</label>
-  <textarea id="what" placeholder="Например: нажал «Изи», сказал «напомни завтра в 9», а напоминание не появилось" required></textarea>
+  <textarea id="what" placeholder="Напишите или запишите голосом. Например: нажал «Изи», сказал «напомни завтра в 9», а напоминание не появилось" required></textarea>
+  <div class="voice" id="voice"><button type="button" class="rec" id="rec"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg><span>Записать голосом</span></button></div>
 </div>
 
 <div class="card">
   <div class="h">Где</div>
   <div class="chips" id="where"></div>
+  <div class="scr" id="scr" hidden></div>
 </div>
 
 <div class="card">
@@ -114,7 +126,9 @@ details[open] summary{margin-bottom:10px}
   let D = {}; try { D = JSON.parse(localStorage.getItem("myday.web") || "{}") || {} } catch (e) {}
   const conn = D.conn || {}, me = conn.friend || null
   const secret = conn.hook === HOOK && conn.secret ? conn.secret : ""
-  const st = { where: TAB[q.get("where")] || "", level: "", shots: [] }
+  const st = { where: TAB[q.get("where")] || "", level: "", shots: [], audio: "", sec: 0 }
+  const WIN = String(q.get("win") || "").slice(0, 50)   // окно, открытое в момент нажатия (заголовок)
+  const place = () => [st.where, WIN].filter(Boolean).join(" › ")
 
   function chips(id, list, key) {
     const box = $(id)
@@ -124,6 +138,7 @@ details[open] summary{margin-bottom:10px}
       ;[...box.children].forEach(c => c.classList.toggle("on", c.textContent === st[key])); keep() }
   }
   chips("where", WHERE, "where"); chips("level", LEVEL, "level")
+  if (st.where || WIN) { $("scr").hidden = false; $("scr").textContent = "Экран, где нажали кнопку: " + (place() || "—") }
 
   // кто: друг вошёл через Google — имя известно, иначе спросим (необязательно)
   if (me && me.name) $("hi").textContent = `${me.name.split(" ")[0]}, расскажите, что пошло не так. Любая мелочь помогает сделать IZIDAY лучше.`
@@ -183,12 +198,50 @@ details[open] summary{margin-bottom:10px}
     e.target.value = ""; drawShots()
   }
 
+  // голосовое сообщение: до 3 минут, уходит файлом вместе с отчётом
+  const MAXS = 180
+  let mr = null, chunks = [], tick = null, t0 = 0
+  const recBtn = $("rec"), recTxt = () => recBtn.querySelector("span")
+  const mmss = n => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`
+  function drawVoice() {
+    $("voice").querySelectorAll("audio,.del").forEach(n => n.remove())
+    recBtn.hidden = !!st.audio
+    if (!st.audio) return
+    const a = document.createElement("audio"); a.controls = true; a.src = st.audio; a.preload = "metadata"
+    const d = document.createElement("button"); d.type = "button"; d.className = "del"; d.textContent = "Удалить"
+    d.onclick = () => { st.audio = ""; st.sec = 0; drawVoice() }
+    $("voice").append(a, d)
+  }
+  function stopRec() { if (mr && mr.state !== "inactive") mr.stop() }
+  recBtn.onclick = async () => {
+    if (mr && mr.state === "recording") return stopRec()
+    $("err").textContent = ""
+    if (!navigator.mediaDevices || !window.MediaRecorder) { $("err").textContent = "На этом устройстве запись голоса недоступна — напишите текстом"; return }
+    let stream
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }) } catch (e) { $("err").textContent = "Нет доступа к микрофону — разрешите его или напишите текстом"; return }
+    const type = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || ""
+    mr = new MediaRecorder(stream, type ? { mimeType: type, audioBitsPerSecond: 48000 } : undefined); chunks = []
+    mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data) }
+    mr.onstop = () => {
+      clearInterval(tick); stream.getTracks().forEach(t => t.stop())
+      recBtn.classList.remove("on"); recBtn.querySelector(".dot") && recBtn.querySelector(".dot").remove(); recTxt().textContent = "Записать голосом"
+      st.sec = Math.round((Date.now() - t0) / 1000)
+      if (st.sec < 1 || !chunks.length) return
+      const blob = new Blob(chunks, { type: (mr.mimeType || type || "audio/mp4").split(";")[0] })
+      const fr = new FileReader(); fr.onload = () => { st.audio = fr.result; drawVoice() }; fr.readAsDataURL(blob)
+    }
+    mr.start(1000); t0 = Date.now()
+    recBtn.classList.add("on"); recBtn.insertAdjacentHTML("afterbegin", '<i class="dot"></i>'); recTxt().textContent = "Стоп · 0:00"
+    tick = setInterval(() => { const n = Math.round((Date.now() - t0) / 1000); recTxt().textContent = "Стоп · " + mmss(n); if (n >= MAXS) stopRec() }, 500)
+  }
+
   $("f").onsubmit = async e => {
     e.preventDefault(); $("err").textContent = ""
     const what = $("what").value.trim()
-    if (what.length < 3) { $("err").textContent = "Напишите в двух словах, что случилось"; $("what").focus(); return }
-    const btn = $("send"); btn.disabled = true; btn.textContent = st.shots.length ? "Отправляем скриншоты…" : "Отправляем…"
-    const bug = { what, where: st.where, level: st.level, steps: $("steps").value.trim(), name: $("name").value.trim() || (me && me.name) || "",
+    if (mr && mr.state === "recording") { stopRec(); for (let i = 0; i < 30 && !st.audio; i++) await new Promise(r => setTimeout(r, 100)) }
+    if (what.length < 3 && !st.audio) { $("err").textContent = "Напишите в двух словах или запишите голосом, что случилось"; $("what").focus(); return }
+    const btn = $("send"); btn.disabled = true; btn.textContent = st.audio ? "Отправляем запись…" : st.shots.length ? "Отправляем скриншоты…" : "Отправляем…"
+    const bug = { what: what || "(голосовое сообщение)", audio: st.audio || undefined, sec: st.sec || undefined, where: place(), level: st.level, steps: $("steps").value.trim(), name: $("name").value.trim() || (me && me.name) || "",
       email: (me && me.email) || "", shots: st.shots, dev, ver, errors: errors.slice(-8) }
     try {
       const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 60000)
@@ -206,7 +259,7 @@ details[open] summary{margin-bottom:10px}
   }
   const home = () => location.replace("./")
   $("back").onclick = home; $("home").onclick = home
-  $("again").onclick = () => { $("what").value = ""; $("steps").value = ""; st.shots = []; st.level = ""; drawShots(); chips("level", LEVEL, "level")
+  $("again").onclick = () => { $("what").value = ""; $("steps").value = ""; st.shots = []; st.level = ""; st.audio = ""; st.sec = 0; drawShots(); drawVoice(); chips("level", LEVEL, "level")
     $("done").hidden = true; $("f").hidden = false; $("what").focus() }
 })()
 </script>
