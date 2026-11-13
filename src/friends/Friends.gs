@@ -662,7 +662,7 @@ function bug_(q, secret) {
     }
     // голосовое сообщение (до 3 минут): файл рядом со скриншотами, ссылка — в той же колонке
     const am = /^data:audio\/(mp4|x-m4a|aac|mpeg|webm|ogg|wav)(?:;[^,]*)?;base64,([A-Za-z0-9+/=]+)$/.exec(String(q.audio || ""));
-    if (am && am[2].length <= BUG.maxAudio * 1.37) {
+    if (am && am[2].length <= (BUG.maxAudio || 4e6) * 1.37) {
       const ext = { mp4: "m4a", "x-m4a": "m4a", aac: "aac", mpeg: "mp3", webm: "webm", ogg: "ogg", wav: "wav" }[am[1]];
       const f = bugShots_().createFile(Utilities.newBlob(Utilities.base64Decode(am[2]), "audio/" + am[1], `№${n}-голос ${who}.${ext}`));
       links.push("Голос" + (q.sec ? " " + (Number(q.sec) | 0) + " с" : "") + ": " + f.getUrl());
