@@ -160,7 +160,7 @@ const deEmo1 = s => String(s).replace(EMO_RE1, (m, e) => ei(EMO[e]))   // тол
 // ───────────── Данные на телефоне ─────────────
 // Записи — как в виджете: { id, date, u (время изменения), ... }; удалённые остаются «надгробиями» { id, deleted, u },
 // чтобы удаление дошло до виджета и таблицы
-const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90, goals: 0, pomo: 30 }   // pomo — помидоры (фокус 25 мин), живут в приложении; goals — цели, желания, мечты; shop — покупки, kids — дела детей, fast — голодание   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
+const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90, goals: 0, pomo: 30, bdays: 0 }   // bdays — дни рождения, внесённые вручную (контакты iPhone приходят снимком виджета: D.snap.bdays)   // pomo — помидоры (фокус 25 мин), живут в приложении; goals — цели, желания, мечты; shop — покупки, kids — дела детей, fast — голодание   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
 let D = {}
 function load() {
   try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
@@ -314,7 +314,7 @@ function sync() {
 let calForce = false, calBusy = false
 const calListReq = () => ({ action: "list", from: dayKey(addDays(sod(new Date()), -21)) })
 function calTake(r) {
-  if (r) D.gcal = r.events ? { ok: true, at: Date.now(), events: r.events, calendars: r.calendars || [] } : { ok: !!(D.gcal && D.gcal.ok), at: Date.now(), events: (D.gcal && D.gcal.events) || [], error: r.error || "" }
+  if (r) D.gcal = r.events ? { ok: true, at: Date.now(), events: r.events, calendars: r.calendars || [], bdays: Array.isArray(r.bdays) ? r.bdays : (D.gcal && D.gcal.bdays) || [] } : { ok: !!(D.gcal && D.gcal.ok), at: Date.now(), events: (D.gcal && D.gcal.events) || [], bdays: (D.gcal && D.gcal.bdays) || [], error: r.error || "" }
   if (r && r.events) calReflow()
 }
 async function calRefresh() {
@@ -942,6 +942,10 @@ const AGENT_TOOLS = [
     input_schema: { type: "object", properties: { title: { type: "string" }, days: { type: "array", items: { type: "number" }, description: "1 — пн … 7 — вс" },
       time: { type: "string", description: "HH:MM, если есть" }, kid: { type: "string", description: "Кто из детей" }, who: { type: "string", description: "Кто забирает / везёт" }, take: { type: "string", description: "Что взять" } }, required: ["title", "days"] } },
   { name: "get_kids", description: "Дела детей по дням недели.", input_schema: { type: "object", properties: {} } },
+  { name: "add_birthday", description: "Запомнить день рождения («у мамы ДР 5 марта», «Кирилл родился 12.04.1990»). Пуш придёт за неделю, накануне и утром в сам день. Дни рождения из контактов iPhone и Google приходят сами.",
+    input_schema: { type: "object", properties: { name: { type: "string", description: "Кто: имя или «мама»" }, date: { type: "string", description: "MM-DD или YYYY-MM-DD, если год известен" }, note: { type: "string", description: "Заметка: идеи подарка и т. п." } }, required: ["name", "date"] } },
+  { name: "get_birthdays", description: "Ближайшие дни рождения (из приложения и контактов iPhone): сколько дней осталось, сколько исполнится. days — горизонт, по умолчанию 60.", input_schema: { type: "object", properties: { days: { type: "number" } } } },
+  { name: "delete_birthday", description: "Убрать день рождения по id (из get_birthdays). Для контакта iPhone или Google — перестать о нём напоминать.", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "delete_kids_item", description: "Убрать дело детей по id (из get_kids).", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "start_fast", description: "Начать интервальное голодание (по умолчанию 16 ч). Когда окно откроется — придёт пуш.", input_schema: { type: "object", properties: { hours: { type: "number" } } } },
   { name: "stop_fast", description: "Закончить голодание сейчас (поел).", input_schema: { type: "object", properties: {} } },
@@ -1384,6 +1388,17 @@ async function runTool(name, x) {
       if (!days.length) return { error: "нужны дни недели: 1 — пн … 7 — вс" }
       const k = upsert("kids", { id: uid("c"), date: Date.now(), title: String(x.title).trim(), days, time: /^\d{1,2}:\d\d$/.test(x.time || "") ? x.time.padStart(5, "0") : "", kid: x.kid || "", who: x.who || "", take: x.take || "" })
       return { ok: true, id: k.id, days: days.map(d => WD7[d - 1]).join(", ") }
+    }
+    case "add_birthday": {
+      const md = bdayParse(x.date); if (!md || !String(x.name || "").trim()) return { error: "нужны имя и дата (MM-DD или YYYY-MM-DD)" }
+      const name = String(x.name).trim(), same = bdaysMine().find(b => b.name.toLowerCase() === name.toLowerCase())
+      const b = upsert("bdays", Object.assign({}, same || { id: uid("y"), date: Date.now() }, { name: same ? same.name : name, md: md.md, year: md.year || (same && same.year) || 0, note: x.note != null ? String(x.note) : (same && same.note) || "" }))
+      return { ok: true, id: b.id, next: bdayInfo(b) }
+    }
+    case "get_birthdays": return { items: bdaysUpcoming(Math.max(1, Math.min(366, +x.days || 60))).map(b => Object.assign({ id: b.id, name: b.name, from: b.src === "c" ? "контакты iPhone" : b.src === "g" ? "Google Контакты" : "приложение" }, bdayInfo(b), b.note ? { note: b.note } : {})) }
+    case "delete_birthday": {
+      const b = bdaysAll().find(z => z.id === x.id); if (!b) return { error: "нет такого" }
+      bdayOff(b); return { ok: true }
     }
     case "get_kids": return { items: kidsList().map(k => ({ id: k.id, title: k.title, days: (k.days || []).map(d => WD7[d - 1]).join(", "), time: k.time, kid: k.kid, who: k.who, take: k.take })) }
     case "delete_kids_item": { if (!live(D.kids).some(k => k.id === x.id)) return { error: "нет такого" }; remove("kids", x.id); return { ok: true } }
@@ -2322,7 +2337,7 @@ async function eventSheet(e) {
 async function addMenu() {
   const glass = H().glass || 250
   const opts = [["💬 Сказать помощнику", () => { setTab("chat"); setTimeout(micStart, 300) }], ["➖ Расход", () => moneyForm("expense")], ["➕ Доход", () => moneyForm("income")],
-    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()], ["🛒 Покупка", shopForm], ["👧 Дела детей", kidsForm], ["🎯 Цель или желание", () => goalsForm("month")], ["🔁 Снова пора: повторяющееся дело", () => choreForm()], ["📋 Новый список", listForm], ["⏱ Помидоро — фокус 25 мин", pomoAsk],
+    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()], ["🛒 Покупка", shopForm], ["👧 Дела детей", kidsForm], ["🎂 День рождения", () => bdaysForm(true)], ["🎯 Цель или желание", () => goalsForm("month")], ["🔁 Снова пора: повторяющееся дело", () => choreForm()], ["📋 Новый список", listForm], ["⏱ Помидоро — фокус 25 мин", pomoAsk],
     ["⏰ Напоминание", reminderForm], ["📅 Событие", () => calQuick()]]
   const i = await ui.choose("Добавить", "", opts.map(o => o[0]))
   if (i >= 0) opts[i][1]()
@@ -2493,6 +2508,7 @@ function renderToday() {
   if (isToday) html += habitsCard(selDay)
   if (isToday) html += todayTop(v, now)
   html += kidsCard(selDay)
+  if (isToday) html += bdaysCard()
   if (isToday && shopOpen().length) html += shopCard()
   if (isToday) html += choresToday()
   if (isToday && pomoNow()) html += pomoCard()
@@ -2915,7 +2931,7 @@ const DO = {
   "go-today": () => { selDay = sod(new Date()); stripCenter = null; stripJump = true; render(); if (stripJump) stripInit(null) },
   "tab-money": () => setTab("money"), "tab-health": () => setTab("health"), report: () => showReport("month"),
   sheet: () => window.open(D.conn.sheetUrl, "_blank"),
-  budgets: () => budgetForm(), "recur-add": () => recurForm(), "chore-add": () => choreForm(), "list-add": () => listForm(), habits: () => habitsForm(), weight: () => weightForm(), shop: () => shopForm(), kids: () => kidsForm(), goals: () => goalsForm("month"), search: () => searchSheet(),
+  budgets: () => budgetForm(), "recur-add": () => recurForm(), "chore-add": () => choreForm(), "list-add": () => listForm(), habits: () => habitsForm(), weight: () => weightForm(), shop: () => shopForm(), kids: () => kidsForm(), bdays: () => bdaysForm(), goals: () => goalsForm("month"), search: () => searchSheet(),
   sync: () => (!D.conn || !D.conn.hook) ? DO.connect() : sync().then(ok => toast(ok ? "Обновлено" : `Не получилось: ${D.sync.error || "нет связи"}`)),
   "run-widget": () => sync().then(runWidgetNow),
   autoconnect: () => autoConnect(),
@@ -3201,6 +3217,86 @@ function kidsForm() {
     upsert("kids", { id: uid("c"), date: Date.now(), title, days: [...days].sort(), time: $("#k-h", s.el).value || "", kid: $("#k-k", s.el).value.trim(), who: $("#k-w", s.el).value.trim(), take: $("#k-x", s.el).value.trim() })
     s.close(); kidsForm(); toast("Добавлено")
   }
+}
+
+// ── Дни рождения: внесённые в приложении (D.bdays), контакты iPhone (снимок виджета D.snap.bdays) и Google Контакты
+// (таблица читает их из Google Календаря и присылает с календарём: D.gcal.bdays). md — "MM-DD", year — год (0 — неизвестен).
+// Один человек из разных источников (то же имя в любом порядке слов + та же дата) показывается один раз — как и на сервере.
+// Запись { id, off: true } — «не напоминать». Пуши шлёт таблица (pushTick).
+const MON_G = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+const bdaysMine = () => live(D.bdays).filter(b => !b.off && b.name && /^\d\d-\d\d$/.test(b.md || ""))
+const bdayKey = b => String(b.name || "").toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9]+/g, " ").trim().split(" ").sort().join(" ") + "|" + b.md
+function bdaysAll(withOff) {
+  const ok = b => b && b.id && b.name && /^\d\d-\d\d$/.test(b.md || ""), arr = v => Array.isArray(v) ? v.filter(ok) : []
+  const off = new Set(live(D.bdays).filter(b => b.off).map(b => b.id))
+  const all = [].concat(bdaysMine().map(b => Object.assign({ src: "m" }, b)), arr(D.snap && D.snap.bdays).map(b => Object.assign({ src: "c" }, b)), arr(D.gcal && D.gcal.bdays).map(b => Object.assign({ src: "g" }, b)))
+  const offKeys = new Set(all.filter(b => off.has(b.id)).map(bdayKey)), out = new Map()
+  for (const b of all) {
+    const k = bdayKey(b), had = out.get(k)
+    if (!had) out.set(k, Object.assign({}, b, { off: offKeys.has(k), year: +b.year || 0 }))
+    else if (!had.year && +b.year) had.year = +b.year
+  }
+  return [...out.values()].filter(b => withOff || !b.off)
+}
+function bdayParse(v) {
+  const t = String(v || "").trim(); let m
+  if ((m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) return bdayOk(+m[2], +m[3], +m[1])
+  if ((m = t.match(/^(?:--)?(\d{1,2})-(\d{1,2})$/))) return bdayOk(+m[1], +m[2], 0)
+  if ((m = t.match(/^(\d{1,2})[./](\d{1,2})(?:[./](\d{4}))?$/))) return bdayOk(+m[2], +m[1], +m[3] || 0)
+  return null
+}
+function bdayOk(mo, d, y) {
+  if (!(mo >= 1 && mo <= 12 && d >= 1 && d <= [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1])) return null
+  return { md: String(mo).padStart(2, "0") + "-" + String(d).padStart(2, "0"), year: y > 1800 && y < new Date().getFullYear() ? y : 0 }   // год этого года — скорее всего, просто не меняли год в календаре выбора
+}
+// ближайшая дата (сегодня — тоже ближайшая); 29 февраля в невисокосный год — 28-го
+function bdayNext(md, from = sod(new Date())) {
+  const [mo, d] = md.split("-").map(Number)
+  for (const y of [from.getFullYear(), from.getFullYear() + 1]) {
+    const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0, dt = new Date(y, mo - 1, mo === 2 && d === 29 && !leap ? 28 : d)
+    if (dt >= from) return dt
+  }
+  return null
+}
+function bdayInfo(b) {
+  const n = bdayNext(b.md), t0 = sod(new Date()), left = Math.round((n - t0) / 864e5), age = b.year ? n.getFullYear() - b.year : 0
+  return { date: n.getDate() + " " + MON_G[n.getMonth()], days_left: left, turns: age || undefined, when: left === 0 ? "сегодня" : left === 1 ? "завтра" : `через ${left} ${plural(left, "день", "дня", "дней")}` }
+}
+const bdaysUpcoming = days => bdaysAll().map(b => Object.assign(b, { _n: bdayNext(b.md) })).filter(b => b._n && (b._n - sod(new Date())) / 864e5 <= days).sort((a, b) => a._n - b._n || a.name.localeCompare(b.name))
+function bdayOff(b) { if (b.src !== "m") upsert("bdays", { id: b.id, date: Date.now(), off: true, name: b.name }); else remove("bdays", b.id) }
+function bdayRow(b, act) {
+  const i = bdayInfo(b)
+  return `<div class="row${i.days_left === 0 ? " bd-now" : ""}"><span class="pin">${ei("gift")}</span><div class="grow"><div class="t">${esc(b.name)}${i.turns ? ` · ${i.turns}` : ""}</div>
+    <div class="s">${esc(i.date)} · ${esc(i.when)}${b.note ? " · " + esc(b.note) : ""}</div></div>${act || ""}</div>`
+}
+function bdaysCard() {
+  const l = bdaysUpcoming(14)
+  if (!l.length) return ""
+  return `<div class="card" id="bdays"><h2>Дни рождения<button class="act" data-do="bdays">Все</button></h2>${l.slice(0, 6).map(b => bdayRow(b)).join("")}</div>`
+}
+function bdaysForm(add) {
+  const all = bdaysAll(true), on = all.filter(b => !b.off).map(b => Object.assign(b, { _n: bdayNext(b.md) })).sort((a, b) => a._n - b._n), off = all.filter(b => b.off)
+  const s = sheet(`<h3>Дни рождения</h3>
+    <div class="field"><label>Кто</label><input id="bd-n" placeholder="Мама, Кирилл, Алия…"></div>
+    <div class="field"><label>Когда</label><input id="bd-d" type="date"></div>
+    <div class="field"><label class="bd-chk"><input id="bd-y" type="checkbox"> Год неизвестен</label></div>
+    <div class="btns"><button class="btn" data-a="no">Готово</button><button class="btn primary" data-a="ok">Добавить</button></div>
+    <div style="margin-top:14px">${on.map(b => bdayRow(b, `<button class="btn small${b.src === "m" ? " red" : ""}" data-off="${esc(b.id)}">${b.src === "m" ? "Убрать" : "Не напоминать"}</button>`)).join("") ||
+      `<div class="empty">Добавьте здесь или скажите Изи: «у мамы день рождения 5 марта». Дни рождения из контактов iPhone и Google появляются сами</div>`}</div>
+    ${off.length ? `<div class="s" style="margin:14px 0 4px">Не напоминать</div>${off.map(b => `<div class="row"><div class="grow"><div class="t">${esc(b.name)}</div></div><button class="btn small" data-on="${esc(b.id)}">Напоминать</button></div>`).join("")}` : ""}
+    <div class="s" style="margin-top:12px">Пуш придёт за неделю, накануне вечером и утром в сам день. Источники: ${[["m", "вручную"], ["c", "контакты iPhone"], ["g", "Google"]].map(([k, t]) => `${t} — ${all.filter(b => b.src === k).length}`).join(", ")}.</div>`, { onClose: () => render() })
+  const yr = $("#bd-y", s.el)
+  $$("[data-off]", s.el).forEach(b => b.onclick = () => { const x = all.find(z => z.id === b.dataset.off); if (x) bdayOff(x); s.close(); bdaysForm() })
+  $$("[data-on]", s.el).forEach(b => b.onclick = () => { remove("bdays", b.dataset.on); s.close(); bdaysForm() })
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const name = $("#bd-n", s.el).value.trim(), md = bdayParse($("#bd-d", s.el).value)
+    if (!name) return toast("Напишите, чей день рождения")
+    if (!md) return toast("Выберите дату")
+    upsert("bdays", { id: uid("y"), date: Date.now(), name, md: md.md, year: yr.checked ? 0 : md.year, note: "" })
+    s.close(); bdaysForm(); toast("Добавлено")
+  }
+  if (add) setTimeout(() => { const i = $("#bd-n", s.el); if (i) i.focus() }, 350)
 }
 
 // ── Интервальное голодание: таймер; когда окно откроется — пуш (таблица) ──
@@ -3848,6 +3944,7 @@ async function hashAction(given) {
   if (a === "health") return setTab("health")
   if (a === "shop") { setTab("today"); return setTimeout(() => { const el = $("#shop"); if (el) el.scrollIntoView({ block: "start" }) }, 50) }
   if (a === "kids") return setTab("today")
+  if (a === "bdays") { setTab("today"); return setTimeout(() => { const el = $("#bdays"); if (el) el.scrollIntoView({ block: "start", behavior: "smooth" }) }, 50) }
   if (a === "goals") { setTab("today"); return goalsForm(["wish", "dream"].includes(arg) ? arg : "month") }
   if (a === "today") return setTab("today")
   if (a === "rem") return remFollow(arg)

@@ -179,7 +179,7 @@ function advice() { ensureSheets_(); writeAdvice_(); }
 // Виджет присылает снимок того, что видит только iPhone (календарь, напоминания, часы), и выполняет
 // очередь команд приложения (создать или перенести событие, отметить напоминание). Каждая запись хранит
 // s — время, когда таблица её приняла: клиент получает только записи новее своего прошлого запроса.
-const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90, goals: 0, log: 90 },   // сколько дней хранить (0 — всё); rems — напоминания IZIDAY; budgets, recur, habits, hlog, weight — лимиты, регулярные платежи, привычки, вес; shop — покупки, kids — дела детей, fast — голодание
+const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90, goals: 0, log: 90, bdays: 0 },   // сколько дней хранить (0 — всё); bdays — дни рождения, внесённые в приложении; rems — напоминания IZIDAY; budgets, recur, habits, hlog, weight — лимиты, регулярные платежи, привычки, вес; shop — покупки, kids — дела детей, fast — голодание
   tomb: 90, chunk: 45000, opsKeep: 3 };
 const ROUTE_URL = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/;
 
@@ -419,7 +419,8 @@ function cal_(c) {
     const out = [], list = cals(), def = CalendarApp.getDefaultCalendar().getId(), info = [];
     for (const k of list) { const name = k.getName(); info.push({ name, primary: k.getId() === def }); for (const e of k.getEvents(from, to)) out.push(ev(e, name)); }   // имя календаря — из цикла: getCalendarById на каждое событие очень медленный
     out.sort((x, y) => x.start < y.start ? -1 : 1);
-    return { events: out.slice(0, 600), calendars: info };
+    let bdays = []; try { bdays = gbdays_(); } catch (e) {}   // дни рождения из Google Контактов — приложению
+    return { events: out.slice(0, 600), calendars: info, bdays };
   }
   if (a === "create") {
     const k = (c.calendar && cals().find(x => x.getName() === c.calendar)) || CalendarApp.getDefaultCalendar();
@@ -1076,6 +1077,21 @@ function pushTick() {
       for (const k of Object.keys(travel)) if (now - travel[k].at > 6 * 3600e3) delete travel[k];
       hubSet_("push_travel", travel);
     }
+    // 9. дни рождения: за неделю в 10:00 (подумать о подарке), накануне в 19:00 и в сам день в 9:00.
+    //    Источники: внесённые в приложении (список bdays), контакты iPhone (снимок виджета snap.bdays) и Google Контакты
+    //    (дни рождения в Google Календаре); один человек из разных источников — один пуш; off — «не напоминать»
+    let bdays = []; try { bdays = bdaysAll_(alive("bdays"), snap.bdays, gbdays_()); } catch (e) {}   // сбой здесь не должен остановить остальные пуши
+    for (const b of bdays) {
+      const next = bdayNext_(b.md, dayOf(now)); if (!next) continue;
+      const age = b.year > 1800 ? Number(next.slice(0, 4)) - b.year : 0, who = b.name + (age > 0 ? ` (${age})` : "");
+      const at = (days, hm) => pushParse_(Utilities.formatDate(new Date(pushParse_(next, tz).getTime() - days * 864e5 + 12 * 3600e3), tz, "yyyy-MM-dd") + "T" + hm, tz).getTime();
+      [[7, "10:00", "🎂 Через неделю день рождения", `${who} — ${bdayDate_(next)}. Подумай о подарке, могу подсказать идеи.`],
+       [1, "19:00", "🎂 Завтра день рождения", `${who}. Не забудь поздравить.`],
+       [0, "09:00", "🎂 Сегодня день рождения", `${who}${age > 0 ? ` — исполняется ${age}` : ""}. Поздравь!`]].forEach(([d, hm, title, body]) => {
+        const t = at(d, hm);
+        if (t > from && t <= now + 60e3) once("bd" + d + ":" + b.id + ":" + next, { title, body, url: "./#bdays" });
+      });
+    }
     // 8. Claude Code закончил переданную задачу (итог появился на листе «Ответы Claude Code»)
     for (const j of ccCheck_(SpreadsheetApp.getActiveSpreadsheet(), now))
       if (j.state === "done" && j.doneAt > now - 6 * 3600e3) once("cc:" + j.id, { title: "Задача готова", body: `«${j.title}»: ${String(j.text || "").split("\n")[0].slice(0, 140)}`, url: "./#chat" });
@@ -1085,6 +1101,67 @@ function pushTick() {
     hubSet_("push_last", { at: now, items: items.length, res });
     return res;
   } finally { lock.releaseLock(); }
+}
+// Дни рождения: md — "MM-DD", year — год рождения (0 — неизвестен). Порядок важности: внесённые в приложении,
+// контакты iPhone, Google. Один человек (то же имя в любом порядке слов + та же дата) — одна запись, год берётся у того, где он есть.
+// Запись { id, off: true } выключает напоминания о человеке из любого источника
+const bdayKey_ = b => String(b.name || "").toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9]+/g, " ").trim().split(" ").sort().join(" ") + "|" + b.md;
+function bdaysAll_(mine, contacts, google) {
+  const off = new Set(), out = new Map(), ok = b => b && b.id && b.name && /^\d\d-\d\d$/.test(b.md || "");
+  for (const b of mine || []) if (b && b.off) off.add(String(b.id));
+  const all = [].concat((mine || []).filter(b => ok(b) && !b.off), Array.isArray(contacts) ? contacts.filter(ok) : [], Array.isArray(google) ? google.filter(ok) : []);
+  const offKeys = new Set(all.filter(b => off.has(String(b.id))).map(bdayKey_));
+  for (const b of all) {
+    const k = bdayKey_(b); if (offKeys.has(k)) continue;
+    const had = out.get(k);
+    if (!had) out.set(k, { id: String(b.id), name: String(b.name), md: b.md, year: Number(b.year) || 0 });
+    else if (!had.year && Number(b.year)) had.year = Number(b.year);
+  }
+  return [...out.values()];
+}
+// Дни рождения из Google Контактов: Google Календарь показывает их событиями типа birthday (раньше — отдельный
+// календарь «Дни рождения»). Читаем API Календаря токеном скрипта, держим 6 часов в кэше
+function gbdays_() {
+  let cache = null, hit = null;
+  try { cache = CacheService.getScriptCache(); hit = cache.get("gbdays"); } catch (e) {}
+  if (hit) try { return JSON.parse(hit); } catch (e) {}
+  const out = [], seen = new Set(), headers = { Authorization: "Bearer " + ScriptApp.getOAuthToken() };
+  const now = new Date(), to = new Date(now.getTime() + 367 * 864e5);
+  const clean = t => String(t || "").replace(/^\s*(день рождения|др|birthday)\s*[:\-—–]?\s*/i, "").replace(/\s*([\-—–:]\s*день рождения|’s birthday|'s birthday|birthday)\s*$/i, "").replace(/^[🎂🎉\s]+/u, "").trim();
+  const take = (cal, extra) => {
+    const url = "https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(cal) + "/events?singleEvents=true&maxResults=2500" + extra +
+      "&timeMin=" + encodeURIComponent(now.toISOString()) + "&timeMax=" + encodeURIComponent(to.toISOString());
+    try {
+      const r = UrlFetchApp.fetch(url, { headers, muteHttpExceptions: true });
+      if (r.getResponseCode() !== 200) return;
+      for (const e of JSON.parse(r.getContentText()).items || []) {
+        const d = (e.start && (e.start.date || e.start.dateTime) || "").slice(0, 10), name = clean(e.summary);
+        if (!/^\d{4}-\d\d-\d\d$/.test(d) || !name) continue;
+        const id = "g:" + ((e.birthdayProperties && e.birthdayProperties.contact) || e.recurringEventId || e.id), md = d.slice(5);
+        if (seen.has(id + md)) continue; seen.add(id + md);
+        out.push({ id, name, md, year: 0 });
+      }
+    } catch (e) {}
+  };
+  take("primary", "&eventTypes=birthday");
+  take("addressbook#contacts@group.v.calendar.google.com", "");
+  try { if (cache) cache.put("gbdays", JSON.stringify(out.slice(0, 1500)), 6 * 3600); } catch (e) {}
+  return out;
+}
+// ближайшая дата («yyyy-MM-dd», сегодня — тоже ближайшая); 29 февраля в невисокосный год — 28-го
+function bdayNext_(md, today) {
+  const m = String(md || "").match(/^(\d\d)-(\d\d)$/); if (!m) return "";
+  const y0 = Number(today.slice(0, 4));
+  for (const y of [y0, y0 + 1]) {
+    const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+    const d = m[1] === "02" && m[2] === "29" && !leap ? "28" : m[2], s = y + "-" + m[1] + "-" + d;
+    if (s >= today) return s;
+  }
+  return "";
+}
+function bdayDate_(s) {
+  const M = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+  return Number(s.slice(8, 10)) + " " + M[Number(s.slice(5, 7)) - 1];
 }
 function pushParse_(s, tz) {
   const m = String(s || "").match(/^(\d{4})-(\d\d)-(\d\d)(?:[T ](\d\d):(\d\d))?/);

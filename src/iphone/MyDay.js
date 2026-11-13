@@ -351,7 +351,29 @@ async function hubSnapshot() {
     recur: !!(r.hasRecurrenceRules), notes: r.notes || "" })
   const names = async forRem => { try { return (forRem ? await Calendar.forReminders() : await Calendar.forEvents()).map(c => c.title) } catch (e) { return [] } }
   return { pushAware: 1, events, reminders: open.slice(0, 200).map(rem).concat(done.slice(-30).map(rem)),
-    calendars: await names(false), lists: await names(true), watch: await loadHealth(), health: (await healthDays()).slice(-60), loc: await hereNow(), notif: await notifInfo() }
+    calendars: await names(false), lists: await names(true), watch: await loadHealth(), health: (await healthDays()).slice(-60), loc: await hereNow(), notif: await notifInfo(),
+    bdays: await contactBdays() }
+}
+// Дни рождения из контактов iPhone (сюда же попадают Google и iCloud, если они подключены в «Контактах»): приложение
+// показывает ближайшие, таблица шлёт пуши. Контакты читаем не чаще раза в 12 ч, между чтениями — копия в bdays.json.
+// Год без года iOS хранит как 1604 — такой год не передаём
+async function contactBdays() {
+  const cache = await loadJSON("bdays.json")
+  const old = cache && !Array.isArray(cache) && Array.isArray(cache.list) ? cache : { at: 0, list: [] }
+  if (Date.now() - (old.at || 0) < 12 * 3600e3) return old.list
+  try {
+    const all = await Contact.all(await ContactContainer.all()), list = []
+    for (const c of all) {
+      const d = c.birthday
+      if (!d || !(d instanceof Date) || isNaN(d)) continue
+      const name = [c.givenName, c.familyName].filter(Boolean).join(" ").trim() || c.nickname || c.organizationName || ""
+      if (!name) continue
+      const y = d.getFullYear()
+      list.push({ id: "c:" + c.identifier, name, md: String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"), year: y > 1800 && y <= new Date().getFullYear() ? y : 0 })
+    }
+    saveJSON("bdays.json", { at: Date.now(), list: list.slice(0, 1500) })
+    return list.slice(0, 1500)
+  } catch (e) { return old.list }   // нет доступа к контактам — что было
 }
 // Для приложения: сколько уведомлений виджет поставил (видно в «Ещё» — проверить, что они вообще есть)
 async function notifInfo() {

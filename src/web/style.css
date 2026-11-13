@@ -1302,3 +1302,8 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 .pl-unit button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 4px rgba(0, 0, 0, .14); }
 .pl-eq:empty { display: none; }
 #pl-l .pl-row .t { white-space: normal; overflow: visible; text-overflow: clip; }
+/* Дни рождения: сегодняшний — цветом, флажок «Год неизвестен» */
+.row.bd-now .t { font-weight: 700 }
+.row.bd-now .pin .ei { color: var(--pink) }
+.bd-chk { display: flex; align-items: center; gap: 8px; font-size: 15px }
+.bd-chk input { width: 20px; height: 20px; accent-color: var(--accent) }

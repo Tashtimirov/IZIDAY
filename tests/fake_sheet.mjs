@@ -106,6 +106,8 @@ export function sheetScript() {
       newTrigger: fn => { const t = { fn, getHandlerFunction: () => fn }; const b = { timeBased: () => b, everyMinutes: m => { t.every = m; return b }, create: () => { triggers.push(t); return t } }; return b } },
     // API Календаря (обрезка серии): GET по iCalUID — главное событие с правилом, PATCH — новое правило
     UrlFetchApp: { fetch: (url, o = {}) => {
+      if (/googleapis\.com\/calendar/.test(url) && /eventTypes=birthday/.test(url)) return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ items: globalThis.__gbdays || [] }) }   // дни рождения из Google Контактов
+      if (/googleapis\.com\/calendar/.test(url) && /addressbook/.test(url)) return { getResponseCode: () => 404, getContentText: () => "{}" }
       if (/googleapis\.com\/calendar/.test(url)) {
         const m = url.match(/iCalUID=([^&]+)/), ev = m && cal.events.find(x => x.getId() === decodeURIComponent(m[1]))
         if (m) return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ items: ev ? [{ id: "M" + ev.getId(), start: ev.isAllDayEvent() ? { date: "x" } : { dateTime: ev.getStartTime().toISOString() }, recurrence: ["RRULE:FREQ=WEEKLY;COUNT=20"] }] : [] }) }

@@ -37,7 +37,7 @@ def friends_gs(client=""):
     # службы владельца: календарь — свой, почты нет (и упоминаний в комментариях тоже: Google ищет имена служб по всему тексту)
     sub(r"\bCalendarApp\b", "FCAL_")
     sub(r"\bGmailApp\b", "NOGMAIL_")
-    sub(r"ScriptApp\.getOAuthToken\(\)", '""', 1)
+    sub(r"ScriptApp\.getOAuthToken\(\)", '""', 2)   # 2: обрезка серии и дни рождения из Google (у друзей — пусто)
     # подсказки шлёт сервер (виджета у друзей нет), раз в 10 минут: время работы скриптов у Google ограничено
     sub(r"full = !!snap\.pushAware;", "full = true;", 1)
     sub(r"const PUSH = \{ tick: 5,", "const PUSH = { tick: 10,", 1)
