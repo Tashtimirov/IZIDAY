@@ -91,7 +91,7 @@ check(+(await page.textContent(".pl-life")).replace(/\D/g, "") === lifeP - (5 - 
 // статья твёрдой суммой: переключатель % / ฿, «На жизнь» пересчитывается
 const base = await page.evaluate(() => incomeBase())
 await page.click('[data-u="invest"][data-v="amt"]'); await page.waitForTimeout(150)
-check(+(await page.inputValue('[data-p="invest"]')) === Math.round(base * pv.invest / 1000) * 10 && await page.isVisible(".pl-pct.fix"), "процент инвестиций переведён в сумму по обычному доходу", { base, v: await page.inputValue('[data-p="invest"]') })
+check(+(await page.inputValue('[data-p="invest"]')).replace(/\D/g, "") === Math.round(base * pv.invest / 1000) * 10 && await page.isVisible(".pl-pct.fix"), "процент инвестиций переведён в сумму по обычному доходу", { base, v: await page.inputValue('[data-p="invest"]') })
 await page.fill('[data-p="invest"]', "12000"); await page.dispatchEvent('[data-p="invest"]', "input"); await page.waitForTimeout(100)
 const lifeA = +(await page.textContent(".pl-life")).replace(/\D/g, ""), invP = Math.round(12000 / base * 100)
 check(lifeA === lifeP - (5 - pv.charity) - (invP - pv.invest) && /≈ \d+% от обычного дохода/.test(await page.textContent('[data-eq="invest"]')), "сумма 12 000 — «На жизнь» пересчиталось", { lifeA, invP, eq: await page.textContent('[data-eq="invest"]') })

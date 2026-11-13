@@ -1301,3 +1301,4 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 .pl-unit button { border: 0; background: none; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 7px; font-size: 14px; font-weight: 700; color: var(--sub); transition: background .2s, color .2s; }
 .pl-unit button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 4px rgba(0, 0, 0, .14); }
 .pl-eq:empty { display: none; }
+#pl-l .pl-row .t { white-space: normal; overflow: visible; text-overflow: clip; }

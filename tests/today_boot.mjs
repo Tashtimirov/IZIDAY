@@ -32,7 +32,7 @@ export async function boot2({ root, time, lists = () => ({}), events = () => [],
   if (init) await ctx.addInitScript(init)
   const page = await ctx.newPage()
   const errors = []
-  page.on("pageerror", e => errors.push(String(e)))
+  page.on("pageerror", e => errors.push(String(e) + (process.env.STK ? e.stack : "")))
   page.on("console", m => { if (m.type() === "error") errors.push(m.text()) })
   await page.clock.setFixedTime(time)
   await page.route("https://script.google.com/**", r => r.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(sheet.post(r.request().postData())) }))

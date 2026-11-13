@@ -4421,7 +4421,6 @@ const envJar = k => gk("jar").find(j => j.env === k) || (k === "cushion" ? jars(
 // сколько статья берёт из дохода inc: твёрдая сумма или процент
 const zX = (z, inc) => z.amt > 0 ? z.amt : inc * (+z.pct || 0) / 100
 const zLab = z => z.amt > 0 ? core.money(z.amt) : `${z.pct}%`
-const curSym = () => CUR[baseCur()] || core.CONFIG.currency
 const planHas = k => planItems().some(z => z.k === k && z.pct > 0)
 // копилки на цели (без подушки, если подушка — отдельная статья)
 const goalJars = (cush = planHas("cushion")) => jars().filter(j => (+j.saved || 0) < j.target && !(cush && j === envJar("cushion")))
@@ -4519,7 +4518,7 @@ function planCard(anim) {
     ${p ? "" : `<div class="muted small" style="margin-top:6px">Это предложение по умолчанию. Нажмите «Настроить», выберите свои статьи — Изи подберёт проценты.</div>`}</div>`
 }
 function planForm() {
-  const cur = aplan(), base = incomeBase(), sym = curSym()
+  const cur = aplan(), base = incomeBase(), sym = core.CONFIG.currency
   // fix — статья задана твёрдой суммой в месяц (amt), иначе процентом (pct)
   let items = (cur ? cur.items : planDefault()).map(z => Object.assign({}, z, { fix: z.amt > 0 }))
   const s = sheet(`<h3>Как раскладывать доход</h3><div class="msg">Выберите статьи — Изи предложит проценты под ваши платежи, копилки и обычные траты. Для любой статьи можно поставить свой процент или твёрдую сумму в месяц, «На жизнь» пересчитается само.</div>
@@ -4542,12 +4541,14 @@ function planForm() {
     lifeFix()
     $$("#pl-ch .chip", s.el).forEach(b => b.classList.toggle("on", items.some(z => z.k === b.dataset.k)))
     $("#pl-l", s.el).innerHTML = items.map(z => `<div class="row pl-row"><span class="pl-ic" style="background:${ENV(z.k).c}">${tdIco(ENV(z.k).ico, 15)}</span><div class="grow"><div class="t">${esc(ENV(z.k).t)}</div>${z.why ? `<div class="s">${esc(z.why)}</div>` : ""}<div class="s pl-eq" data-eq="${z.k}"></div></div>
-      ${z.k === "life" ? `<b class="pl-life"></b>` : `<div class="pl-pct${z.fix ? " fix" : ""}"><input type="number" inputmode="numeric" min="0" data-p="${z.k}" value="${z.fix ? (z.amt > 0 ? z.amt : "") : z.pct}" placeholder="${z.fix ? "сумма" : "0"}"><div class="pl-unit"><button data-u="${z.k}" data-v="pct" class="${z.fix ? "" : "on"}">%</button><button data-u="${z.k}" data-v="amt" class="${z.fix ? "on" : ""}">${esc(sym)}</button></div></div>`}</div>`).join("")
+      ${z.k === "life" ? `<b class="pl-life"></b>` : `<div class="pl-pct${z.fix ? " fix" : ""}"><input type="${z.fix ? "text" : "number"}" inputmode="numeric" min="0" data-p="${z.k}" value="${z.fix ? (z.amt > 0 ? num(z.amt) : "") : z.pct}" placeholder="${z.fix ? "сумма" : "0"}"><div class="pl-unit"><button data-u="${z.k}" data-v="pct" class="${z.fix ? "" : "on"}">%</button><button data-u="${z.k}" data-v="amt" class="${z.fix ? "on" : ""}">${esc(sym)}</button></div></div>`}</div>`).join("")
       + `<div class="small exp" id="pl-over" hidden>Больше 100% — уменьшите что-нибудь</div>`
     refresh()
-    $$("[data-p]", s.el).forEach(i => i.oninput = () => { const z = items.find(x => x.k === i.dataset.p), v = Math.max(0, Math.round(+i.value || 0))
+    $$("[data-p]", s.el).forEach(i => i.oninput = () => { const z = items.find(x => x.k === i.dataset.p), v = Math.max(0, Math.round(+String(i.value).replace(/[^\d.]/g, "") || 0))
       if (z.fix) { z.amt = v; z.why = "ваша сумма" } else { z.pct = v; z.why = "ваш процент" }
       lifeFix(); refresh() })
+    // сумма — с пробелами между тысячами, когда закончили ввод
+    $$(".pl-pct.fix input", s.el).forEach(i => { i.onblur = () => { const z = items.find(x => x.k === i.dataset.p); i.value = z.amt > 0 ? num(z.amt) : "" } })
     // переключатель % / сумма: переводим одно в другое по обычному доходу
     $$("[data-u]", s.el).forEach(b => b.onclick = () => { const z = items.find(x => x.k === b.dataset.u), fix = b.dataset.v === "amt"
       if (fix === z.fix) return
