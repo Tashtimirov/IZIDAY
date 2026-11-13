@@ -73,7 +73,9 @@ self.addEventListener("notificationclick", e => {
   const url = new URL((e.notification.data && e.notification.data.url) || "./", self.registration.scope).href
   e.waitUntil((async () => {
     const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
-    for (const c of list) { try { await c.navigate(url); return c.focus() } catch (err) { return c.focus() } }
+    // приложение открыто — не меняем адрес (iPhone тогда заново спрашивает микрофон и камеру), а передаём действие сообщением
+    const hash = new URL(url).hash
+    for (const c of list) { try { if (hash) c.postMessage({ type: "izi-open", hash }); return c.focus() } catch (err) { return c.focus() } }
     return self.clients.openWindow(url)
   })())
 })
