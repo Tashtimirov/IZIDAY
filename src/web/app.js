@@ -6902,6 +6902,7 @@ document.addEventListener("visibilitychange", () => {
 // когда руки свободны: ничего не печатаете, не говорите с Изи, не открыто окно, 40 секунд без касаний; или когда
 // приложение уйдёт в фон. Раздел и место на экране сохраняются, после перезагрузки — короткая подсказка «Обновлено».
 const UPD_KEY = "izi-upd"
+const UPD_QUIET = true   // тихое обновление: без подсказки «IZIDAY обновлён» (решает версия, которая только что загрузилась)
 function updBusy() {
   if (typeof TALK !== "undefined" && TALK) return true                     // разговор с Изи
   if (chatBusy || rec || voice) return true                                 // Изи отвечает, идёт запись
@@ -6916,7 +6917,7 @@ function updRestore() {
   if (!u || Date.now() - u.t > 60e3) return
   if (u.tab && u.tab !== "today" && u.tab !== "chat") { try { setTab(u.tab) } catch (e) {} }
   if (u.y) requestAnimationFrame(() => { const m = $("#view"); if (m) m.scrollTop = u.y })
-  setTimeout(() => toast("IZIDAY обновлён"), 400)
+  if (!UPD_QUIET) setTimeout(() => toast("IZIDAY обновлён"), 400)
 }
 updRestore()
 if ("serviceWorker" in navigator && (location.protocol === "https:" || window.SW_TEST)) {   // SW_TEST — только в тесте на localhost
