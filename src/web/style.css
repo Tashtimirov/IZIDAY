@@ -17,6 +17,14 @@ html, body { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, Roboto, "Segoe UI", sans-serif;
   overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
 input, textarea, select, button { font: inherit; color: inherit; }
+/* Поля ввода без своего оформления — в цветах темы (иначе iPhone рисует их белыми и в тёмной теме текст не виден).
+   :where — нулевой вес: любое оформление конкретного поля по-прежнему главнее. */
+:root { color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { color-scheme: dark; } }
+:where(input:not([type=checkbox], [type=radio], [type=range], [type=color], [type=file], [type=button], [type=submit], [type=hidden]), select, textarea) {
+  background-color: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 10px; }
+@media (prefers-color-scheme: dark) { :where(input:not([type=checkbox], [type=radio], [type=range], [type=color], [type=file], [type=button], [type=submit], [type=hidden]), select, textarea) { background-color: rgba(255, 255, 255, .06); } }
+:where(input, textarea)::placeholder { color: var(--sub); opacity: .8; }
 button { cursor: pointer; }
 
 /* ── шапка ── */
@@ -876,7 +884,7 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 .pl-row { gap: 11px; }
 .pl-ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; flex: none; }
 .pl-pct { display: flex; align-items: center; gap: 3px; flex: none; }
-.pl-pct input { width: 58px; text-align: right; padding: 7px 8px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pl-pct input { width: 58px; outline: none; transition: width .25s cubic-bezier(.2, .9, .25, 1); text-align: right; padding: 7px 8px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .pl-pct span, .pl-life { font-weight: 700; color: var(--sub); }
 .pl-life { min-width: 48px; text-align: right; color: var(--text); font-size: 16px; }
 #pl-ch .chip { font-size: 13px; }
@@ -1286,3 +1294,10 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 .card.mtr .seg button { padding: 7px 14px; text-align: center; border-radius: 9px; }
 .card.mtr .seg button.on { background: var(--card); box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .card.mtr .muted { margin-top: 6px; line-height: 1.35; }
+/* Раскладка дохода: процент или твёрдая сумма для каждой статьи */
+.pl-pct.fix input { width: 92px; }
+.pl-pct input:focus { border-color: var(--accent); }
+.pl-unit { display: flex; background: var(--track); border-radius: 9px; padding: 2px; margin-left: 4px; }
+.pl-unit button { border: 0; background: none; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 7px; font-size: 14px; font-weight: 700; color: var(--sub); transition: background .2s, color .2s; }
+.pl-unit button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 4px rgba(0, 0, 0, .14); }
+.pl-eq:empty { display: none; }

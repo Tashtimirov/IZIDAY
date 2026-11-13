@@ -1186,7 +1186,7 @@ async function runTool(name, x) {
         debts: debts().map(d => ({ title: d.title, dir: d.dir, amount: d.amount, due: d.due || undefined, note: debtLine(d).s })),
         capital: accts().length ? { total: cap.total, accounts: accts().map(a => ({ title: a.title, amount: a.amount, currency: a.cur || baseCur() })) } : undefined,
         fx: fxLine(), learned_categories: catRules().length,
-        income_plan: { saved_by_user: !!aplan(), items: planItems().map(z => ({ item: z.title || ENV(z.k).t, percent: z.pct, ...(envJar(z.k) ? { accumulated: envJar(z.k).saved || 0 } : {}) })) },
+        income_plan: { saved_by_user: !!aplan(), items: planItems().map(z => ({ item: z.title || ENV(z.k).t, percent: z.pct, ...(z.amt > 0 ? { fixed_amount_per_month: z.amt } : {}), ...(envJar(z.k) ? { accumulated: envJar(z.k).saved || 0 } : {}) })) },
         items: t.items.slice(-60).map(e => ({ id: e.id, date: iso(new Date(e.date)), type: e.type, amount: e.amount, method: e.method, category: e.category, comment: e.comment })),
         budgets: live(D.budgets).filter(b => b.limit > 0).map(b => { const s = budgetState(b.category, key); return { category: b.category, limit: b.limit, spent: s.spent, left: s.left } }),
         recurring: live(D.recur).map(r => ({ id: r.id, title: r.title, amount: r.amount, day: r.day, category: r.category, paid: recurPaid(r, key), due: dayKey(recurDue(r, monthStart(key))) })) }
@@ -4392,7 +4392,7 @@ function spendPublish() {
 }
 
 // — 3. Распределение дохода по плану: человек выбирает статьи из списка, Изи предлагает проценты; пришёл доход — раскладка по процентам.
-// План — goals {id "aplan", kind "aplan", items [{k, title, pct, why}]}; статьи-конверты — копилки без цели {env: k} (кроме «Платежи», «На жизнь», «Копилки на цели»)
+// План — goals {id "aplan", kind "aplan", items [{k, title, pct, amt?, why}]}; amt — твёрдая сумма в месяц вместо процента (pct тогда — её доля от обычного дохода, для полосы и «На жизнь»); статьи-конверты — копилки без цели {env: k} (кроме «Платежи», «На жизнь», «Копилки на цели»)
 const ENVS = [
   { k: "bills", t: "Обязательные платежи", ico: "bill", c: "#FF9F0A", d: "аренда, школа, связь — по регулярным платежам" },
   { k: "goals", t: "Копилки на цели", ico: "jar", c: "#12C28A", d: "делится между копилками по их плану" },
@@ -4414,6 +4414,10 @@ const FLEX = ["fun", "gifts", "invest", "edu", "cushion", "debt", "parents", "ki
 const aplan = () => { const g = D.goals.find(x => x.id === "aplan" && !x.deleted); return g && Array.isArray(g.items) && g.items.length ? g : null }
 const CUSH_RE = /подушк|резерв|запас/i
 const envJar = k => gk("jar").find(j => j.env === k) || (k === "cushion" ? jars().find(j => CUSH_RE.test(j.title)) : null)
+// сколько статья берёт из дохода inc: твёрдая сумма или процент
+const zX = (z, inc) => z.amt > 0 ? z.amt : inc * (+z.pct || 0) / 100
+const zLab = z => z.amt > 0 ? core.money(z.amt) : `${z.pct}%`
+const curSym = () => CUR[baseCur()] || core.CONFIG.currency
 const planHas = k => planItems().some(z => z.k === k && z.pct > 0)
 // копилки на цели (без подушки, если подушка — отдельная статья)
 const goalJars = (cush = planHas("cushion")) => jars().filter(j => (+j.saved || 0) < j.target && !(cush && j === envJar("cushion")))
@@ -4469,8 +4473,10 @@ function allocPending(now = new Date()) {
   const inc = live(D.money).filter(e => e.type === "income" && e.amount >= 3000 && core.monthKey(new Date(e.date)) === key && now - e.date < 10 * 864e5 && e.date <= +now
     && !D.goals.some(a => a.id === "al:" + e.id)).sort((a, b) => b.date - a.date)[0]
   if (!inc) return null
-  const rows = planItems().map(z => ({ k: z.k, title: z.title || ENV(z.k).t, pct: z.pct, x: Math.round(inc.amount * z.pct / 100 / 10) * 10 }))
-  const fix = inc.amount - sumBy(rows, r => r.x), life = rows.find(r => r.k === "life"); if (life) life.x += fix
+  const rows = planItems().map(z => ({ k: z.k, title: z.title || ENV(z.k).t, pct: z.pct, lab: zLab(z), x: z.k === "life" ? 0 : Math.round(zX(z, inc.amount) / 10) * 10 }))
+  // твёрдые суммы больше дохода — всё ужимаем поровну
+  const nl = sumBy(rows, r => r.x); if (nl > inc.amount) rows.forEach(r => { r.x = Math.floor(r.x * inc.amount / nl / 10) * 10 })
+  const life = rows.find(r => r.k === "life"); if (life) life.x = inc.amount - sumBy(rows.filter(r => r !== life), r => r.x)
   // копилки на цели: делим по нужде каждой
   const g = rows.find(r => r.k === "goals")
   let js = []
@@ -4497,7 +4503,7 @@ function planMonth(key = core.monthKey(new Date())) {
   const p = aplan()
   if (!p) return jarsMonth(key)
   const inc = core.monthTotals(live(D.money), key).income
-  return sumBy(p.items.filter(z => z.k !== "bills" && z.k !== "life"), z => Math.max(inc * z.pct / 100, z.k === "goals" ? sumBy(goalJars(), j => jarDep(j, key)) : envJar(z.k) ? jarDep(envJar(z.k), key) : 0))
+  return sumBy(p.items.filter(z => z.k !== "bills" && z.k !== "life"), z => Math.max(zX(z, inc), z.k === "goals" ? sumBy(goalJars(), j => jarDep(j, key)) : envJar(z.k) ? jarDep(envJar(z.k), key) : 0))
 }
 const planBar = items => `<div class="pl-bar">${items.filter(z => z.pct > 0).map(z => `<i style="flex:${z.pct};background:${ENV(z.k).c}" title="${esc(ENV(z.k).t)}"></i>`).join("")}</div>`
 function planCard(anim) {
@@ -4505,32 +4511,55 @@ function planCard(anim) {
   return `<div class="card mn-in" ${anim()}><h2>Как раскладываю доход<button class="act" data-do="plan-edit">${p ? "Изменить" : "Настроить"}</button></h2>${planBar(items)}
     ${items.map(z => { const j = envJar(z.k), dep = j ? jarDep(j) : 0
       return `<div class="row pl-row" ${j ? `data-jar="${esc(j.id)}"` : ""}><span class="pl-ic" style="background:${ENV(z.k).c}">${tdIco(ENV(z.k).ico, 15)}</span><div class="grow"><div class="t">${esc(z.title || ENV(z.k).t)}</div>
-        ${j ? `<div class="s">накоплено ${esc(core.money(j.saved || 0))}${dep ? ` · в ${MONTHS_PREP[new Date().getMonth()]} +${num(dep)}` : ""}</div>` : ""}</div><div class="amt">${z.pct}%</div></div>` }).join("")}
+        ${j ? `<div class="s">накоплено ${esc(core.money(j.saved || 0))}${dep ? ` · в ${MONTHS_PREP[new Date().getMonth()]} +${num(dep)}` : ""}</div>` : ""}</div><div class="amt">${esc(zLab(z))}</div></div>` }).join("")}
     ${p ? "" : `<div class="muted small" style="margin-top:6px">Это предложение по умолчанию. Нажмите «Настроить», выберите свои статьи — Изи подберёт проценты.</div>`}</div>`
 }
 function planForm() {
-  const cur = aplan()
-  let items = cur ? cur.items.map(z => Object.assign({}, z)) : planDefault()
-  const s = sheet(`<h3>Как раскладывать доход</h3><div class="msg">Выберите статьи — Изи предложит проценты под ваши платежи, копилки и обычные траты. Любой процент можно поправить, «На жизнь» пересчитается сам.</div>
+  const cur = aplan(), base = incomeBase(), sym = curSym()
+  // fix — статья задана твёрдой суммой в месяц (amt), иначе процентом (pct)
+  let items = (cur ? cur.items : planDefault()).map(z => Object.assign({}, z, { fix: z.amt > 0 }))
+  const s = sheet(`<h3>Как раскладывать доход</h3><div class="msg">Выберите статьи — Изи предложит проценты под ваши платежи, копилки и обычные траты. Для любой статьи можно поставить свой процент или твёрдую сумму в месяц, «На жизнь» пересчитается само.</div>
     <div class="field"><div class="chips" id="pl-ch">${ENVS.filter(e => e.k !== "life").map(e => `<button class="chip" data-k="${e.k}">${tdIco(e.ico, 14)} ${esc(e.t)}</button>`).join("")}</div></div>
     <div id="pl-bar"></div><div id="pl-l"></div>
     <div class="btns" style="margin-top:12px"><button class="btn" data-a="opt">Предложить оптимально</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
-  const lifeFix = () => { const l = items.find(z => z.k === "life"); l.pct = Math.max(0, 100 - sumBy(items.filter(z => z.k !== "life"), z => z.pct)) }
+  const lifeFix = () => {
+    for (const z of items) if (z.fix) z.pct = base && z.amt > 0 ? Math.round(z.amt / base * 100) : 0   // сумма → доля обычного дохода (для полосы и «На жизнь»)
+    const l = items.find(z => z.k === "life"); l.pct = Math.max(0, 100 - sumBy(items.filter(z => z.k !== "life"), z => z.pct)) }
+  const over = () => sumBy(items.filter(z => z.k !== "life"), z => z.pct) > 100
+  const xOf = z => z.fix ? (+z.amt || 0) : base * (+z.pct || 0) / 100
+  // подпись-пересчёт под статьёй: «≈ 15 000 ₽ в месяц» для процента, «≈ 12% от обычного дохода» для суммы
+  const eq = z => !base ? "" : z.k === "life" ? `≈ ${core.money(Math.max(0, Math.round((base - sumBy(items.filter(x => x.k !== "life"), xOf)) / 10) * 10))} в месяц`
+    : z.fix ? (z.amt > 0 ? `≈ ${z.pct}% от обычного дохода ${core.money(base)}` : "") : z.pct > 0 ? `≈ ${core.money(Math.round(base * z.pct / 1000) * 10)} в месяц` : ""
+  const lifePct = () => items.find(x => x.k === "life").pct + "%"
+  const refresh = () => { $("#pl-bar", s.el).innerHTML = planBar(items); const lb = $(".pl-life", s.el); lb.textContent = lifePct(); lb.classList.toggle("exp", over())
+    for (const z of items) { const e = $(`[data-eq="${z.k}"]`, s.el); if (e) e.textContent = eq(z) }
+    $("#pl-over", s.el).hidden = !over() }
   const paint = () => {
+    lifeFix()
     $$("#pl-ch .chip", s.el).forEach(b => b.classList.toggle("on", items.some(z => z.k === b.dataset.k)))
-    $("#pl-bar", s.el).innerHTML = planBar(items)
-    const over = sumBy(items.filter(z => z.k !== "life"), z => z.pct) > 100
-    $("#pl-l", s.el).innerHTML = items.map(z => `<div class="row pl-row"><span class="pl-ic" style="background:${ENV(z.k).c}">${tdIco(ENV(z.k).ico, 15)}</span><div class="grow"><div class="t">${esc(ENV(z.k).t)}</div>${z.why ? `<div class="s">${esc(z.why)}</div>` : ""}</div>
-      ${z.k === "life" ? `<b class="pl-life ${over ? "exp" : ""}">${z.pct}%</b>` : `<div class="pl-pct"><input type="number" inputmode="numeric" data-p="${z.k}" value="${z.pct}"><span>%</span></div>`}</div>`).join("") + (over ? `<div class="small exp">Больше 100% — уменьшите что-нибудь</div>` : "")
-    $$("[data-p]", s.el).forEach(i => i.oninput = () => { const z = items.find(x => x.k === i.dataset.p); z.pct = Math.max(0, Math.round(+i.value || 0)); z.why = "ваш процент"; lifeFix()
-      $("#pl-bar", s.el).innerHTML = planBar(items); const lb = $(".pl-life", s.el); lb.textContent = items.find(x => x.k === "life").pct + "%" })
+    $("#pl-l", s.el).innerHTML = items.map(z => `<div class="row pl-row"><span class="pl-ic" style="background:${ENV(z.k).c}">${tdIco(ENV(z.k).ico, 15)}</span><div class="grow"><div class="t">${esc(ENV(z.k).t)}</div>${z.why ? `<div class="s">${esc(z.why)}</div>` : ""}<div class="s pl-eq" data-eq="${z.k}"></div></div>
+      ${z.k === "life" ? `<b class="pl-life"></b>` : `<div class="pl-pct${z.fix ? " fix" : ""}"><input type="number" inputmode="numeric" min="0" data-p="${z.k}" value="${z.fix ? (z.amt > 0 ? z.amt : "") : z.pct}" placeholder="${z.fix ? "сумма" : "0"}"><div class="pl-unit"><button data-u="${z.k}" data-v="pct" class="${z.fix ? "" : "on"}">%</button><button data-u="${z.k}" data-v="amt" class="${z.fix ? "on" : ""}">${esc(sym)}</button></div></div>`}</div>`).join("")
+      + `<div class="small exp" id="pl-over" hidden>Больше 100% — уменьшите что-нибудь</div>`
+    refresh()
+    $$("[data-p]", s.el).forEach(i => i.oninput = () => { const z = items.find(x => x.k === i.dataset.p), v = Math.max(0, Math.round(+i.value || 0))
+      if (z.fix) { z.amt = v; z.why = "ваша сумма" } else { z.pct = v; z.why = "ваш процент" }
+      lifeFix(); refresh() })
+    // переключатель % / сумма: переводим одно в другое по обычному доходу
+    $$("[data-u]", s.el).forEach(b => b.onclick = () => { const z = items.find(x => x.k === b.dataset.u), fix = b.dataset.v === "amt"
+      if (fix === z.fix) return
+      z.fix = fix
+      if (fix) { z.amt = base && z.pct ? Math.round(base * z.pct / 1000) * 10 : 0; z.why = "ваша сумма" } else { delete z.amt; z.why = "ваш процент" }
+      if (navigator.vibrate) navigator.vibrate(8); paint()
+      const i = $(`[data-p="${z.k}"]`, s.el); if (i && !i.value) i.focus() })
   }
-  $$("#pl-ch .chip", s.el).forEach(b => b.onclick = () => { const k = b.dataset.k, keys = items.map(z => z.k)
+  // выбор статей: Изи пересчитывает проценты, а то, что человек задал сам, оставляем
+  $$("#pl-ch .chip", s.el).forEach(b => b.onclick = () => { const k = b.dataset.k, keys = items.map(z => z.k), mine = items.filter(z => z.fix || /^ваш/.test(z.why || ""))
     const next = keys.includes(k) ? keys.filter(x => x !== k) : [...keys.filter(x => x !== "life"), k, "life"]
-    items = planSuggest(ENVS.map(e => e.k).filter(x => next.includes(x))); if (navigator.vibrate) navigator.vibrate(8); paint() })
+    items = planSuggest(ENVS.map(e => e.k).filter(x => next.includes(x))).map(z => { const m = z.k !== "life" && mine.find(x => x.k === z.k); return m ? Object.assign({}, m) : z })
+    if (navigator.vibrate) navigator.vibrate(8); paint() })
   $('[data-a="opt"]', s.el).onclick = () => { items = planSuggest(ENVS.map(e => e.k).filter(x => items.some(z => z.k === x))); paint(); toast("Предложил под ваши цифры") }
-  $('[data-a="ok"]', s.el).onclick = () => { lifeFix(); if (sumBy(items.filter(z => z.k !== "life"), z => z.pct) > 100) return toast("Больше 100%")
-    upsert("goals", { id: "aplan", date: Date.now(), kind: "aplan", items: items.map(z => ({ k: z.k, title: ENV(z.k).t, pct: z.pct, why: z.why || "" })) }); s.close(); render(); toast("План сохранён") }
+  $('[data-a="ok"]', s.el).onclick = () => { lifeFix(); if (over()) return toast("Больше 100%")
+    upsert("goals", { id: "aplan", date: Date.now(), kind: "aplan", items: items.map(z => ({ k: z.k, title: ENV(z.k).t, pct: z.pct, ...(z.fix && z.amt > 0 ? { amt: z.amt } : {}), why: z.why || "" })) }); s.close(); render(); toast("План сохранён") }
   paint()
 }
 
@@ -4691,7 +4720,7 @@ function renderMoney() {
   const al = isCur && allocPending(now)
   if (al) html += `<div class="card mn-alloc mn-in mn-swipe" ${anim()} data-swipe="alloc"><h2>Пришло ${esc(core.money(al.inc.amount))} — разложим?<button class="act" data-do="plan-edit">План</button></h2>${planBar(al.rows)}
     ${al.rows.filter(r => r.x > 0).map(r => { const sub = r.k === "bills" ? live(D.recur).filter(x => x.type !== "income").slice(0, 4).map(x => x.title.toLowerCase()).join(", ") : r.k === "goals" && al.js.length ? al.js.map(z => `${z.j.title} ${num(z.x)}`).join(" · ") : r.k === "life" ? `≈ ${num(al.perDay)} ${core.CONFIG.currency} в день` : ENV(r.k).d
-      return `<div class="row pl-row"><span class="pl-ic" style="background:${ENV(r.k).c}">${tdIco(ENV(r.k).ico, 15)}</span><div class="grow"><div class="t">${esc(r.title)} <span class="muted small">${r.pct}%</span></div>${sub ? `<div class="s">${esc(sub)}</div>` : ""}</div><div class="amt ${r.k === "life" ? "inc" : ""}">${num(r.x)}</div></div>` }).join("")}
+      return `<div class="row pl-row"><span class="pl-ic" style="background:${ENV(r.k).c}">${tdIco(ENV(r.k).ico, 15)}</span><div class="grow"><div class="t">${esc(r.title)} <span class="muted small">${esc(r.lab || r.pct + "%")}</span></div>${sub ? `<div class="s">${esc(sub)}</div>` : ""}</div><div class="amt ${r.k === "life" ? "inc" : ""}">${num(r.x)}</div></div>` }).join("")}
     ${al.planned ? "" : `<div class="muted small" style="margin-top:4px">Изи предложил по вашим платежам и копилкам. Свои статьи — благотворительность, инвестиции, обучение — в «План».</div>`}
     <button class="btn primary wide" data-do="mn-alloc">Разложить так</button><button class="btn ghost wide" data-do="mn-alloc-no">Не сейчас</button></div>`
   // 8. Все / Мои / Общие
