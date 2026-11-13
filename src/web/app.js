@@ -3753,7 +3753,7 @@ async function pushHere(force) {
   if (!D.conn || !navigator.geolocation || (!force && Date.now() - hereAt < 10 * 60e3)) return
   try { if (navigator.permissions) { const p = await navigator.permissions.query({ name: "geolocation" }); if (p.state !== "granted" && !force) return } } catch (e) {}
   hereAt = Date.now()
-  navigator.geolocation.getCurrentPosition(p => hubPost({ push: { action: "here", lat: p.coords.latitude, lng: p.coords.longitude, at: Date.now() } }).catch(() => {}),
+  navigator.geolocation.getCurrentPosition(p => { whereLast = { lat: p.coords.latitude, lng: p.coords.longitude, src: "сейчас" }; whereAt = Date.now(); hubPost({ push: { action: "here", lat: p.coords.latitude, lng: p.coords.longitude, at: Date.now() } }).catch(() => {}) },
     () => {}, { enableHighAccuracy: false, maximumAge: 300000, timeout: 10000 })
 }
 async function pushCard() {
@@ -3817,10 +3817,14 @@ document.addEventListener("visibilitychange", () => {
 })
 
 // ───────────── Действия из виджета (ссылки вида …/#voice) ─────────────
-async function hashAction() {
-  const h = decodeURIComponent(location.hash.replace(/^#/, ""))
+// iPhone (приложение на экране «Домой»): любая смена адреса — #… или replaceState — заставляет iOS заново
+// спрашивать микрофон, камеру и место (ошибка WebKit 215884). Поэтому нажатие на уведомление больше не меняет
+// адрес: sw.js присылает действие сообщением (izi-open), и оно выполняется прямо здесь
+async function hashAction(given) {
+  const fromUrl = typeof given !== "string"
+  const h = fromUrl ? decodeURIComponent(location.hash.replace(/^#/, "")) : decodeURIComponent(String(given).replace(/^#/, ""))
   if (!h) return
-  history.replaceState(null, "", location.pathname + location.search)
+  if (fromUrl) history.replaceState(null, "", location.pathname + location.search)
   while (stack.length) stack[stack.length - 1].close()
   if (h.startsWith("setup=")) return connect(h.slice(6))
   const eq = h.indexOf("="), a = eq < 0 ? h : h.slice(0, eq), arg = eq < 0 ? "" : h.slice(eq + 1)
@@ -6070,7 +6074,7 @@ function talkTap() {
 }
 function talkPause(msg) { const t = TALK; if (!t) return; ttsStop(); talkLiveCut(); talkBargeOff(t, true); clearTimeout(t.timer); clearTimeout(t.idle); t.n++; const r = t.rec; t.rec = null; try { r && r.abort() } catch (e) {}; talkState("pause", null, typeof msg === "string" ? msg : "Нажмите на шар, чтобы продолжить") }
 // Касание — единственное, что iPhone точно разрешает: в нём заново будим звук и берём свежий микрофон
-function talkWake() { try { ttsUnlock(); if (window.STT && STT.on()) { STT.release && STT.release(); STT.prime() } } catch (e) {} }
+function talkWake() { try { ttsUnlock(); if (window.STT && STT.on()) STT.prime() } catch (e) {} }   // микрофон не отпускаем: новый поток — новый вопрос iOS; «глухой» поток сменит сторож Whisper
 // Дослушивать: Изи ждёт, пока человек договорит. Пауза для отправки — 2,6 с; если фраза повисла
 // на «и», «что», «потому что», «э», «ну»… — ждём 4,5 с. Safari сам рвёт распознавание на паузах —
 // услышанное не отправляем, а копим и слушаем дальше. Если отправили, а человек продолжил говорить
@@ -6781,7 +6785,8 @@ setTimeout(pushKeep, 5000)
 hashAction()
 setTimeout(memorize, 8000)   // прошлый разговор закончился — сложить в память
 setTimeout(autoPlan, 15000)   // первый раз за день — план подсказок
-window.addEventListener("hashchange", hashAction)
+window.addEventListener("hashchange", () => hashAction())
+try { navigator.serviceWorker && navigator.serviceWorker.addEventListener("message", e => { const m = e.data; if (m && m.type === "izi-open") hashAction(String(m.hash || "")) }) } catch (e) {}
 sync()
 setInterval(() => { if (document.visibilityState === "visible" && !(TALK && TALK.state !== "pause")) syncSoon() }, 60000)   // в живом разговоре — после него
 setInterval(() => { if (document.visibilityState === "visible") { iziWhenCheck(); iziProactive() } }, 60000)   // Изи пишет первым и «напомни, когда…»
