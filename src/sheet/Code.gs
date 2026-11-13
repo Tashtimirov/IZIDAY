@@ -1077,21 +1077,8 @@ function pushTick() {
       for (const k of Object.keys(travel)) if (now - travel[k].at > 6 * 3600e3) delete travel[k];
       hubSet_("push_travel", travel);
     }
-    // 9. дни рождения: за неделю в 10:00 (подумать о подарке), накануне в 19:00 и в сам день в 9:00.
-    //    Источники: внесённые в приложении (список bdays), контакты iPhone (снимок виджета snap.bdays) и Google Контакты
-    //    (дни рождения в Google Календаре); один человек из разных источников — один пуш; off — «не напоминать»
-    let bdays = []; try { bdays = bdaysAll_(alive("bdays"), snap.bdays, gbdays_()); } catch (e) {}   // сбой здесь не должен остановить остальные пуши
-    for (const b of bdays) {
-      const next = bdayNext_(b.md, dayOf(now)); if (!next) continue;
-      const age = b.year > 1800 ? Number(next.slice(0, 4)) - b.year : 0, who = b.name + (age > 0 ? ` (${age})` : "");
-      const at = (days, hm) => pushParse_(Utilities.formatDate(new Date(pushParse_(next, tz).getTime() - days * 864e5 + 12 * 3600e3), tz, "yyyy-MM-dd") + "T" + hm, tz).getTime();
-      [[7, "10:00", "🎂 Через неделю день рождения", `${who} — ${bdayDate_(next)}. Подумай о подарке, могу подсказать идеи.`],
-       [1, "19:00", "🎂 Завтра день рождения", `${who}. Не забудь поздравить.`],
-       [0, "09:00", "🎂 Сегодня день рождения", `${who}${age > 0 ? ` — исполняется ${age}` : ""}. Поздравь!`]].forEach(([d, hm, title, body]) => {
-        const t = at(d, hm);
-        if (t > from && t <= now + 60e3) once("bd" + d + ":" + b.id + ":" + next, { title, body, url: "./#bdays" });
-      });
-    }
+    // 9. дни рождения: за неделю в 10:00, накануне в 19:00 и в сам день в 9:00 (bdayPush_ — ниже, у помощников дней рождения)
+    try { bdayPush_(now, from, tz, once, alive, snap); } catch (e) {}   // сбой здесь не должен остановить остальные пуши
     // 8. Claude Code закончил переданную задачу (итог появился на листе «Ответы Claude Code»)
     for (const j of ccCheck_(SpreadsheetApp.getActiveSpreadsheet(), now))
       if (j.state === "done" && j.doneAt > now - 6 * 3600e3) once("cc:" + j.id, { title: "Задача готова", body: `«${j.title}»: ${String(j.text || "").split("\n")[0].slice(0, 140)}`, url: "./#chat" });
@@ -1101,6 +1088,22 @@ function pushTick() {
     hubSet_("push_last", { at: now, items: items.length, res });
     return res;
   } finally { lock.releaseLock(); }
+}
+// Пуши о днях рождения (вызывается из pushTick). Источники: внесённые в приложении (список bdays), контакты iPhone
+// (снимок виджета snap.bdays) и Google Контакты (дни рождения в Google Календаре); один человек из разных источников — один пуш
+function bdayPush_(now, from, tz, once, alive, snap) {
+  const dayOf = t => Utilities.formatDate(new Date(t), tz, "yyyy-MM-dd");
+  for (const b of bdaysAll_(alive("bdays"), (snap || {}).bdays, gbdays_())) {
+    const next = bdayNext_(b.md, dayOf(now)); if (!next) continue;
+    const age = b.year > 1800 ? Number(next.slice(0, 4)) - b.year : 0, who = b.name + (age > 0 ? ` (${age})` : "");
+    const at = (days, hm) => pushParse_(Utilities.formatDate(new Date(pushParse_(next, tz).getTime() - days * 864e5 + 12 * 3600e3), tz, "yyyy-MM-dd") + "T" + hm, tz).getTime();
+    [[7, "10:00", "🎂 Через неделю день рождения", `${who} — ${bdayDate_(next)}. Подумай о подарке, могу подсказать идеи.`],
+     [1, "19:00", "🎂 Завтра день рождения", `${who}. Не забудь поздравить.`],
+     [0, "09:00", "🎂 Сегодня день рождения", `${who}${age > 0 ? ` — исполняется ${age}` : ""}. Поздравь!`]].forEach(([d, hm, title, body]) => {
+      const t = at(d, hm);
+      if (t > from && t <= now + 60e3) once("bd" + d + ":" + b.id + ":" + next, { title, body, url: "./#bdays" });
+    });
+  }
 }
 // Дни рождения: md — "MM-DD", year — год рождения (0 — неизвестен). Порядок важности: внесённые в приложении,
 // контакты iPhone, Google. Один человек (то же имя в любом порядке слов + та же дата) — одна запись, год берётся у того, где он есть.
