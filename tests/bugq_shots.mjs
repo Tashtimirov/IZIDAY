@@ -20,7 +20,7 @@ const href = await page.evaluate(() => new Promise(res => { const o = window.IZI
   Object.defineProperty(window, "__go", { value: 1 }); const a = location.href
   document.addEventListener("click", e => { if (e.target.closest("[data-bug]")) { e.stopImmediatePropagation(); e.preventDefault(); res("ok") } }, { capture: true, once: true })
   document.querySelector("#bugq").click() }))
-const lbl = await page.evaluate(() => document.querySelector("#bugq").getAttribute("aria-label"))
+const lbl = await page.evaluate(() => document.querySelector("#bugq").textContent)
 console.log(JSON.stringify(r), href, lbl)
 console.log(r.today && !r.money && !r.plans ? "BUGQ_OK" : "BUGQ_FAIL")
 console.log(errors.length ? "ERR " + errors.join("\n") : "no errors")
