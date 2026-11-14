@@ -1,5 +1,6 @@
 // Проверочные просьбы к Изи: что человек говорит и что Изи должен сделать.
 // «Сейчас» в проверке: суббота 14.11.2026, 10:00 по Бангкоку. В календаре: свидание с Аней вс 18:00, созвон с Кириллом пн 11:00, падел пн 19:00.
+// Праздник «День Конституции» (чт 10.12, календарь «Праздники», удалить нельзя — скрыть в IZIDAY).
 // В деньгах: такси 320 ฿ сегодня в 9:00, кофе 120 ฿ вчера. Напоминание «Оплатить интернет» на сегодня.
 //   tools  — эти инструменты должны быть вызваны (порядок не важен)
 //   no     — эти инструменты вызывать нельзя
@@ -23,6 +24,7 @@ export const SCENARIOS = [
   { id: "c3", area: "Календарь", t: "что у меня в понедельник?", tools: ["get_events"], no: ["create_event", "update_event", "delete_event"], say: /созвон|кирилл/i },
   { id: "c4", area: "Календарь", t: "отмени падел в понедельник", tools: ["delete_event"], no: ["create_event"] },
   { id: "c5", area: "Календарь", t: "каждый будний день в 7:30 зарядка", tools: ["create_event"], input: ["create_event.start~T07:30"], check: c => { const e = c.find(x => x.name === "create_event"); return e && e.input.repeat && /MO/.test(JSON.stringify(e.input.repeat)) && /FR/.test(JSON.stringify(e.input.repeat)) ? "" : "нет повтора по будням" } },
+  { id: "c7", area: "Календарь", t: "удали из календаря День Конституции", anyOf: ["delete_event", "hide_event"], no: ["create_event"], notSay: /не могу удалить|невозможно удалить/i },
   { id: "c6", area: "Календарь", t: "ужин с родителями в пятницу в 8", tools: ["create_event"], input: ["create_event.start~2026-11-20T20:00"] },
   // ── Напоминания
   { id: "r1", area: "Напоминания", t: "напомни через час позвонить маме", tools: ["create_reminder"], input: ["create_reminder.title~мам"], check: c => { const r = c.find(x => x.name === "create_reminder"); return r && /T11:00/.test(JSON.stringify(r.input)) ? "" : "время не через час (ожидалось 11:00)" } },

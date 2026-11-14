@@ -18,6 +18,7 @@ const lists = ({ bkk, dk }) => ({
 const events = ({ bkk, iso }) => [
   { id: "E1", title: "Свидание с Аней", start: iso(bkk(1, 18)), end: iso(bkk(1, 20)), calendar: "Личное", all_day: false, location: "", repeats: false },
   { id: "E2", title: "Созвон с Кириллом", start: iso(bkk(2, 11)), end: iso(bkk(2, 12)), calendar: "Работа", all_day: false, location: "", repeats: false },
+  { id: "E4", title: "День Конституции", start: iso(bkk(26, 0)).slice(0, 10), end: iso(bkk(27, 0)).slice(0, 10), calendar: "Праздники", all_day: true, location: "", repeats: false, readonly: true },
   { id: "E3", title: "Падел", start: iso(bkk(2, 19)), end: iso(bkk(2, 21)), calendar: "Личное", all_day: false, location: "", repeats: false }]
 
 const BANNED = /(Конечно!|Отличный вопрос|С радостью помогу|Надеюсь, это поможет|Обращайтесь|Дайте знать|Подводя итог|является|представляет собой|важно отметить|^#{1,3} |\*\*)/im
