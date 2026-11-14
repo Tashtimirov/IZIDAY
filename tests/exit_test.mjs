@@ -53,6 +53,8 @@ for (const dark of [false, true]) {
     const ask = async v => { await page.waitForSelector("#ask-v"); await page.fill("#ask-v", String(v)); await page.click('.sheet [data-a="ok"]'); await page.waitForTimeout(350) }
     await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close(); setTab("plans"); plansF = "fam"; render() }); await page.waitForTimeout(300)
     await page.click('[data-f="new"]'); await ask("Папа"); await ask("Семья"); await page.waitForTimeout(600)
+    // после создания семьи один раз открывается «Что делим с семьёй» — закрываем, как сделал бы человек
+    await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close(); D.fam.shareAsked = 1; render() }); await page.waitForTimeout(300)
     await page.click('[data-f="kid"]'); await ask("Миша"); await ask(9); await page.waitForTimeout(600)
     await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() })
     const kidId = await page.evaluate(() => Object.entries(D.fam.data.members).find(([, m]) => m.name === "Миша")[0])
