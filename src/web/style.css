@@ -1318,3 +1318,32 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 .row.bd-now .pin .ei { color: var(--pink) }
 .bd-chk { display: flex; align-items: center; gap: 8px; font-size: 15px }
 .bd-chk input { width: 20px; height: 20px; accent-color: var(--accent) }
+
+/* Календарь семьи: цвета слоёв, чипы «чьё событие», легенда */
+.sheet .chip.ly, .cq-own .chip.ly { gap: 7px; transition: background .25s, color .25s, transform .15s; }
+.sheet .chip.ly:active { transform: scale(.94); }
+.sheet .chip.ly em { width: 9px; height: 9px; border-radius: 50%; background: var(--c); opacity: .45; transition: opacity .25s; flex: none; }
+.sheet .chip.ly.on { background: color-mix(in srgb, var(--c, var(--accent)) 18%, var(--card)); color: color-mix(in srgb, var(--c, var(--accent)) 75%, var(--text)); border-color: color-mix(in srgb, var(--c) 45%, transparent); }
+.sheet .chip.ly.on em { opacity: 1; }
+.cq-own { margin-top: 14px; }
+.cq-own .k { font-size: 12.5px; font-weight: 600; color: var(--sub); margin-bottom: 7px; }
+.cg-a.done { opacity: .55; text-decoration: line-through; }
+.cs-row { border-top: .5px solid var(--line); }
+.cs-row:first-child { border-top: 0; }
+.cs-row.kid { padding-left: 22px; }
+.cs-h { width: 100%; border: 0; background: none; color: var(--text); display: flex; align-items: center; gap: 12px; padding: 11px 0; text-align: left; }
+.cs-h > i { width: 22px; height: 22px; border-radius: 50%; flex: none; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 8%, transparent); transition: background .25s; }
+.cs-h b { display: block; font-weight: 600; font-size: 15.5px; }
+.cs-h small { display: block; font-size: 12.5px; color: var(--sub); }
+.cs-h em { font-style: normal; font-size: 13.5px; font-weight: 600; color: var(--accent); }
+.cs-pal { display: flex; flex-wrap: wrap; gap: 10px; padding: 2px 0 14px 34px; animation: csIn .22s ease; }
+.cs-pal button { width: 30px; height: 30px; border-radius: 50%; border: 0; padding: 0; transition: transform .15s, box-shadow .2s; }
+.cs-pal button.on { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); transform: scale(.92); }
+@keyframes csIn { from { opacity: 0; transform: translateY(-4px); } }
+.cs-t { margin: 18px 0 4px; font-size: 13px; font-weight: 700; color: var(--sub); text-transform: uppercase; letter-spacing: .04em; }
+.fc-leg { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 2px 0 10px; font-size: 13.5px; color: var(--sub); font-weight: 600; }
+.fc-leg span { display: inline-flex; align-items: center; gap: 6px; }
+.fc-leg i, .fc-row > i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.fc-row { width: 100%; border: 0; background: none; text-align: left; color: var(--text); gap: 12px; }
+.fc-row > .tdi { color: var(--sub); opacity: .6; }
+.sheet #fe-r { margin: 4px 0 12px; }

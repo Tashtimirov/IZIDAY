@@ -454,6 +454,7 @@ function iphone() {
     }
     if (o.tool === "delete_event") events = events.filter(v => !(v.id === x.id && (x.all_future || !x.occurrence_start || v.start === x.occurrence_start)))
   }
+  try { for (const e of famEvents()) events.push(e) } catch (e) {}   // общие дела семьи и расписание детей (family.js)
   events = events.map(e => Object.assign(e, { s: parseIso(e.start), e: parseIso(e.end) || parseIso(e.start) })).filter(e => e.s)
     .sort((a, b) => a.s - b.s)
   return { events, reminders, watch: snap.watch && snap.watch.day === dayKey(new Date()) ? snap.watch : null, at: snap.at || 0 }
@@ -1089,6 +1090,7 @@ async function runTool(name, x) {
       return { ok: true, id: "op:" + op.id, note: QUEUED }
     }
     case "update_event": {
+      if (String(x.id).startsWith("fam:")) return { error: "это событие семьи — оно меняется в приложении: Календарь → нажать на событие" }
       if (String(x.id).startsWith("op:")) return { error: "это событие ещё не внесено в iPhone — изменить его можно после обновления виджета" }
       const e = v.events.find(ev => ev.id === x.id && (!x.occurrence_start || ev.start === x.occurrence_start)) || v.events.find(ev => ev.id === x.id)
       if (!e) return { error: "событие не найдено" }
@@ -1102,6 +1104,7 @@ async function runTool(name, x) {
       return { ok: true, note: QUEUED }
     }
     case "delete_event": {
+      if (String(x.id).startsWith("fam:")) return { error: "это событие семьи — оно удаляется в приложении: Календарь → нажать на событие" }
       if (String(x.id).startsWith("op:")) { cancelOp(x.id.slice(3)); return { ok: true, note: "событие ещё не было внесено — отменено" } }
       const e = v.events.find(ev => ev.id === x.id && (!x.occurrence_start || ev.start === x.occurrence_start)) || v.events.find(ev => ev.id === x.id)
       if (!e) return { error: "событие не найдено" }
@@ -2299,6 +2302,7 @@ async function eventForm() {
   render(); toast("📅 Внесётся в календарь iPhone при обновлении виджета")
 }
 async function eventSheet(e) {
+  if (e.fam) return famEvForm(e.fam)
   const when = e.all_day ? "весь день" : `${hm(e.s)}–${hm(e.e)}`
   const b = await ui.confirm(e.title || "(без названия)", deEmo(`<div class="msg">${esc(core.cap(fullDate(e.s)))}, ${when}${e.location ? "\n📍 " + esc(e.location) : ""}${e.calendar ? "\n" + esc(e.calendar) : ""}${e.repeats ? "\n🔁 повторяется" : ""}${e.pending ? "\n⏳ ещё не внесено в iPhone" : ""}</div>`),
     e.pending ? ["Отменить"] : ["Удалить", "Перенести"])
@@ -2475,11 +2479,11 @@ function renderToday() {
     <div class="dh-n">${nSel ? `${nSel} ${plural(nSel, "событие", "события", "событий")}` : "Нет событий"}</div></div><button class="act" data-do="event">+ Событие</button></div>`
   const useTl = selDay >= t0
   const allDay = dayEvs.map((e, i) => [e, i]).filter(([e]) => e.all_day || e.s < selDay)
-  if (useTl) html += allDay.map(([e, i]) => `<div class="row" data-ev="${i}"><div class="bar-l" style="background:${esc(e.color || "var(--teal)")}"></div><div class="time" style="font-size:11.5px">${e.all_day ? "весь день" : "до " + hm(e.e)}</div><div class="grow"><div class="t">${esc(e.title || "(без названия)")}</div></div></div>`).join("") + timelineHTML(v, selDay, dayEvs, now)
+  if (useTl) html += allDay.map(([e, i]) => `<div class="row" data-ev="${i}"><div class="bar-l" style="background:${esc(evColor(e))}"></div><div class="time" style="font-size:11.5px">${e.all_day ? "весь день" : "до " + hm(e.e)}</div><div class="grow"><div class="t">${esc(e.title || "(без названия)")}</div></div></div>`).join("") + timelineHTML(v, selDay, dayEvs, now)
   else html += dayEvs.length ? dayEvs.map((e, i) => {
     const t = e.all_day ? "весь день" : e.s < selDay ? "до " + hm(e.e) : hm(e.s)
     const past = isToday && !e.all_day && e.e <= now
-    return `<div class="row ${e.pending ? "pending" : ""} ${past ? "past" : ""}" data-ev="${i}"><div class="bar-l" style="background:${esc(e.color || "var(--teal)")}"></div>
+    return `<div class="row ${e.pending ? "pending" : ""} ${past ? "past" : ""}" data-ev="${i}"><div class="bar-l" style="background:${esc(evColor(e))}"></div>
       <div class="time" style="${e.all_day ? "font-size:11.5px" : ""}">${t}</div>
       <div class="grow"><div class="t">${esc(e.title || "(без названия)")}</div><div class="s">${e.all_day ? "" : hm(e.s) + "–" + hm(e.e)}${e.location ? " · " + esc(e.location) : ""}${e.calendar ? " · " + esc(e.calendar) : ""}</div></div></div>`
   }).join("") : `<div class="empty">${gcalOn() || D.snap ? "Ничего не запланировано" : "Загружаю Google Календарь…"}</div>`
@@ -3202,19 +3206,25 @@ function kidsForm() {
     <div class="field" style="margin-top:12px"><label>Что</label><input id="k-t" placeholder="Плавание, рисование, забрать из школы…"></div>
     <div class="field"><div class="chips" id="k-d">${WD7.map((d, i) => `<button class="chip" data-d="${i + 1}">${d}</button>`).join("")}</div></div>
     <div class="field"><label>Во сколько</label><input id="k-h" type="time"></div>
-    <div class="field"><label>Кто из детей</label><input id="k-k" placeholder="Необязательно"></div>
+    ${famKids().length ? `<div class="field"><label>Кто из детей</label><div class="chips" id="k-kc">${famKids().map(m => `<button class="chip ly" data-kid="${esc(m.id)}" style="--c:${kidC(m.id)}"><em></em>${esc(name1(m.name))}</button>`).join("")}</div></div>`
+      : '<div class="field"><label>Кто из детей</label><input id="k-k" placeholder="Необязательно"></div>'}
     <div class="field"><label>Кто забирает</label><input id="k-w" placeholder="Необязательно"></div>
     <div class="field"><label>Что взять</label><input id="k-x" placeholder="Форма, очки, сменка…"></div>
     <div class="btns"><button class="btn" data-a="no">Готово</button><button class="btn primary" data-a="ok">Добавить</button></div>`, { onClose: () => render() })
   const days = new Set()
+  let kidId = ""
+  $$("#k-kc .chip", s.el).forEach(b => b.onclick = () => { kidId = kidId === b.dataset.kid ? "" : b.dataset.kid; $$("#k-kc .chip", s.el).forEach(z => z.classList.toggle("on", z.dataset.kid === kidId)) })
   $$("#k-d .chip", s.el).forEach(b => b.onclick = () => { const d = +b.dataset.d; days.has(d) ? days.delete(d) : days.add(d); b.classList.toggle("on", days.has(d)) })
-  $$("[data-del]", s.el).forEach(b => b.onclick = () => { remove("kids", b.dataset.del); s.close(); kidsForm() })
+  $$("[data-del]", s.el).forEach(b => b.onclick = () => { const fe = famCal() && FAM.L("events").find(x => x.id === b.dataset.del); if (fe) FAM.put("events", Object.assign({}, fe, { del: true }))
+    remove("kids", b.dataset.del); s.close(); kidsForm() })
   $('[data-a="no"]', s.el).onclick = () => s.close()
   $('[data-a="ok"]', s.el).onclick = () => {
     const title = $("#k-t", s.el).value.trim()
     if (!title) return toast("Напишите, что за дело")
     if (!days.size) return toast("Выберите дни недели")
-    upsert("kids", { id: uid("c"), date: Date.now(), title, days: [...days].sort(), time: $("#k-h", s.el).value || "", kid: $("#k-k", s.el).value.trim(), who: $("#k-w", s.el).value.trim(), take: $("#k-x", s.el).value.trim() })
+    const km = kidId && famKids().find(m => m.id === kidId), id = uid("c"), take = $("#k-x", s.el).value.trim()
+    if (km) FAM.put("events", { id, title: title.slice(0, 60), who: km.id, days: [...days].sort(), time: $("#k-h", s.el).value || "", min: 60, take: take.slice(0, 80), by: FAM.meId(), at: Date.now() })
+    upsert("kids", { id, date: Date.now(), title, days: [...days].sort(), time: $("#k-h", s.el).value || "", kid: km ? name1(km.name) : ($("#k-k", s.el) ? $("#k-k", s.el).value.trim() : ""), who: $("#k-w", s.el).value.trim(), take: $("#k-x", s.el).value.trim() })
     s.close(); kidsForm(); toast("Добавлено")
   }
 }
@@ -5236,7 +5246,7 @@ function timelineHTML(v, day, evs, now = new Date()) {
     const past = isT && it.e <= now
     if (it.kind === "road") html += `<div class="tl-it road">${tdIco("car", 14)} дорога ${it.min} мин · выехать в ${hm(it.s)}</div>`
     else if (it.kind === "ev") { const e = it.ev, rain = wxRain(e.s, e.e)
-      html += `${lbl}<div class="tl-it ev ${past ? "past" : ""} ${e.pending ? "pending" : ""}" data-ev="${it.i}" style="--c:${esc(e.color || "var(--teal)")}"><b>${esc(e.title || "(без названия)")}</b><small>${hm(e.s)}–${hm(e.e)}${e.location ? " · " + esc(e.location) : ""}${rain ? ` · ${tdIco("rain", 12)} ${rain.mm >= 4 ? "ливень" : "дождь"}` : ""}</small></div>` }
+      html += `${lbl}<div class="tl-it ev ${past ? "past" : ""} ${e.pending ? "pending" : ""}" data-ev="${it.i}" style="--c:${esc(evColor(e))}"><b>${esc(e.title || "(без названия)")}</b><small>${hm(e.s)}–${hm(e.e)}${e.location ? " · " + esc(e.location) : ""}${rain ? ` · ${tdIco("rain", 12)} ${rain.mm >= 4 ? "ливень" : "дождь"}` : ""}</small></div>` }
     else if (it.kind === "rem") { const r = it.r
       html += `${lbl}<div class="tl-it task ${r.completed ? "past" : ""}"><button class="check ${r.completed ? "on" : ""}" ${r.completed ? "" : `data-check="${esc(r.id)}"`}></button><div><b>${esc(r.title)}</b><small>${hm(it.s)}</small></div></div>` }
     else if (it.kind === "free") { const pick = undated[sugg++]
@@ -5407,32 +5417,83 @@ Object.assign(TD_ICO, {
   grid: '<rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M7.5 13.5h2M11 13.5h2M14.5 13.5h2M7.5 17h2M11 17h2"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   hand: '<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 10.5V4a1.5 1.5 0 0 1 3 0v6.5M14 10.5V5.5a1.5 1.5 0 0 1 3 0V14c0 4-2.7 7-6.5 7-2.6 0-4.3-1.3-5.7-3.5L3 14a1.5 1.5 0 0 1 2.4-1.8L8 15"/>',
+  fam: '<circle cx="9" cy="8" r="3.3"/><path d="M2.8 19.5a6.2 6.2 0 0 1 12.4 0"/><circle cx="17.3" cy="9.3" r="2.6"/><path d="M16.6 14.2a4.8 4.8 0 0 1 4.9 4.8"/>',
   chev: '<path d="M9 5l7 7-7 7"/>', back: '<path d="M15 5l-7 7 7 7"/>', wand: '<path d="M4 20L16 8M14 4v3M19 9h-3M18.5 4.5l-2 2"/>'
 })
-const LAYER_C = { me: "#0A9F6E", olya: "#AF52DE", kids: "#FF9F0A" }
+// Слои календаря: я · семья (общие дела) · каждый близкий · дети. У каждого свой цвет, его можно сменить (D.cal.colors).
+const LAYER_C = { me: "#0A9F6E", fam: "#FF375F", olya: "#AF52DE", kids: "#FF9F0A" }
+const LAYER_PAL = ["#0A9F6E", "#FF375F", "#AF52DE", "#FF9F0A", "#0A84FF", "#30B0C7", "#5E5CE6", "#A2845E", "#FF6B4A", "#8E8E93"]
+const PERS_C = ["#5E5CE6", "#A2845E", "#8E8E93", "#FF6B4A"], KID_C = ["#FF9F0A", "#0A84FF", "#30B0C7", "#FF6B4A", "#A2845E"]
 const TZS = [["Europe/Moscow", "Москва", "Мск"], ["Asia/Yekaterinburg", "Уфа", "Уфа"], ["Asia/Dubai", "Дубай", "Дуб"], ["Europe/London", "Лондон", "Лон"], ["America/New_York", "Нью-Йорк", "НЙ"]]
 function calS() {
   const c = D.cal = D.cal || {}
-  for (const [k, v] of Object.entries({ view: innerWidth >= 700 ? "7" : "3", tz: "Europe/Moscow", tzOn: 0, map: {}, names: {}, layers: {} })) if (c[k] == null) c[k] = v
-  for (const k of ["me", "olya", "kids"]) if (c.layers[k] == null) c.layers[k] = 1
+  for (const [k, v] of Object.entries({ view: innerWidth >= 700 ? "7" : "3", tz: "Europe/Moscow", tzOn: 0, map: {}, names: {}, layers: {}, colors: {} })) if (c[k] == null) c[k] = v
+  for (const k of ["me", "fam", "olya", "kids"]) if (c.layers[k] == null) c.layers[k] = 1
   return c
 }
+const layerOn = k => calS().layers[k] !== 0
+const name1 = n => String(n || "").trim().split(/\s+/)[0]
+// семья из family.js: близкие (взрослые и подростки, кроме меня) и дети
+const famCal = () => window.FAM && FAM.on && FAM.on() ? FAM : null
+const famOthers = () => { const f = famCal(); return f ? f.members().filter(m => m.id !== f.meId() && m.role !== "kid") : [] }
+const famKids = () => { const f = famCal(); return f ? f.members().filter(m => m.role === "kid") : [] }
+const persKey = m => { const i = famOthers().findIndex(x => x.id === m.id); return i <= 0 ? "olya" : "p:" + m.id }   // первый близкий — слой «olya» (так он хранился раньше)
+function calLayers() {
+  const S = calS(), oth = famOthers()
+  const out = [{ k: "me", name: "Я" }, { k: "fam", name: "Семья" }, { k: "olya", name: layerName("olya") }]
+  oth.slice(1).forEach((m, i) => out.push({ k: "p:" + m.id, name: name1(m.name) || "Близкий", c: PERS_C[i % PERS_C.length] }))
+  out.push({ k: "kids", name: "Дети" })
+  for (const l of out) l.c = S.colors[l.k] || l.c || LAYER_C[l.k]
+  return out
+}
+const layerC = k => (calLayers().find(l => l.k === k) || {}).c || LAYER_C.me
+// цвет ребёнка: по id или имени из семьи; без семьи — общий цвет слоя «Дети»
+function kidC(k) {
+  const ks = famKids(), n = normT(name1(k)), i = k ? ks.findIndex(m => m.id === k || normT(name1(m.name)) === n) : -1
+  return i < 0 ? layerC("kids") : calS().colors["k:" + ks[i].id] || (i ? KID_C[i % KID_C.length] : layerC("kids"))
+}
+const evColor = e => e.c || layerC(evLayer(e))
 function layerName(k) {
   if (k === "me") return "Я"
   if (k === "kids") return "Дети"
+  if (k === "fam") return "Семья"
+  if (k.slice(0, 2) === "p:") { const m = famOthers().find(m => "p:" + m.id === k); return m ? name1(m.name) : "Близкий" }
   const S = calS(); if (S.names.olya) return S.names.olya
+  const m = famOthers()[0]; if (m && m.name) return name1(m.name)
   const c = ((D.gcal && D.gcal.events) || []).map(e => e.calendar).find(n => n && evLayer({ calendar: n }) === "olya")
-  return c && c.length <= 12 ? c : "Семья"
+  return c && c.length <= 12 ? c : "Близкий"
 }
 const tzInfo = () => TZS.find(t => t[0] === calS().tz) || TZS[0]
 function tzHm(d, tz = calS().tz) { try { return new Intl.DateTimeFormat(((window.L && L.loc) || "ru-RU"), { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d) } catch (e) { return "" } }
 function evLayer(e) {
+  if (e.fam) return e.L
   const m = calS().map[e.calendar || ""]
-  if (m) return m
+  if (m && (m.slice(0, 2) !== "p:" || famOthers().some(x => "p:" + x.id === m))) return m
   const c = normT(e.calendar)
-  if (/(^|\s)ол[яиеью]|olya|olga|жен[аы]|wife|муж|husband|семь|family/.test(c)) return "olya"
+  if (/семь|семей|family/.test(c)) return "fam"
+  for (const x of famOthers()) { const n = normT(name1(x.name)); if (n.length >= 3 && c.includes(n)) return persKey(x) }
+  if (/(^|\s)ол[яиеью]|olya|olga|(^|\s)али[яюие]|aliya|жен[аы]|wife|муж|husband|супруг/.test(c)) return "olya"
   if (/дет|kid|сын|доч|школ|school|сад/.test(c)) return "kids"
   return "me"
+}
+// События семьи (family.js, список events) как обычные события: видны в «Сегодня», в календаре и Изи.
+// Запись: разовая {day} или по дням недели {days}; time пусто — весь день; who — "fam" (вся семья) или id члена семьи
+function famEvents() {
+  const f = famCal(); if (!f) return []
+  const out = [], t0 = sod(new Date()), ms = f.members(), me = f.meId(), own = new Set(live(D.kids).map(k => k.id))
+  for (const x of f.L("events")) {
+    if (!x.title || own.has(x.id)) continue   // своё расписание детей (D.kids) рисуется само
+    const m = x.who && x.who !== "fam" ? ms.find(m => m.id === x.who) : null
+    const L = !m ? "fam" : m.role === "kid" ? "kids" : m.id === me ? "me" : persKey(m)
+    const days = x.day ? [parseIso(x.day)] : [...Array(60)].map((_, i) => addDays(t0, i - 14)).filter(d => (x.days || []).map(Number).includes(wdOf(d)))
+    for (const d of days) {
+      if (!d) continue
+      const dk = dayKey(d), all = !/^\d{1,2}:\d\d$/.test(x.time || ""), st = all ? null : atHM(d, x.time)
+      out.push({ id: "fam:" + x.id, title: x.title + (m && m.id !== me ? " · " + name1(m.name) : ""), start: all ? dk : iso(st), end: all ? dk + "T23:59" : iso(new Date(+st + (+x.min || 60) * 60e3)), all_day: all,
+        calendar: "Семья", location: x.place || "", notes: x.take ? "Взять с собой: " + x.take : "", repeats: !x.day, fam: x, L, c: m && m.role === "kid" ? kidC(m.id) : null })
+    }
+  }
+  return out
 }
 const atHM = (d, s) => { const [h, m] = String(s || "0:0").split(":").map(Number); const x = sod(d); x.setHours(h || 0, m || 0, 0, 0); return x }
 const durLbl = m => m >= 60 ? `${Math.floor(m / 60)} ч${m % 60 ? " " + (m % 60) + " мин" : ""}` : `${m} мин`
@@ -5444,7 +5505,7 @@ const pblkOn = d => pblks().filter(p => (p.days || []).map(Number).includes(wdOf
 function protHit(s, e) { for (let d = sod(s); d < e; d = addDays(d, 1)) { const h = pblkOn(d).find(x => x.s < e && x.e > s); if (h) return h } return null }
 
 // — занятость и свободные окна: мои события, совместные из других слоёв («Обед с Олей»), дорога, защищённое время, дела со временем
-const evMine = e => { const L = evLayer(e); return L === "me" || L !== "off" && /(^|\s)(с|со)\s+\S/i.test(e.title || "") }
+const evMine = e => { const L = evLayer(e); return L === "me" || L === "fam" || L !== "off" && /(^|\s)(с|со)\s+\S/i.test(e.title || "") }
 function travCached(e) { if (!e || !e.location || e.all_day) return null; const c = (D.trav || {})[(e.id || e.title) + "|" + e.start]; return c && c.min ? c : null }
 const remEst = r => +(D.rems.find(x => x.id === r.id) || {}).est || 30
 function busyOn(v, day) {
@@ -5514,11 +5575,11 @@ function wxDay(d) {
 let calCache = []
 function calItems(v, d, now) {
   const S = calS(), d0 = sod(d), d1 = addDays(d0, 1), out = [], allDay = []
-  const prots = S.layers.me ? pblkOn(d0) : []
+  const prots = layerOn("me") ? pblkOn(d0) : []
   for (const e of v.events) {
     if (e.e <= d0 || e.s >= d1) continue
     const L = evLayer(e)
-    if (L === "off" || !S.layers[L]) continue
+    if (L === "off" || !layerOn(L)) continue
     if (e.all_day) { allDay.push({ kind: "ev", ev: e, L }); continue }
     const s = e.s < d0 ? d0 : e.s, en = e.e > d1 ? d1 : e.e
     const pr = prots.find(p => normT(p.p.title) === normT(e.title) && p.s < en && p.e > s)
@@ -5530,8 +5591,10 @@ function calItems(v, d, now) {
     }
   }
   for (const p of prots) if (!p.used) out.push({ kind: "prot", s: p.s, e: p.e, p: p.p })
-  if (S.layers.kids) for (const k of kidsOn(d0)) if (/^\d{1,2}:\d\d/.test(k.time || "")) { const s = atHM(d0, k.time); out.push({ kind: "kid", s, e: new Date(+s + (+k.min || 60) * 60e3), k }) }
-  if (S.layers.me) for (const r of v.reminders) if (!r.completed && remHasTime(r) && sameDay(remDue(r), d0)) out.push({ kind: "rem", s: remDue(r), e: new Date(+remDue(r) + Math.max(30, remEst(r)) * 60e3), r })
+  if (layerOn("kids")) for (const m of famKids()) { const t = FAM.tasksOn(m.id, d0), old = d0 <= sod(now)   // дела ребёнка на день — одной плашкой
+    if (t.n) allDay.push({ kind: "ktask", m, c: kidC(m.id), done: old && t.done === t.n, t: `${name1(m.name)}: ${old ? `${t.done} из ${t.n}` : t.n} ${plural(t.n, "дело", "дела", "дел")}` }) }
+  if (layerOn("kids")) for (const k of kidsOn(d0)) if (/^\d{1,2}:\d\d/.test(k.time || "")) { const s = atHM(d0, k.time); out.push({ kind: "kid", s, e: new Date(+s + (+k.min || 60) * 60e3), k }) }
+  if (layerOn("me")) for (const r of v.reminders) if (!r.completed && remHasTime(r) && sameDay(remDue(r), d0)) out.push({ kind: "rem", s: remDue(r), e: new Date(+remDue(r) + Math.max(30, remEst(r)) * 60e3), r })
   // дорога, на которую нет времени: предыдущая встреча кончается позже, чем надо выезжать
   for (const it of out) if (it.kind === "road") it.late = out.some(x => x.kind === "ev" && x.ev !== it.ev && x.L === "me" && x.e > it.s && x.s < it.s)
   return { items: out.sort((a, b) => a.s - b.s), allDay }
@@ -5559,7 +5622,7 @@ function calGrid(v, start, n, now) {
   const y = t => Math.round((t.getHours() + t.getMinutes() / 60 - h0) * PX)
   const tz = tzInfo()
   let html = `<div class="cg n${n}" style="--px:${PX}px"><div class="cg-head"><div class="cg-tc"></div>${days.map(d => `<button class="cg-dh ${sameDay(d, now) ? "td" : ""} ${d.getDay() % 6 === 0 ? "we" : ""}" data-cday="${+d}"><span>${WD[d.getDay()]}</span><b>${d.getDate()}</b>${wxDay(d)}</button>`).join("")}</div>`
-  if (cols.some(c => c.allDay.length)) html += `<div class="cg-ad"><div class="cg-tc"><small>весь день</small></div>${cols.map(c => `<div>${c.allDay.map(a => { calCache.push(a); return `<button class="cg-a" style="--c:${LAYER_C[a.L] || LAYER_C.me}" data-ci="${calCache.length - 1}">${esc(a.ev.title || "(без названия)")}</button>` }).join("")}</div>`).join("")}</div>`
+  if (cols.some(c => c.allDay.length)) html += `<div class="cg-ad"><div class="cg-tc"><small>весь день</small></div>${cols.map(c => `<div>${c.allDay.map(a => { calCache.push(a); return `<button class="cg-a ${a.done ? "done" : ""}" style="--c:${a.c || evColor(a.ev)}" data-ci="${calCache.length - 1}">${esc(a.t || a.ev.title || "(без названия)")}</button>` }).join("")}</div>`).join("")}</div>`
   html += `<div class="cg-body" style="height:${(h1 - h0) * PX}px"><div class="cg-tc">${[...Array(h1 - h0)].map((_, i) => `<div style="top:${i * PX}px"><b>${h0 + i}:00</b>${S.tzOn ? `<small>${tzHm(atHM(days[0], (h0 + i) + ":00")).replace(/^0/, "")} ${tz[2]}</small>` : ""}</div>`).join("")}</div>`
   cols.forEach((c, di) => {
     const d = days[di]
@@ -5572,12 +5635,12 @@ function calGrid(v, start, n, now) {
       const st = `top:${top}px;height:${hh}px;${lw}--d:${(di * 4 + k) * 22}ms;`
       if (it.kind === "road") html += `<div class="cg-it road ${it.late ? "late" : ""}" style="${st}" data-ci="${ci}">${hh >= 20 ? `${tdIco("car", 11)} ${it.late ? "не успеть" : "дорога"} ${it.min} мин` : ""}</div>`
       else if (it.kind === "prot") html += `<div class="cg-it prot" style="${st}" data-ci="${ci}"><b>${esc(it.p.title)}</b>${hh >= 34 ? "<small>защищено</small>" : ""}</div>`
-      else if (it.kind === "kid") html += `<div class="cg-it ev ${past ? "past" : ""}" style="${st}--c:${LAYER_C.kids}" data-ci="${ci}"><b>${esc(it.k.title)}${it.k.kid ? " · " + esc(it.k.kid) : ""}</b></div>`
+      else if (it.kind === "kid") html += `<div class="cg-it ev ${past ? "past" : ""}" style="${st}--c:${kidC(it.k.kid)}" data-ci="${ci}"><b>${esc(it.k.title)}${it.k.kid ? " · " + esc(it.k.kid) : ""}</b></div>`
       else if (it.kind === "rem") html += `<div class="cg-it task" style="${st}" data-ci="${ci}"><b>${esc(it.r.title)}</b></div>`
       else {
         const e = it.ev, rain = e.location && wxRain(e.s, e.e), call = S.tzOn && CALL_RE.test(e.title || "")
         const sub = [hh >= 46 && e.location ? esc(e.location) : "", rain ? `${tdIco("rain", 11)} дождь` : "", call ? `${tdIco("globe", 11)} у них ${tzHm(e.s)}` : "", it.prot ? "защищено" : ""].filter(Boolean)
-        html += `<div class="cg-it ev ${it.prot ? "prot" : ""} ${past ? "past" : ""} ${e.pending ? "pending" : ""}" style="${st}--c:${LAYER_C[it.L] || LAYER_C.me}" data-ci="${ci}"><b>${esc(e.title || "(без названия)")}</b>${sub.length && hh >= 34 ? `<small>${sub.join(" · ")}</small>` : ""}</div>`
+        html += `<div class="cg-it ev ${it.prot ? "prot" : ""} ${past ? "past" : ""} ${e.pending ? "pending" : ""}" style="${st}--c:${evColor(e)}" data-ci="${ci}"><b>${esc(e.title || "(без названия)")}</b>${sub.length && hh >= 34 ? `<small>${sub.join(" · ")}</small>` : ""}</div>`
       }
     })
     if (sameDay(d, now) && now.getHours() >= h0 && now.getHours() < h1) html += `<div class="cg-now" style="top:${y(now)}px"></div>`
@@ -5645,8 +5708,8 @@ function renderCal() {
   calCache = []
   const views = [["1", "День"], ["3", "3 дня"], ["7", "Неделя"], ["m", "Месяц"]], vi = views.findIndex(x => x[0] === S.view)
   let html = `<div class="seg" style="--i:${vi}"><i></i>${views.map(([k, l]) => `<button data-cv="${k}" class="${S.view === k ? "on" : ""}">${l}</button>`).join("")}</div>`
-  html += `<div class="chips pf cal-l">${["me", "olya", "kids"].map(k => `<button class="chip ly ${S.layers[k] ? "on" : ""}" data-ly="${k}" style="--c:${LAYER_C[k]}">${k === "me" ? "<i>Я</i>" : `<em></em>${esc(layerName(k))}`}</button>`).join("")}
-    <button class="chip ly tz ${S.tzOn ? "on" : ""}" data-ly="tz">${tdIco("globe", 15)} ${S.tzOn ? "" : "+ "}${esc(tzInfo()[1])}</button><button class="chip ly cog" data-do="cal-set" aria-label="Слои и календари">${tdIco("layers", 16)}</button></div>`
+  html += `<div class="chips pf cal-l">${calLayers().map(l => `<button class="chip ly ${layerOn(l.k) ? "on" : ""}" data-ly="${esc(l.k)}" style="--c:${l.c}">${l.k === "me" ? "<i>Я</i>" : `<em></em>${esc(l.name)}`}</button>`).join("")}
+    <button class="chip ly tz ${S.tzOn ? "on" : ""}" data-ly="tz">${tdIco("globe", 15)} ${S.tzOn ? "" : "+ "}${esc(tzInfo()[1])}</button><button class="chip ly cog" data-do="cal-set" aria-label="Цвета и календари">${tdIco("layers", 16)}</button></div>`
   if (!gcalOn() && D.gcal && D.gcal.error) html += `<div class="banner"><b>Google Календарь не ответил</b>${esc(D.gcal.error)}</div>`
   // друг без своего Google Календаря: события пока живут внутри IZIDAY — предлагаем подключить (можно скрыть)
   if (window.FRIEND && FRIEND.me() && !FRIEND.me().gcal && !D.gcHide) html += `<div class="banner"><b>Ваш Google Календарь</b>Подключите — и встречи из него появятся здесь, а новые попадут в Google на всех устройствах.
@@ -5664,6 +5727,7 @@ function renderCal() {
   html += undatedCard(v, now)
   if (S.view !== "m") html += loadMonth(v, calStart, false)
   html += `<div class="card cal-acts">
+    <button class="row" data-do="cal-fam"><span class="ic" style="background:${layerC("fam")}">${tdIco("fam", 18)}</span><div class="grow"><div class="t">Календарь семьи</div><div class="s">${famCal() ? "Общие дела и расписание детей — у каждого свой цвет" : "Общие дела, календарь близких и детей — каждый своим цветом"}</div></div>${tdIco("chev", 15)}</button>
     <button class="row" data-do="cal-free"><span class="ic" style="background:#0A84FF">${tdIco("share", 18)}</span><div class="grow"><div class="t">Когда я свободен</div><div class="s">Окна текстом — клиенту или другу в мессенджер</div></div>${tdIco("chev", 15)}</button>
     <button class="row" data-do="cal-tpls"><span class="ic" style="background:#5E5CE6">${tdIco("tpl", 18)}</span><div class="grow"><div class="t">Шаблоны событий</div><div class="s">${etpls().length ? esc(etpls().slice(0, 3).map(t => t.title).join(", ")) : "Длительность, адрес, напоминание и «взять с собой»"}</div></div>${tdIco("chev", 15)}</button>
     <button class="row" data-do="cal-prot"><span class="ic" style="background:#FF9F0A">${tdIco("shield", 18)}</span><div class="grow"><div class="t">Защищённое время</div><div class="s">${pblks().length ? esc(pblks().slice(0, 3).map(p => p.title).join(", ")) : "Спорт, дети, вечер с женой — помощник его не займёт"}</div></div>${tdIco("chev", 15)}</button></div>`
@@ -5686,7 +5750,7 @@ function bindCal(v) {
   const S = calS()
   $$("[data-cv]", v).forEach(b => b.onclick = () => calSetView(b.dataset.cv))
   $$("[data-cs]", v).forEach(b => b.onclick = () => calShift(+b.dataset.cs))
-  $$("[data-ly]", v).forEach(b => b.onclick = () => { const k = b.dataset.ly; if (k === "tz") S.tzOn = S.tzOn ? 0 : 1; else S.layers[k] = S.layers[k] ? 0 : 1; save(false); if (navigator.vibrate) navigator.vibrate(8); render() })
+  $$("[data-ly]", v).forEach(b => b.onclick = () => { const k = b.dataset.ly; if (k === "tz") S.tzOn = S.tzOn ? 0 : 1; else S.layers[k] = layerOn(k) ? 0 : 1; save(false); if (navigator.vibrate) navigator.vibrate(8); render() })
   $$("[data-cday]", v).forEach(b => b.onclick = () => { S.view = "1"; calStart = sod(new Date(+b.dataset.cday)); calAnim = "in-f"; save(false); render() })
   $$("[data-ci]", v).forEach(el => el.onclick = ev => { ev.stopPropagation(); calTap(calCache[+el.dataset.ci]) })
   $$("[data-slot]", v).forEach(b => b.onclick = ev => { ev.stopPropagation(); const r = iphone().reminders.find(x => x.id === b.dataset.slot), sl = calSlots[b.dataset.slot]; if (!r || !sl) return
@@ -5712,6 +5776,7 @@ async function calTap(it) {
   if (it.kind === "ev") return eventSheet(it.ev)
   if (it.kind === "prot") return protForm(it.p)
   if (it.kind === "kid") return kidsForm()
+  if (it.kind === "ktask") return FAM.isAdult() ? FAM.kidSheet(it.m.id) : ui.info(it.t, "Дела ребёнка на день. Отмечает их сам ребёнок, проверяют взрослые.")
   if (it.kind === "road") return ui.info(`Дорога ${it.min} мин`, `До «${it.ev.title}»${it.ev.location ? " (" + it.ev.location + ")" : ""}: выехать в ${hm(it.s)}.${it.late ? "\nПредыдущая встреча кончается позже — не успеваете. Сдвиньте одну из встреч." : ""}`)
   if (it.kind === "rem") {
     const i = await ui.choose(it.r.title, `${core.cap(dayWord(it.s))} в ${hm(it.s)}`, ["Выполнено", "Другое время", "Убрать время"])
@@ -5745,7 +5810,8 @@ function calParse(text, base) {
 const remindLbl = m => m >= 1440 ? "за день" : m >= 60 ? `за ${m % 60 ? durLbl(m) : m / 60 === 1 ? "час" : m / 60 + " ч"}` : `за ${m} мин`
 const qTrav = {}
 function calQuick(pref = {}) {
-  let x = null, edit = false, force = false, timer = 0
+  let x = null, edit = false, force = false, timer = 0, own = pref.own || "me"
+  const owners = () => famCal() ? [["me", "Моё", layerC("me")], ["fam", "Семья", layerC("fam")]].concat(FAM.members().filter(m => m.id !== FAM.meId()).map(m => [m.id, name1(m.name), m.role === "kid" ? kidC(m.id) : layerC(persKey(m))])) : []
   const s = sheet(`<h3>Новое событие</h3><div class="cq-box"><textarea id="cq" rows="2" placeholder="Например: завтра в 15 стоматолог на Сукхумвите, напомни за час">${esc(pref.text || "")}</textarea>${pref.start ? `<div class="muted small">${esc(core.cap(fullDate(pref.start)))}, ${hm(pref.start)} — если время не скажете</div>` : ""}</div>
     <div id="cq-pv"></div><div id="cq-tp"></div>`)
   const inp = $("#cq", s.el), pv = $("#cq-pv", s.el)
@@ -5770,14 +5836,16 @@ function calQuick(pref = {}) {
         ${x.bring ? `<div>${tdIco("brief", 14)} взять: ${esc(x.bring)}</div>` : ""}${x.tpl ? `<div class="muted small">по шаблону «${esc(x.tpl.title)}»</div>` : ""}</div>`
     pv.innerHTML += (hit ? `<div class="warn-card prot-w">${tdIco("hand", 22)}<div><b>Это время защищено</b>«${esc(hit.p.title)}» ${WD[hit.s.getDay()]} ${hm(hit.s)}–${hm(hit.e)}. Поставить всё равно или найти другое время?
         <div class="chips"><button class="chip on" data-a="other">Другое время</button><button class="chip" data-a="force">Всё равно</button></div></div></div>` : "")
+      + (owners().length ? `<div class="cq-own"><div class="k">Чьё событие</div><div class="chips">${owners().map(([k, n, c]) => `<button class="chip ly ${own === k ? "on" : ""}" data-own="${esc(k)}" style="--c:${c}"><em></em>${esc(n)}</button>`).join("")}</div></div>` : "")
       + `<div class="btns"><button class="btn primary" data-a="ok" ${x.start ? "" : "disabled"}>Сохранить</button><button class="btn" data-a="edit">${edit ? "Готово" : "Изменить"}</button></div>
         ${x.tpl ? "" : `<button class="chip cq-mk" data-a="mk">${tdIco("tpl", 15)} Сделать шаблоном</button>`}`
     const A = k => $(`[data-a="${k}"]`, pv)
+    $$("[data-own]", pv).forEach(b => b.onclick = () => { if (edit) readForm(); own = b.dataset.own; draw() })
     if (A("other")) A("other").onclick = () => { const sl = calFindSlot(x.start, x.minutes); if (!sl) return toast("Свободного окна на неделю нет"); x.start = sl; x.end = new Date(+sl + x.minutes * 60e3); toast(`Предлагаю ${dayWord(sl)} ${hm(sl)}`); draw() }
     if (A("force")) A("force").onclick = () => { force = true; draw() }
     A("edit").onclick = () => { if (edit) readForm(); edit = !edit; draw() }
     A("ok").onclick = async () => { if (edit) readForm(); if (!x.start) return; if (!force && protHit(x.start, x.end)) { draw(); return toast("Время защищено — выберите") }
-      A("ok").disabled = true; A("ok").textContent = "Сохраняю…"; const ok = await calSave(x); if (ok) s.close(); else { A("ok").disabled = false; A("ok").textContent = "Сохранить" } }
+      A("ok").disabled = true; A("ok").textContent = "Сохраняю…"; const ok = await calSave(x, own); if (ok) s.close(); else { A("ok").disabled = false; A("ok").textContent = "Сохранить" } }
     if (A("mk")) A("mk").onclick = () => { if (edit) readForm(); etplForm(null, x) }
   }
   const readForm = () => { const g = id => $(id, pv) && $(id, pv).value
@@ -5798,7 +5866,13 @@ function calFindSlot(from, minutes) {
     if (g) return g.prev && g.prev.ev ? new Date(Math.min(+g.e - minutes * 60e3, Math.ceil((+g.s + 15 * 60e3) / 9e5) * 9e5)) : g.s }
   return null
 }
-async function calSave(x) {
+async function calSave(x, own) {
+  if (own && own !== "me" && famCal()) {   // событие семьи или близкого — в общий календарь семьи, его видят все
+    FAM.put("events", { id: uid("fe"), title: x.title, who: own, day: dayKey(x.start), time: hm(x.start), min: x.minutes || 60, place: x.location || "", take: x.bring || "", by: FAM.meId(), at: Date.now() })
+    if (x.remind) remAdd({ title: `${x.title} в ${hm(x.start)}${x.bring ? " · взять: " + x.bring : ""}`, due: iso(new Date(+x.start - x.remind * 60e3)) })
+    toast(`${x.title} — ${dayWord(x.start)} в ${hm(x.start)}, видит вся семья`); render()
+    return true
+  }
   const ev = { title: x.title, start: iso(x.start), end: iso(x.end) }
   if (x.location) ev.location = x.location
   if (x.bring) ev.notes = "Взять с собой: " + x.bring
@@ -5896,23 +5970,97 @@ function freeSheet() {
   fill()
 }
 
-// — 4 и 10. Слои семьи, календари и второй часовой пояс
+// — 4 и 10. Цвета и слои семьи, календари Google и второй часовой пояс
 function calSettings() {
-  const S = calS(), names = [...new Set(((D.gcal && D.gcal.calendars) || []).map(c => c.name || c).concat(iphone().events.map(e => e.calendar).filter(Boolean)))]
-  const opts = [["me", "Я"], ["olya", layerName("olya")], ["kids", "Дети"], ["off", "Скрыть"]]
-  const s = sheet(`<h3>Слои календаря</h3><div class="msg">Каждый календарь Google — в свой слой. Чужой календарь появится здесь, когда владелец откроет вам доступ к нему в Google Календаре (Настройки → Открыть доступ).</div>
-    ${names.map((n, i) => `<div class="field"><label>${esc(n)}</label><div class="chips" data-cal="${i}">${opts.map(([k, l]) => `<button class="chip ${evLayer({ calendar: n }) === k ? "on" : ""}" data-k="${k}">${esc(l)}</button>`).join("")}</div></div>`).join("") || '<div class="empty">Календари ещё не загружены</div>'}
-    <div class="field"><label>Как зовут второй слой</label><input id="cs-o" value="${esc(layerName("olya"))}"></div>
+  const S = calS(), names = [...new Set(((D.gcal && D.gcal.calendars) || []).map(c => c.name || c).concat(iphone().events.filter(e => !e.fam).map(e => e.calendar).filter(Boolean)))]
+  const SUB = { me: "мои события и дела", fam: "общие дела — их видят все в семье", olya: "календарь близкого целиком", kids: "расписание и дела детей" }
+  const rows = () => { const out = []
+    for (const l of calLayers()) { out.push([l.k, l.name, l.c, SUB[l.k] || "календарь близкого целиком"])
+      if (l.k === "kids") for (const m of famKids()) out.push(["k:" + m.id, name1(m.name), kidC(m.id), "ребёнок", 1]) }
+    return out }
+  const draw = open => rows().map(([k, n, c, sub, kid]) => `<div class="cs-row ${kid ? "kid" : ""}"><button class="cs-h" data-cs-k="${esc(k)}"><i style="background:${c}"></i><span class="grow"><b>${esc(n)}</b><small>${esc(sub)}</small></span><em>${open === k ? "Готово" : "Цвет"}</em></button>
+    ${open === k ? `<div class="cs-pal">${LAYER_PAL.map(x => `<button class="${x === c ? "on" : ""}" data-cs-c="${x}" style="background:${x}" aria-label="Цвет"></button>`).join("")}</div>` : ""}</div>`).join("")
+  const opts = () => calLayers().map(l => [l.k, l.name, l.c]).concat([["off", "Скрыть", "#8E8E93"]])
+  const s = sheet(`<h3>Цвета и календари</h3><div class="msg">У каждого свой цвет — ваши события, общие дела семьи, календарь близкого и дети не сливаются.</div>
+    <div id="cs-rows">${draw()}</div>
+    <h4 class="cs-t">Календари Google</h4><div class="msg">Чтобы видеть календарь близкого целиком, пусть он откроет вам доступ в Google Календаре (Настройки → Открыть доступ конкретным людям). Календарь появится здесь, и его события пойдут цветом близкого.</div>
+    ${names.map((n, i) => `<div class="field"><label>${esc(n)}</label><div class="chips" data-cal="${i}">${opts().map(([k, l, c]) => `<button class="chip ly ${evLayer({ calendar: n }) === k ? "on" : ""}" data-k="${esc(k)}" style="--c:${c}"><em></em>${esc(l)}</button>`).join("")}</div></div>`).join("") || '<div class="empty">Календари ещё не загружены</div>'}
+    ${famOthers().length ? "" : `<div class="field"><label>Имя близкого (второй слой)</label><input id="cs-o" value="${esc(layerName("olya"))}"></div>`}
     <div class="field"><label>Второй часовой пояс</label><div class="chips" id="cs-tz">${TZS.map(t => `<button class="chip ${S.tz === t[0] ? "on" : ""}" data-tz="${t[0]}">${t[1]}</button>`).join("")}</div></div>
     <div class="btns"><button class="btn primary" data-a="ok">Готово</button></div>`, { onClose: () => render() })
+  let open = ""
+  const bindRows = () => {
+    $$("[data-cs-k]", s.el).forEach(b => b.onclick = () => { open = open === b.dataset.csK ? "" : b.dataset.csK; $("#cs-rows", s.el).innerHTML = draw(open); bindRows() })
+    $$("[data-cs-c]", s.el).forEach(b => b.onclick = () => { S.colors[open] = b.dataset.csC; save(false); if (navigator.vibrate) navigator.vibrate(8); $("#cs-rows", s.el).innerHTML = draw(open); bindRows()
+      $$("[data-cal] .chip", s.el).forEach(c => { const l = calLayers().find(l => l.k === c.dataset.k); if (l) c.style.setProperty("--c", l.c) }) })
+  }
+  bindRows()
   $$("[data-cal]", s.el).forEach(g => $$(".chip", g).forEach(c => c.onclick = () => { S.map[names[+g.dataset.cal]] = c.dataset.k; $$(".chip", g).forEach(x => x.classList.toggle("on", x === c)); save(false) }))
   $$("#cs-tz .chip", s.el).forEach(c => c.onclick = () => { S.tz = c.dataset.tz; S.tzOn = 1; $$("#cs-tz .chip", s.el).forEach(x => x.classList.toggle("on", x === c)); save(false) })
-  $("#cs-o", s.el).onchange = e => { S.names.olya = e.target.value.trim(); save(false) }
-  $('[data-a="ok"]', s.el).onclick = () => { const v = $("#cs-o", s.el).value.trim(); S.names.olya = v; save(false); s.close() }
+  const nm = $("#cs-o", s.el); if (nm) nm.onchange = e => { S.names.olya = e.target.value.trim(); save(false) }
+  $('[data-a="ok"]', s.el).onclick = () => { if (nm) S.names.olya = nm.value.trim(); save(false); s.close() }
+}
+// — Календарь семьи: общие дела и расписание детей. Живут в таблице семьи (family.js, список events) — их видят все в семье
+const famEvWhen = x => (x.day ? shortDate(parseIso(x.day)) : (x.days || []).map(d => WD7[d - 1]).join(", ")) + (x.time ? " · " + x.time : "")
+const famEvWho = x => { if (x.who === "fam" || !x.who) return ["Вся семья", layerC("fam")]
+  const m = FAM.members().find(m => m.id === x.who); return m ? [name1(m.name), m.role === "kid" ? kidC(m.id) : m.id === FAM.meId() ? layerC("me") : layerC(persKey(m))] : ["Семья", layerC("fam")] }
+function famCalSheet() {
+  if (!famCal()) {
+    const s = sheet(`<h3>Календарь семьи</h3><div class="msg">Объедините близких в семью — и в календаре появится общий слой «Семья»: дела, которые видят все. События каждого идут своим цветом, расписание и дела детей — отдельно.\n\nКалендарь близкого целиком подключается через Google: он открывает вам доступ, вы выбираете для него цвет.</div>
+      <div class="btns"><button class="btn" data-a="set">Цвета и календари</button><button class="btn primary" data-a="new">Создать семью</button></div>`)
+    $('[data-a="set"]', s.el).onclick = () => { s.close(); calSettings() }
+    $('[data-a="new"]', s.el).onclick = () => { s.close(); plansF = "fam"; setTab("plans") }
+    return
+  }
+  const t0 = dayKey(new Date()), list = FAM.L("events").filter(x => x.title && (!x.day || x.day >= t0)).sort((a, b) => (a.day ? 0 : 1) - (b.day ? 0 : 1) || String(a.day || "").localeCompare(String(b.day || "")) || String(a.time || "").localeCompare(String(b.time || "")))
+  const adult = FAM.isAdult()
+  const s = sheet(`<h3>Календарь семьи</h3><div class="fc-leg">${calLayers().map(l => `<span><i style="background:${l.c}"></i>${esc(l.name)}</span>`).concat(famKids().map(m => `<span><i style="background:${kidC(m.id)}"></i>${esc(name1(m.name))}</span>`)).join("")}</div>
+    <div>${list.map(x => { const [w, c] = famEvWho(x); return `<button class="row fc-row" data-fe="${esc(x.id)}"><i style="background:${c}"></i><div class="grow"><div class="t">${esc(x.title)}</div><div class="s">${esc(w)} · ${esc(famEvWhen(x))}${x.day ? "" : " · каждую неделю"}</div></div>${tdIco("chev", 15)}</button>` }).join("") || '<div class="empty">Пока пусто. Добавьте общее дело — поездку, ужин, день рождения бабушки — или расписание ребёнка: школу и кружки.</div>'}</div>
+    ${adult ? `<div class="btns"><button class="btn" data-a="sch">${tdIco("clock", 16)} Расписание ребёнка</button><button class="btn primary" data-a="ev">${tdIco("plus", 16)} Дело семьи</button></div>` : ""}
+    <button class="chip cq-mk" data-a="set">${tdIco("layers", 15)} Цвета и календари</button>`, { onClose: () => render() })
+  $$("[data-fe]", s.el).forEach(b => b.onclick = () => { const x = FAM.L("events").find(x => x.id === b.dataset.fe); s.close(); famEvForm(x, null, true) })
+  const A = k => $(`[data-a="${k}"]`, s.el)
+  if (A("ev")) A("ev").onclick = () => { s.close(); famEvForm(null, { who: "fam" }, true) }
+  if (A("sch")) A("sch").onclick = () => { s.close(); const k = famKids()[0] || FAM.members().find(m => m.role === "teen"); famEvForm(null, { who: k ? k.id : "fam", days: [] }, true) }
+  A("set").onclick = () => { s.close(); calSettings() }
+}
+function famEvForm(x, pref, back) {
+  if (!famCal()) return
+  if (!FAM.isAdult()) { const [w] = famEvWho(x || {}); return ui.info(x ? x.title : "Календарь семьи", x ? `${w} · ${famEvWhen(x)}${x.place ? "\n" + x.place : ""}${x.take ? "\nВзять с собой: " + x.take : ""}\n\nМенять дела семьи могут взрослые.` : "Дела семьи добавляют взрослые.") }
+  const b = Object.assign({ title: "", who: "fam", day: dayKey(selDay && selDay >= sod(new Date()) ? selDay : new Date()), time: "", min: 60, place: "", take: "" }, pref || {}, x || {})
+  let who = b.who || "fam", weekly = !b.day || Array.isArray((pref || {}).days) && !x
+  const days = new Set((b.days || []).map(Number))
+  const whos = [["fam", "Вся семья", layerC("fam")]].concat(FAM.members().map(m => [m.id, m.id === FAM.meId() ? "Я" : name1(m.name), m.role === "kid" ? kidC(m.id) : m.id === FAM.meId() ? layerC("me") : layerC(persKey(m))]))
+  const s = sheet(`<h3>${x ? esc(x.title) : weekly ? "Расписание" : "Дело семьи"}</h3>
+    <div class="field"><label>Что</label><input id="fe-t" value="${esc(b.title)}" placeholder="${weekly ? "Школа, плавание, английский…" : "Ужин у бабушки, поездка, кино…"}"></div>
+    <div class="field"><label>Для кого</label><div class="chips" id="fe-w">${whos.map(([k, n, c]) => `<button class="chip ly ${who === k ? "on" : ""}" data-k="${esc(k)}" style="--c:${c}"><em></em>${esc(n)}</button>`).join("")}</div></div>
+    <div class="seg two" id="fe-r"><button data-r="0" class="${weekly ? "" : "on"}">Один раз</button><button data-r="1" class="${weekly ? "on" : ""}">Каждую неделю</button></div>
+    <div class="field" id="fe-one" ${weekly ? "hidden" : ""}><label>День</label><input id="fe-d" type="date" value="${esc(b.day || dayKey(new Date()))}"></div>
+    <div class="field" id="fe-wk" ${weekly ? "" : "hidden"}><label>Дни недели</label><div class="chips" id="fe-days">${WD7.map((d, i) => `<button class="chip ${days.has(i + 1) ? "on" : ""}" data-d="${i + 1}">${d}</button>`).join("")}</div></div>
+    <div class="grid2"><div class="field"><label>Во сколько</label><input id="fe-h" type="time" value="${esc(b.time || "")}"></div>
+    <div class="field"><label>Сколько минут</label><input id="fe-m" type="number" inputmode="numeric" value="${esc(b.min || 60)}"></div></div>
+    <div class="field"><label>Место</label><input id="fe-p" value="${esc(b.place || "")}" placeholder="Необязательно"></div>
+    <div class="field"><label>Взять с собой</label><input id="fe-x" value="${esc(b.take || "")}" placeholder="Форма, сменка, подарок…"></div>
+    <div class="msg">Без времени — дело на весь день. Его увидят все в семье, каждый на своём телефоне.</div>
+    <div class="btns">${x ? '<button class="btn red" data-a="del">Удалить</button>' : '<button class="btn" data-a="no">Отмена</button>'}<button class="btn primary" data-a="ok">Сохранить</button></div>`, { onClose: () => { render(); if (back) setTimeout(famCalSheet, 240) } })
+  $$("#fe-w .chip", s.el).forEach(c => c.onclick = () => { who = c.dataset.k; $$("#fe-w .chip", s.el).forEach(z => z.classList.toggle("on", z === c)) })
+  $$("#fe-r button", s.el).forEach(c => c.onclick = () => { weekly = c.dataset.r === "1"; $$("#fe-r button", s.el).forEach(z => z.classList.toggle("on", z === c)); $("#fe-one", s.el).hidden = weekly; $("#fe-wk", s.el).hidden = !weekly })
+  $$("#fe-days .chip", s.el).forEach(c => c.onclick = () => { const d = +c.dataset.d; days.has(d) ? days.delete(d) : days.add(d); c.classList.toggle("on", days.has(d)) })
+  const no = $('[data-a="no"]', s.el); if (no) no.onclick = () => s.close()
+  const del = $('[data-a="del"]', s.el); if (del) del.onclick = () => { FAM.put("events", Object.assign({}, x, { del: true })); if (D.kids.some(k => k.id === x.id)) remove("kids", x.id); s.close(); toast("Удалено у всей семьи") }
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const title = $("#fe-t", s.el).value.trim().slice(0, 60); if (!title) return toast("Напишите, что за дело")
+    if (weekly && !days.size) return toast("Выберите дни недели")
+    const day = $("#fe-d", s.el).value; if (!weekly && !day) return toast("Выберите день")
+    const it = { id: x ? x.id : uid("fe"), title, who, time: $("#fe-h", s.el).value || "", min: Math.max(5, Math.round(+$("#fe-m", s.el).value || 60)), place: $("#fe-p", s.el).value.trim().slice(0, 80), take: $("#fe-x", s.el).value.trim().slice(0, 80), by: x ? x.by : FAM.meId(), at: x ? x.at : Date.now() }
+    if (weekly) it.days = [...days].sort(); else it.day = day
+    FAM.put("events", it)
+    s.close(); toast(who === "fam" ? "Сохранено — видит вся семья" : "Сохранено")
+  }
 }
 Object.assign(DO, {
   event: () => calQuick(), "cal-open": () => { calStart = null; setTab("cal") }, "cal-today": () => { calStart = null; calAnim = "in-f"; render() },
-  "cal-set": () => calSettings(), "cal-free": () => freeSheet(), "cal-tpls": () => etplList(), "cal-prot": () => protList(),
+  "cal-set": () => calSettings(), "cal-fam": () => famCalSheet(), "cal-free": () => freeSheet(), "cal-tpls": () => etplList(), "cal-prot": () => protList(),
 })
 
 // ═════════════ Изи: характер, голос и живой разговор ═════════════

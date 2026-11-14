@@ -53,7 +53,7 @@ const goalIc = t => GOAL_IC.find(x => x[2].test(t || ""))
 // ───────────── Данные ─────────────
 // D.fam = { url, code, id, role, name, fname, owner, data, at, out{list:[items]}, seen{}, err }
 const famOn = () => !!(D.fam && D.fam.code && D.fam.url)
-const F = () => (D.fam && D.fam.data) || { members: {}, set: {}, tasks: [], log: [], goals: [], money: [], dreams: [] }
+const F = () => (D.fam && D.fam.data) || { members: {}, set: {}, tasks: [], log: [], goals: [], money: [], dreams: [], events: [] }
 const L = k => (F()[k] || []).filter(x => x && !x.del)
 const meId = () => D.fam && D.fam.id
 const kidMode = () => (famOn() && D.fam.role === "kid") || (!famOn() && D.who === "kid")
@@ -113,8 +113,9 @@ async function push(force, extra) {
     for (const k in out) if (out[k] && out[k].length) { q[k] = out[k].slice(); sent[k] = new Set(q[k].map(x => x.id + ":" + x.u)) }
     const r = await post(D.fam.url, q)
     if (r && r.ok && r.family) {
-      for (const k in sent) D.fam.out[k] = (D.fam.out[k] || []).filter(x => !sent[k].has(x.id + ":" + x.u))
       const f = r.family
+      // события семьи: пока таблица семьи их не хранит (старая версия скрипта), держим у себя и шлём снова
+      for (const k in sent) if (k !== "events" || Array.isArray(f.events)) D.fam.out[k] = (D.fam.out[k] || []).filter(x => !sent[k].has(x.id + ":" + x.u))
       for (const k in D.fam.out) for (const x of D.fam.out[k] || []) { const arr = f[k] || (f[k] = []), i = arr.findIndex(y => y.id === x.id); if (i < 0) arr.push(x); else if ((arr[i].u || 0) <= x.u) arr[i] = x }
       D.fam.data = f; D.fam.at = Date.now(); D.fam.err = ""; D.fam.fname = f.name; if (r.key != null) D.fam.key = !!r.key
       const m = f.members[D.fam.id]; if (m && D.fam.role !== m.role && !D.fam.me) D.fam.role = m.role
@@ -166,6 +167,11 @@ function goalsTick() {
 // ───────────── Дела ребёнка ─────────────
 const kidTasks = kid => L("tasks").filter(t => t.kid === kid && !t.pay)
 const kidEarn = kid => L("tasks").filter(t => t.kid === kid && t.pay)
+const tasksOn = (kid, d) => { const w = wd(d), day = dayKey(d), l = kidTasks(kid).filter(t => !t.days || !t.days.length || t.days.includes(w))
+  return { n: l.length, done: l.filter(t => { const x = logOf(kid, t.id, day); return x && x.st === "ok" }).length } }
+// Расписание ребёнка и общие дела семьи на день (список events: разовые {day} и по дням недели {days}; who — "fam" или id)
+const evOn = (id, d) => L("events").filter(x => x.title && (x.who === "fam" || x.who === id) && (x.day ? x.day === dayKey(d) : (x.days || []).map(Number).includes(wd(d))))
+  .sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")))
 const todayTasks = kid => kidTasks(kid).filter(t => !t.days || !t.days.length || t.days.includes(wd()))
 const logOf = (kid, task, day) => L("log").find(x => x.kid === kid && x.task === task && x.day === (day || today()))
 function tick(task) {
@@ -298,6 +304,8 @@ function kDay(me) {
   let h = kHead(`${core.cap(WDF[d.getDay()])}, ${d.getDate()} ${MONTHS_GEN[d.getMonth()]}`, `Привет, ${short(me.name)}!`, `<div class="kmy">${star(num(kidStars(me.id)))}<span>мои звёзды</span></div>`)
   h += `<div class="ksay">${orb(64)}<div class="kbub">${esc(kidTip(me, tasks, done))}</div></div>`
   h += `<div class="kcard"><h2>Мои дела <span>${done} из ${tasks.length}</span></h2>${tasks.map(t => kTask(me, t)).join("") || `<div class="kmuted">Сегодня дел нет. Попроси маму или папу добавить их в приложении.</div>`}</div>`
+  const sch = evOn(me.id, d)
+  if (sch.length) h += `<div class="kcard ksch"><h2>Расписание <span>${sch.length}</span></h2>${sch.map(x => `<div class="krow"><div class="ktm">${esc(x.time || "днём")}</div><div class="grow"><b>${esc(x.title)}</b>${x.who === "fam" || x.take || x.place ? `<div class="kmuted">${[x.who === "fam" && "вся семья", x.place, x.take && "взять: " + x.take].filter(Boolean).map(esc).join(" · ")}</div>` : ""}</div><i style="background:${x.who === "fam" ? layerC("fam") : kidC(me.id)}"></i></div>`).join("")}</div>`
   if (g) { const p = goalProg(g), gi = goalIc(g.title), mine = sumSince(g.start || "0000").by[me.id] || 0
     h += `<div class="kcard kgoal"><h2>Семейная цель</h2><div class="krow"><div class="kgi">${ic(g.ic || gi[0], 30, gi[1])}</div><div class="grow"><b>${esc(g.title)}</b><div class="kmuted">${num(p.have)} из ${num(p.need)}${mine ? ` · ты принёс ${num(mine)}` : ""}</div></div></div><div class="kbar"><i style="width:${Math.round(p.p * 100)}%"></i></div></div>` }
   if (les) h += `<button class="kcard krow kles" data-kles="${les.id}"><div class="kplay">${ic("play", 24, "#fff")}</div><div class="grow"><b>Урок дня: «${esc(les.t)}»</b><div class="kmuted">3 минуты · +${LESSON_STARS} звёзд</div></div>${ic("chev", 22, "#A19BC7")}</button>`
@@ -957,6 +965,6 @@ function init() {
   setInterval(() => { if (document.visibilityState === "visible") push(false) }, 60e3)
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") push(Date.now() - ((D.fam && D.fam.at) || 0) > 20e3) })
   if (pendingFam) setTimeout(join, 1000)
-  window.FAM = { scan, orbInvite, keyOn, ai, link, kidSheet, join, push, put, famDays, sumSince, goalProg, jars, kidStars, waits, approve, kidMode, openFam, LESSONS, lesson, credit, pocketTick }
+  window.FAM = { scan, orbInvite, on: famOn, members, meId, isAdult, L, tasksOn, COLORS, keyOn, ai, link, kidSheet, join, push, put, famDays, sumSince, goalProg, jars, kidStars, waits, approve, kidMode, openFam, LESSONS, lesson, credit, pocketTick }
 }
 })()
