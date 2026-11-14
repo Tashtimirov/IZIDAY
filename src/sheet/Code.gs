@@ -1372,7 +1372,7 @@ function famSave_(code, json) {
   while (parts.length < w) parts.push("");
   sh.getRange(r, 1, 1, w).setValues([parts]);
 }
-const FAMILY = { max: 10, lists: { tasks: 120, log: 1500, goals: 60, money: 1500, dreams: 200 }, keepDays: 120 };
+const FAMILY = { max: 10, lists: { tasks: 120, log: 1500, goals: 60, money: 1500, dreams: 200, events: 400 }, keepDays: 120 };
 function family_(q, owner) {
   const clean = (v, n) => String(v == null ? "" : v).replace(/[<>]/g, "").slice(0, n || 60);
   const lock = LockService.getScriptLock();
@@ -1381,7 +1381,7 @@ function family_(q, owner) {
     if (q.op === "new") {
       if (!owner) return { ok: false, error: "forbidden" };
       const code = Utilities.getUuid().replace(/-/g, "").slice(0, 14);
-      const fam = { code, name: clean(q.name, 40) || "Семья", created: Date.now(), members: {}, set: {}, tasks: [], log: [], goals: [], money: [], dreams: [] };
+      const fam = { code, name: clean(q.name, 40) || "Семья", created: Date.now(), members: {}, set: {}, tasks: [], log: [], goals: [], money: [], dreams: [], events: [] };
       famSave_(code, JSON.stringify(fam));
       return { ok: true, family: fam };
     }
