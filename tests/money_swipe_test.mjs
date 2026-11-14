@@ -52,6 +52,21 @@ for (const dark of [false, true]) {
   await page.evaluate(() => setTab("money")); await page.waitForTimeout(600)
   await page.evaluate(() => $('.mn-ops [data-money="e2"]').click()); await page.waitForTimeout(500)
   check(await page.evaluate(() => /Изменить/.test(document.body.textContent) && !!document.querySelector('[data-a="del"]')), "нажатие по строке открывает окно правки с «Удалить»")
+  // витрина выключенных «Денег» («Функции по выбору»): строки тоже смахиваются
+  await page.evaluate(() => { try { while (stack.length) stack[stack.length - 1].close() } catch (e) {} D.feat = Object.assign(D.feat || {}, { money: 0 }); save(false); setTab("money"); render() }); await page.waitForTimeout(700)
+  const fr = await page.$('.ft-ops [data-money="e2"]')
+  if (fr) {
+    await page.evaluate(() => $(".ft-ops [data-money=e2]").scrollIntoView({ block: "center" })); await page.waitForTimeout(300)
+    const fb = await fr.boundingBox()
+    await page.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2); await page.mouse.down()
+    for (let i = 1; i <= 8; i++) await page.mouse.move(fb.x + fb.width / 2 - i * 15, fb.y + fb.height / 2)
+    await page.mouse.up(); await page.waitForTimeout(350)
+    check(await page.$eval('.ft-ops [data-money="e2"]', e => e.parentNode.classList.contains("open")), "витрина выключенных «Денег»: смахивание открывает «Удалить»")
+    await shot("5-off")
+    await page.click('.ft-ops [data-money="e2"] + .swd-del'); await page.waitForTimeout(600)
+    check(!(await alive(page, "e2")), "витрина: трата удалена")
+    await page.evaluate(() => { D.feat.money = 1; save(false); render() })
+  } else console.log("   · витрины выключенных «Денег» нет в этой сборке")
   check(!errors.length, "без ошибок в консоли", errors)
   await browser.close(); server.close && server.close()
 }
