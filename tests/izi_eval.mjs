@@ -81,7 +81,7 @@ async function runScenario(s) {
   })
   if (s.friend) await page.evaluate(() => { D.conn.key = D.conn.key || "sk-test" })
   if (s.needs && !(await page.evaluate(n => chatTools().some(t => t.name === n), s.needs))) { console.log("–", `[${s.area}] ${s.t}  (пропущено: в этой версии нет ${s.needs})`); await b.browser.close(); b.server.close(); return }
-  await page.evaluate(x => { EV.ask = x.ask || null; EV.fail = x.fail || "" }, s)
+  await page.evaluate(x => { EV.ask = x.ask || null; EV.fail = x.fail || "" }, { ask: s.ask, fail: s.fail })
   const t0 = Date.now()
   await page.evaluate(t => chatSend(t), s.t).catch(e => {})
   const ms = Date.now() - t0
