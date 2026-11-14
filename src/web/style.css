@@ -1347,3 +1347,7 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 .fc-row { width: 100%; border: 0; background: none; text-align: left; color: var(--text); gap: 12px; }
 .fc-row > .tdi { color: var(--sub); opacity: .6; }
 .sheet #fe-r { margin: 4px 0 12px; }
+
+/* IZIDAY Плюс (заявка) и «Пригласить друга» — grow.js */
+.grow-price { font-size: 22px; font-weight: 700; letter-spacing: -.2px; margin: 2px 0 6px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.grow-price span { font-size: 13px; font-weight: 600; color: var(--sub); }

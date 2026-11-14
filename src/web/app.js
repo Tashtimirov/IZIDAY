@@ -2671,6 +2671,7 @@ function renderMore() {
     : `<div class="banner"><b>Поставьте на экран «Домой»</b>Нажмите «Поделиться» ⎋ внизу Safari → «На экран «Домой»». Приложение будет открываться отдельно и мгновенно.</div>`
   const z = IZI()
   html += iziCard()
+  if (window.GROW) html += GROW.cards()   // заявка на подписку и «Пригласить друга» (grow.js)
   html += langCard()
   html += curCard()
   if (c && c.friend) html += FRIEND.card()
