@@ -36,7 +36,7 @@ page.on("pageerror", e => errors.push(String(e)))
 await page.route("https://script.google.com/**", r => r.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(sheet.post(r.request().postData())) }))
 await page.route("https://api.anthropic.com/**", r => r.request().method() === "OPTIONS" ? r.fulfill({ status: 200, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*" } })
   : (() => { const b = r.request().postData() || ""; window_sys.push(b)
-    const used = /tool_result/.test(b), want = /такси/.test(b)
+    const used = /tool_result/.test(b), want = /потратил 350 на такси/.test(b)
     const body = want && !used ? { content: [{ type: "tool_use", id: "tu1", name: "add_money", input: { type: "expense", amount: 350, method: "transfer", category: "Транспорт", comment: "такси" } }], stop_reason: "tool_use" }
       : { content: [{ type: "text", text: want ? "Записал: такси, 350 ฿, категория «Транспорт»." : "ок" }], stop_reason: "end_turn" }
     return r.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(body) }) })())
@@ -81,7 +81,7 @@ check(/Здоровье/.test(await page.textContent(".ft-tray")) && /Игра/.
 check(!(await page.isVisible('.rings-card [data-do="water"]')), "кольцо воды скрыто без «Здоровья»")
 check(!/Отметьте стакан воды/.test(await page.textContent("#view")), "в «Первых шагах» нет шага про воду")
 await page.evaluate(() => document.querySelector(".ft-tray").scrollIntoView())
-await page.waitForTimeout(300); await shot2("f2-tray")
+await page.waitForTimeout(3500); await shot2("f2-tray")
 
 console.log("Выключенный раздел — витрина")
 await tab("health")
@@ -92,10 +92,10 @@ await page.click('.ft-show [data-ft-on="health"]'); await page.waitForTimeout(50
 check(await page.evaluate(() => FEAT.on("health")) && !(await page.isVisible(".ft-show")), "«Подключить» включает раздел")
 
 console.log("Изи и выключенные «Деньги»")
-await page.evaluate(() => FEAT.set("money", false, true)); await tab("chat")
+await page.evaluate(() => { FEAT.set("money", false, true); D.onb.tips = { plans: 1, money: 1, health: 1, chat: 1, cal: 1 } }); await tab("chat")
 await page.fill("#chat-in", "потратил 350 на такси")
 await page.evaluate(() => chatSend($("#chat-in").value)); await page.waitForTimeout(2500)
-check(await page.evaluate(() => live(D.money).some(e => e.amount === 350)), "трата записана, хотя «Деньги» выключены")
+check(await page.evaluate(() => live(D.money).filter(e => e.amount === 350).length === 1), "трата записана один раз, хотя «Деньги» выключены", await page.evaluate(() => live(D.money).map(e => e.amount)))
 check(await page.isVisible(".ft-offer-c"), "под ответом карточка «Подключить»")
 check(window_sys.some(b => /выключил разделы: Деньги/.test(b)), "Изи знает, что «Деньги» выключены")
 await shot2("f4-chat-offer")
