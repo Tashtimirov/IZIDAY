@@ -122,7 +122,8 @@ await p2.route("https://accounts.google.com/**", r => r.fulfill({ status: 302, h
 await p2.route("https://script.google.com/**", r => r.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(F.post(JSON.parse(r.request().postData()))) }))
 await p2.goto(BASE)
 await p2.waitForSelector("#onb .ob-btn")
-for (let k = 0; k < 3; k++) { await p2.click('#onb [data-ob="next"]'); await p2.waitForTimeout(350) }
+// карточек знакомства со временем стало больше: листаем до последней, а не фиксированное число раз
+for (let k = 0; k < 12 && /Дальше|Начнём/.test(await p2.textContent('#onb [data-ob="next"]')); k++) { await p2.click('#onb [data-ob="next"]'); await p2.waitForTimeout(350) }
 const btn = await p2.textContent('#onb [data-ob="next"]')
 check(/Войти через Google/.test(btn) && /войти через Google/.test(await p2.textContent("#onb")), "последняя карточка знакомства — «Войти через Google»", btn)
 await p2.screenshot({ path: path.join(SHOTS, "fr-0-intro.png") })

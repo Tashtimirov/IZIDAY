@@ -1,6 +1,6 @@
 // Автообновление установленного приложения: новая версия скачивается в фоне и применяется сама —
 // сразу после запуска/возврата в приложение, но не посреди ввода, окна или разговора с Изи.
-// Раздел сохраняется, после обновления — подсказка «IZIDAY обновлён». Нужна сборка dist/web. Chromium.
+// Раздел сохраняется, обновление тихое, без подсказки. Нужна сборка dist/web. Chromium.
 import { createRequire } from "module"
 const { chromium } = createRequire(import.meta.url)("playwright")
 import http from "http"
@@ -42,7 +42,7 @@ await page.waitForTimeout(700)
 const a = await page.evaluate(() => ({ v: window.APPVER, tab, toast: $("#toast").textContent }))
 check(a.v === 2, "после возврата новая версия применилась сама", a)
 check(a.tab === "money", "раздел сохранился («Деньги»)", a)
-check(/обновл/i.test(a.toast), "подсказка «IZIDAY обновлён»", a)
+check(!/обновл/i.test(a.toast), "обновление тихое: подсказки «IZIDAY обновлён» нет (так просил владелец)", a)
 
 // посреди ввода — не перезагружаем; как только поле пустое и руки свободны — обновляемся
 await page.evaluate(() => { setTab("chat"); const t = $("#chat-in"); t.focus(); t.value = "пишу сообщение" })
