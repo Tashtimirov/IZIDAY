@@ -17,6 +17,7 @@ const snap = async n => { await page.waitForTimeout(350); await page.screenshot(
 const T = () => page.textContent(".sheet.show")
 await page.evaluate(() => { setTab("plans"); plansF = "fam"; render() }); await page.waitForTimeout(200)
 await page.click('[data-f="new"]'); await ask("Папа"); await ask("Таштимировы"); await page.waitForTimeout(600)
+await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close(); D.fam.shareAsked = 1; render() }); await page.waitForTimeout(300)   // разовое окно «Что делим с семьёй»
 await page.click('[data-f="kid"]'); await ask("Миша"); await ask(9); await page.waitForTimeout(600); await closeAll()
 const dad = await page.evaluate(() => FAM.meId()), kid = await page.evaluate(() => FAM.members().find(m => m.name === "Миша").id)
 await page.evaluate(({ kid }) => { const P = FAM.put, k = dayKey(new Date())
