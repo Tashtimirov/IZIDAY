@@ -259,8 +259,9 @@ const live = list => list.filter(x => x && !x.deleted)
 const nowSrv = () => Date.now() + ((D.sync && D.sync.skew) || 0)
 function upsert(key, rec) {
   if (window.UNDO) UNDO.note(key, rec)   // отмена действия (undo.js): запомнить прежнюю версию
-  rec.u = nowSrv()
   const i = D[key].findIndex(x => x.id === rec.id)
+  // правка всегда новее той версии, которую правили, даже если часы ушли назад
+  rec.u = Math.max(nowSrv(), i >= 0 ? (D[key][i].u || 0) + 1 : 0)
   if (i >= 0) D[key][i] = rec; else D[key].push(rec)
   save()
   return rec
@@ -752,7 +753,7 @@ function addFood(m) {
 // Защита от случайных серий: из виджета (#water) второй стакан за минуту не пишется, в приложении — спрашиваем
 let lastWaterAt = 0
 async function addWater(ml, from) {
-  const now = Date.now(), last = Math.max(lastWaterAt, ...today(D.water).map(w => w.u || w.date || 0))
+  const now = Date.now(), last = Math.max(lastWaterAt, ...today(D.water).map(w => w.u ? w.u - ((D.sync && D.sync.skew) || 0) : w.date || 0))   // u — по часам сервера
   if (from === "widget" && now - last < 60e3) return toast(`💧 Стакан уже записан ${Math.max(1, Math.round((now - last) / 1000))} с назад`)
   if (from !== "widget" && now - last < 10e3 && (await ui.confirm("Ещё стакан?", `<div class="msg">Только что уже добавлено ${ml} мл. Записать ещё один?</div>`, ["Отмена", "Записать"])) !== "Записать") return
   lastWaterAt = now

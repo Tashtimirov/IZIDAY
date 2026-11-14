@@ -67,9 +67,10 @@ const short = n => String(n || "").split(" ")[0]
 
 let ver = 0
 function put(list, item) {
-  item.u = typeof nowSrv === "function" ? nowSrv() : Date.now()   // по часам сервера (app.js)
   const f = D.fam.data || (D.fam.data = F()), arr = f[list] || (f[list] = [])
   const i = arr.findIndex(x => x.id === item.id)
+  // по часам сервера (app.js) и всегда новее версии, которую правили
+  item.u = Math.max(typeof nowSrv === "function" ? nowSrv() : Date.now(), i >= 0 ? (arr[i].u || 0) + 1 : 0)
   if (i < 0) arr.push(item); else arr[i] = item
   const out = D.fam.out || (D.fam.out = {}), q = out[list] || (out[list] = [])
   const j = q.findIndex(x => x.id === item.id); if (j < 0) q.push(item); else q[j] = item
@@ -111,9 +112,12 @@ async function push(force, extra) {
     const pts = myPts(); if (pts) q.me.pts = pts
     if (D.fam.me) Object.assign(q.me, D.fam.me)
     for (const k in out) if (out[k] && out[k].length) { q[k] = out[k].slice(); sent[k] = new Set(q[k].map(x => x.id + ":" + x.u)) }
-    const r = await post(D.fam.url, q)
+    const t0 = Date.now(), r = await post(D.fam.url, q), t1 = Date.now()
     if (r && r.ok && r.family) {
       const f = r.family
+      // поправка часов и у тех, у кого нет своей таблицы (ребёнок): сервер ставит members[id].at = время сервера
+      const mm = f.members && f.members[D.fam.id]
+      if (mm && mm.at && typeof skewOf === "function" && D.sync) D.sync.skew = skewOf(mm.at, t0, t1, D.sync.skew)
       // события семьи: пока таблица семьи их не хранит (старая версия скрипта), держим у себя и шлём снова
       for (const k in sent) if (k !== "events" || Array.isArray(f.events)) D.fam.out[k] = (D.fam.out[k] || []).filter(x => !sent[k].has(x.id + ":" + x.u))
       for (const k in D.fam.out) for (const x of D.fam.out[k] || []) { const arr = f[k] || (f[k] = []), i = arr.findIndex(y => y.id === x.id); if (i < 0) arr.push(x); else if ((arr[i].u || 0) <= x.u) arr[i] = x }

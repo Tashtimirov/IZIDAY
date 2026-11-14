@@ -273,12 +273,12 @@ window.METRICS = (() => {
       let main = 0, all = 0
       try { main = (localStorage.getItem("myday.web") || "").length; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); all += k.length + (localStorage.getItem(k) || "").length } } catch (e) {}
       // символы UTF-16 → КБ (Safari считает предел в байтах UTF-16: 2 байта на символ)
-      M.push("память", "данные на телефоне, КБ", main * 2 / 1024)
-      if (typeof D !== "undefined" && D.chatArchive) M.push("память", "архив чата, сообщений", D.chatArchive.length)
-      M.push("память", "весь localStorage, КБ", all * 2 / 1024)
-      if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then(e => { if (e && e.usage >= 0) M.push("память", "всё хранилище приложения, КБ", e.usage / 1024) }).catch(() => {})
+      M.push("сеанс", "память: данные на телефоне, КБ", main * 2 / 1024)
+      if (typeof D !== "undefined" && D.chatArchive) M.push("сеанс", "память: архив чата, сообщений", D.chatArchive.length)
+      M.push("сеанс", "память: весь localStorage, КБ", all * 2 / 1024)
+      if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then(e => { if (e && e.usage >= 0) M.push("сеанс", "память: всё хранилище приложения, КБ", e.usage / 1024) }).catch(() => {})
       try { const r = indexedDB.open("iziday-chat", 1); r.onupgradeneeded = () => r.result.createObjectStore("a")
-        r.onsuccess = () => { try { const g = r.result.transaction("a", "readonly").objectStore("a").get("archive"); g.onsuccess = () => { M.push("память", "архив чата в IndexedDB, КБ", JSON.stringify(g.result || []).length * 2 / 1024); r.result.close() } } catch (e) {} } } catch (e) {}
+        r.onsuccess = () => { try { const g = r.result.transaction("a", "readonly").objectStore("a").get("archive"); g.onsuccess = () => { M.push("сеанс", "память: архив чата в IndexedDB, КБ", JSON.stringify(g.result || []).length * 2 / 1024); r.result.close() } } catch (e) {} } } catch (e) {}
     } catch (e) {}
   }
   setTimeout(storeSize, 15e3)
