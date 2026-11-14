@@ -1,0 +1,50 @@
+/* IZIDAY · Функции по выбору (feat.js): выбор при знакомстве, «Функции» в настройках, витрина выключенного раздела,
+   предложение в чате, «Можно подключить» и «Выключенные функции» на «Сегодня». */
+.ft-ic { display: block; flex: none; }
+/* — знакомство (тёмный фон цвета Изи) */
+#onb.pick .ob-p { margin: 6px 0 4px; }
+.ft-lab { font-size: 12px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: #a6ffe0; opacity: .85; margin: 14px 4px 7px; }
+.ft-base { display: flex; gap: 7px; }
+.ft-base span { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 4px; border-radius: 14px; font-weight: 600; font-size: 14px;
+  background: rgba(255,255,255,.08); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.14); }
+.ft-base .izi-orb { margin: 0; flex: none; }
+.ft-row { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; text-align: left; padding: 9px 12px; border-radius: 16px; margin-bottom: 7px; color: inherit;
+  background: rgba(255,255,255,.08); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.14); animation: obUp .45s cubic-bezier(.22,1,.36,1) both; }
+.ft-pick .ft-row:nth-child(2) { animation-delay: .04s } .ft-pick .ft-row:nth-child(3) { animation-delay: .08s } .ft-pick .ft-row:nth-child(4) { animation-delay: .12s } .ft-pick .ft-row:nth-child(5) { animation-delay: .16s }
+.ft-b { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; flex: none; background: rgba(255,255,255,.12); }
+.ft-t { flex: 1; min-width: 0; } .ft-t b { display: block; font-size: 15.5px; } .ft-t span { display: block; font-size: 12.5px; color: rgba(255,255,255,.6); }
+.ft-row .tgl { pointer-events: none; }
+#onb .ft-row .tgl.on { background: #2fc58a; }
+/* — настройки */
+.ft-more .ft-row { background: none; box-shadow: none; border-radius: 0; padding: 9px 0; margin: 0; border-top: 1px solid var(--line); animation: none; }
+.ft-more .ft-row:first-of-type { border-top: 0; }
+.ft-more .ft-b, .ft-show .ft-b, .ft-hint .ft-b, .ft-offer-c .ft-ic { background: var(--track); color: var(--accent, #0A9F6E); }
+.ft-more .ft-t span { color: var(--sub); }
+/* — витрина выключенного раздела */
+.ft-sh { display: flex; align-items: center; gap: 12px; }
+.ft-sh h2 { margin: 0; }
+.ft-bb { width: 46px; height: 46px; border-radius: 14px; }
+.ft-li { display: flex; gap: 12px; align-items: flex-start; margin-top: 14px; }
+.ft-li .ft-b { width: 34px; height: 34px; border-radius: 10px; }
+.ft-li b { display: block; font-size: 15px; } .ft-li span { display: block; font-size: 13px; color: var(--sub); }
+.ft-go { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 18px; padding: 13px; font-size: 16px; border-radius: 14px; }
+.ft-ops .row { align-items: center; }
+.ft-del { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; color: var(--red); font-size: 14px; font-weight: 600; padding: 8px 6px; border-radius: 10px; }
+.ft-del:active { background: var(--track); }
+/* — чат */
+.ft-offer-c { margin: 4px 0 10px; max-width: 88%; padding: 12px 14px; border-radius: 18px; border: 1px solid var(--line);
+  background: linear-gradient(135deg, rgba(47,197,138,.12), rgba(30,120,255,.06)); animation: obUp .4s cubic-bezier(.22,1,.36,1) both; }
+.ft-oc-t { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; line-height: 1.4; }
+.ft-oc-t .ft-ic { color: var(--accent, #0A9F6E); background: none; margin-top: 1px; }
+.ft-oc-b { display: flex; gap: 8px; margin-top: 11px; }
+/* — «Сегодня» */
+.ft-hint { transition: transform .26s, opacity .26s; }
+.ft-hint.gone { opacity: 0; transform: translateX(-30%); }
+.ft-pill { font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--accent, #0A9F6E); margin-bottom: 8px; }
+.ft-hint-p { font-size: 15px; margin-top: 10px; line-height: 1.4; }
+.ft-sw { font-size: 12px; color: var(--sub); text-align: center; margin-top: 9px; }
+.ft-tray { margin: 6px 0 12px; padding: 14px 14px 8px; border-radius: var(--r-card, 18px); border: 1.5px dashed var(--line); }
+.ft-tray .bk-add { flex-wrap: wrap; row-gap: 0; }
+.ft-tray .bk-add small { flex-basis: 100%; padding-left: 38px; font-size: 12.5px; color: var(--sub); }
+@keyframes obUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ft-row, .ft-offer-c { animation: none; } }

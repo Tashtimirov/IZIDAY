@@ -144,6 +144,7 @@ if (typeof iziStyle === "function") { const _st = iziStyle; iziStyle = function 
 // ───────────── Знакомство: большой шар живого разговора и анкета ─────────────
 // Шар — тот же, что в разговоре с Изи: когда «говорит» Изи (новая карточка), дрожит его волна,
 // когда отвечает человек (касание варианта) — вторая. Шар один на всё знакомство и плавно меняет размер
+let first = false   // первое знакомство (а не повтор из настроек): для выбора функций — набор новичка
 function cards() {
   const who = `<div class="ob-pick"><button data-who="adult" class="${kid() ? "" : "on"}">${I("user", 28)}<b>Взрослый</b><small>полная версия</small></button><button data-who="kid" class="${kid() ? "on" : ""}">${I("kid", 28)}<b>Ребёнок</b><small>детская версия</small></button></div>`
   const qs = QS(), L = []
@@ -163,10 +164,8 @@ function cards() {
   L.push({ h: `<div class="ob-h">Просто скажите</div><div class="ob-p">Удерживайте шар внизу и говорите как человеку. ${nm()} сам поймёт, что это: дело, трата или вода.</div>
     <div class="ob-say">«Завтра в 10 стоматолог, и запиши такси 350»</div>
     ${feat("cal", "rgba(255,255,255,.14)", "Стоматолог", "завтра, 10:00 — в календарь")}${feat("money", "rgba(255,255,255,.14)", "Такси · 350", "трата, Транспорт")}` })
-  L.push({ h: `<div class="ob-h">Пять разделов</div><div class="ob-p">Всё, что нужно на день, в одном месте</div>
-    ${feat("cal", "rgba(255,255,255,.14)", "Сегодня", "события, дела, кольца дня")}${feat("list", "rgba(255,255,255,.14)", "Планы", "цели, списки, привычки")}
-    <div class="ob-feat"><div class="b">${orb(30)}</div><div><b>${nm()}</b><span>нажмите — чат, удерживайте — голос</span></div></div>
-    ${feat("money", "rgba(255,255,255,.14)", "Деньги", "траты, бюджет, «можно сегодня»")}${feat("heart", "rgba(255,255,255,.14)", "Здоровье", "вода, еда, шаги, дневник")}` })
+  // Что включить сейчас: Деньги, Здоровье, Игра, Голодание, Семья (feat.js); Сегодня, Планы и Изи — всегда
+  if (window.FEAT) L.push({ pick: 1, h: FEAT.pickHTML(first) })
   L.push({ big: 1, h: `<div class="ob-h">Учимся на деле</div><div class="ob-p">На «Сегодня» вас ждут «Первые шаги» — шесть простых дел, чтобы освоиться. А в каждом разделе ${nm()} один раз подскажет главное.</div>
     <div class="ob-p ob-sm">Знакомство и анкету можно повторить в настройках</div>` })
   return L
@@ -195,6 +194,8 @@ function intro(at) {
   document.body.appendChild(ov)
   if (typeof silkCanvas === "function") silkCanvas(ov.querySelector(".ob-stage canvas"), "talk")
   const body = ov.querySelector(".ob-body"), foot = ov.querySelector(".ob-foot")
+  first = !O().intro
+  if (window.FEAT) FEAT._reset()
   let list = cards(), i = 0
   if (at === "quiz") i = list.findIndex(c => c.q) || 0
   const draw = (dir = 0) => {
@@ -202,12 +203,13 @@ function intro(at) {
     const c = list[i], last = i === list.length - 1, qs = list.filter(x => x.q), inQuiz = !!c.q
     // друг без виджета: последняя карточка сразу ведёт ко входу через Google (friends.js)
     const gl = last && !kid() && !D.conn && window.FRIEND && FRIEND.on()
-    ov.className = "ob-ov" + (kid() ? " kid" : "") + (c.big ? " big" : "") + (inQuiz ? " quiz" : "")
+    ov.className = "ob-ov" + (kid() ? " kid" : "") + (c.big ? " big" : "") + (inQuiz || c.pick ? " quiz" : "") + (c.pick ? " pick" : "")
     ov.querySelector(".ob-prog").innerHTML = list.map((_, k) => `<i class="${k < i ? "done" : k === i ? "on" : ""}"></i>`).join("")
     body.innerHTML = `<div class="ob-card ${dir > 0 ? "in-r" : dir < 0 ? "in-l" : "in"}">${c.h}${gl ? `<div class="ob-p">Осталось войти через Google — и всё настроится само.</div>` : ""}</div>`
     foot.innerHTML = `<button class="ob-btn" data-ob="next">${gl ? FRIEND.gico + "Войти через Google" : last ? (kid() ? "Поехали!" : "Начать") : c.start ? "Начнём" : "Дальше"}</button>
       ${gl ? `<button class="ob-skip" data-ob="widget">У меня свой виджет Scriptable</button>` : ""}
-      <button class="ob-skip" data-ob="${inQuiz || c.start ? "quiz-skip" : "skip"}" ${last && !gl ? "hidden" : ""}>${gl ? "Позже" : inQuiz || c.start ? "Пропустить анкету" : "Пропустить"}</button>`
+      <button class="ob-skip" data-ob="${c.pick ? "ft-all" : inQuiz || c.start ? "quiz-skip" : "skip"}" ${last && !gl ? "hidden" : ""}>${gl ? "Позже" : c.pick ? "Включить всё" : inQuiz || c.start ? "Пропустить анкету" : "Пропустить"}</button>`
+    if (c.pick) FEAT.pickBind(body)
     body.querySelectorAll("[data-who]").forEach(b => b.onclick = () => { youSay(); setWho(b.dataset.who); draw() })
     body.querySelectorAll("[data-q]").forEach(b => b.onclick = () => {
       youSay(); qSet(b.dataset.q, b.dataset.v, !!b.dataset.many)
@@ -230,6 +232,7 @@ function intro(at) {
     const last = i === list.length - 1, gl = last && !kid() && !D.conn && window.FRIEND && FRIEND.on()
     if (a === "next") { if (list[i].q && list[i].q[0] === "habits") habitsFromQuiz(); return last ? (done(), gl && setTimeout(() => FRIEND.login(), 340)) : go(1) }
     if (a === "back") return go(-1)
+    if (a === "ft-all") { FEAT.pickAll(); return go(1) }
     if (a === "skip") return done()
     if (a === "quiz-skip") { const k = list.findIndex((c, j) => j > i && !c.q && !c.start); i = k > 0 ? k : list.length - 1; return draw(1) }
     // владелец со своим виджетом: подключиться к нему, а не к серверу друзей (иначе — новый пустой аккаунт)
@@ -245,7 +248,9 @@ function intro(at) {
     if (dx < 0) { if (list[i].q && list[i].q[0] === "habits") habitsFromQuiz(); go(1) } else go(-1)
   })
   const done = () => {
-    O().intro = Date.now(); if (!D.who) setWho("adult"); habitsFromQuiz(); save(false)
+    if (!D.who) setWho("adult")
+    if (window.FEAT) try { FEAT.pickDone(first) } catch (e) { console.error("feat", e) }
+    O().intro = Date.now(); habitsFromQuiz(); save(false)
     clearInterval(speakT); if (typeof SILK !== "undefined") SILK.demo = ""
     ov.classList.add("out"); setTimeout(() => { if (ov) ov.remove(); ov = null; if (tab === "today") render() }, 420)
     if (kid() && typeof window.famJoin === "function") setTimeout(() => window.famJoin(), 460)   // вход ребёнка по коду семьи — family.js
@@ -268,10 +273,12 @@ const STEPS = () => [
   ["plan", "target", kid() ? "Загадай мечту в «Планах»" : "Добавьте цель или список в «Планы»", () => live(D.goals || []).some(g => /^(month|wish|dream|list|chore)$/.test(g.kind || "") || (D.habits && live(D.habits).length)), () => setTab("plans")],
   ["push", "bell", "Включите уведомления", () => typeof Notification !== "undefined" && Notification.permission === "granted", () => pushEnable()],
 ]
+const fOn = k => !window.FEAT || FEAT.on(k)
+const STEPS_ON = () => STEPS().filter(s => (s[0] !== "water" || fOn("health")) && (s[0] !== "money" || fOn("money")))
 function stepsHTML() {
   const o = O()
   if (!auto() || !o.intro || o.steps) return ""
-  const st = STEPS(), n = st.filter(s => s[3]()).length, pts = !!window.GAMI && !GAMI.off()
+  const st = STEPS_ON(), n = st.filter(s => s[3]()).length, pts = !!window.GAMI && !GAMI.off()
   if (n === st.length) { o.steps = "done"; save(false); setTimeout(() => toast(kid() ? "Ура! Ты освоился" : "Первые шаги пройдены"), 400); return "" }
   return `<div class="card ob-steps" id="ob-steps"><div class="ob-st-h">${orb(42, "margin:0;flex:none")}<div><b>Первые шаги с ${nm()}</b><span>${n} из ${st.length}${pts ? " · за каждый шаг баллы" : ""}</span></div></div>
     <div class="ob-bar"><i style="width:${Math.round(n / st.length * 100)}%"></i></div>
@@ -304,6 +311,7 @@ let tipEl = null
 function tip(t) {
   const o = O(), d = TIPS[t]
   if (!d || !auto() || !o.intro || (o.tips || {})[t] || tipEl || ov) return
+  if ((t === "money" || t === "health") && !fOn(t)) return   // выключенный раздел сам рассказывает о себе
   o.tips = Object.assign(o.tips || {}, { [t]: Date.now() }); save(false)
   const fill = s => s.replace(/\{n\}/g, nm())
   tipEl = document.createElement("div")

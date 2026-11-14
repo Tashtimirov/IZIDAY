@@ -918,6 +918,7 @@ function wrap() {
   const plans0 = renderPlans
   renderPlans = function () {
     const html = plans0.apply(this, arguments)
+    if (window.FEAT && !FEAT.on("family")) return html   // «Семья» выключена в «Функциях» (feat.js)
     if (plansF === "fam") { const i = html.indexOf("</div>") + 6; return html.slice(0, i) + famPage() }
     if (plansF === "all") { try { return html + famPage() } catch (e) { console.error("fam", e) } }   // семья и в общем списке, в конце
     return html

@@ -9,8 +9,8 @@
 // Скрытые хранятся в D.blocksOff[раздел] = { ключ: название }.
 window.BLOCKS = (function () {
   const TABS = ["today", "plans", "money", "health"]
-  const FIX = ".month, .wnav, .strip, .chips, .seg, .btns, .banner, .bk-tray, .bk-foot"
-  const NO_HOLD = "input, textarea, select, [contenteditable], [data-tpl], #strip, .bk-nohold, .bk-rm, .bk-tray, .bk-foot"
+  const FIX = ".month, .wnav, .strip, .chips, .seg, .btns, .banner, .bk-tray, .bk-foot, .ft-tray, .ft-hint, .ft-show, .ft-ops"
+  const NO_HOLD = "input, textarea, select, [contenteditable], [data-tpl], #strip, .bk-nohold, .bk-rm, .bk-tray, .bk-foot, .ft-tray, .ft-hint, .ft-show, .ft-ops"
   const GENERIC = new Set(["card", "mn-in", "hl-in", "hl-tip", "empty", "gnew", "pending", "gone", "on", "anim"])
   const HOLD = 420, HOLD_EDIT = 180, SLOP = 9
   const EASE = "cubic-bezier(.22,1,.36,1)"
