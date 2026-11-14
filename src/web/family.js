@@ -39,7 +39,7 @@ const P = {
   pizza: '<path d="M12 21L3 6a14 14 0 0 1 18 0z"/><circle cx="10" cy="9" r="1"/><circle cx="14" cy="12" r="1"/>', tent: '<path d="M3 20L12 4l9 16zM12 4v16M9 20l3-6 3 6"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   share: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6h14v-6"/>', briefcase: '<rect x="3" y="7" width="18" height="13" rx="3"/><path d="M9 7V5h6v2M3 12h18"/>',
-  wand: '<path d="M4 20L15 9M14 4v3M19 9h-3M17.5 5.5l-2 2M12 3l.5 1.5M20 11l1.5.5"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>', link: '<path d="M10 14a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1 1"/><path d="M14 10a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1-1"/>',
+  wand: '<path d="M4 20L15 9M14 4v3M19 9h-3M17.5 5.5l-2 2M12 3l.5 1.5M20 11l1.5.5"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>', scan: '<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.5"/>', link: '<path d="M10 14a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1 1"/><path d="M14 10a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1-1"/>',
 }
 const ic = (n, s = 20, c = "currentColor", sw = 2) => `<svg class="fi" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${P[n] || P.star}</svg>`
 const TASK_IC = [["tooth", "#2FB7FF"], ["bag", "#FF8A3D"], ["book", "#8B6CFF"], ["paw", "#18B57A"], ["home", "#FF5FA2"], ["bed", "#6A4BF2"], ["dish", "#FFB547"], ["plant", "#18B57A"], ["shirt", "#2FB7FF"], ["ball", "#FF8A3D"], ["music", "#AF52DE"], ["star", "#E89A00"]]
@@ -289,8 +289,8 @@ function kidRender() {
 }
 function kHead(sub, title, right) { return `<div class="khd"><div class="grow"><div class="ks">${esc(sub)}</div><h1>${esc(title)}</h1></div>${right || ""}</div>` }
 function kidNoFam() {
-  return `<div class="kd"><div class="kempty">${orb(110)}<h1>Привет!</h1><p>Попроси маму или папу прислать тебе ссылку-приглашение в семью. Они найдут её в «Планы → Семья».</p>
-  <button class="kbtn" data-k="paste">У меня есть ссылка</button><button class="klink" data-k="adult">Я взрослый</button></div></div>`
+  return `<div class="kd"><div class="kempty">${orb(110)}<h1>Привет!</h1><p>Попроси маму или папу показать тебе шар Изи. Он у них в «Планы → Семья».</p>
+  <button class="kbtn" data-k="scan">Сканировать шар</button><button class="klink" data-k="paste">У меня есть ссылка</button><button class="klink" data-k="adult">Я взрослый</button></div></div>`
 }
 function kDay(me) {
   const d = new Date(), tasks = todayTasks(me.id), done = tasks.filter(t => { const l = logOf(me.id, t.id); return l && l.st !== "no" }).length
@@ -372,7 +372,7 @@ function kidBind(v) {
   $$("[data-k]", v).forEach(b => b.onclick = () => (KDO[b.dataset.k] || (() => {}))())
 }
 const KDO = {
-  paste: () => window.famJoin(), adult: () => { D.who = "adult"; save(false); render() },
+  paste: () => famPaste(), scan: () => scan(), adult: () => { D.who = "adult"; save(false); render() },
   wish: async () => { const t = await ui.ask("Чего тебе хочется?", "Большое или маленькое — всё подходит.", "", { placeholder: "Например: лего-замок", ok: "В банку" }); if (!t) return
     put("dreams", { id: uid("dr"), kid: meId(), title: t.slice(0, 60), at: Date.now() }); burst(); render() },
   buy: () => buyForm(), hist: () => moneyHist(meId()),
@@ -529,7 +529,8 @@ function party(g, p) {
 // ═════════════ Взрослые: «Планы → Семья» ═════════════
 function famPage() {
   if (!famOn()) return `<div class="card fcard"><h2>Семья</h2><div class="muted">Общие семейные баллы и цели, дела и копилки детей, уроки Изи про цели, желания и деньги. Дети 8–13 лет получают яркий детский режим, подростки 14–17 — обычное приложение в семье.</div>
-    <div class="btns" style="margin-top:12px"><button class="btn" data-f="paste">У меня есть ссылка</button><button class="btn primary" data-f="new">Создать семью</button></div></div>`
+    <div class="btns" style="margin-top:12px"><button class="btn" data-f="scan">${ic("scan", 16)} Сканировать шар</button><button class="btn primary" data-f="new">Создать семью</button></div>
+    <button class="flink" data-f="paste">У меня есть ссылка-приглашение</button></div>`
   const mk = monthStartK(), mon = sumSince(mk), g = famGoals().find(x => !x.done), gp = g && goalProg(g), adult = isAdult(), cur = core.CONFIG.currency || "฿"
   let h = `<div class="fhero"><div class="k">Семейные баллы за ${MONTH_NOM_L()}</div><div class="v">${num(mon.total)}</div>`
   if (g) h += `<div class="fbar"><i style="width:${Math.round(gp.p * 100)}%"></i></div><div class="fl"><span>цель: ${esc(g.title)} · ${num(gp.need)}</span><span>ещё ${num(gp.need - gp.have)}</span></div>`
@@ -579,7 +580,7 @@ function kidSheet(id) {
   const s = sheet(html); s.el.classList.add("fam-sheet")
   const on = (a, f) => { const b = $(`[data-a="${a}"]`, s.el); if (b) b.onclick = f }
   on("task", () => { s.close(); taskForm(id) }); on("earn", () => { s.close(); taskForm(id, true) }); on("money", () => { s.close(); moneyForm(id) })
-  on("link", () => invite(k)); on("gift", async () => { const v = Math.round(+(await ui.ask("Сколько положить?", "Разложится по копилкам по раскладке ребёнка.", "", { type: "number" })) || 0); if (v > 0) { credit(id, v, "gift", "Подарок", uid("gf")); s.close(); toast("Положено") } })
+  on("link", () => orbInvite(k)); on("gift", async () => { const v = Math.round(+(await ui.ask("Сколько положить?", "Разложится по копилкам по раскладке ребёнка.", "", { type: "number" })) || 0); if (v > 0) { credit(id, v, "gift", "Подарок", uid("gf")); s.close(); toast("Положено") } })
   on("drop", async () => { if (await ui.confirm(`Убрать ${k.name} из семьи?`, `<div class="msg">Дела и звёзды останутся в журнале, но в семье ${esc(short(k.name))} больше не будет.</div>`, ["Отмена", "Убрать"]) === "Убрать") { s.close(); push(true, { drop: id }) } })
   $$("[data-ftdel]", s.el).forEach(b => b.onclick = () => { const t = L("tasks").find(x => x.id === b.dataset.ftdel); if (t) { put("tasks", Object.assign({}, t, { del: true })); b.closest(".row").remove() } })
   $$("[data-fwish]", s.el).forEach(b => b.onclick = () => { toWish(b.dataset.fwish); b.outerHTML = '<span class="tag">в моих желаниях</span>' })
@@ -718,7 +719,7 @@ async function kidAdd() {
   const id = uid("k"), role = roleOf(age), color = COLORS[(members().length) % COLORS.length]
   D.fam.data.members[id] = { name, age, role, color, joined: Date.now(), pts: {}, at: 0 }
   await push(true, { add: [{ id, name, age, role, color }] })
-  render(); invite(member(id) || { id, name, role })
+  render(); orbInvite(member(id) || { id, name, role })
 }
 function link(m) { return location.origin + location.pathname + "#fam=" + btoa(unescape(encodeURIComponent(JSON.stringify(Object.assign({ u: D.fam.url, c: D.fam.code, n: F().name || D.fam.fname || "Семья" }, m ? { m: m.id, r: m.role, nm: m.name } : {}))))).replace(/=+$/, "") }
 async function invite(m) {
@@ -749,13 +750,143 @@ async function join() {
   save(false); await push(true); if (D.fam.err) toast(`Семья: ${D.fam.err}`)
   setTab("plans"); openFam()
 }
-// Вход по ссылке вручную (из тура новичка после «Ребёнок» и из «У меня есть ссылка»)
-window.famJoin = async function () {
+// Вход по ссылке вручную («У меня есть ссылка»)
+async function famPaste() {
   if (famOn()) return
   const v = await ui.ask("Ссылка-приглашение", "Вставь ссылку, которую прислали мама или папа.", "", { placeholder: "https://…#fam=…", ok: "Войти" })
   if (!v) return
   const m = v.match(/fam=([A-Za-z0-9+/=_-]+)/); if (!m) return toast("Это не ссылка на семью")
   pendingFam = m[1]; join()
+}
+// Вход в семью из тура новичка после «Ребёнок»: шар Изи с телефона родителя или ссылка
+window.famJoin = async function () {
+  if (famOn()) return
+  if (!scanCan()) return famPaste()
+  const v = await ui.choose("Вход в семью", "Попроси маму или папу показать шар Изи: «Планы → Семья».", ["Сканировать шар", "У меня есть ссылка"])
+  if (v === 0) scan(); else if (v === 1) famPaste()
+}
+
+// ───────────── Код-шар: приглашение по шару Изи ─────────────
+// Главный телефон показывает шар с кольцами дуг (orbcode.js), второй наводит на него камеру в IZIDAY. В шаре — короткий
+// одноразовый код; само приглашение 10 минут лежит на общем сервере IZIDAY (Friends.gs inv_) и отдаётся один раз.
+const invHook = () => { try { const h = window.FRIEND && FRIEND.hook && FRIEND.hook(); return /^https:\/\/script\.google\.com\//.test(h || "") ? h : "" } catch (e) { return "" } }
+async function invCall(q) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 25000)
+  try {
+    const r = await fetch(invHook(), { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, credentials: "omit", cache: "no-store", signal: ctl.signal, body: JSON.stringify({ inv: q }) })
+    return await r.json()
+  } catch (e) { return { ok: false, error: "нет связи", net: true } } finally { clearTimeout(t) }
+}
+const hexBytes = h => new Uint8Array((h.match(/../g) || []).map(x => parseInt(x, 16)))
+const orbBox = (cls = "") => `<div class="ocode ${cls}"><i class="ocode-glow"></i><canvas class="ocode-c"></canvas><i class="ocode-shine"></i><b class="izi-orb ocode-orb"></b></div>`
+function orbPaint(box, token) {
+  const c = $(".ocode-c", box), d = Math.min(3, devicePixelRatio || 1), px = Math.round((box.clientWidth || 280) * d)
+  c.width = c.height = px
+  const P = typeof iziCol === "function" ? iziCol() : null
+  ORBCODE.draw(c.getContext("2d"), px, ORBCODE.encode(hexBytes(token)), P ? { a: P[4], b: P[3] } : {})
+}
+async function orbInvite(m) {
+  if (!invHook() || !window.ORBCODE) return invite(m)
+  const who = m && m.name ? short(m.name) : ""
+  let alive = true, tm = 0, token = "", until = 0, n = 0
+  const s = sheet(`<h3>${who ? `${esc(who)}: вход в семью` : "Пригласить в семью"}</h3>${orbBox("wait")}
+    <div class="ocode-t">Готовлю шар…</div>
+    <div class="msg ocode-how">На втором телефоне откройте IZIDAY и нажмите «Сканировать шар».</div>
+    <div class="btns"><button class="btn" data-a="link">${ic("link", 16)} Отправить ссылкой</button></div>`, { onClose: () => { alive = false; clearTimeout(tm) } })
+  s.el.classList.add("ocode-sheet")
+  const box = $(".ocode", s.el), txt = $(".ocode-t", s.el)
+  $('[data-a="link"]', s.el).onclick = () => invite(m)
+  const make = async () => {
+    token = ""; box.classList.add("wait"); txt.textContent = "Готовлю шар…"
+    const r = await invCall({ op: "new", p: link(m && m.id ? m : null).split("#fam=")[1] })
+    if (!alive) return
+    if (!r || !r.ok || !r.token) { txt.textContent = r && r.net ? "Нет связи. Шар появится, когда вернётся интернет." : `Шар не получился${r && r.error ? `: ${r.error}` : ""}. Отправьте приглашение ссылкой.`; if (r && r.net) tm = setTimeout(make, 5000); return }
+    token = r.token; until = Date.now() + (r.ttl || 600) * 1000 - 5000
+    orbPaint(box, token); box.classList.remove("wait"); tick()
+  }
+  const tick = async () => {
+    if (!alive || !token) return
+    const left = Math.max(0, Math.round((until - Date.now()) / 1000))
+    if (!left) return make()
+    txt.textContent = `Шар действует ещё ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`
+    if (++n % 2 === 0 && document.visibilityState === "visible") {
+      const t0 = token, r = await invCall({ op: "stat", token: t0 })
+      if (!alive || t0 !== token) return
+      if (r && r.ok && r.used) return done()
+    }
+    tm = setTimeout(tick, 1000)
+  }
+  const done = async () => {
+    token = ""; box.classList.add("ok"); txt.textContent = who ? `${who} в семье` : "Подключено"
+    try { if (navigator.vibrate) navigator.vibrate([20, 60, 40]) } catch (e) {}
+    const how = $(".ocode-how", s.el); if (how) how.textContent = "Шар отсканирован."
+    setTimeout(() => push(true), 2500)
+    tm = setTimeout(() => { if (alive) s.close(); push(true) }, 3600)
+  }
+  make()
+}
+// Сканер шара: своя камера в приложении. Смахнуть вниз — закрыть
+const scanCan = () => !!(invHook() && window.ORBCODE && navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+let scanOn = false
+async function scan() {
+  if (scanOn) return
+  if (famOn() && kidMode()) return
+  if (!scanCan()) { await ui.info("Сканер недоступен", "На этом телефоне камера из приложения не открывается. Попросите прислать приглашение ссылкой."); return famPaste() }
+  scanOn = true
+  const el = document.createElement("div"); el.className = "oscan"
+  el.innerHTML = `<video playsinline muted autoplay></video><div class="oscan-aim"><i></i></div>
+    <div class="oscan-top">Смахните вниз — закрыть</div>
+    <div class="oscan-bot"><b>Наведите на шар Изи</b><span>Шар показывает тот, кто приглашает: «Планы → Семья».</span></div>
+    <div class="oscan-ok"><div class="ocode solo"><i class="ocode-glow"></i><i class="ocode-shine"></i><b class="izi-orb ocode-orb"></b></div><b>Готово</b></div>`
+  document.body.append(el)
+  const v = $("video", el), msg = $(".oscan-bot b", el), sub = $(".oscan-bot span", el)
+  let stream = null, tm = 0, busy = false
+  const tried = new Set(), cv = document.createElement("canvas"), cx = cv.getContext("2d", { willReadFrequently: true })
+  const close = () => { if (!scanOn) return; scanOn = false; clearTimeout(tm); if (stream) stream.getTracks().forEach(t => t.stop()); el.classList.remove("show"); setTimeout(() => el.remove(), 320) }
+  el.addEventListener("izi-back", close)
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false })
+    v.srcObject = stream; try { await v.play() } catch (e) {}
+  } catch (e) {
+    scanOn = false; el.remove()
+    await ui.info("Камера недоступна", (typeof IS_DROID !== "undefined" && IS_DROID ? "Разрешите камеру: Настройки телефона → Приложения → IZIDAY (или Chrome) → Разрешения → Камера." : "Разрешите камеру: Настройки → IZIDAY (или Safari) → Камера → «Разрешить».") + " Или попросите прислать приглашение ссылкой.")
+    return
+  }
+  requestAnimationFrame(() => el.classList.add("show"))
+  let y0 = null, dy = 0
+  el.addEventListener("touchstart", e => { y0 = e.touches[0].clientY; dy = 0; el.style.transition = "none" }, { passive: true })
+  el.addEventListener("touchmove", e => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); el.style.transform = `translateY(${dy}px)` }, { passive: true })
+  el.addEventListener("touchend", () => { if (y0 == null) return; y0 = null; el.style.transition = ""; el.style.transform = ""; if (dy > 110) close() })
+  const say = (a, b) => { msg.textContent = a; if (b != null) sub.textContent = b }
+  const loop = async () => {
+    if (!scanOn) return
+    let wait = 140
+    if (!busy && v.videoWidth) {
+      const k = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight)), W = Math.round(v.videoWidth * k), H = Math.round(v.videoHeight * k)
+      if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H }
+      cx.drawImage(v, 0, 0, W, H)
+      let tok = null
+      try { tok = ORBCODE.decode(ORBCODE.gray(cx.getImageData(0, 0, W, H).data, W, H), W, H) } catch (e) { console.error("scan", e) }
+      const hex = tok && ORBCODE.str(tok)
+      if (hex && !tried.has(hex)) {
+        busy = true; tried.add(hex); el.classList.add("found"); say("Шар найден", "Подключаю…")
+        const r = await invCall({ op: "get", token: hex })
+        if (!scanOn) return
+        if (r && r.ok && r.p && parseLink(r.p)) {
+          el.classList.add("ok"); try { if (navigator.vibrate) navigator.vibrate([20, 60, 40]) } catch (e) {}
+          const x = parseLink(r.p); $(".oscan-ok > b", el).textContent = x.n ? `Семья «${x.n}»` : "Готово"
+          tm = setTimeout(() => { close(); pendingFam = r.p; join() }, 1700)
+          return
+        }
+        el.classList.remove("found"); busy = false
+        if (r && r.net) tried.delete(hex)
+        say(r && r.net ? "Нет связи" : "Этот шар уже не действует", r && r.net ? "Проверьте интернет, сканер попробует ещё раз." : "Попросите показать шар заново: он обновится сам.")
+        wait = 1800
+      }
+    }
+    tm = setTimeout(loop, wait)
+  }
+  loop()
 }
 async function leave() {
   if (await ui.confirm("Выйти из семьи?", `<div class="msg">Ваши баллы перестанут идти в семейный счёт.</div>`, ["Отмена", "Выйти"]) !== "Выйти") return
@@ -764,7 +895,7 @@ async function leave() {
 
 // ───────────── Встраивание в экраны ─────────────
 function openFam() { plansF = "fam"; if (tab !== "plans") setTab("plans"); else render(); scrollView(false) }
-const FDO = { keyadd: () => keyAdd(), keydel: () => { delete D.myKey; save(false); render(); toast("Ключ убран") }, keyon: () => shareKey(true), keyoff: () => shareKey(false), new: () => famNew(), paste: () => window.famJoin(), invite: () => invite(null), kid: () => kidAdd(), goal: () => goalForm(), leave: () => leave(), open: () => openFam() }
+const FDO = { keyadd: () => keyAdd(), keydel: () => { delete D.myKey; save(false); render(); toast("Ключ убран") }, keyon: () => shareKey(true), keyoff: () => shareKey(false), new: () => famNew(), paste: () => famPaste(), scan: () => scan(), invite: () => orbInvite(null), kid: () => kidAdd(), goal: () => goalForm(), leave: () => leave(), open: () => openFam() }
 function bindFam(v) {
   $$("[data-f]", v).forEach(b => b.onclick = e => { e.stopPropagation(); const f = FDO[b.dataset.f]; if (f) f() })
   $$("[data-fm]", v).forEach(b => b.onclick = () => kidSheet(b.dataset.fm))
@@ -826,6 +957,6 @@ function init() {
   setInterval(() => { if (document.visibilityState === "visible") push(false) }, 60e3)
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") push(Date.now() - ((D.fam && D.fam.at) || 0) > 20e3) })
   if (pendingFam) setTimeout(join, 1000)
-  window.FAM = { keyOn, ai, link, kidSheet, join, push, put, famDays, sumSince, goalProg, jars, kidStars, waits, approve, kidMode, openFam, LESSONS, lesson, credit, pocketTick }
+  window.FAM = { scan, orbInvite, keyOn, ai, link, kidSheet, join, push, put, famDays, sumSince, goalProg, jars, kidStars, waits, approve, kidMode, openFam, LESSONS, lesson, credit, pocketTick }
 }
 })()

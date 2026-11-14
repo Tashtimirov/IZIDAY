@@ -6,7 +6,7 @@
 (function () {
 "use strict"
 const N = 40, RINGS = [.62, .74, .86], NB = 15, KD = 6, NP = NB - KD      // 40 секторов × 3 кольца = 120 бит = 15 байт
-const LW = .065, RING_W = .045, PLATE = 1.2, ORB_R = .5                    // всё в долях радиуса опорного кольца
+const LW = .065, RING_W = .045, PLATE = 1.2, ORB_R = .42                    // всё в долях радиуса опорного кольца
 // ───────────── Рид — Соломон над GF(256) ─────────────
 const EXP = new Uint8Array(512), LOG = new Uint8Array(256)
 for (let i = 0, x = 1; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 256) x ^= 0x11d }
@@ -47,6 +47,21 @@ function rsFix(c) {
   }
   return found === L && !syn(c)
 }
+// Известно, какие байты закрыты (блик, палец): до 6 таких байт восстанавливаются точно
+function rsErase(c, pos) {
+  const S = syn(c); if (!S) return true
+  const m = pos.length, X = pos.map(i => EXP[NB - 1 - i]), M = []
+  for (let j = 0; j < m; j++) { const row = new Uint8Array(m + 1); for (let k = 0; k < m; k++) row[k] = j ? EXP[(LOG[X[k]] * j) % 255] : 1; row[m] = S[j]; M.push(row) }
+  for (let i = 0; i < m; i++) {
+    let p = i; while (p < m && !M[p][i]) p++
+    if (p === m) return false
+    ;[M[i], M[p]] = [M[p], M[i]]
+    const iv = inv(M[i][i]); for (let k = i; k <= m; k++) M[i][k] = mul(M[i][k], iv)
+    for (let r = 0; r < m; r++) if (r !== i && M[r][i]) { const f = M[r][i]; for (let k = i; k <= m; k++) M[r][k] ^= mul(f, M[i][k]) }
+  }
+  for (let k = 0; k < m; k++) c[pos[k]] ^= M[k][m]
+  return !syn(c)
+}
 const crc8 = b => { let c = 0x5b; for (let i = 0; i < 5; i++) { c ^= b[i]; for (let k = 0; k < 8; k++) c = c & 128 ? ((c << 1) ^ 0x07) & 255 : (c << 1) & 255 } return c }
 // рисунок-маска: чтобы дуги ложились ровно по всему кругу, даже если в коде много нулей подряд
 const MASK = (() => { const m = new Uint8Array(N * 3); let s = 0x2f6e2b1; for (let i = 0; i < m.length; i++) { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; m[i] = (s >>> 7) & 1 } return m })()
@@ -57,11 +72,13 @@ function encode(tok) {
   for (let i = 0; i < bits.length; i++) bits[i] = ((cw[i >> 3] >> (7 - (i & 7))) & 1) ^ MASK[i]
   return bits   // бит i: сектор i/3, кольцо i%3
 }
-function unbits(bits, shift) {
-  const cw = new Uint8Array(NB), n = bits.length
-  for (let i = 0; i < n; i++) if (bits[(i + shift * 3) % n] ^ MASK[i]) cw[i >> 3] |= 128 >> (i & 7)
-  if (!rsFix(cw) || cw[5] !== crc8(cw)) return null
-  return cw.slice(0, 5)
+function unbits(bits, shift, dim) {
+  const cw = new Uint8Array(NB), n = bits.length, er = new Set()
+  for (let i = 0; i < n; i++) { const k = (i + shift * 3) % n; if (bits[k] ^ MASK[i]) cw[i >> 3] |= 128 >> (i & 7); if (dim && dim[k]) er.add(i >> 3) }
+  const c2 = cw.slice()
+  if (rsFix(cw) && cw[5] === crc8(cw)) return cw.slice(0, 5)
+  if (er.size && er.size <= 6 && rsErase(c2, [...er]) && c2[5] === crc8(c2)) return c2.slice(0, 5)
+  return null
 }
 
 // ───────────── Рисунок ─────────────
@@ -146,16 +163,26 @@ function decodeAt(g, W, H, I, win) {
       const ux = x - cx, uy = y - cy, r = Math.hypot(i0 * ux + i1 * uy, i1 * ux + i2 * uy); m1 += r; m2 += r * r; cnt++ }
     if (!cnt) continue
     m1 /= cnt; const sd = Math.sqrt(Math.max(0, m2 / cnt - m1 * m1))
-    if (sd < .12) cands.push({ cx, cy, A, sd, n })
+    if (sd < .2) cands.push({ cx, cy, A, sd, n })
   }
   cands.sort((p, q) => q.n - p.n)
   const at = (x, y) => { const xi = x | 0, yi = y | 0; if (xi < 0 || yi < 0 || xi >= W - 1 || yi >= H - 1) return 0
     const fx = x - xi, fy = y - yi, p = yi * W + xi; return g[p] * (1 - fx) * (1 - fy) + g[p + 1] * fx * (1 - fy) + g[p + W] * (1 - fx) * fy + g[p + W + 1] * fx * fy }
   for (const cd of cands.slice(0, 4)) {
     let { cx, cy, A } = cd, ok = true
+    // На светлом фоне находится не само опорное кольцо, а край тёмной подложки (он шире). Тогда кольцо — самый яркий
+    // круг внутри найденного: ищем его радиус и сжимаем оценку
+    {
+      const prof = []
+      for (let r = .4; r <= 1.12; r += .01) { let m = 0; for (let k = 0; k < 48; k++) { const th = k / 48 * Math.PI * 2, c = Math.cos(th), sn = Math.sin(th); m += at(cx + (A[0] * c + A[1] * sn) * r, cy + (A[1] * c + A[2] * sn) * r) } prof.push(m / 48) }
+      let bi = -1, bv = 20
+      for (let i = 6; i < prof.length - 6; i++) { const v = prof[i] - (prof[i - 6] + prof[i + 6]) / 2; if (v > bv) { bv = v; bi = i } }
+      if (bi >= 0) { const r = .4 + bi * .01; if (Math.abs(r - 1) > .04) A = [A[0] * r, A[1] * r, A[2] * r] }
+    }
     // 3. Уточнение: по 96 лучам ищем гребень кольца и подгоняем эллипс
-    for (let it = 0; it < 3 && ok; it++) {
-      const sc = Math.sqrt(Math.abs(A[0] * A[2] - A[1] * A[1])), pts = [], span = it ? .07 : .14
+    for (let it = 0; it < 5 && ok; it++) {
+      const sc = Math.sqrt(Math.abs(A[0] * A[2] - A[1] * A[1])), span = it < 2 ? .13 : .07
+      let pts = []
       for (let k = 0; k < 96; k++) {
         const th = k / 96 * Math.PI * 2, ux = A[0] * Math.cos(th) + A[1] * Math.sin(th), uy = A[1] * Math.cos(th) + A[2] * Math.sin(th)
         let sw = 0, sr = 0, mn = 255, vals = []
@@ -163,10 +190,19 @@ function decodeAt(g, W, H, I, win) {
         for (const [r, v] of vals) { const w = (v - mn) * (v - mn); sw += w; sr += w * r }
         if (sw > 200) { const r = sr / sw; pts.push([(ux * r) / sc, (uy * r) / sc]) }
       }
-      if (pts.length < 40) { ok = false; break }
-      const M = Array.from({ length: 5 }, () => new Array(5).fill(0)), v = new Array(5).fill(0)
-      for (const [x, y] of pts) { const f = [x * x, x * y, y * y, x, y]; for (let i = 0; i < 5; i++) { v[i] += f[i]; for (let j = 0; j < 5; j++) M[i][j] += f[i] * f[j] } }
-      const s = solve(M, v, 5); if (!s) { ok = false; break }
+      if (pts.length < 30) { ok = false; break }
+      // эллипс по точкам; точки, что легли мимо (блик, чужая дуга, палец), отбрасываются, и подгонка повторяется
+      let s = null
+      for (let pass = 0; pass < 3; pass++) {
+        const M = Array.from({ length: 5 }, () => new Array(5).fill(0)), v = new Array(5).fill(0)
+        for (const [x, y] of pts) { const f = [x * x, x * y, y * y, x, y]; for (let i = 0; i < 5; i++) { v[i] += f[i]; for (let j = 0; j < 5; j++) M[i][j] += f[i] * f[j] } }
+        s = solve(M, v, 5); if (!s) break
+        const res = pts.map(([x, y]) => Math.abs(s[0] * x * x + s[1] * x * y + s[2] * y * y + s[3] * x + s[4] * y - 1)), med = res.slice().sort((a, b) => a - b)[res.length >> 1]
+        const keep = pts.filter((_, i) => res[i] <= Math.max(.02, med * 3))
+        if (keep.length === pts.length || keep.length < 30) break
+        pts = keep
+      }
+      if (!s) { ok = false; break }
       const [qa, qb, qc, qd, qe] = s, dq = 4 * qa * qc - qb * qb
       if (dq <= 0 || qa <= 0) { ok = false; break }
       const x0 = (qb * qe - 2 * qc * qd) / dq, y0 = (qb * qd - 2 * qa * qe) / dq, k = 1 + qa * x0 * x0 + qb * x0 * y0 + qc * y0 * y0
@@ -203,18 +239,21 @@ function decodeAt(g, W, H, I, win) {
     // сгладить опорные яркости по соседним лучам
     const wS = new Float32Array(M2), bS = new Float32Array(M2)
     for (let k = 0; k < M2; k++) { let w = 0, b = 0; for (let d = -OS; d <= OS; d++) { const t = thr[(k + d + M2) % M2]; w += t[0]; b += t[1] } wS[k] = w / (2 * OS + 1); bS[k] = b / (2 * OS + 1) }
+    // где опорное кольцо не видно (закрыто или засвечено) — дуги рядом считаем нечитаемыми
+    const cs = Array.from(wS, (w, k) => w - bS[k]).sort((a, b) => a - b), cmed = cs[M2 >> 1]
     const phases = []
     for (let ph = 0; ph < OS; ph++) {
-      const bits = new Uint8Array(N * 3); let margin = 0
+      const bits = new Uint8Array(N * 3), dim = new Uint8Array(N * 3); let margin = 0
       for (let s = 0; s < N; s++) for (let j = 0; j < 3; j++) {
         let v = 0, w = 0, b = 0
         for (let d = -1; d <= 1; d++) { const k = (s * OS + ph + d + M2) % M2; v += val[j][k]; w += wS[k]; b += bS[k] }
         const t = b + (w - b) * .45; bits[s * 3 + j] = v > t ? 1 : 0; margin += Math.abs(v - t)
+        if (w - b < cmed * 3 * .4) dim[s * 3 + j] = 1
       }
-      phases.push({ bits, margin })
+      phases.push({ bits, margin, dim })
     }
     phases.sort((p, q) => q.margin - p.margin)
-    for (const p of phases) for (let s = 0; s < N; s++) { const t = unbits(p.bits, s); if (t) return t }
+    for (const p of phases) for (let s = 0; s < N; s++) { const t = unbits(p.bits, s, p.dim); if (t) return t }
   }
   return null
 }

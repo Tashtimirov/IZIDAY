@@ -32,7 +32,7 @@ export function friendsServer(opt = {}) {
     getLastColumn() { return this.cells.reduce((m, r) => Math.max(m, r ? r.length : 0), 0) }
     getSheetId() { return 100 }
   }
-  const books = {}, trashed = []
+  const books = {}, trashed = [], cache = {}
   function book(name) {
     const id = "S" + (Object.keys(books).length + 1), sheets = [new Sheet("Лист1")]
     const ss = { name, tz: "Asia/Bangkok", getSheetByName: n => sheets.find(s => s.name === n) || null, insertSheet: n => { const s = new Sheet(n); sheets.push(s); return s },
@@ -68,6 +68,7 @@ export function friendsServer(opt = {}) {
       computeDigest: (alg, s) => [...crypto.createHash("sha256").update(String(s)).digest()].map(b => b > 127 ? b - 256 : b),
       DigestAlgorithm: { SHA_256: 1 }, Charset: { UTF_8: 1 },
     },
+    CacheService: { getScriptCache: () => ({ get: k => { const v = cache[k]; return v && v.exp > Date.now() ? v.v : null }, put: (k, v, sec) => { cache[k] = { v: String(v), exp: Date.now() + (sec || 600) * 1000 } }, remove: k => { delete cache[k] } }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, tryLock() { return true }, releaseLock() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = String(v) }, deleteProperty: k => { delete props[k] }, getKeys: () => Object.keys(props) }) },
     ContentService: { createTextOutput: s => ({ setMimeType: () => JSON.parse(s) }), MimeType: { JSON: 1 } },
@@ -82,5 +83,5 @@ export function friendsServer(opt = {}) {
   }
   const gs = new Function(...Object.keys(g), code + "; return { doPost, doGet, pushTick, cal_, FR }")(...Object.values(g))
   const post = b => gs.doPost({ postData: { contents: JSON.stringify(b) } })
-  return { code, gs, post, books, props, mails, aiCalls, pushes, tokens, tzFmt, trashed }
+  return { code, gs, post, cache, books, props, mails, aiCalls, pushes, tokens, tzFmt, trashed }
 }

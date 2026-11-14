@@ -193,3 +193,46 @@ body.kidm .sheet .btn.primary { background: linear-gradient(135deg, #8B6CFF, #5B
 body.kidm .sheet input, body.kidm .sheet textarea { background: #fff; color: #2A2350; border: 2px solid #E2DBFF; border-radius: 18px; font-weight: 700; }
 body.kidm .sheet input:focus { border-color: #8B6CFF; outline: none; }
 .kwhy2 { display: block; margin-top: 4px; font-size: 12px; font-weight: 600; color: #A19BC7; }
+
+/* ── Код-шар: приглашение в семью. Шар Изи в кольцах дуг; при подключении светится сильнее ── */
+.flink { display: block; margin: 10px auto 0; padding: 6px 10px; border: 0; background: none; color: var(--muted, #8a8a8e); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
+.ocode { position: relative; width: min(256px, 68vw); aspect-ratio: 1; margin: 6px auto 10px; border-radius: 50%; transition: opacity .35s, transform .5s cubic-bezier(.2, .9, .25, 1); }
+.ocode-c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 50%; transition: filter .6s, opacity .35s; }
+.ocode.wait .ocode-c { opacity: .25; }
+.ocode .ocode-orb { position: absolute !important; left: 50%; top: 50%; width: 35%; height: 35%; margin: -17.5% 0 0 -17.5%; transition: transform .7s cubic-bezier(.2, .9, .25, 1.15), filter .7s; }
+.ocode .ocode-orb::before { display: none; }
+.ocode-glow { position: absolute; inset: -26%; border-radius: 50%; pointer-events: none; opacity: 0; transform: scale(.7);
+  background: radial-gradient(circle, color-mix(in srgb, var(--izi2, #18b98a) 85%, #fff) 0%, color-mix(in srgb, var(--izi2, #18b98a) 70%, transparent) 45%, transparent 70%); transition: opacity .7s, transform .9s cubic-bezier(.2, .9, .25, 1); }
+.ocode.ok .ocode-glow { opacity: .95; transform: scale(1); animation: ocode-pulse 1.5s ease-in-out .7s infinite alternate; }
+.ocode.ok .ocode-c { filter: brightness(1.5) saturate(1.2); }
+.ocode-shine { position: absolute; inset: 0; border-radius: 50%; pointer-events: none; opacity: 0; mix-blend-mode: screen; transition: opacity .8s;
+  background: radial-gradient(circle, #fff 0%, color-mix(in srgb, var(--izi2, #18b98a) 80%, #fff) 22%, color-mix(in srgb, var(--izi2, #18b98a) 45%, transparent) 46%, transparent 72%); }
+.ocode.ok .ocode-shine, .oscan.ok .ocode-shine { opacity: .85; animation: ocode-pulse 1.5s ease-in-out .7s infinite alternate; }
+.ocode.ok .ocode-orb { transform: scale(1.25); filter: brightness(1.35) saturate(1.2); }
+@keyframes ocode-pulse { from { opacity: .95; transform: scale(1); } to { opacity: .7; transform: scale(1.06); } }
+.ocode-t { text-align: center; font-weight: 600; font-size: 16px; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+.ocode-how { text-align: center; }
+.ocode-sheet .btns { justify-content: center; }
+.ocode.solo { width: 170px; margin: 0 auto 64px; }
+.ocode.solo .ocode-shine { inset: -45%; }
+.ocode.solo .ocode-glow { inset: -70%; }
+.ocode.solo .ocode-orb { width: 100%; height: 100%; margin: -50% 0 0 -50%; }
+.oscan { position: fixed; inset: 0; z-index: 200; background: #000; color: #fff; transform: translateY(100%); transition: transform .4s cubic-bezier(.2, .9, .25, 1); touch-action: none; overflow: hidden; }
+.oscan.show { transform: none; }
+.oscan video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.oscan-aim { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.oscan-aim i { width: min(76vw, 340px); aspect-ratio: 1; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .85); box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .45); transition: border-color .3s, transform .4s cubic-bezier(.2, .9, .25, 1.2); animation: oscan-breathe 2.4s ease-in-out infinite alternate; }
+.oscan.found .oscan-aim i { border-color: var(--izi2, #18b98a); border-width: 3px; transform: scale(.94); animation: none; }
+@keyframes oscan-breathe { from { transform: scale(1); } to { transform: scale(1.035); } }
+.oscan-top { position: absolute; left: 0; right: 0; top: 0; padding: calc(14px + env(safe-area-inset-top)) 16px 12px; text-align: center; font-size: 13px; opacity: .75; }
+.oscan-bot { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 24px calc(34px + env(safe-area-inset-bottom)); text-align: center; display: grid; gap: 6px; background: linear-gradient(transparent, rgba(0, 0, 0, .6)); }
+.oscan-bot b { font-size: 19px; } .oscan-bot span { font-size: 14px; opacity: .8; }
+.oscan-ok { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(4, 8, 16, .82); opacity: 0; pointer-events: none; transition: opacity .45s; }
+.oscan-ok > b { font-size: 22px; }
+.oscan.ok .oscan-ok { opacity: 1; }
+.oscan.ok .oscan-bot, .oscan.ok .oscan-top { opacity: 0; }
+.oscan-ok .ocode { transform: scale(.6); }
+.oscan.ok .oscan-ok .ocode { transform: none; }
+.oscan.ok .oscan-ok .ocode-orb { filter: brightness(1.3) saturate(1.2); }
+.oscan.ok .oscan-ok .ocode-glow { opacity: .95; transform: scale(1); animation: ocode-pulse 1.5s ease-in-out .7s infinite alternate; }
+@media (prefers-reduced-motion: reduce) { .oscan, .ocode, .ocode-glow, .oscan-aim i { transition: none; animation: none !important; } }

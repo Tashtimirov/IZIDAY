@@ -71,6 +71,7 @@ function doPost(e) {
   if (body.login) return out_(login_(body.login));
   if (body.metrics) return out_(metrics_(body.metrics, body.secret ? userBySecret_(body.secret) : null));   // журнал действий — без доступа к данным
   if (body.bug) return out_(bug_(body.bug, body.secret));   // недочёты: можно и без входа
+  if (body.inv) return out_(inv_(body.inv));                 // код-шар: одноразовое приглашение в семью на 10 минут
   // Лиги и семьи общие для всех: хранятся в общей таблице и общих свойствах
   if (body.league && !body.secret) return out_(league_(body.league, false));
   if (body.family && !body.secret) return out_(family_(body.family, false));
@@ -649,6 +650,44 @@ function bugShots_() {
   p.setProperty("BUGS_SHOTS", f.getId());
   return f;
 }
+// ── Код-шар: приглашение в семью. В шаре на экране помещается только короткий код (5 байт), а само приглашение
+// (адрес семьи) лежит здесь 10 минут и отдаётся один раз. Старый снимок шара или повторное сканирование не сработают.
+//   {op:"new", p}      → {ok, token, ttl}   p — то же, что в ссылке-приглашении после #fam=
+//   {op:"get", token}  → {ok, p}            приглашение гасится
+//   {op:"stat", token} → {ok, used, live}   главный телефон видит, что шар отсканирован
+const INV = { ttl: 600, newHour: 400, missHour: 1500 };
+function inv_(q) {
+  if (!q || typeof q !== "object") return { ok: false, error: "пустой запрос" };
+  const cache = CacheService.getScriptCache(), hh = Utilities.formatDate(new Date(), "UTC", "yyyyMMddHH");
+  const bump = (k, max) => { const n = Number(cache.get(k) || 0); if (n >= max) return false; cache.put(k, String(n + 1), 3700); return true; };
+  if (q.op === "new") {
+    const p = String(q.p || "");
+    if (!/^[A-Za-z0-9+\/=_-]{20,900}$/.test(p)) return { ok: false, error: "плохое приглашение" };
+    if (!bump("invn:" + hh, INV.newHour)) return { ok: false, error: "слишком много приглашений за час — попробуйте позже" };
+    let token = "";
+    for (let i = 0; i < 5 && !token; i++) { const t = Utilities.getUuid().replace(/-/g, "").slice(0, 10); if (!cache.get("inv:" + t)) token = t; }
+    if (!token) return { ok: false, error: "попробуйте ещё раз" };
+    cache.put("inv:" + token, p, INV.ttl);
+    return { ok: true, token: token, ttl: INV.ttl };
+  }
+  const token = String(q.token || "").toLowerCase();
+  if (!/^[0-9a-f]{10}$/.test(token)) return { ok: false, error: "плохой код" };
+  if (q.op === "stat") return { ok: true, used: !!cache.get("invu:" + token), live: !!cache.get("inv:" + token) };
+  if (q.op === "get") {
+    const lock = LockService.getScriptLock(); lock.waitLock(10000);
+    try {
+      const p = cache.get("inv:" + token);
+      if (!p) {
+        if (!bump("invm:" + hh, INV.missHour)) return { ok: false, error: "слишком много попыток — попробуйте позже" };
+        return { ok: false, error: cache.get("invu:" + token) ? "этот шар уже использован — попросите показать новый" : "шар устарел — попросите показать новый", gone: true };
+      }
+      cache.remove("inv:" + token); cache.put("invu:" + token, "1", INV.ttl);
+      return { ok: true, p: p };
+    } finally { lock.releaseLock(); }
+  }
+  return { ok: false, error: "неизвестная команда" };
+}
+
 const bugTxt_ = (s, n) => String(s == null ? "" : s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").slice(0, n).replace(/^[=+\-@]/, "'$&");   // без формул в таблице
 
 function bug_(q, secret) {
