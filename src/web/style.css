@@ -1351,3 +1351,19 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 /* IZIDAY Плюс (заявка) и «Пригласить друга» — grow.js */
 .grow-price { font-size: 22px; font-weight: 700; letter-spacing: -.2px; margin: 2px 0 6px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .grow-price span { font-size: 13px; font-weight: 600; color: var(--sub); }
+/* Удаление операции смахиванием (moneySwipe) */
+.swd { position: relative; overflow: hidden; border-top: 1px solid var(--line); }
+.swd:first-of-type { border-top: 0; }
+.swd > .row { border-top: 0; transition: transform .28s cubic-bezier(.2,.8,.2,1), margin .28s cubic-bezier(.2,.8,.2,1); touch-action: pan-y; }
+.swd > .row.drag { transition: none; }
+.swd-del { position: absolute; top: 4px; bottom: 4px; right: 0; width: 0; border: 0; border-radius: 12px; background: var(--red); color: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font: inherit; font-size: 12.5px; font-weight: 700;
+  opacity: 0; overflow: hidden; white-space: nowrap; transition: opacity .2s, width .28s cubic-bezier(.2,.8,.2,1); cursor: pointer; }
+.swd > .row.drag ~ .swd-del { transition: none; }
+.swd-del .tdi { color: #fff; }
+.swd.open .swd-del, .swd-all .swd-del { opacity: 1; width: 88px; }
+.swd-all .swd > .row { margin-right: 96px; transform: none !important; }
+.swd-all .swd-del { width: 88px !important; }
+.swd.gone { transition: max-height .22s ease, opacity .22s; max-height: 0 !important; opacity: 0; }
+.swd-hint { margin: -2px 0 6px; }
+@media (prefers-reduced-motion: reduce) { .swd > .row, .swd.gone { transition: none; } }
