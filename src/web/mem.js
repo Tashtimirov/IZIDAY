@@ -371,7 +371,7 @@ runTool = async function (name, x) {
   let out
   try { out = await _runTool(name, x) } finally {
     const changes = TXN; TXN = prev
-    if (logIt && out && !out.error && !(name === "forget" && !changes.length)) {
+    if (logIt && out && !out.error && !out.duplicate && !out.warning && !(name === "forget" && !changes.length)) {   // «уже есть» — ничего не создано, в журнал не пишем
       const text = (PAST[name] ? PAST[name](x) : "Сделал: " + (TOOL_STATUS[name] || name))
       journal(catOf(name), text, changes.length ? { undo: changes, tool: name } : { tool: name })
     }
