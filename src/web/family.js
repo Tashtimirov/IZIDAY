@@ -539,59 +539,127 @@ function kidCtx() {
   return `Сегодня ${fullDate(new Date())}. Дела: ${t || "нет"}. Звёзд всего: ${kidStars(meId())}. Копилки: Трачу ${j.spend}, Коплю ${j.save}, Делюсь ${j.share} ${core.CONFIG.currency || "฿"}. ${m ? `Главная мечта: ${m.title}${m.price ? `, стоит ${m.price}` : ""}.` : ""} Банка желаний: ${kidDreams(meId()).filter(d => !d.main && !d.done).map(d => d.title).join(", ") || "пусто"}. ${les ? `Следующий урок: ${les.t}.` : ""} Семейная цель: ${(famGoals().find(x => !x.done) || {}).title || "нет"}.`
 }
 const MIC_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>'
+// Детский чат с Изи. Как у взрослых: текст, голос одной фразой, живой разговор («Поговорить»), фото и файлы («+»).
+// Остановить можно всегда кнопкой с подписью: «Стоп» / «Закончить разговор»; «Закрыть» и смахивание гасят голос и микрофон
+const KATT_MAX = 3
+const KPLUS = [["cam", "Камера", "Сфотографировать"], ["lib", "Фото", "Из галереи"], ["doc", "Файл", "PDF, Word, текст"]]
+const KIC = {
+  live: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg>',
+  plus: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  cam: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+  lib: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="M20 16l-5-5-8 8.5"/></svg>',
+  doc: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h7l4.5 4.5v12.5H7z"/><path d="M14 3.5V8h4.5M10 13h6M10 16.5h6"/></svg>',
+}
 function kidIzi() {
   const chat = D.kchat || (D.kchat = [])
-  let busyK = false
-  // Остановить и закрыть — всегда на виду: «Стоп» прерывает голос Изи и микрофон, «Закрыть» ещё и убирает окно
-  let recK = null
-  const hush = () => { try { if (recK) recK.cancel() } catch (e) {} ; try { if (typeof ttsStop === "function") ttsStop() } catch (e) {} }
-  const s = sheet(`<div class="ksheet kchat"><div class="kchat-h">${orb(44)}<b class="grow">${esc(iziName())}</b><button class="kstop" hidden>${ic("stopsq", 18)}Стоп</button><button class="kclose" aria-label="Закрыть">${ic("x", 20, "currentColor", 2.6)}<span>Закрыть</span></button></div><div class="kmsgs"></div>
-    <div class="kin"><button class="kmic" aria-label="Сказать голосом">${MIC_SVG}</button><input id="kc-t" placeholder="Скажи или напиши ${esc(iziName())}…" enterkeyhint="send"><button class="ksend" aria-label="Отправить">${ic("chev", 22, "#fff", 3)}</button></div></div>`)
+  let busyK = false, kv = "", hush = 0, recK = null, live = false, quiet = 0, att = []
+  const stopAll = () => { hush++; live = false; try { if (typeof ttsStop === "function") ttsStop() } catch (e) {}; if (recK) recK.cancel(); kvSet("") }
+  const s = sheet(`<div class="ksheet kchat"><div class="kchat-h">${orb(44)}<b class="kname">${esc(iziName())}</b>
+      <button class="kgo" aria-label="Живой разговор">${KIC.live}<span>Поговорить</span></button>
+      <button class="kclose" aria-label="Закрыть">${ic("x", 18, "currentColor", 3)}<span>Закрыть</span></button></div>
+    <div class="kmsgs"></div>
+    <div class="klivep" hidden>${orb(88)}<div class="klst"></div></div>
+    <button class="kstop" hidden><i></i><span>Стоп</span></button>
+    <div class="ktray" hidden></div>
+    <div class="kplusm" hidden>${KPLUS.map(([k, t, sub]) => `<button data-kp="${k}">${KIC[k]}<span><b>${t}</b><small>${sub}</small></span></button>`).join("")}</div>
+    <div class="kin"><button class="kplus" aria-label="Добавить фото или файл">${KIC.plus}</button><button class="kmic" aria-label="Сказать голосом">${MIC_SVG}</button><input id="kc-t" placeholder="Скажи или напиши ${esc(iziName())}…" enterkeyhint="send"><button class="ksend" aria-label="Отправить">${ic("chev", 22, "#fff", 3)}</button></div></div>`, { onClose: () => stopAll() })
   s.el.classList.add("kid-sheet", "kfull")
   try { if (typeof ttsUnlock === "function") ttsUnlock() } catch (e) {}
-  const stopB = $(".kstop", s.el)
-  const live = () => { if (!s.el.isConnected) return clearInterval(tick); stopB.hidden = !(recK || (typeof TTS !== "undefined" && (TTS.speaking || TTS.wait))) }
-  const tick = setInterval(live, 250)
-  stopB.onclick = () => { hush(); live() }
+  const box = $(".kmsgs", s.el), inp = $("#kc-t", s.el), stopB = $(".kstop", s.el), lp = $(".klivep", s.el), tray = $(".ktray", s.el), pm = $(".kplusm", s.el)
+  // kv: listen — слушаю, think — Изи думает над голосовым вопросом, say — Изи говорит; кнопка «Стоп» видна во всех трёх.
+  // В живом разговоре вместо строки ввода — шар с подписью, что сейчас происходит, и «Закончить разговор»
+  function kvSet(v) { kv = v; $(".kchat", s.el).classList.toggle("klive", live)
+    lp.hidden = !live; stopB.hidden = !v && !live; stopB.dataset.st = live ? "live" : v; lp.dataset.st = v
+    $(".klst", lp).textContent = v === "listen" ? "Слушаю — говори" : v === "think" ? "Думаю…" : v === "say" ? "Говорю. Нажми на шар, чтобы перебить" : "Пауза"
+    $("span", stopB).textContent = live ? "Закончить разговор" : v === "say" ? `Стоп — ${iziName()} замолчит` : v === "listen" ? "Стоп — не слушать" : "Стоп — ответ без голоса" }
+  stopB.onclick = () => { const was = live; stopAll(); toast(was ? "Разговор закончен" : "Разговор остановлен") }
   $(".kclose", s.el).onclick = () => s.close()
-  const close0 = s.close; s.close = () => { hush(); clearInterval(tick); close0() }
-  const box = $(".kmsgs", s.el), inp = $("#kc-t", s.el)
+  // Изи заговорил не через этот чат (подсказка, чтение вслух) — «Стоп» всё равно появляется; замолчал — прячется
+  let sayAt = 0
+  const tick = setInterval(() => { if (!s.el.isConnected) return clearInterval(tick)
+    const sp = typeof TTS !== "undefined" && (TTS.speaking || TTS.wait)
+    if (sp && !kv) kvSet("say"); else if (!sp && kv === "say" && !live && Date.now() - sayAt > 1500) kvSet("") }, 300)
+  $(".kgo", s.el).onclick = () => { if (live) return; pm.hidden = true; live = true; quiet = 0; if (kv === "say") { hush++; try { ttsStop() } catch (e) {} }
+    if (recK) return kvSet("listen"); kvSet(""); listen() }
+  // шар в живом разговоре: пока Изи говорит — перебить и слушать; пока слушает — отправить сразу
+  lp.onclick = (() => { if (!live) return; if (kv === "say") { hush++; try { ttsStop() } catch (e) {}; listen() } else if (kv === "listen" && recK) recK.finish() })
   const draw = () => {
     const l = chat.slice(-30)
     box.innerHTML = (l.length ? "" : `<div class="kmsg a">${esc(kidTipText())}</div><div class="kquick">${["Что мне сделать сейчас?", "Как быстрее накопить на мечту?", "Придумай мне цель на неделю"].map(q => `<button data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>`) +
-      l.map(x => `<div class="kmsg ${x.role === "user" ? "u" : "a"}">${esc(x.content)}${x.why ? `<small class="kwhy2">${esc(x.why)}</small>` : ""}</div>`).join("") + (busyK ? `<div class="kmsg a kdots"><i></i><i></i><i></i></div>` : "")
+      l.map(x => `<div class="kmsg ${x.role === "user" ? "u" : "a"}">${(x.thumbs || []).length ? `<div class="kthumbs">${x.thumbs.map(t => `<img src="${esc(t)}" alt="">`).join("")}</div>` : ""}${(x.files || []).map(n => `<div class="kfile">${KIC.doc}<span>${esc(n)}</span></div>`).join("")}${esc(x.content)}${x.why ? `<small class="kwhy2">${esc(x.why)}</small>` : ""}</div>`).join("") + (busyK ? `<div class="kmsg a kdots"><i></i><i></i><i></i></div>` : "")
     $$("[data-q]", box).forEach(b => b.onclick = () => send(b.dataset.q))
     box.scrollTop = box.scrollHeight
   }
   let byVoice = false
-  const say = t => { try { if (typeof speak === "function") speak(t, { force: true }) } catch (e) {} }
-  // Голос: ребёнок говорит — Изи слушает до паузы, отправляет и отвечает вслух.
+  const say = t => { const my = hush; sayAt = Date.now(); try { if (typeof speak === "function") { kvSet("say"); speak(t, { force: true, onEnd: () => { if (my !== hush || kv !== "say") return; kvSet(""); if (live) setTimeout(() => { if (live && my === hush && !recK) listen() }, 350) } }) } } catch (e) { kvSet("") } }
+  // Голос: ребёнок говорит — Изи слушает до паузы, отправляет и отвечает вслух. В живом разговоре — снова слушает.
   // Как у взрослых: Safari слушает непрерывно, конец фразы — 2,2 с тишины. Синтез речи здесь не трогаем:
   // на iPhone/iPad «говорить» и «слушать» в одно касание вешают страницу — синтез будится при открытии окна.
   const listen = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition, mic = $(".kmic", s.el)
     if (recK) return recK.finish()
-    if (!SR) { inp.focus(); return toast("Нажми микрофон на клавиатуре и говори") }
+    if (!SR) { live = false; kvSet(""); inp.focus(); return toast("Нажми микрофон на клавиатуре и говори") }
     try { if (typeof TTS !== "undefined" && TTS.speaking && typeof ttsStop === "function") ttsStop() } catch (e) {}
     const r = new SR(); r.lang = ((window.L && L.loc) || "ru-RU"); r.interimResults = true; r.continuous = true
-    let txt = "", t = null, done = false
+    let txt = "", t = null, done = false, drop = false
     const stopNow = () => { clearTimeout(t); try { r.stop() } catch (e) {} ; t = setTimeout(end, 1500) }   // Safari не прислал onend — закончим сами
     const end = () => { if (done) return; done = true; clearTimeout(t); try { r.abort() } catch (e) {}
-      recK = null; mic.classList.remove("on"); inp.placeholder = `Скажи или напиши ${iziName()}…`; if (txt) { byVoice = true; send(txt) } }
+      recK = null; mic.classList.remove("on"); inp.placeholder = `Скажи или напиши ${iziName()}…`; if (kv === "listen") kvSet("")
+      if (drop) { inp.value = ""; return }
+      if (txt) { quiet = 0; byVoice = true; send(txt); return }
+      // живой разговор: молчит — слушаем ещё раз, потом пауза до касания шара
+      if (live && ++quiet < 2) setTimeout(() => { if (live && !recK) listen() }, 300)
+      else if (live) { live = false; kvSet(""); toast("Не слышу. Нажми «Поговорить», когда захочешь") } }
     r.onresult = e => { const a = []; for (let i = 0; i < e.results.length; i++) a.push(e.results[i][0].transcript)
-      txt = a.join(" ").replace(/\s+/g, " ").trim(); inp.value = txt; clearTimeout(t); t = setTimeout(stopNow, 2200) }
-    r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") toast("Разреши микрофон в настройках Safari"); if (e.error !== "no-speech") end() }
+      txt = a.join(" ").replace(/\s+/g, " ").trim(); inp.value = txt; $(".klst", lp).textContent = txt || "Слушаю — говори"; clearTimeout(t); t = setTimeout(stopNow, 2200) }
+    r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { live = false; toast("Разреши микрофон в настройках Safari") } if (e.error !== "no-speech") end() }
     r.onend = end
-    recK = { finish: stopNow, cancel: () => { txt = ""; end() } }; mic.classList.add("on"); inp.placeholder = "Слушаю… нажми ещё раз — отправить"
+    recK = { finish: stopNow, cancel: () => { drop = true; end() } }; mic.classList.add("on"); inp.placeholder = "Слушаю… нажми ещё раз — отправить"; kvSet("listen")
     t = setTimeout(stopNow, 8000)   // ничего не сказал — выключаемся
     try { r.start() } catch (err) { end() }
   }
+  // ── Фото и файлы: до трёх за раз, карточки над строкой ввода; уходят Изи вместе со следующим сообщением ──
+  const drawTray = () => { tray.hidden = !att.length
+    tray.innerHTML = att.map((a, i) => `<div class="kat">${a.thumb ? `<img src="${esc(a.thumb)}" alt="">` : `<span class="kdoc">${KIC.doc}</span>`}<small>${esc(a.thumb ? "Фото" : a.name)}</small><button data-kx="${i}" aria-label="Убрать">${ic("x", 14, "currentColor", 3)}</button></div>`).join("")
+    $$("[data-kx]", tray).forEach(b => b.onclick = () => { att.splice(+b.dataset.kx, 1); drawTray() }) }
+  const addFiles = async fs => {
+    for (const f of fs) {
+      if (att.length >= KATT_MAX) { toast(`За раз — до ${KATT_MAX} фото или файлов`); break }
+      try {
+        const name = (f.name || "файл").slice(0, 60)
+        if (/pdf$/i.test(f.type) || /\.pdf$/i.test(f.name || "")) {
+          if (f.size > 8e6) { toast("Файл слишком большой. Сфотографируй нужную страницу"); continue }
+          att.push({ t: "pdf", d: (await fileB64(f)).split(",")[1], name })
+        } else if (/^image\//.test(f.type) || /\.(jpe?g|png|heic|webp|gif)$/i.test(f.name || "")) {
+          const url = await shrinkPhoto(f, 1280); att.push({ t: "image", d: url.split(",")[1], thumb: await shrinkData(url, 220), name })
+        } else if (window.DOCREAD) {
+          const d = await DOCREAD.read(f)
+          if (d.image) { const url = await shrinkPhoto(d.image, 1280); att.push({ t: "image", d: url.split(",")[1], thumb: await shrinkData(url, 220), name }) }
+          else att.push({ t: "text", text: String(d.text || "").slice(0, 20000), name })
+        } else toast("Такой файл не открыть")
+      } catch (e) { toast("Не получилось открыть файл") }
+    }
+    drawTray()
+  }
+  const pick = (accept, cam) => { const i = document.createElement("input"); i.type = "file"; i.accept = accept; if (cam) i.setAttribute("capture", "environment"); else i.multiple = true
+    i.style.display = "none"; i.onchange = () => { addFiles([...i.files]); i.remove() }; s.el.append(i); i.click() }
+  $(".kplus", s.el).onclick = () => { pm.hidden = !pm.hidden }
+  $$("[data-kp]", pm).forEach(b => b.onclick = () => { pm.hidden = true; const k = b.dataset.kp
+    k === "cam" ? pick("image/*", true) : k === "lib" ? pick("image/*") : pick(".pdf,.doc,.docx,.txt,.rtf,.xls,.xlsx,.ppt,.pptx,.pages,.numbers,.key,.csv,.md,application/pdf,text/*") })
   const send = async text => {
-    text = String(text || "").trim(); if (!text || busyK) return
-    const voiceNow = byVoice; byVoice = false
-    chat.push({ role: "user", content: text.slice(0, 500), at: Date.now() }); inp.value = ""; busyK = true; draw()
-    // в историю для Claude — только настоящий разговор, без наших «не получилось»
-    const ask = () => post(D.fam.url, { op: "ask", code: D.fam.code, id: D.fam.id, ctx: kidCtx(), messages: chat.filter(x => !x.err).slice(-12).map(x => ({ role: x.role, content: x.content })) })
+    text = String(text || "").trim(); if (busyK) return
+    const files = att.splice(0); drawTray()
+    if (!text && files.length) text = files.length > 1 ? "Посмотри, пожалуйста, это" : files[0].t === "image" ? "Посмотри, пожалуйста, фото" : "Посмотри, пожалуйста, файл"
+    if (!text) return
+    const voiceNow = byVoice, my = hush; byVoice = false; pm.hidden = true
+    try { if (typeof ttsStop === "function" && kv === "say") { ttsStop(); kvSet("") } } catch (e) {}
+    const msg = { role: "user", content: text.slice(0, 500), at: Date.now() }
+    if (files.some(a => a.thumb)) msg.thumbs = files.filter(a => a.thumb).map(a => a.thumb)
+    if (files.some(a => !a.thumb)) msg.files = files.filter(a => !a.thumb).map(a => a.name)
+    chat.push(msg); inp.value = ""; busyK = true; draw(); if (voiceNow) kvSet("think")
+    // в историю для Claude — только настоящий разговор, без наших «не получилось»; вложения — только к этому сообщению
+    const ask = () => post(D.fam.url, { op: "ask", code: D.fam.code, id: D.fam.id, ctx: kidCtx(), messages: chat.filter(x => !x.err).slice(-12).map(x => ({ role: x.role, content: x.content })),
+      att: files.length ? files.map(a => ({ t: a.t, d: a.d, text: a.text, name: a.name })) : undefined })
     let r = await ask()
     // Claude перегружен или упёрся в минутный лимит ключа — подождать и спросить ещё раз
     if (r && !r.ok && /overload|rate|529|429|занята|долго/i.test(r.error || "")) { await new Promise(z => setTimeout(z, 2500)); r = await ask() }
@@ -601,7 +669,8 @@ function kidIzi() {
     chat.push(Object.assign({ role: "assistant", content: ans, at: Date.now() }, err ? { err: true, why: String((r && r.error) || "нет ответа").slice(0, 120) } : {}))
     while (chat.length > 60) chat.shift()
     save(false); draw()
-    if (voiceNow && s.el.isConnected) say(ans)
+    if ((voiceNow || live) && my === hush && document.body.contains(s.el)) say(ans)   // нажали «Стоп» или закрыли — ответ только текстом
+    else if (kv === "think") kvSet("")
   }
   $(".kmic", s.el).onclick = listen
   $(".ksend", s.el).onclick = () => send(inp.value)
