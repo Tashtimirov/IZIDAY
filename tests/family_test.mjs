@@ -99,7 +99,13 @@ await kp.screenshot({ path: SHOTS + "fm-kid-coins.png" })
 await kp.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await kp.waitForTimeout(300)
 // учёба
 await kp.click('#knav [data-kt="learn"]'); await kp.waitForTimeout(300)
-check(await kp.evaluate(() => $$(".knode.done").length === 1 && $$(".knode.now").length === 1), "путь уроков: пройден один, следующий подсвечен")
+{ const km = await kp.evaluate(() => ({ map: !!$(".kl-map"), done: $$(".kl-map .kl-row.done").length, now: $$(".kl-map .kl-row.now").length })); check(km.map && km.now === 1, "карта обучения открывается, первый урок подсвечен", km) }
+await kp.screenshot({ path: SHOTS + "kids-map.png" })
+await kp.click(".kl-map .kl-row.now"); await kp.waitForTimeout(400)
+check(await kp.evaluate(() => stack.length > 0), "урок из карты обучения открывается")
+await kp.screenshot({ path: SHOTS + "kids-lesson.png" })
+await kp.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await kp.waitForTimeout(300)
+await kp.click('#knav [data-kt="learn"]'); await kp.waitForTimeout(300)
 await kp.screenshot({ path: SHOTS + "fm-kid-learn.png", fullPage: true })
 // мечты
 await kp.click('#knav [data-kt="dreams"]'); await kp.waitForTimeout(200)
