@@ -77,14 +77,16 @@ function defaults() {
     game: false, fast: false, family: false,
   }
 }
-function apply(st) { for (const k of Object.keys(st)) set(k, st[k], true) }
+function apply(st) { for (const [k] of LIST) if (k in st) set(k, st[k], true) }
 
 // «Семья» в фильтрах «Планов» (family.js добавляет её сам; без семьи и с выключенной функцией — убираем)
+let famF = null
 function syncPlans() {
   if (typeof PLAN_F === "undefined") return
   const i = PLAN_F.findIndex(x => x[0] === "fam"), want = on("family")
+  if (i >= 0) famF = PLAN_F[i]
   if (!want && i >= 0) { PLAN_F.splice(i, 1); if (typeof plansF !== "undefined" && plansF === "fam") plansF = "all" }
-  if (want && i < 0 && typeof famPage !== "undefined") PLAN_F.push(["fam", "Семья"])
+  if (want && i < 0 && famF) PLAN_F.push(famF)
 }
 
 // ───────────── Переключатели (знакомство и настройки) ─────────────
@@ -95,7 +97,8 @@ function rowHTML(k, val, cls = "") {
 // Карточка знакомства: вместо «Пять разделов». draft — выбор до «Начать»
 let draft = null
 function pickHTML(first) {
-  if (!draft) { draft = {}; const d = first ? defaults() : null; for (const [k] of LIST) draft[k] = d ? d[k] : on(k) }
+  // пока человек сам ничего не трогал, набор следует ответам анкеты (их можно поменять, вернувшись назад)
+  if (!draft || !draft._touched) { draft = {}; const d = first ? defaults() : null; for (const [k] of LIST) draft[k] = d ? d[k] : on(k) }
   if (famIn()) draft.family = true
   return `<div class="ob-h">Что включить сейчас?</div><div class="ob-p">Остальное подключите, когда понадобится. ${nm()} подскажет.</div>
     <div class="ft-lab">Всегда с вами</div>
@@ -106,7 +109,7 @@ function pickHTML(first) {
 function pickBind(root) {
   root.querySelectorAll("[data-ft-tg]").forEach(b => b.onclick = () => {
     const k = b.dataset.ftTg; if (k === "family" && famIn()) return
-    draft[k] = !draft[k]
+    draft[k] = !draft[k]; draft._touched = 1
     b.querySelector(".tgl").classList.toggle("on", draft[k]); b.setAttribute("aria-pressed", draft[k] ? "true" : "false")
     if (navigator.vibrate) navigator.vibrate(8)
   })
@@ -117,7 +120,7 @@ function pickDone(first) {
   apply(draft || (first ? defaults() : {}))
   draft = null
 }
-function pickAll() { for (const [k] of LIST) draft[k] = true }
+function pickAll() { draft = draft || {}; for (const [k] of LIST) draft[k] = true; draft._touched = 1 }
 
 function moreCard() {
   if (kid()) return ""
@@ -133,7 +136,7 @@ function showHTML(k) {
   if (k === "money") {
     // траты, которые человек уже назвал Изи, видны и удаляются прямо здесь
     const ops = live(D.money || []).sort((a, b) => b.date - a.date).slice(0, 30)
-    if (ops.length) extra = `<div class="card ft-ops"><h2>Уже записано</h2>${ops.map(e => `<div class="row"><div class="grow"><div class="t">${e.type === "income" ? "+" : "−"}${esc(core.money(e.amount))} · ${esc(e.category || "")}</div><div class="s">${esc(dayName(new Date(e.date)))}${e.comment ? " · " + esc(e.comment) : ""}</div></div><button type="button" class="ft-del" data-ft-del="${esc(e.id)}" aria-label="Удалить">${I("trash", 18)}<span>Удалить</span></button></div>`).join("")}</div>`
+    if (ops.length) extra = `<div class="card ft-ops"><h2>Уже записано</h2>${ops.map(e => `<div class="row" data-money="${esc(e.id)}"><div class="grow"><div class="t">${e.type === "income" ? "+" : "−"}${esc(core.money(e.amount))} · ${esc(e.category || "")}</div><div class="s">${esc(dayName(new Date(e.date)))}${e.comment ? " · " + esc(e.comment) : ""}</div></div><button type="button" class="ft-del" data-ft-del="${esc(e.id)}" aria-label="Удалить">${I("trash", 18)}<span>Удалить</span></button></div>`).join("")}</div>`
   }
   return `<div class="card ft-show"><div class="ft-sh"><span class="ft-b ft-bb">${I(m[1], 24)}</span><div><h2>${m[2]}</h2><div class="muted small">Раздел выключен. Подключается одним касанием</div></div></div>
     ${(m[4] || []).map(([ic, t, s]) => `<div class="ft-li"><span class="ft-b">${I(ic, 19)}</span><div><b>${t}</b><span>${fill(s)}</span></div></div>`).join("")}
