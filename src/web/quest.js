@@ -30,10 +30,41 @@ const QK = {
   sport: { ic: "dumbbell", auto: (q, d) => live(D.workouts).some(w => sameDay(w.date, d)) },
   top: { ic: "star", auto: (q, d) => { let ids = []; try { ids = top3Ids(dayKey(d)) } catch (e) {} return live(D.rems).some(r => ids.includes(r.id) && r.done && r.doneAt && sameDay(r.doneAt, d) && new Date(r.doneAt).getHours() < q.until) } },
   focus: { ic: "timer", auto: (q, d) => live(D.pomo).some(p => p.full && p.start && sameDay(p.start, d)) },
+  // знакомство: первые три дня новичок пробует главное (вместо «Позвонить маме» на пустых данных)
+  n_money: { ic: "wallet", auto: (q, d) => live(D.money).some(e => e.type === "expense" && sameDay(e.date, d)) },
+  n_rem: { ic: "check", auto: (q, d) => live(D.rems).some(r => r.date && sameDay(r.date, d)) },
+  n_ask: { ic: "sparkle", auto: (q, d) => (D.chat || []).some(m => m.role === "user" && m.at && sameDay(m.at, d)) },
+  n_water: { ic: "drop", auto: (q, d) => live(D.water).some(w => sameDay(w.date, d)) },
+  n_habit: { ic: "flame", auto: (q, d) => live(D.habits).some(h => h.title && h.date && sameDay(h.date, d)) },
+  n_goal: { ic: "star", auto: (q, d) => live(D.goals).some(g => g.kind === "month" && g.date && sameDay(g.date, d)) },
+}
+// Новичок — первые три дня с начала пользования. Начало = самая ранняя запись (у старых пользователей она давно),
+// без записей — сегодня. Запоминаем один раз.
+const NEWBIE = [
+  ["n_money", "Запишите расход голосом", "скажите Изи «кофе 120»", () => live(D.money).some(e => e.type === "expense")],
+  ["n_rem", "Поставьте напоминание", "«напомни завтра в 9 позвонить в банк»", () => live(D.rems).length > 0],
+  ["n_ask", "Спросите Изи про неделю", "«что у меня на этой неделе?»", () => (D.chat || []).some(m => m.role === "user")],
+  ["n_water", "Отметьте стакан воды", "кнопка «+» вверху или скажите «выпил стакан»", () => live(D.water).length > 0],
+  ["n_habit", "Заведите одну привычку", "зарядка, чтение — посчитаю серию", () => live(D.habits).some(h => h.title)],
+  ["n_goal", "Поставьте цель на месяц", "«цель на месяц: прочитать книгу»", () => live(D.goals).some(g => g.kind === "month")],
+]
+function newbieDays(now = new Date()) {
+  if (!D.firstAt) {
+    const ds = [].concat(live(D.money), live(D.rems), live(D.goals), live(D.water), live(D.habits)).map(x => +x.date || 0).filter(x => x > 1e12)
+      .concat((D.chat || []).map(m => +m.at || 0).filter(x => x > 1e12))
+    D.firstAt = Math.min(Date.now(), ...ds); setTimeout(() => save(false), 0)
+  }
+  return Math.floor((sod(now) - sod(new Date(D.firstAt))) / 864e5)
+}
+function newbieQuests(now) {
+  if (newbieDays(now) > 2) return null
+  const l = NEWBIE.filter(x => !x[3]()).slice(0, 3).map(([k, t, s2]) => ({ k, t, s: s2 }))
+  return l.length >= 2 ? l : null
 }
 const qDone = (q, d) => !!q.done || (QK[q.k] && QK[q.k].auto ? !!QK[q.k].auto(q, d) : false)
 const questsOf = k => goalsK("quests").filter(x => x.day === k).sort((a, b) => a.date - b.date)[0] || null
 function pickQuests(now = new Date()) {
+  const nb = newbieQuests(now); if (nb) return nb
   const st = G.stats(), t0 = sod(now), past = st.days.filter(x => x.d < t0).slice(-7), n = past.length || 1, hr = now.getHours()
   const recent = new Set(); for (let i = 1; i <= 2; i++) { const q = questsOf(dayKey(addDays(t0, -i))); if (q) q.list.forEach(x => recent.add(x.k)) }
   const c = [], hg = H()
@@ -96,7 +127,7 @@ function questsHTML(st, full) {
     ${q.list.map((x, i) => { const ok = qDone(x, now)
       return `<div class="row gqr ${ok ? "ok" : ""}"><button class="check ${ok ? "on" : ""}" data-qtap="${i}" aria-label="Отметить"></button><span class="gic quest">${ico((QK[x.k] || {}).ic || "sparkle", 17)}</span>
         <div class="grow"><div class="t ${ok ? "struck" : ""}">${esc(x.t)}</div><div class="s">${esc(x.s || "")}</div></div><span class="gp">+${Q_PTS}</span></div>` }).join("")}
-    <div class="gqall"><span>${all ? `${ico("sparkle", 15)} Все три — бонус +${Q_ALL}` : `Все три — ещё +${Q_ALL} сверх потолка`}</span>${full ? "" : `<button class="linkbtn" data-qgo="quest">Квесты ›</button>`}</div></div>`
+    <div class="gqall"><span>${all ? `${ico("sparkle", 15)} Все три — бонус +${Q_ALL}` : `Все три — ещё +${Q_ALL} бонусом`}</span>${full ? "" : `<button class="linkbtn" data-qgo="quest">Все задания ›</button>`}</div></div>`
 }
 
 // ───────────── Комбо ─────────────
@@ -164,7 +195,7 @@ function bossHit(id, sid, fromTool) {
 function bossWin(b) {
   while (stack.length) stack[stack.length - 1].close()
   render()
-  G.celeSheet(`<div class="k">Босс повержен</div><div class="emb">${bossFace(150, true)}</div><h1>${esc(b.title)}</h1><p>${bSteps(b).length} ${plural(bSteps(b).length, "удар", "удара", "ударов")} · +${BOSS_WIN} баллов сверх потолка</p>
+  G.celeSheet(`<div class="k">Босс повержен</div><div class="emb">${bossFace(150, true)}</div><h1>${esc(b.title)}</h1><p>${bSteps(b).length} ${plural(bSteps(b).length, "удар", "удара", "ударов")} · +${BOSS_WIN} баллов бонусом</p>
     <div class="gift"><b>${ico("trophy", 17)} Приз</b>Самое неприятное позади. Можно взять награду из «Моего пути».</div>`)
 }
 function bossSheet(id) {
@@ -335,10 +366,10 @@ function init() {
     out.bosses = bosses().map(b => ({ title: b.title, hp: `${bHp(b).left}/${bHp(b).all}`, won: !!b.won, next_step: (bSteps(b).find(s => !s.done) || {}).t || null })) })
   X.today.push(st => questsHTML(st) + bossTodayHTML())
   X.path.push(orbPathHTML)
-  X.segs.push(["quest", "Квесты"])
+  X.segs.push(["quest", "Задания"])
   X.pages.quest = questPage
   G.RULES.push(["sparkle", "quest", "Задание дня", `три в день под слабые места; все три — ещё +${Q_ALL}`, Q_PTS], ["bolt", "top", "Комбо", "дела подряд: третье ×1,5, с пятого ×2", "×2"],
-    ["bolt", "boss", "Удар по боссу", `победа над боссом — +${BOSS_WIN} сверх потолка`, BOSS_HIT], ["target", "goal", "Веха на карте цели", "каждый сделанный шаг цели", STEP_PTS])
+    ["bolt", "boss", "Удар по боссу", `победа над боссом — +${BOSS_WIN} бонусом`, BOSS_HIT], ["target", "goal", "Веха на карте цели", "каждый сделанный шаг цели", STEP_PTS])
   // шаг цели запоминает, когда сделан — для баллов и карты
   const ss0 = stepSet
   stepSet = function (id, sid, patch) { if (patch && patch.done === true && !patch.at) patch = Object.assign({}, patch, { at: Date.now() }); return ss0.call(this, id, sid, patch) }

@@ -224,7 +224,7 @@ window.DS = (function () {
       if (document.body.dataset.dsTab !== t) document.body.dataset.dsTab = t
       lastTab = t
       empties(v)
-      if (t === "more" && !$(".ds-ts", v)) { const last = v.lastElementChild; const box = document.createElement("div"); box.innerHTML = tsCard(); last && last.classList.contains("muted") ? v.insertBefore(box.firstChild, last) : v.append(box.firstChild) }
+      if (t === "more" && !$(".ds-ts", v)) { const last = v.lastElementChild, slot = $(".ds-ts-slot", v); const box = document.createElement("div"); box.innerHTML = tsCard(); slot ? slot.replaceWith(box.firstChild) : last && last.classList.contains("muted") ? v.insertBefore(box.firstChild, last) : v.append(box.firstChild) }   // «Размер текста» — в группу «Приложение» (место готовит settings.js)
       rings(v, fresh); numbers(v, fresh)
     } finally { mo.takeRecords(); busy = false }
   }

@@ -17,7 +17,7 @@ window.BLOCKS = (function () {
   // названия блоков без заголовка
   const NAMES = { ".daycard": "События дня", ".gizi": "Новое в игре", ".gstrip": "Баллы и ранг", ".hero-now": "Что дальше", ".hero-eve": "Вечер",
     ".rings-card": "Кольца дня", ".top3": "Три главных", ".gq": "Задания дня", ".mn-hero": "Можно потратить сегодня", ".mn-tot": "Итог месяца",
-    ".mn-ops": "Операции", ".hl-hero": "Готовность", ".tip-card": "Подсказка Изи", "#pomo": "Помидоро" }
+    ".mn-ops": "Операции", ".hl-hero": "Готовность", ".tip-card": "Подсказка Изи", "#pomo": "Фокус 25 минут" }
   const SVG = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="${d}"/></svg>`
   const MINUS = SVG("M7 12h10"), PLUS = SVG("M12 7v10M7 12h10")
   const PEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><path d="M16.5 13.5v6M13.5 16.5h6"/></svg>'

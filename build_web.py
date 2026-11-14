@@ -114,6 +114,11 @@ if my.exists():
         n16 = len(shared.encode("utf-16-le")) // 2
         (OUT / "w.json").write_text(json.dumps({"build": build.group(1), "len": n16, "sum": s, "code": shared}, ensure_ascii=False))
 
+# Дата сборки — для строки версии внизу Настроек («IZIDAY 1.0 · сборка от 14 ноября»)
+import datetime as _dt
+_app = OUT / "app.js"
+_app.write_text(_app.read_text().replace("__BUILD_DATE__", _dt.date.today().isoformat()))
+
 # Версия кэша: меняется вместе с файлами, иначе телефон держит старое приложение
 h = hashlib.sha256()
 for p in sorted(OUT.rglob("*")):

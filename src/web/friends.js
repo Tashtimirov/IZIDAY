@@ -210,7 +210,7 @@ window.FRIEND = (() => {
       <div class="set"><span>Последний обмен</span><span>${esc(ago(D.sync.at))}</span></div>
       ${D.sync.error ? `<div class="msg exp small">${esc(D.sync.error)}</div>` : ""}
       <div class="btns" style="margin-top:10px"><button class="btn" data-do="sync">${ei("sync")}Обменяться сейчас</button><button class="btn red" data-do="glogout">Выйти</button></div>
-      <div class="btns" style="margin-top:6px"><button class="btn small" data-fw="1">У меня свой виджет Scriptable</button></div>
+      <div class="btns" style="margin-top:6px"><button class="linkbtn" data-fw="1">Вход для владельца</button></div>
       <div class="muted small" style="margin-top:8px">Записи хранятся на сервере IZIDAY в вашем личном разделе. Войдите той же почтой на другом телефоне — и всё будет там.</div>
       <div style="margin-top:10px"><button class="linkbtn" data-fdel="1">Удалить аккаунт и все данные</button></div></div>`
   }

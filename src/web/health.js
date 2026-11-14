@@ -568,6 +568,11 @@ function heroCard(rd) {
     <div class="s2">${esc(rd.why)} — ${esc(rd.adv)}.</div>
     <span class="pill">${hi("bed", 15)} сон ${hShort(rd.s.h)}</span>${rd.rhr ? `<span class="pill">${hi("heart", 15)} ${rd.rhr} уд/мин</span>` : ""}</div>`
 }
+// Сна ещё нет: одна строка вместо карточки «Готовность —» и пустого графика сна
+function sleepLine() {
+  return `<div class="card hl-in hl-line" ${anim()}><button class="row list-row" data-hl="sleep"><span class="hl-mi">${hi("bed", 18)}</span><div class="grow"><div class="t">Сон</div><div class="s">Запишите сон — посчитаю готовность на день</div></div><span class="act-l">Записать</span></button>
+    <div class="small muted hl-how">Сон может приходить из Apple Здоровья. <button class="link" data-hl="how">Как подключить</button></div></div>`
+}
 function sleepCard() {
   const n = nights(7), c = CFG(), max = Math.max(c.need + 1, ...n.map(x => x.s ? x.s.h : 0))
   const got = n.filter(x => x.s), bt = bedtime()
@@ -597,7 +602,7 @@ function moodCard() {
 function activityCard(h, g) {
   return `<div class="card hl-in" ${anim()}><h2>Активность${h.watch ? `<span class="muted small" style="text-transform:none;letter-spacing:0">часы: ${ago(h.watch.updated)}</span>` : ""}</h2>
     <div class="watch"><div><b>${h.steps != null ? num(h.steps) : "—"}</b><span>шагов</span></div><div><b>${num(h.active)}</b><span>актив. ккал из ${num(g.moveGoal)}</span></div><div><b>${num(h.exercise)}</b><span>мин упражнений</span></div></div>
-    ${!h.watch ? `<div class="muted small" style="margin-top:8px">Данные часов приходят через виджет после Быстрой команды «Мой день - здоровье».</div>` : h.watch && !h.active && !h.exercise && (h.steps || 0) > 2000 ? `<div class="muted small" style="margin-top:8px">Шаги есть, а калорий и минут нет — в Быстрой команде сбились шаги «Активная энергия» и «Время упражнений».</div>` : ""}
+    ${!h.watch ? `<div class="muted small" style="margin-top:8px">${D.conn && D.conn.friend ? "Шаги и тренировки можно записать вручную или сказать Изи: «прошёл 5 км»." : "Данные часов приходят через виджет после Быстрой команды «Мой день - здоровье»."}</div>` : h.watch && !h.active && !h.exercise && (h.steps || 0) > 2000 ? `<div class="muted small" style="margin-top:8px">Шаги есть, а калорий и минут нет — в Быстрой команде сбились шаги «Активная энергия» и «Время упражнений».</div>` : ""}
     <div class="btns" style="margin-top:10px"><button class="btn small" data-do="workout">+ Тренировка без часов</button></div>
     ${h.workouts.map(w => `<div class="row" data-wk="${esc(w.id)}"><div class="time">${hm(new Date(w.date))}</div><div class="grow"><div class="t">${esc(w.title)}</div><div class="s">${w.minutes} мин</div></div><div class="amt">−${num(w.kcal)}</div></div>`).join("")}</div>`
 }
@@ -665,9 +670,9 @@ function weekCharts(t0) {
   const days = [...Array(7)].map((_, i) => addDays(t0, i - 6))
   const kc = days.map(d => live(D.food).filter(f => sameDay(f.date, d)).reduce((s, f) => s + (f.kcal || 0), 0))
   const wa = days.map(d => live(D.water).filter(w => sameDay(w.date, d)).reduce((s, w) => s + (w.ml || 0), 0))
-  const mk = Math.max(1, ...kc), mw = Math.max(1, ...wa)
-  return `<div class="card hl-in" ${anim()}><h2>Неделя: калории</h2><div class="chart">${days.map((d, i) => `<div class="col"><div class="lbl">${kc[i] ? num(kc[i]) : ""}</div><div class="b" style="height:${kc[i] / mk * 100}%"></div><div class="lbl">${WD[d.getDay()]}</div></div>`).join("")}</div></div>
-    <div class="card hl-in" ${anim()}><h2>Неделя: вода</h2><div class="chart">${days.map((d, i) => `<div class="col"><div class="lbl">${wa[i] ? liters(wa[i]) : ""}</div><div class="b w" style="height:${wa[i] / mw * 100}%"></div><div class="lbl">${WD[d.getDay()]}</div></div>`).join("")}</div></div>`
+  const mk = Math.max(1, ...kc), mw = Math.max(1, ...wa), d3 = a => a.filter(Boolean).length >= 3
+  return `${d3(kc) ? `<div class="card hl-in" ${anim()}><h2>Неделя: калории</h2><div class="chart">${days.map((d, i) => `<div class="col"><div class="lbl">${kc[i] ? num(kc[i]) : ""}</div><div class="b" style="height:${kc[i] / mk * 100}%"></div><div class="lbl">${WD[d.getDay()]}</div></div>`).join("")}</div></div>` : ""}
+    ${d3(wa) ? `<div class="card hl-in" ${anim()}><h2>Неделя: вода</h2><div class="chart">${days.map((d, i) => `<div class="col"><div class="lbl">${wa[i] ? liters(wa[i]) : ""}</div><div class="b w" style="height:${wa[i] / mw * 100}%"></div><div class="lbl">${WD[d.getDay()]}</div></div>`).join("")}</div></div>` : ""}`
 }
 function reportCard() {
   return `<div class="card hl-in" ${anim()}><h2><span>${hi("doc", 15)} Отчёт за месяц</span></h2><div class="small muted">Вес, сон, пульс, шаги, питание и лекарства на одной странице.</div>
@@ -684,9 +689,20 @@ function renderHealth2() {
     return html.slice(0, i) + extra + html.slice(i)
   }
   const g = H(), h = dayHealth(day), rd = readiness(day)
+  // Пустые блоки — одной строкой: сверху «Сон: записать» вместо большой карточки с прочерком и пустого графика,
+  // внизу «Можно добавить» (лекарства, вес, план тренировок, медкарта). Графики — когда есть данные за 3 дня.
+  const sleepNone = !nights(7).some(x => x.s), p = patterns(), more = []
+  if (!meds().length) more.push(["pill", "Лекарства и витамины", "Напомню о приёме вовремя", 'data-hl="med-add"'])
+  if (!weightTrend()) more.push(["scale", "Вес", "Покажу тренд без скачков", 'data-do="weight"'])
+  if (!plan()) more.push(["dumbbell", "План тренировок", "Изи составит под вашу цель", 'data-hl="plan-izi"'])
+  if (!medrecs().length) more.push(["steth", "Медкарта семьи", "Анализы, врачи, прививки", 'data-hl="mr-add"'])
+  const has = n => !more.some(m => m[1] === n)
   let html = dayNav(day, "hday")
-  html += heroCard(rd) + sleepCard() + patternCard() + moodCard() + waterCard(h, g) + medsCard() + activityCard(h, g) + foodCard(h)
-  html += fastCard() + planCard() + weightCard2() + medrecCard() + weekCharts(day) + reportCard()
+  html += sleepNone ? sleepLine() : heroCard(rd) + sleepCard()
+  html += (p.list.length ? patternCard() : "") + moodCard() + waterCard(h, g) + (has("Лекарства и витамины") ? medsCard() : "") + activityCard(h, g) + foodCard(h)
+  html += fastCard() + (has("План тренировок") ? planCard() : "") + (has("Вес") ? weightCard2() : "") + (has("Медкарта семьи") ? medrecCard() : "") + weekCharts(day)
+  if (more.length) html += `<div class="card hl-in hl-more" ${anim()}><h2>Можно добавить</h2>${more.map(([ic, t, s2, a]) => `<button class="row list-row" ${a}><span class="hl-mi">${hi(ic, 18)}</span><div class="grow"><div class="t">${esc(t)}</div><div class="s">${esc(s2)}</div></div><span class="chev">${ICO.chev}</span></button>`).join("")}</div>`
+  html += (typeof healthGoalsCard === "function" ? healthGoalsCard() : "") + reportCard()
   return html
 }
 

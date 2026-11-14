@@ -52,7 +52,7 @@ window.UNDO = (function () {
     if (key === "money") return [r.comment || r.category, r.amount ? (typeof core !== "undefined" && core.money ? core.money(r.amount) : r.amount) : ""].filter(Boolean).join(" ")
     if (key === "weight") return r.kg ? `${r.kg} кг` : "Вес"
     if (key === "fast") return "Голодание"
-    if (key === "pomo") return "Помидор"
+    if (key === "pomo") return "Фокус"
     return String(r.title || r.text || r.t || r.name || "").trim()
   }
   function arrDiff(p, c) {

@@ -133,3 +133,10 @@ button.link { border: 0; background: none; padding: 0; color: var(--teal); font:
 
 /* Своё время лекарства: поле + галочка, без вылезания за край на iPhone */
 .md-add{display:flex;gap:8px;margin-top:7px;align-items:stretch}.md-add input{flex:1;min-width:0}.md-add .btn{flex:none;width:48px;padding:0;display:grid;place-items:center}.field input[type=time]{min-width:0;max-width:100%;-webkit-appearance:none;appearance:none;text-align:left;min-height:44px}.field input[type=time]::-webkit-date-and-time-value{text-align:left}
+
+/* Пустые блоки одной строкой (14.11): «Сон: записать» сверху и «Можно добавить» внизу */
+.hl-line { padding-top: 6px; padding-bottom: 10px; }
+.hl-mi { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex: none; background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); }
+.hl-line .act-l { color: var(--accent); font-weight: 600; font-size: 15px; flex: none; }
+.hl-line .hl-how { margin: 2px 0 0 46px; }
+.hl-more .row .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

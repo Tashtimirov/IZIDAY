@@ -341,7 +341,7 @@ function tick() {
       if (st.lv > seen.rank) { seen.rank = st.lv; D.gamiRankPending = st.lv; save(false); toastQ.push([emblem(st.lv, 28), `Новый ранг: ${st.rank}`, () => showPending()]) }
       const nw = goalsK("ach").map(a => a.key).filter(k => !seen.ach.includes(k))
       if (nw.length) { seen.ach = seen.ach.concat(nw); save(false); const l = achList(st).filter(a => nw.includes(a.key))
-        toastQ.push([`+${ACH_PTS * nw.length}`, `Ачивка: ${l.map(a => a.t).join(", ")}`, () => achSheet(nw)]) }
+        toastQ.push([`+${ACH_PTS * nw.length}`, `Достижение: ${l.map(a => a.t).join(", ")}`, () => achSheet(nw)]) }
     }
     if (toastQ.length) { const [c, t, f] = toastQ.shift(); gToast(c, t, true, f); lastToday = st.today.total; lastIds = new Set(st.today.items.map(i => i.id).concat(st.today.extra.map(x => x.id))); if (toastQ.length) setTimeout(tick, 2800); return }
     const tt = st.today.total, ids = new Set(st.today.items.map(i => i.id).concat(st.today.extra.map(x => x.id)))
@@ -432,7 +432,7 @@ function badges(v) {
 
 // ───────────── «Мой путь» в «Планах»: путь, ачивки, награды, лига ─────────────
 let gSeg = "path", achCat = "Все"
-const SEGS = [["path", "Путь"], ["ach", "Ачивки"], ["rew", "Награды"], ["lg", "Лига"]]
+const SEGS = [["path", "Путь"], ["ach", "Достижения"], ["rew", "Награды"], ["lg", "Лига"]]
 function gamePage() {
   const st = stats(), segs = SEGS.slice(0, 1).concat(GX.segs, SEGS.slice(1))
   if (!segs.some(x => x[0] === gSeg)) gSeg = "path"
@@ -451,7 +451,7 @@ function pathPage(st) {
   html += `<div class="card"><h2>Сегодня<span class="muted small" style="font-weight:500;text-transform:none;letter-spacing:0">${coin(st.today.total)}</span></h2>
     ${it.length ? it.slice(0, 12).map(i => `<div class="row"><span class="gic ${i.kind}">${svgI(KIND_IC[i.kind] || "check", 18)}</span><div class="grow"><div class="t">${esc(i.t)}</div>${+sod(i.at) === i.at ? "" : `<div class="s">${hm(new Date(i.at))}</div>`}</div><span class="gp">+${i.p}</span></div>`).join("")
       : '<div class="empty">Пока ни одного балла — отметьте дело или привычку</div>'}
-    ${st.today.base > CAP ? `<div class="muted small" style="margin-top:6px">Потолок ${CAP} в день — дальше баллы не растут.</div>` : ""}${st.today.bonus ? `<div class="row"><span class="gic top">${svgI("bolt", 18)}</span><div class="grow"><div class="t">Чистый день</div></div><span class="gp">+${st.today.bonus}</span></div>` : ""}${st.today.ach ? `<div class="row"><span class="gic goal">${svgI("trophy", 18)}</span><div class="grow"><div class="t">Ачивки</div></div><span class="gp">+${st.today.ach}</span></div>` : ""}${st.today.extra.map(x => `<div class="row"><span class="gic top">${svgI(x.ic || "trophy", 18)}</span><div class="grow"><div class="t">${esc(x.t)}</div><div class="s">сверх потолка</div></div><span class="gp">+${x.p}</span></div>`).join("")}</div>`
+    ${st.today.base > CAP ? `<div class="muted small" style="margin-top:6px">Потолок ${CAP} в день — дальше баллы не растут.</div>` : ""}${st.today.bonus ? `<div class="row"><span class="gic top">${svgI("bolt", 18)}</span><div class="grow"><div class="t">Чистый день</div></div><span class="gp">+${st.today.bonus}</span></div>` : ""}${st.today.ach ? `<div class="row"><span class="gic goal">${svgI("trophy", 18)}</span><div class="grow"><div class="t">Достижения</div></div><span class="gp">+${st.today.ach}</span></div>` : ""}${st.today.extra.map(x => `<div class="row"><span class="gic top">${svgI(x.ic || "trophy", 18)}</span><div class="grow"><div class="t">${esc(x.t)}</div><div class="s">бонус</div></div><span class="gp">+${x.p}</span></div>`).join("")}</div>`
   const wk = [...Array(7)].map((_, i) => { const d = addDays(monday(new Date()), i), x = st.days.find(y => y.k === dayKey(d)); return { d, v: x ? x.total : 0 } })
   const mx = Math.max(60, ...wk.map(x => x.v))
   html += `<div class="card"><h2>Неделя<span class="muted small" style="font-weight:500;text-transform:none;letter-spacing:0">${num(st.weekPts)} баллов</span></h2><div class="gweek">${wk.map(x => `<div class="${sameDay(x.d, new Date()) ? "td" : ""}"><i style="height:${Math.round(x.v / mx * 86) + 4}px;${x.v ? "" : "background:var(--track)"}"></i><b>${x.v || ""}</b>${WD[x.d.getDay()]}</div>`).join("")}</div></div>`
@@ -462,10 +462,10 @@ function pathPage(st) {
   return html
 }
 const KIND_IC = { task: "check", top: "star", habit: "flame", health: "drop", day: "moon", money: "wallet", goal: "target", focus: "timer", quest: "sparkle", boss: "bolt" }
-const RULES = [["check", "task", "Дело", "главное из трёх — 20, «Снова пора» — 10", PTS.task], ["flame", "habit", "Привычка", "×1,5 после 5 дней серии, ×2 после 21; новая — ×2 три дня", PTS.habit],
+const RULES = [["check", "task", "Дело", "главное из трёх — 20, повторяющееся — 10", PTS.task], ["flame", "habit", "Привычка", "×1,5 после 5 дней серии, ×2 после 21; новая — ×2 три дня", PTS.habit],
   ["drop", "health", "Цели здоровья", "вода, шаги, белок; тренировка — 15", PTS.health], ["wallet", "money", "День в бюджете", "все траты разнесены по категориям", PTS.money],
   ["moon", "day", "Итоги дня", "закрыть день вечером", PTS.note], ["target", "goal", "Цель месяца", "сбылось желание или мечта — 30", PTS.month], ["timer", "focus", "Фокус 25 минут", "до 4 в день", PTS.focus],
-  ["trophy", "goal", "Ачивка", "за каждую", ACH_PTS]]
+  ["trophy", "goal", "Достижение", "за каждое", ACH_PTS]]
 function achPage(st) {
   const l = achList(st), cats = ["Все", "Дела", "Здоровье", "Деньги", "Семья", "Особые"]
   const f = l.filter(a => achCat === "Все" || a.cat === achCat), got = f.filter(a => a.ok), rest = f.filter(a => !a.ok).sort((a, b) => b.p - a.p)
@@ -764,7 +764,7 @@ function wrapScreens() {
     const html = plans0.apply(this, arguments)
     if (gOff()) return html
     if (plansF === "game") { const i = html.indexOf("</div>") + 6; return html.slice(0, i) + gamePage() }
-    if (plansF === "all") { const i = html.indexOf("</div>") + 6; return html.slice(0, i) + stripHTML(stats()) + html.slice(i) }
+    // полоса ранга — только на «Сегодня» (на «Планах» она повторялась)
     return html
   }
   const top0 = todayTop

@@ -1351,3 +1351,36 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 /* IZIDAY Плюс (заявка) и «Пригласить друга» — grow.js */
 .grow-price { font-size: 22px; font-weight: 700; letter-spacing: -.2px; margin: 2px 0 6px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .grow-price span { font-size: 13px; font-weight: 600; color: var(--sub); }
+/* ═════════════ Экраны и тексты до теста (14.11) ═════════════ */
+/* Сжатая шапка при прокрутке: название и кнопки, без строки «Обновлено» и плашки «Сообщить об ошибке» */
+#top-title, #top-title .dt { transition: font-size .25s cubic-bezier(.2,.8,.2,1), margin .25s; }
+#top-sub, #bugq { transition: max-height .25s cubic-bezier(.2,.8,.2,1), opacity .2s, margin .25s, padding .25s; max-height: 60px; }
+body.top-mini #top-title { font-size: 24px; }
+body.top-mini #top-title .dt { display: inline; font-size: 14px; margin: 0 0 0 8px; }
+body.top-mini #top-sub, body.top-mini #bugq { max-height: 0; opacity: 0; margin-top: 0; padding-top: 0; padding-bottom: 0; overflow: hidden; pointer-events: none; min-height: 0; }
+@media (prefers-reduced-motion: reduce) { #top-title, #top-title .dt, #top-sub, #bugq { transition: none; } }
+/* Мелкие кнопки: вид прежний, невидимая зона нажатия больше (Apple советует не меньше 44 точек) */
+.card h2 .act, .btn.small, .x-btn, .i-btn, .dot, .linkbtn { position: relative; }
+.card h2 .act::after, .btn.small::after, .x-btn::after, .i-btn::after, .linkbtn::after { content: ""; position: absolute; inset: -9px -4px; }
+.card h2 .act::after { inset: -10px -8px -10px -2px; }
+.check:not(.ds-pop)::before { content: ""; position: absolute; inset: -11px; border-radius: 50%; }
+.dot::after { content: ""; position: absolute; inset: -12px -1.5px; }
+/* Контраст: серый поясняющий текст в светлой теме был 3,4 к 1 (норма 4,5) — на тон темнее; в тёмной белый текст
+   на ярко-зелёной кнопке был 2 к 1 — фон кнопки темнее (4,4 к 1), цвет тот же */
+:root { --sub: #6C6C70; --h2: #6C6C70; }
+@media (prefers-color-scheme: dark) { :root { --sub: #8E8E93; --h2: #8E8E93; } .btn.primary { background: #248A3D; } }
+/* Деньги: незаполненные блоки строками в «Ещё» */
+.mn-more .mn-mi { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); width: 34px; height: 34px; border-radius: 10px; }
+.mn-more .row .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Увеличение двумя пальцами разрешено (для слабого зрения); двойное касание не увеличивает — кнопки нажимаются сразу */
+html { touch-action: manipulation; }
+/* Настройки по группам */
+.set-grp { margin: 22px 6px 8px; font: 600 13px/1.2 var(--font); color: var(--sub); text-transform: uppercase; letter-spacing: .04em; }
+.set-grp:first-child { margin-top: 6px; }
+.app-ver { text-align: center; margin: 18px 0 14px; }
+/* Пустой блок — одной строкой: заголовок с действием и короткая подсказка */
+.card.line-card { padding-top: 12px; padding-bottom: 12px; }
+.card.line-card h2 { margin-bottom: 2px; }
+.card.line-card .s1 { color: var(--sub); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* «Очистить чат» в меню «+» чата */
+.c-clr { background: linear-gradient(160deg, #FF6B6B, #E0344F); }

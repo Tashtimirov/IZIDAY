@@ -956,7 +956,7 @@ const AGENT_TOOLS = [
   { name: "start_pomodoro", description: "Начать помидор: фокус на одном деле (по умолчанию 25 минут, потом 5 минут отдыха). Когда время выйдет — придёт уведомление.",
     input_schema: { type: "object", properties: { title: { type: "string", description: "Над чем работаем" }, minutes: { type: "number" } } } },
   { name: "stop_pomodoro", description: "Остановить текущий помидор.", input_schema: { type: "object", properties: {} } },
-  { name: "add_chore", description: "«Снова пора»: дело, которое повторяется раз в N дней (полить цветы — 3, помыть машину — 14, сменить постель — 7). last_done — YYYY-MM-DD, когда делали в последний раз (если сказали). То же название — обновит.",
+  { name: "add_chore", description: "Повторяющееся дело («Снова пора»): дело, которое повторяется раз в N дней (полить цветы — 3, помыть машину — 14, сменить постель — 7). last_done — YYYY-MM-DD, когда делали в последний раз (если сказали). То же название — обновит.",
     input_schema: { type: "object", properties: { title: { type: "string" }, every_days: { type: "number" }, last_done: { type: "string" } }, required: ["title", "every_days"] } },
   { name: "chore_done", description: "Отметить «снова пора» сделанным (сегодня или date YYYY-MM-DD) — следующий раз посчитается сам.", input_schema: { type: "object", properties: { title: { type: "string" }, date: { type: "string" } }, required: ["title"] } },
   { name: "get_chores", description: "Дела «снова пора»: как часто, когда делали, когда снова пора (самое срочное — первым).", input_schema: { type: "object", properties: {} } },
@@ -1539,7 +1539,7 @@ function agentSystem() {
   const now = new Date(), c = core.CONFIG
   const cats = t => c.categories[t].map(x => x[0]).join(", ")
   const cals = c.calendars || []
-  return `${window.L && L.en ? EN_RULE : ""}Ты — личный ассистент в приложении «Мой день» на ${IS_DROID ? "Android-телефоне" : "iPhone"}. Тебя зовут ${iziName()}; ${iziG("о себе говори в мужском роде («я записал», «я понял»)", "ты девушка, о себе говори в женском роде («я записала», «я поняла»)")}. Пользователь часто говорит голосом по-русски; речь распознаётся с ошибками («падал», «падлу» = «падел»), восстанавливай смысл.
+  return `${window.L && L.en ? EN_RULE : ""}Ты — личный ассистент в приложении IZIDAY на ${IS_DROID ? "Android-телефоне" : "iPhone"}. Тебя зовут ${iziName()}; ${iziG("о себе говори в мужском роде («я записал», «я понял»)", "ты девушка, о себе говори в женском роде («я записала», «я поняла»)")}. Пользователь часто говорит голосом по-русски; речь распознаётся с ошибками («падал», «падлу» = «падел»), восстанавливай смысл.
 Сегодня ${dayKey(now)}, ${DAY_NAMES[now.getDay()].toLowerCase()}; точное время сейчас — в квадратных скобках в начале последнего сообщения пользователя. Используй местное время без смещения, формат YYYY-MM-DDTHH:MM.
 
 Как работать:
@@ -2341,7 +2341,7 @@ async function eventSheet(e) {
 async function addMenu() {
   const glass = H().glass || 250
   const opts = [["💬 Сказать помощнику", () => { setTab("chat"); setTimeout(micStart, 300) }], ["➖ Расход", () => moneyForm("expense")], ["➕ Доход", () => moneyForm("income")],
-    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()], ["🛒 Покупка", shopForm], ["👧 Дела детей", kidsForm], ["🎂 День рождения", () => bdaysForm(true)], ["🎯 Цель или желание", () => goalsForm("month")], ["🔁 Снова пора: повторяющееся дело", () => choreForm()], ["📋 Новый список", listForm], ["⏱ Помидоро — фокус 25 мин", pomoAsk],
+    ["📷 Фото: еда, счёт, чек", photoPrompt], ["🍽 Еда", foodMenu], [`💧 Стакан воды ${glass} мл`, () => addWater(glass)], ["🏃 Тренировка", () => workoutForm()], ["🛒 Покупка", shopForm], ["👧 Дела детей", kidsForm], ["🎂 День рождения", () => bdaysForm(true)], ["🎯 Цель или желание", () => goalsForm("month")], ["🔁 Повторяющееся дело", () => choreForm()], ["📋 Новый список", listForm], ["⏱ Фокус 25 минут", pomoAsk],
     ["⏰ Напоминание", reminderForm], ["📅 Событие", () => calQuick()]]
   const i = await ui.choose("Добавить", "", opts.map(o => o[0]))
   if (i >= 0) opts[i][1]()
@@ -2357,6 +2357,7 @@ function setTab(t) {
   if (t === "chat" && sideOK()) { const was = tab === "chat"; side = true; if (was) return setTab(sideFrom); sideOpen(); return }
   if (t !== "chat") sideFrom = t
   tab = t
+  topMini(false)
   document.body.dataset.scr = t
   $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t || t === "cal" && b.dataset.tab === "today"))
   $("#fab").classList.toggle("side-on", side)
@@ -2448,6 +2449,22 @@ function renderTop() {
   }
   $("#top-sub").textContent = sub
 }
+
+var topMini = () => {}
+// Шапка сжимается при прокрутке вниз: остаются название и кнопки (строка «Обновлено» и плашка «Сообщить об ошибке» прячутся,
+// вернутся, как только экран прокрутят наверх). В чате не сжимаем. Короткий экран не сжимаем: иначе шапка «прыгала» бы.
+;(() => {
+  const v = $("#view"); if (!v) return
+  let mini = false
+  const set = m => { if (m === mini) return; mini = m; document.body.classList.toggle("top-mini", m) }
+  v.addEventListener("scroll", () => {
+    if (document.body.classList.contains("chat")) return set(false)
+    const y = v.scrollTop
+    if (!mini && y > 48 && v.scrollHeight - v.clientHeight > 180) set(true)
+    else if (mini && y < 8) set(false)
+  }, { passive: true })
+  topMini = set
+})()
 
 const WDF = ["воскресенье","понедельник","вторник","среда","четверг","пятница","суббота"]
 const MONTHS_GEN = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"]
@@ -2564,7 +2581,7 @@ function stripInit(keep) {
 }
 
 function renderChatHTML() {
-  return `<div class="chat-tools"><button data-do="talk" class="tk-chip"><b class="mini-orb"></b>Поговорить</button><button data-brief="morning">${ei("sun")}Утренняя сводка</button><button data-brief="evening">${ei("moon")}Вечерняя</button><button data-do="memory">${ei("brain")}Память</button><button data-do="chat-clear">${ei("eraser")}Очистить</button></div>
+  return `<div class="chat-tools"><button data-do="talk" class="tk-chip"><b class="mini-orb"></b>Поговорить</button><button data-brief="morning">${ei("sun")}Утренняя сводка</button><button data-brief="evening">${ei("moon")}Вечерняя</button><button data-do="memory">${ei("brain")}Память</button></div>
     <div class="chat-list" id="chat-list">${chatItems()}</div>
     <div class="chat-bar"><div class="att-tray" id="att-tray"></div><div class="cb-pill"><button class="cam plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
     <button class="dict" aria-label="Диктовать текст">${CB_MIC}</button><button class="send" aria-label="Отправить">${ICO.send}</button>
@@ -2662,6 +2679,24 @@ function renderHealth() {
   return html
 }
 
+// Цели здоровья (вода, белок, калории, вес) — в «Здоровье», раньше лежали в Настройках
+function healthGoalsCard() {
+  const g = H()
+  return `<div class="card hl-in" id="hl-goals"><h2>Мои нормы</h2>
+    <div class="set"><span>Вода в день, мл</span><input type="number" data-set="waterGoal" value="${g.waterGoal}"></div>
+    <div class="set"><span>Белок в день, г</span><input type="number" data-set="proteinGoal" value="${proteinGoal()}"></div>
+    <div class="set"><span>Стакан, мл</span><input type="number" data-set="glass" value="${g.glass}"></div>
+    <div class="set"><span>Калории в день, ккал</span><input type="number" data-set="kcalGoal" value="${g.kcalGoal || 2000}"></div>
+    <div class="set"><span>Вес, кг (для тренировок)</span><input type="number" data-set="weight" value="${g.weight}"></div></div>`
+}
+// Версия внизу Настроек: тестер может назвать её в переписке. Дату ставит сборка, код версии — кэш приложения (как в отчёте о недочёте)
+const BUILD_DATE = "__BUILD_DATE__"
+let appVerCode = ""
+try { caches.keys().then(k => { const v = k.filter(x => /^myday-/.test(x) && x !== "myday-conn")[0]; if (v) { appVerCode = v.replace(/^myday-/, ""); const el = $(".app-ver"); if (el) el.textContent = appVer() } }).catch(() => {}) } catch (e) {}
+function appVer() {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(BUILD_DATE) ? parseIso(BUILD_DATE) : null
+  return `IZIDAY 1.0${d ? ` · сборка от ${d.getDate()} ${MONTHS_GEN[d.getMonth()]}` : ""}${appVerCode ? ` · ${appVerCode}` : ""}`
+}
 const standalone = () => window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches
 function renderMore() {
   const c = D.conn
@@ -2695,18 +2730,12 @@ function renderMore() {
     <div class="muted small">Войдите один раз своей почтой Google — и на любом телефоне хватит кнопки «Войти через Google»: откроется эта таблица со всеми записями, без Scriptable.</div>
     <div class="btns" style="margin-top:10px"><button class="btn ${D.gLink ? "" : "primary"}" data-do="glogin">${FRIEND.gico}${D.gLink ? "Привязать заново" : "Привязать вход Google"}</button></div></div>`
   }
-  const g = H()
   html += `<div class="card"><h2>Уведомления</h2><div class="set"><span>Подсказки и напоминания</span><span id="push-state">…</span></div>
-    <div class="muted small">Подсказки помощника, напоминания, вода и «пора выезжать» приходят прямо от IZIDAY: их по расписанию (каждые 5 минут) отправляет таблица. Для «пора выезжать» разрешите приложению место.</div>
+    <div class="muted small">${c && !c.friend ? "Подсказки помощника, напоминания, вода и «пора выезжать» приходят прямо от IZIDAY: их по расписанию (каждые 5 минут) отправляет таблица. Для «пора выезжать» разрешите приложению место." : "Подсказки Изи, напоминания, вода и «пора выезжать» приходят на телефон, даже когда IZIDAY закрыт. Для «пора выезжать» разрешите доступ к геопозиции."}</div>
     <div class="btns" id="push-btns" style="margin-top:10px"></div></div>`
-  html += `<div class="card"><h2>Цели</h2>
-    <div class="set"><span>Вода в день, мл</span><input type="number" data-set="waterGoal" value="${g.waterGoal}"></div>
-    <div class="set"><span>Белок в день, г</span><input type="number" data-set="proteinGoal" value="${proteinGoal()}"></div>
-    <div class="set"><span>Стакан, мл</span><input type="number" data-set="glass" value="${g.glass}"></div>
-    <div class="set"><span>Калории в день, ккал</span><input type="number" data-set="kcalGoal" value="${g.kcalGoal || 2000}"></div>
-    <div class="set"><span>Вес, кг (для тренировок)</span><input type="number" data-set="weight" value="${g.weight}"></div></div>`
-  html += `<div class="card"><h2>Кнопки виджета</h2><div class="muted small">🎤 и 💬 открывают помощника, 📷 — еду по фото, ${esc(core.CONFIG.currency)} — расход, 💧 — стакан воды. Ссылки из виджета открываются в Safari — данные там те же, через таблицу.</div></div>`
-  html += `<div class="muted small" style="text-align:center;margin:14px 0">Мой день · веб-приложение</div>`
+  // карточка про виджет — только у владельца (у друзей виджета нет)
+  if (c && !c.friend) html += `<div class="card" data-grp="owner"><h2>Кнопки виджета</h2><div class="muted small">🎤 и 💬 открывают помощника, 📷 — еду по фото, ${esc(core.CONFIG.currency)} — расход, 💧 — стакан воды. Ссылки из виджета открываются в Safari — данные там те же, через таблицу.</div></div>`
+  html += `<div class="muted small app-ver">${esc(appVer())}</div>`
   return html
 }
 
@@ -2864,7 +2893,7 @@ function bind() {
   $$("[data-chore-done]", v).forEach(b => b.onclick = ev => { ev.stopPropagation(); const c = choreDone(b.dataset.choreDone); if (navigator.vibrate) navigator.vibrate(10); b.classList.add("on"); setTimeout(render, 300); toast(`Готово. Снова — ${choreWhen(c)}`) })
   $$("[data-hd]", v).forEach(b => b.onclick = () => { const h = D.habits.find(z => z.id === b.dataset.hd), on = habitToggle(h, new Date(+b.dataset.hdd)); if (navigator.vibrate) navigator.vibrate(10); render()
     if (on && !h.bad && sameDay(+b.dataset.hdd, new Date())) { const st = habitStreak(h); if (st > 1) toast(`Серия ${st} ${plural(st, "день", "дня", "дней")}`) } })
-  $$("[data-pomo]", v).forEach(b => b.onclick = () => { if (b.dataset.pomo === "stop") { const p = pomoStop(); render(); return toast(p && p.full ? "🍅 Готово" : "Помидор остановлен") } pomoAsk() })
+  $$("[data-pomo]", v).forEach(b => b.onclick = () => { if (b.dataset.pomo === "stop") { const p = pomoStop(); render(); return toast(p && p.full ? "Готово" : "Фокус остановлен") } pomoAsk() })
   $$("[data-habit]", v).forEach(b => b.onclick = () => {
     const h = D.habits.find(z => z.id === b.dataset.habit)
     const on = habitToggle(h, selDay > sod(new Date()) ? new Date() : selDay)
@@ -3091,7 +3120,7 @@ function findHabit(q) {
 function habitsCard(day) {
   const list = habitList(), isT = sameDay(day, new Date())
   let html = `<div class="card"><h2>Привычки<button class="act" data-do="habits">${list.length ? "Изменить" : "+ Добавить"}</button></h2>`
-  if (!list.length) return html + `<div class="empty">Отмечайте каждый день то, что хотите делать (зарядка, чтение) или бросить (алкоголь, курение) — приложение посчитает серию.</div></div>`
+  if (!list.length) return `<div class="card line-card"><h2>Привычки<button class="act" data-do="habits">+ Добавить</button></h2><div class="s1">Зарядка, чтение — посчитаю серию дней</div></div>`
   html += `<div class="habits">${list.map(h => {
     const on = habitOn(h, day), st = habitStreak(h, day)
     const sub = h.bad ? (on ? "было" : `${st} ${plural(st, "день", "дня", "дней")} без`) : (st ? `${st} ${plural(st, "день", "дня", "дней")} подряд` : isT ? "ещё не сегодня" : "не было")
@@ -3428,7 +3457,7 @@ function stepsForm(id) {
   const s = sheet(`<div class="sh-head">${icoBox(GOAL_ICO[g.kind] || "target")}<div class="grow"><h3>${esc(g.title)}</h3><div class="muted small">${esc(sub)}</div></div></div>
     ${l.length ? `<div class="prog"><div style="width:${done / l.length * 100}%"></div></div>` : ""}
     <div style="margin-top:8px">${l.map((x, i) => `<div class="row step"><button class="check ${x.done ? "on" : ""}" data-st="${esc(x.id)}"></button><div class="grow"><div class="t ${x.done ? "struck" : ""}">${i + 1}. ${esc(x.t)}</div>${x.date ? `<div class="s">${esc(stepWhen(x))}${x.cal ? " · в календаре" : ""}</div>` : ""}</div>
-      ${x.done ? "" : `<button class="i-btn ${x.date ? "on" : ""}" data-sdate="${esc(x.id)}" aria-label="Дата">${ICO.today}</button><button class="i-btn" data-spomo="${esc(x.id)}" aria-label="Помидоро">${ICO.timer}</button>`}<button class="x-btn" data-sdel="${esc(x.id)}" aria-label="Убрать">${ICO.x}</button></div>`).join("")
+      ${x.done ? "" : `<button class="i-btn ${x.date ? "on" : ""}" data-sdate="${esc(x.id)}" aria-label="Дата">${ICO.today}</button><button class="i-btn" data-spomo="${esc(x.id)}" aria-label="Фокус 25 минут">${ICO.timer}</button>`}<button class="x-btn" data-sdel="${esc(x.id)}" aria-label="Убрать">${ICO.x}</button></div>`).join("")
       || '<div class="empty">Разбейте на шаги: что сделать первым, вторым… Каждому шагу можно дать дату и внести в календарь. Не знаете, с чего начать, — «План с помощником».</div>'}</div>
     <div class="add-line" style="margin-top:12px"><input id="st-t" placeholder="${l.length ? "+ Следующий шаг" : "+ Первый шаг: узнать цены, записаться…"}"><button class="btn primary small" data-a="ok">Добавить</button></div>
     ${noCal.length ? `<button class="btn primary" data-a="cal" style="width:100%;margin-top:10px">Внести план в календарь · ${noCal.length}</button>` : ""}
@@ -3477,7 +3506,7 @@ function pomoStart(title, link = "", min = POMO.work) {
   pomoStop()
   min = Math.max(5, Math.min(90, Math.round(+min || POMO.work)))
   const p = upsert("pomo", { id: uid("q"), date: Date.now(), start: Date.now(), min, title: String(title || "Фокус").trim(), link })
-  upsert("nudges", { id: "pq" + p.id, date: p.start + min * 60e3, title: "🍅 Помидор готов", text: `${min} минут на «${p.title}». Теперь ${POMO.rest} минут отдыха — встаньте, попейте воды.` })
+  upsert("nudges", { id: "pq" + p.id, date: p.start + min * 60e3, title: "Фокус готов", text: `${min} минут на «${p.title}». Теперь ${POMO.rest} минут отдыха — встаньте, попейте воды.` })
   save(); return p
 }
 function pomoStop() {
@@ -3489,12 +3518,12 @@ function pomoStop() {
 const pomoLeft = p => { const ms = Math.max(0, p.start + p.min * 60e3 - Date.now()), m = Math.floor(ms / 60e3), sec = Math.floor(ms / 1000) % 60; return `${m}:${String(sec).padStart(2, "0")}` }
 function pomoCard() {
   const p = pomoNow(), n = pomoToday().length
-  let html = `<div class="card" id="pomo"><h2>Помидоро${n ? `<span class="muted small" style="margin-left:auto">сегодня ${n}</span>` : ""}</h2>`
+  let html = `<div class="card" id="pomo"><h2>Фокус 25 минут${n ? `<span class="muted small" style="margin-left:auto">сегодня ${n}</span>` : ""}</h2>`
   if (p) return html + `<div class="wt"><b id="pomo-left">${pomoLeft(p)}</b><span class="muted small">${esc(p.title)}</span></div>
     <div class="prog"><div id="pomo-bar" style="width:${Math.min(1, (Date.now() - p.start) / (p.min * 60e3)) * 100}%"></div></div>
     <div class="btns" style="margin-top:10px"><button class="btn small" data-pomo="stop">Остановить</button></div></div>`
   return html + `<div class="btns"><button class="btn primary" data-pomo="start">Фокус ${POMO.work} минут</button></div>
-    <div class="muted small" style="margin-top:8px">${n ? `${n * POMO.work} минут фокуса сегодня. ` : ""}Начните с шага мечты или скажите помощнику «помидор на отчёт».</div></div>`
+    <div class="muted small" style="margin-top:8px">${n ? `${n * POMO.work} минут фокуса сегодня. ` : ""}Начните с шага мечты или скажите Изи «фокус на отчёт».</div></div>`
 }
 async function pomoAsk() {
   const t = await ui.ask("🍅 Фокус 25 минут", "Над чем работаете?", "", { type: "text", ok: "Начать" })
@@ -3514,7 +3543,7 @@ function goalsCard(always) {
 function goalsMore() {
   const n = k => goalsOf(k).length, d = k => goalsOf(k).filter(g => g.done).length
   return `<div class="card"><h2>Цели и мечты</h2>${["month", "wish", "dream"].map(k => `<button class="row list-row" data-goals="${k}">${icoBox(GOAL_ICO[k])}
-    <div class="grow"><div class="t">${GOAL_KIND[k][1]}</div><div class="s">${n(k) ? `${d(k)} ${k === "month" ? "сделано" : "сбылось"} из ${n(k)}${GOAL_MAX[k] ? ` · мест ${GOAL_MAX[k]}` : ""}` : k === "wish" ? "Пишите всё, чего хочется: большое и маленькое" : k === "dream" ? "Крупное: на год, два, три" : "3–5 целей на этот месяц"}</div></div><span class="chev">${ICO.chev}</span></button>`).join("")}</div>`
+    <div class="grow"><div class="t">${GOAL_KIND[k][1]}</div><div class="s">${n(k) ? `${d(k)} ${k === "month" ? "сделано" : "сбылось"} из ${n(k)}${GOAL_MAX[k] ? ` · мест ${GOAL_MAX[k]}` : ""}` : k === "wish" ? "Пишите всё, чего хочется: большое и маленькое" : k === "dream" ? "Крупное на срок до 2 лет, с шагами" : "3–5 целей на этот месяц"}</div></div><span class="chev">${ICO.chev}</span></button>`).join("")}</div>`
 }
 function wishGroupsHTML(l, rowFn) {
   return WISH_GROUPS.map(([k, name, ic]) => { const g = l.filter(x => wishGroup(x) === k); if (!g.length) return ""
@@ -3572,7 +3601,7 @@ const TONE = { cart: "orange", star: "pink", summit: "violet", target: "green", 
   apple: "green", moon: "violet", sun: "orange", pen: "blue", phone: "blue", ban: "red", check: "green", paw: "orange", tool: "blue" }
 const icoBox = (k, tone) => `<span class="ic ${tone || TONE[k] || "green"}">${ICO[k] || ICO.list}</span>`
 let plansF = "all"
-const PLAN_F = [["all", "Всё"], ["lists", "Списки"], ["habits", "Привычки"], ["again", "Снова пора"], ["goals", "Цели"]]
+const PLAN_F = [["all", "Всё"], ["lists", "Списки"], ["habits", "Привычки"], ["again", "Повторяющиеся"], ["goals", "Цели"]]
 function renderPlans() {
   const f = plansF, all = f === "all"
   // Без полосы вкладок: «Всё» — одним списком, подстраница (из карточки) — с кнопкой «Все планы».
@@ -3609,7 +3638,7 @@ const choreRow = c => { const n = choreLeft(c)
   return `<div class="row chore" data-chore="${esc(c.id)}">${icoBox(c.ico || "repeat")}<div class="grow"><div class="t">${esc(c.title)}</div><div class="s"><span class="due ${n < 0 ? "late" : n === 0 ? "now" : ""}">${esc(core.cap(choreWhen(c)))}</span> · ${esc(everyTxt(c.every))}</div></div><button class="check" data-chore-done="${esc(c.id)}" aria-label="Сделано"></button></div>` }
 function choresCard(max = 0) {
   const l = chores(), show = max ? l.slice(0, max) : l
-  let html = `<div class="card" id="chores"><h2>Снова пора<button class="act" data-do="chore-add">+ Дело</button></h2>`
+  let html = `<div class="card" id="chores"><h2>Повторяющиеся дела<button class="act" data-do="chore-add">+ Дело</button></h2>`
   if (!l.length) return html + `<div class="empty">Дела, которые повторяются: полить цветы раз в 3 дня, помыть машину раз в 2 недели, сменить постель раз в неделю. Отметили — приложение посчитает, когда снова пора.</div></div>`
   html += show.map(choreRow).join("")
   if (max && l.length > max) html += `<button class="more-link" data-pf="again">Все дела · ${l.length}</button>`
@@ -3617,11 +3646,11 @@ function choresCard(max = 0) {
 }
 function choresToday() {
   const l = chores().filter(c => choreLeft(c) <= 0)
-  return l.length ? `<div class="card" id="chores-today"><h2>Снова пора<span class="muted small">${l.length}</span></h2>${l.map(choreRow).join("")}</div>` : ""
+  return l.length ? `<div class="card" id="chores-today"><h2>Пора повторить<span class="muted small">${l.length}</span></h2>${l.map(choreRow).join("")}</div>` : ""
 }
 function choreForm(c) {
   let every = c ? c.every : 7, ico = c ? c.ico : ""
-  const s = sheet(`<h3>${c ? esc(c.title) : "Снова пора"}</h3>${c ? `<div class="muted small" style="margin:-4px 0 10px">${esc(core.cap(agoTxt(c.last)))} · снова ${esc(choreWhen(c))}</div>` : ""}
+  const s = sheet(`<h3>${c ? esc(c.title) : "Повторяющееся дело"}</h3>${c ? `<div class="muted small" style="margin:-4px 0 10px">${esc(core.cap(agoTxt(c.last)))} · снова ${esc(choreWhen(c))}</div>` : ""}
     <div class="field"><label>Что делать</label><input id="c-t" value="${c ? esc(c.title) : ""}" placeholder="Полить цветы, помыть машину…"></div>
     <div class="field"><label>Как часто</label><div class="chips" id="c-n">${[[1, "каждый день"], [3, "3 дня"], [7, "неделя"], [14, "2 недели"], [30, "месяц"]].map(([n, t]) => `<button class="chip ${n === every ? "on" : ""}" data-n="${n}">${t}</button>`).join("")}</div>
       <div class="set" style="margin-top:8px"><span>Каждые, дней</span><input id="c-e" type="number" min="1" max="365" value="${every}"></div></div>
@@ -3642,7 +3671,7 @@ function choreForm(c) {
     const t = $("#c-t", s.el).value.trim(); if (!t) return toast("Напишите, что делать")
     if (!(every >= 1 && every <= 365)) return toast("От 1 до 365 дней")
     const r = c ? upsert("goals", Object.assign({}, c, { title: t, every, ico: ico || c.ico })) : choreAdd(t, every, lastAgo < 0 ? 0 : +addDays(new Date(), -lastAgo), ico)
-    s.close(); render(); toast(`Снова пора: ${choreWhen(r)}`)
+    s.close(); render(); toast(`Повторится ${choreWhen(r)}`)
   }
 }
 
@@ -3669,12 +3698,11 @@ function listItemSet(id, iid, patch) {
   return upsert("goals", Object.assign({}, l, { items: itemsOf(l).map(x => x.id === iid ? Object.assign({}, x, patch) : x).filter(x => !x.deleted) }))
 }
 function listsCard() {
-  const wish = goalsOf("wish"), dream = goalsOf("dream"), sh = shopOpen(), d1 = dream.find(g => !g.done && stepsOf(g).length) || dream.find(g => !g.done)
+  const sh = shopOpen()
   const row = (k, key, title, sub, n = "") => `<button class="row list-row" data-list="${esc(key)}">${icoBox(k)}<div class="grow"><div class="t">${esc(title)}</div><div class="s">${esc(sub)}</div></div>${n ? `<span class="cnt">${esc(n)}</span>` : ""}<span class="chev">${ICO.chev}</span></button>`
   let html = `<div class="card" id="lists"><h2>Списки<button class="act" data-do="list-add">+ Список</button></h2>`
   html += row("cart", "shop", "Покупки", sh.length ? sh.slice(0, 3).map(s => s.title).join(", ") + (sh.length > 3 ? "…" : "") : "Пусто — скажите «купить молоко»", sh.length ? String(sh.length) : "")
-  html += row("star", "wish", "100 желаний", wish.length ? `сбылось ${wish.filter(g => g.done).length}` : "Всё, чего хочется, — большое и маленькое", wish.length ? `${wish.length} ${wishWord(wish.length)}` : "")
-  html += row("summit", "dream", "10 мечт", d1 ? `${d1.title}${stepsOf(d1).length ? " · " + stepsTxt(d1) : ""}` : "Крупное на срок до 2 лет, с шагами", dream.length ? `${dream.length} из 10` : "")
+  // «100 желаний» и «10 мечт» живут только в «Цели и мечты» (раньше были и здесь — новичок думал, что это разное)
   html += myLists().map(l => { const it = itemsOf(l), done = it.filter(x => x.done).length, open = it.filter(x => !x.done)
     return row(l.ico || "list", l.id, l.title, it.length ? open.slice(0, 3).map(x => x.t).join(", ") || "всё отмечено" : "Пустой список", it.length ? `${done} из ${it.length}` : "") }).join("")
   return html + `</div>`
@@ -4238,6 +4266,8 @@ function plusMenu(btn) {
   const scrim = document.createElement("div"); scrim.className = "plus-scrim"
   const m = document.createElement("div"); m.className = "plus-menu"
   const items = [["photo", "cam", "c-cam", "Камера", "Один кадр или серия подряд"], ["photo-lib", "gallery", "c-lib", "Фото и видео", "Из галереи, можно несколько"], ["doc", "doc", "c-doc", "Файл", "PDF, Word, Excel, текст и другие"]]
+  // «Очистить чат» — редкое действие: здесь, в меню чата, а не в ряду с «Поговорить» и сводками
+  if (tab === "chat" || side) items.push(["clear", "x", "c-clr", "Очистить чат", "Краткая сводка останется в памяти"])
   m.innerHTML = items.map(([id, ic, cl, t, sub]) => `<button data-in="${id}"><span class="ic ${cl}">${ICO[ic]}</span><span><b>${t}</b><small>${sub}</small></span></button>`).join("")
   layer.append(scrim, m)
   btn.classList.add("open"); if (bar) bar.classList.add("menu")
@@ -4250,7 +4280,7 @@ function plusMenu(btn) {
   }
   plusClose = close
   scrim.onclick = close
-  $$("[data-in]", m).forEach(b => b.onclick = () => { close(); if (b.dataset.in === "photo") seriesCam(); else $("#" + b.dataset.in).click() })
+  $$("[data-in]", m).forEach(b => b.onclick = () => { close(); if (b.dataset.in === "photo") seriesCam(); else if (b.dataset.in === "clear") DO["chat-clear"](); else $("#" + b.dataset.in).click() })
   let y0 = null
   m.addEventListener("touchstart", e => { y0 = e.touches[0].clientY }, { passive: true })
   m.addEventListener("touchmove", e => { if (y0 != null && e.touches[0].clientY - y0 > 36) { y0 = null; close() } }, { passive: true })
@@ -4855,12 +4885,15 @@ function renderMoney() {
   }
   // 2. Копилки
   const jl = jars().filter(j => mn.view === "all" || (mn.view === "shared") === !!j.shared)
-  html += `<div class="card mn-in" ${anim()}><h2>Копилки<button class="act" data-do="jar-add">+ Новая</button></h2>` + (jl.length ? jl.map(j => {
+  // Незаполненные блоки (копилки, план дохода, платежи, капитал, долги) — строками в одном блоке «Ещё»
+  const more = []
+  if (!jl.length) more.push(["jar", "Копилки", "Отпуск, подушка, машина: посчитаю, сколько откладывать", 'data-do="jar-add"'])
+  else html += `<div class="card mn-in" ${anim()}><h2>Копилки<button class="act" data-do="jar-add">+ Новая</button></h2>` + (jl.length ? jl.map(j => {
     const st = jarState(j, now)
     return `<button class="mn-jar ${st.cls}" data-jar="${esc(j.id)}"><div class="top"><span>${tdIco("jar", 17)}<b>${esc(j.title)}</b>${j.shared ? `<em class="sh">${tdIco("people", 12)}</em>` : ""}</span><span class="am">${num(j.saved || 0)} / ${esc(core.money(j.target))}</span></div>
       <div class="bar"><i style="--w:${Math.round(st.p * 100)}%"></i></div><div class="s">${esc(st.txt)}</div></button>`
   }).join("") : `<div class="empty">Отпуск, подушка на полгода, новая машина: копилка со сроком сама посчитает, сколько откладывать в месяц и успеваете ли вы.</div>`) + `</div>`
-  if (isCur && mn.view === "all") html += planCard(anim)
+  if (isCur && mn.view === "all") { if (aplan() || live(D.money).some(e => e.type === "income")) html += planCard(anim); else more.push(["chart", "Как раскладываю доход", "Изи разложит доход по статьям", 'data-do="plan-edit"']) }
   // Лимиты по категориям
   const cats = Object.entries(t.cats.expense)
   for (const b of live(D.budgets)) if (b.limit > 0 && !cats.some(c => c[0] === b.category)) cats.push([b.category, 0])
@@ -4873,7 +4906,8 @@ function renderMoney() {
     }).join("") : `<div class="empty">Расходов пока нет. «Лимиты» — сколько готовы тратить в месяц по категориям.</div>`) + `</div>`
   // Регулярные платежи
   const rec = live(D.recur).sort((a, b) => (a.day || 0) - (b.day || 0)), rk = monthKey
-  html += `<div class="card mn-in" ${anim()}><h2>Регулярные платежи<button class="act" data-do="recur-add">+ Добавить</button></h2>` + (rec.length ? rec.map(r => {
+  if (!rec.length) more.push(["repeat", "Регулярные платежи", "Аренда, интернет, подписки — напомню в срок", 'data-do="recur-add"'])
+  else html += `<div class="card mn-in" ${anim()}><h2>Регулярные платежи<button class="act" data-do="recur-add">+ Добавить</button></h2>` + (rec.length ? rec.map(r => {
       const paid = recurPaid(r, rk), late = !paid && rk === cur && recurDue(r) < sod(now)
       return `<div class="row" data-recur="${esc(r.id)}"><div class="grow"><div class="t">${esc(r.title)}</div><div class="s ${late ? "exp" : ""}">${r.day} числа · ${rk === cur ? esc(recurLabel(r)) : paid ? "оплачено" : "не оплачено"}</div></div>
         <div class="amt ${paid ? "inc" : ""}">${paid ? tdIco("check", 14) + " " : ""}${esc(core.money(r.amount))}</div></div>`
@@ -4886,7 +4920,8 @@ function renderMoney() {
       <div class="mn-yn"><button class="chip" data-sub="${esc(o.key)}" data-keep="1">Оставить</button><button class="chip no" data-sub="${esc(o.key)}" data-keep="0">Отменить</button></div></div>`).join("")}</div>`
   // 5. Капитал
   const cap = capital(), al2 = accts(), dl = debts()
-  html += `<div class="card mn-in" ${anim()}><h2>Капитал${al2.length ? `<span class="cap-t">${esc(core.money(cap.total))}</span>` : `<button class="act" data-do="acct-add">+ Счёт</button>`}</h2>` + (al2.length ? capChart() + `<div class="grid2 cap-g">${al2.map(a => {
+  if (!al2.length) more.push(["card", "Капитал", "Счета, вклады, наличные в один итог", 'data-do="acct-add"'])
+  else html += `<div class="card mn-in" ${anim()}><h2>Капитал${al2.length ? `<span class="cap-t">${esc(core.money(cap.total))}</span>` : `<button class="act" data-do="acct-add">+ Счёт</button>`}</h2>` + (al2.length ? capChart() + `<div class="grid2 cap-g">${al2.map(a => {
       const c = a.cur || baseCur()
       return `<button class="tile" data-acct="${esc(a.id)}"><div class="k">${tdIco(ACCT_T[a.type] ? ACCT_T[a.type][1] : "card", 13)} ${esc(a.title)}</div><div class="v">${esc(fmtCur(a.amount, c))}</div>${c !== baseCur() ? `<div class="k">≈ ${esc(core.money(Math.round(fx(a.amount, c))))}</div>` : ""}</button>` }).join("")}
       ${cap.jarSum ? `<div class="tile"><div class="k">${tdIco("jar", 13)} В копилках</div><div class="v">${esc(core.money(cap.jarSum))}</div><div class="k">уже внутри счетов</div></div>` : ""}
@@ -4894,13 +4929,15 @@ function renderMoney() {
       <button class="tile add" data-do="acct-add">${tdIco("plus", 16)} Счёт</button></div><div class="muted small" style="margin-top:8px">${esc(fxLine())}</div>`
     : `<div class="empty">Счета, наличные, вклады, квартира и долги — в один итог с графиком по месяцам. Валюты пересчитаются по курсу.</div>`) + `</div>`
   // 9. Долги и займы
-  html += `<div class="card mn-in" id="mn-debts" ${anim()}><h2>Долги и займы<button class="act" data-do="debt-add">+ Добавить</button></h2>` + (dl.length ? dl.map(d => {
+  if (!dl.length) more.push(["hand", "Долги и займы", "Кто кому должен и до какого числа", 'data-do="debt-add"'])
+  else html += `<div class="card mn-in" id="mn-debts" ${anim()}><h2>Долги и займы<button class="act" data-do="debt-add">+ Добавить</button></h2>` + (dl.length ? dl.map(d => {
       const x = debtLine(d, now), sign = d.dir === "in" ? "+" : "−"
       return `<div class="row" data-debt="${esc(d.id)}"><div class="grow"><div class="t">${esc(x.t)}</div><div class="s ${x.late ? "exp" : ""}">${esc(x.s)}</div>${x.ask ? `<button class="chip mn-ask" data-debt-ask="${esc(d.id)}">Напомнить ему</button>` : ""}</div><div class="amt ${d.dir === "in" ? "inc" : ""}">${sign}${num(d.amount)}</div></div>` }).join("")
     : `<div class="empty">Кто кому должен и до какого числа. Для кредита — план погашения: насколько раньше закроете, если добавлять немного каждый месяц.</div>`) + `</div>`
+  if (more.length) html += `<div class="card mn-in mn-more" ${anim()}><h2>Ещё</h2>${more.map(([ic, t2, s2, a]) => `<button class="row list-row" ${a}><span class="pl-ic mn-mi">${tdIco(ic, 17)}</span><div class="grow"><div class="t">${esc(t2)}</div><div class="s">${esc(s2)}</div></div><span class="chev">${ICO.chev}</span></button>`).join("")}</div>`
   // 10. Неделя в деньгах
   if (isCur) { const ti = ["praise", "roast", "dry"].indexOf(mn.tone)
-    html += `<div class="card mn-in" ${anim()}><h2>Неделя в деньгах</h2><div class="seg mn-seg" style="--i:${ti}"><i></i>${[["praise", "Похвали"], ["roast", "Пожури"], ["dry", "Сухо"]].map(([k2, n], i) => `<button data-tone="${k2}" class="${i === ti ? "on" : ""}">${n}</button>`).join("")}</div>
+    html += `<div class="card mn-in" ${anim()}><h2>Неделя в деньгах</h2><div class="seg mn-seg" style="--i:${ti}"><i></i>${[["praise", "Мягко"], ["roast", "Строго"], ["dry", "Коротко"]].map(([k2, n], i) => `<button data-tone="${k2}" class="${i === ti ? "on" : ""}">${n}</button>`).join("")}</div>
       <div class="mn-week" id="mn-week">${esc(weekText(mn.tone, weekMoney(now)))}</div></div>` }
   // Операции (4. валюты)
   const items = t.items.slice().reverse()
@@ -5139,13 +5176,17 @@ function ringsCard(v, now = new Date()) {
   const cs = canSpend(now)
   const R = (p, color, label, val, act) => { const r = 21, L = 2 * Math.PI * r
     return `<button class="rg" data-do="${act}"><svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="${r}" class="mr-t"/><circle cx="26" cy="26" r="${r}" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${L * Math.max(0.001, Math.min(1, p || 0))} ${L}" transform="rotate(-90 26 26)"/></svg><span>${label}</span><b>${val}</b></button>` }
-  return `<div class="card rings-card"><div class="rings">
-    ${R(remsToday.length ? done / remsToday.length : 0, "var(--ok, #0A9F6E)", "дела", `${done} из ${remsToday.length}`, "td-top3")}
-    ${R(h.water / g.waterGoal, "#0A84FF", "вода", liters(h.water) + " л", "water")}
-    ${R((h.steps || 0) / (g.stepGoal || 10000), "#FF9F0A", "шаги", h.steps != null ? num(h.steps) : "—", "tab-health")}
-    ${R((h.protein || 0) / proteinGoal(), "#AF52DE", "белок", num(h.protein) + " г", "tab-health")}
-    ${cs ? R(cs.perDay ? cs.today / cs.perDay : 0, "#30B0C7", "можно", core.money(cs.today), "tab-money") : R(0, "#30B0C7", "траты", "−" + num(live(D.money).filter(e => e.type === "expense" && sameDay(e.date, now)).reduce((s, e) => s + e.amount, 0)), "tab-money")}
-  </div></div>`
+  // Кольцо показываем, когда для него есть цель или хоть одна запись: у новичка не будет «дела 0 из 0», «белок 0 г», «траты −0»
+  const rs = [
+    remsToday.length && R(done / remsToday.length, "var(--ok, #0A9F6E)", "дела", `${done} из ${remsToday.length}`, "td-top3"),
+    live(D.water).length && R(h.water / g.waterGoal, "#0A84FF", "вода", liters(h.water) + " л", "water"),
+    h.steps != null && R((h.steps || 0) / (g.stepGoal || 10000), "#FF9F0A", "шаги", num(h.steps), "tab-health"),
+    live(D.food).some(f => f.protein > 0) && R((h.protein || 0) / proteinGoal(), "#AF52DE", "белок", num(h.protein) + " г", "tab-health"),
+    cs ? R(cs.perDay ? cs.today / cs.perDay : 0, "#30B0C7", "можно", core.money(cs.today), "tab-money")
+      : live(D.money).some(e => e.type === "expense") && R(0, "#30B0C7", "траты", "−" + num(live(D.money).filter(e => e.type === "expense" && sameDay(e.date, now)).reduce((s, e) => s + e.amount, 0)), "tab-money"),
+  ].filter(Boolean)
+  if (rs.length < 2) return ""
+  return `<div class="card rings-card"><div class="rings">${rs.join("")}</div></div>`
 }
 
 // — 2. Три главных дела дня
@@ -5156,7 +5197,7 @@ function top3Card(v, now = new Date()) {
   if (!list.length) {
     const cand = openRems(v).filter(r => !remDue(r) || remDue(r) < addDays(sod(now), 1))
     if (!cand.length || now.getHours() >= 15) return ""
-    return `<div class="card top3"><h2>Три главных<button class="act" data-do="td-top3">Выбрать</button></h2><div class="muted small">Минута утром: выберите три дела, ради которых день будет удачным. Они встанут наверх.</div></div>`
+    return `<div class="card top3 line-card"><h2>Три главных<button class="act" data-do="td-top3">Выбрать</button></h2><div class="s1">Три дела, ради которых день будет удачным</div></div>`
   }
   return `<div class="card top3"><h2>Три главных<button class="act" data-do="td-top3">Изменить</button></h2>${list.map((r, i) => `<div class="row ${r.completed ? "past" : ""}">
     <button class="n ${r.completed ? "on" : ""}" ${r.completed ? "" : `data-check="${esc(r.id)}"`}>${r.completed ? tdIco("check", 14) : i + 1}</button>
@@ -5286,8 +5327,8 @@ function tipCard(v, now = new Date()) {
 const dayTpls = () => live(D.goals).filter(g => g.kind === "dtpl" && g.title)
 function tplCard(now = new Date()) {
   const l = dayTpls()
-  return `<div class="card"><h2>Шаблон дня<button class="act" data-do="td-tpl-new">+ Свой</button></h2>${l.length ? `<div class="chips">${l.map(t => `<button class="chip" data-tpl="${esc(t.id)}">${tdIco(t.ico || "tpl", 15)} ${esc(t.title)}</button>`).join("")}</div>`
-    : '<div class="muted small">Сохраните обычный день как шаблон — «Рабочий», «Выходной с детьми», «Поездка» — и ставьте все его дела одним нажатием.</div>'}</div>`
+  return `<div class="card${l.length ? "" : " line-card"}"><h2>Шаблон дня<button class="act" data-do="td-tpl-new">+ Свой</button></h2>${l.length ? `<div class="chips">${l.map(t => `<button class="chip" data-tpl="${esc(t.id)}">${tdIco(t.ico || "tpl", 15)} ${esc(t.title)}</button>`).join("")}</div>`
+    : '<div class="s1">Все дела обычного дня одним нажатием</div>'}</div>`
 }
 function tplApply(id) {
   const t = D.goals.find(x => x.id === id); if (!t) return
