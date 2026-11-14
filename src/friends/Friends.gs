@@ -447,7 +447,7 @@ function gcals_() {
   if (g && g.lists) try {
     const j = gapi_("get", "/users/me/calendarList?minAccessRole=reader&maxResults=50");
     const list = (j.items || []).filter(k => !k.hidden && k.selected !== false && !k.deleted)
-      .map(k => ({ id: k.primary ? "primary" : k.id, name: k.summaryOverride || k.summary || "Календарь", primary: !!k.primary }));
+      .map(k => ({ id: k.primary ? "primary" : k.id, name: k.summaryOverride || k.summary || "Календарь", primary: !!k.primary, ro: /^(reader|freeBusyReader)$/.test(k.accessRole || "") }));
     if (list.length) return list;
   } catch (e) { if (!gcalGet_()) throw e; }   // доступ отозван — не прятать ошибку
   return [{ id: "primary", name: (g && g.email) || "Google", primary: true }];
@@ -499,7 +499,7 @@ function calG_(c) {
       }
     });
     out.sort((x, y) => x.start < y.start ? -1 : 1);
-    return { events: out.slice(0, 600), calendars: cals.map(k => ({ name: k.name, primary: k.primary })), source: "google" };
+    return { events: out.slice(0, 600), calendars: cals.map(k => ({ name: k.name, primary: k.primary, ro: !!k.ro })), source: "google" };
   }
   if (a === "create") {
     if (!c.title || !c.start) throw new Error("нужны название и время");

@@ -1359,3 +1359,23 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 .sh-tot b { font-size: 24px; font-variant-numeric: tabular-nums; }
 .sh-hint { margin: 0 2px 10px; }
 .sh-est { margin: 8px 4px 0; font-weight: 600; color: var(--text); }
+
+/* Карточка события и окно напоминания */
+.evc-h { display: flex; align-items: center; gap: 10px; }
+.evc-h em { width: 12px; height: 12px; border-radius: 4px; flex: none; }
+.evc-h h3 { margin: 4px 0; overflow-wrap: anywhere; }
+.evc { margin-top: 8px; border-radius: 16px; background: var(--track, var(--bg)); padding: 4px 14px; }
+.evc-r { display: flex; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); align-items: flex-start; }
+.evc-r:first-child { border-top: 0; }
+.evc-r > .tdi { color: var(--sub); flex: none; margin-top: 2px; }
+.evc-r .t { font-weight: 600; overflow-wrap: anywhere; }
+.evc-r .t .muted { font-weight: 500; }
+.evc-r .s { font-size: 13px; color: var(--sub); margin-top: 2px; }
+.evc-r .s a { color: var(--gold-dark, var(--gold)); text-decoration: none; font-weight: 600; }
+.evc-n { white-space: pre-wrap; font-weight: 500; }
+.evc-ro { display: flex; gap: 10px; margin-top: 10px; padding: 11px 14px; border-radius: 14px; background: rgba(255, 159, 10, .13); font-size: 13.5px; line-height: 1.35; }
+.evc-ro .tdi { color: #FF9F0A; flex: none; margin-top: 1px; }
+#ev-b .btns .btn, .sheet .btns .btn .tdi { vertical-align: -3px; }
+#ev-b .chip .tdi { vertical-align: -2px; }
+.rm-q { margin: 2px 0 8px; }
+[data-rem] { cursor: pointer; }

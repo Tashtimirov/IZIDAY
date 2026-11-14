@@ -2348,43 +2348,158 @@ async function eventForm() {
   queueOp("create_event", ev)
   render(); toast("📅 Внесётся в календарь iPhone при обновлении виджета")
 }
-async function eventSheet(e) {
-  if (e.fam) return famEvForm(e.fam)
-  const when = e.all_day ? "весь день" : `${hm(e.s)}–${hm(e.e)}`
-  const b = await ui.confirm(e.title || "(без названия)", deEmo(`<div class="msg">${esc(core.cap(fullDate(e.s)))}, ${when}${e.location ? "\n📍 " + esc(e.location) : ""}${e.calendar ? "\n" + esc(e.calendar) : ""}${e.repeats ? "\n🔁 повторяется" : ""}${e.pending ? "\n⏳ ещё не внесено в iPhone" : ""}</div>`),
-    e.pending ? ["Отменить"] : ["Удалить", "Перенести"])
-  if (b === "Отменить") { cancelOp(e.id.slice(3)); render(); return }
-  if (b === "Перенести") {
-    const t = await ui.ask(`Куда перенести «${e.title}»?`, `Сейчас: ${shortDate(e.s)}, ${hm(e.s)}. Например: «на 20:00», «на пятницу в 15», «на час позже»`)
-    if (!t) return
-    const m = core.buildMove("перенеси x на " + t.replace(/^на\s+/i, ""))
-    let ns
-    if (m.shift) ns = new Date(+e.s + m.shift * 60000)
-    else if (m.toDay || m.toTime) {
-      ns = new Date(m.toDay || sod(e.s))
-      const [hh, mm] = m.toTime ? m.toTime.split(":").map(Number) : [e.s.getHours(), e.s.getMinutes()]
-      ns.setHours(hh, mm, 0, 0)
-    }
-    if (!ns) return ui.info("Не понял, куда перенести", t)
-    if (gcalOn()) {
-      const r = await calDo("update", { id: e.id, occurrence_start: e.start, start: iso(ns), end: iso(new Date(+ns + (e.e - e.s))) })
-      toast(r.error ? `Не получилось: ${r.error}` : `↔️ ${shortDate(ns)}, ${hm(ns)}`); return
-    }
-    queueOp("update_event", { id: e.id, occurrence_start: e.start, start: iso(ns), end: iso(new Date(+ns + (e.e - e.s))) })
-    render(); toast(`↔️ ${shortDate(ns)}, ${hm(ns)} — внесётся при обновлении виджета`)
+// ───── Карточка события: всё, что известно о встрече, и правка (в Google Календарь — запись туда же).
+// Календарь только для чтения (праздники, чужой, подписка) — честно говорим, что изменить нельзя, и даём «Скрыть в IZIDAY».
+const CAL_RO_NAME = /праздник|holidays? in|^holidays|номера недель|week numbers/i
+const CAL_DENY = /not allowed|forbidden|\b403\b|нет прав|нет доступа|read.?only|только (для )?чтени|permission|insufficient|access level|cannot (be )?(edit|modif|chang)/i
+function calRO(e) {
+  const n = e.calendar || ""; if (!n || e.pending) return false
+  const c = ((D.gcal && D.gcal.calendars) || []).find(c => (c.name || c) === n)
+  if (c && c.ro != null) return !!c.ro
+  return !!((D.cal && D.cal.ro) || {})[n] || CAL_RO_NAME.test(n)
+}
+const calROSet = n => { if (!n) return; D.cal = D.cal || {}; D.cal.ro = Object.assign({}, D.cal.ro, { [n]: 1 }); save(false) }
+const evDur = (a, b) => { const m = Math.round((b - a) / 60e3); return m <= 0 ? "" : m >= 1440 && m % 1440 === 0 ? `${m / 1440} ${plural(m / 1440, "день", "дня", "дней")}` : m >= 60 ? `${Math.floor(m / 60)} ч${m % 60 ? " " + (m % 60) + " мин" : ""}` : m + " мин" }
+function eventSheet(e0) {
+  if (!e0) return
+  if (e0.fam) return famEvForm(e0.fam)
+  let e = e0, edit = false, busy = false
+  const s = sheet(`<div id="ev-b"></div>`, { onClose: () => render() })
+  const B = $("#ev-b", s.el)
+  const line = (ic, t, sub) => `<div class="evc-r">${tdIco(ic, 18)}<div><div class="t">${t}</div>${sub ? `<div class="s">${sub}</div>` : ""}</div></div>`
+  const view = () => {
+    const ro = calRO(e), multi = !sameDay(e.s, e.e), tr = e.location && qTrav[e.location]
+    const when = e.all_day ? (multi ? `${esc(core.cap(fullDate(e.s)))} — ${esc(fullDate(e.e))}` : esc(core.cap(fullDate(e.s))))
+      : multi ? `${esc(core.cap(shortDate(e.s)))}, ${hm(e.s)} — ${esc(shortDate(e.e))}, ${hm(e.e)}` : esc(core.cap(fullDate(e.s)))
+    const whenS = e.all_day ? "Весь день" + (multi ? " · " + evDur(e.s, addDays(e.e, 1)) : "") : multi ? evDur(e.s, e.e) : `${hm(e.s)}–${hm(e.e)} · ${evDur(e.s, e.e)}`
+    B.innerHTML = `<div class="evc-h"><em style="background:${esc(evColor(e))}"></em><h3>${esc(e.title || "(без названия)")}</h3></div>
+      <div class="evc">${line("clock", when, whenS)}
+      ${e.location ? line("pin", esc(e.location), `${tr && tr.min && !e.all_day ? `Дорога ${tr.min} мин · выехать в ${hm(new Date(+e.s - (tr.min + 10) * 60e3))} · ` : ""}<a href="https://maps.google.com/?q=${encodeURIComponent(e.location)}" target="_blank" rel="noopener">Открыть на карте</a>`) : line("pin", '<span class="muted">Место не указано</span>')}
+      ${e.calendar ? line("cal", "Календарь «" + esc(e.calendar) + "»", ro ? "только для чтения" : "") : ""}
+      ${e.repeats ? line("repeat", "Повторяется") : ""}
+      ${e.notes ? line("note", `<span class="evc-n">${esc(e.notes)}</span>${e.notes.length >= 300 ? "…" : ""}`) : line("note", '<span class="muted">Описания нет</span>')}
+      ${e.pending ? line("alert", "Ещё не внесено в календарь iPhone", "внесётся при обновлении виджета") : ""}</div>
+      ${ro ? `<div class="evc-ro">${tdIco("lock", 18)}<div>Этот календарь только для чтения: изменить или удалить событие в нём нельзя. Его можно скрыть в IZIDAY — в самом календаре оно останется.</div></div>` : ""}
+      <div class="btns">${e.pending ? '<button class="btn" data-a="cancel">Отменить событие</button>'
+        : ro ? `<button class="btn primary" data-a="hide">${tdIco("eyeoff", 16)} Скрыть в IZIDAY</button>`
+        : `<button class="btn red" data-a="del">Удалить</button><button class="btn" data-a="hide">Скрыть</button><button class="btn primary" data-a="edit">Изменить</button>`}</div>`
+    const A = k => $(`[data-a="${k}"]`, B)
+    if (A("cancel")) A("cancel").onclick = () => { cancelOp(e.id.slice(3)); s.close() }
+    if (A("edit")) A("edit").onclick = () => { edit = true; draw() }
+    if (A("hide")) A("hide").onclick = async () => { const all = await series(); if (all == null) return; evHide(e, all); s.close(); toast(all ? "Серия скрыта в IZIDAY" : "Скрыто в IZIDAY") }
+    if (A("del")) A("del").onclick = del
   }
-  if (b === "Удалить") {
-    let all = false
-    if (e.repeats) { const i = await ui.choose("Повторяющееся событие", "", ["Только это", "Это и все следующие"]); if (i < 0) return; all = i === 1 }
+  const series = async () => { if (!e.repeats) return false; const i = await ui.choose("Повторяющееся событие", "", ["Только это", "Это и все следующие"]); return i < 0 ? null : i === 1 }
+  const del = async () => {
+    const all = await series(); if (all == null) return
     if (gcalOn()) {
-      toast("🗑 Удаляю…")
+      toast("Удаляю…")
       const r = await calDo("delete", { id: e.id, occurrence_start: e.start, all_future: all })
-      if (r.error && calCantDelete(r.error)) { evHide(e, all); render(); toast(all ? "Серия скрыта в IZIDAY" : "Скрыто в IZIDAY"); return }
-      toast(r.error ? `Не получилось: ${r.error}` : all ? "🗑 Удалено это и все следующие" : "🗑 Удалено"); return
+      if (r.error && calCantDelete(r.error)) { evHide(e, all); s.close(); toast(all ? "Серия скрыта в IZIDAY" : "Скрыто в IZIDAY"); return }
+      if (r.error) return toast(`Не получилось: ${r.error}`)
+      D.gcal.events = D.gcal.events.filter(v => !(v.id === e.id && (all ? v.start >= e.start : v.start === e.start)))
+      s.close(); toast(all ? "Удалено это и все следующие" : "Удалено"); return
     }
     queueOp("delete_event", { id: e.id, occurrence_start: e.start, all_future: all })
-    render(); toast("🗑 Удалится при обновлении виджета")
+    s.close(); toast("Удалится при обновлении виджета")
   }
+  const form = () => {
+    let timed = !e.all_day
+    const longN = (e.notes || "").length >= 300
+    B.innerHTML = `<h3>Изменить событие</h3>
+      <div class="field"><label>Название</label><input id="ee-t" value="${esc(e.title || "")}"></div>
+      <div id="ee-all" ${timed ? "hidden" : ""}><div class="field"><label>День</label><input id="ee-d" type="date" value="${dayKey(e.s)}"></div>
+        <button class="chip" data-a="time">${tdIco("clock", 14)} Указать время</button></div>
+      <div id="ee-tm" ${timed ? "" : "hidden"}><div class="field"><label>Начало</label><input id="ee-s" type="datetime-local" value="${timed ? iso(e.s) : dayKey(e.s) + "T09:00"}"></div>
+        <div class="field"><label>Конец</label><input id="ee-e" type="datetime-local" value="${timed ? iso(e.e) : dayKey(e.s) + "T10:00"}"></div></div>
+      <div class="field"><label>Место</label><input id="ee-l" value="${esc(e.location || "")}" placeholder="Адрес или название"></div>
+      ${longN ? `<div class="msg">Описание длинное и показано не целиком — править его лучше в самом календаре, чтобы ничего не потерять.</div>`
+        : `<div class="field"><label>Описание</label><textarea id="ee-n" rows="3" placeholder="Заметки к встрече">${esc(e.notes || "")}</textarea></div>`}
+      ${e.calendar ? `<div class="muted small">Календарь «${esc(e.calendar)}»${gcalOn() ? " — изменения сохранятся в нём" : ""}</div>` : ""}
+      <div class="btns"><button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`
+    const A = k => $(`[data-a="${k}"]`, B), S = $("#ee-s", B), E = $("#ee-e", B)
+    let span = timed ? e.e - e.s : 36e5
+    A("time").onclick = () => { timed = true; S.value = $("#ee-d", B).value + "T09:00"; E.value = $("#ee-d", B).value + "T10:00"; $("#ee-all", B).hidden = true; $("#ee-tm", B).hidden = false }
+    S.onchange = () => { const d = parseIso(S.value); if (d) E.value = iso(new Date(+d + span)) }   // сдвинули начало — конец едет следом
+    E.onchange = () => { const a = parseIso(S.value), b = parseIso(E.value); if (a && b && b > a) span = b - a }
+    A("no").onclick = () => { edit = false; draw() }
+    A("ok").onclick = async () => {
+      if (busy) return
+      const title = $("#ee-t", B).value.trim(); if (!title) return toast("Напишите название")
+      const p = {}, loc = $("#ee-l", B).value.trim(), N = $("#ee-n", B)
+      if (title !== (e.title || "")) p.title = title
+      if (loc !== (e.location || "")) p.location = loc
+      if (N && N.value.trim() !== (e.notes || "").trim()) p.notes = N.value.trim()
+      if (timed) {
+        const a = parseIso(S.value), b = parseIso(E.value)
+        if (!a || !b) return toast("Укажите начало и конец")
+        if (b <= a) return toast("Конец должен быть позже начала")
+        if (e.all_day || +a !== +e.s || +b !== +e.e) { p.start = iso(a); p.end = iso(b) }
+      } else { const d = $("#ee-d", B).value; if (!d) return toast("Выберите день")
+        if (d !== dayKey(e.s)) { p.start = d; p.end = dayKey(new Date(+parseIso(d) + (e.e - e.s))) } }
+      if (!Object.keys(p).length) { edit = false; return draw() }
+      const input = Object.assign({ id: e.id, occurrence_start: e.start }, p)
+      const apply = () => { e = Object.assign({}, e, p.title ? { title: p.title } : {}, p.location != null ? { location: p.location } : {}, p.notes != null ? { notes: p.notes } : {},
+        p.start ? { start: p.start, end: p.end, all_day: !timed, s: parseIso(p.start), e: parseIso(p.end) } : {}) }
+      if (gcalOn()) {
+        busy = true; A("ok").textContent = "Сохраняю…"
+        const r = await calDo("update", input); busy = false
+        if (r.error) {
+          if (CAL_DENY.test(r.error)) { calROSet(e.calendar); edit = false; draw(); return toast("Этот календарь не даёт менять события") }
+          if (A("ok")) A("ok").textContent = "Сохранить"
+          return toast(`Не получилось: ${r.error}`)
+        }
+        const g = D.gcal.events.find(v => v.id === e.id && v.start === e.start)
+        apply(); if (g) Object.assign(g, { title: e.title, location: e.location, notes: e.notes, start: e.start, end: e.end, all_day: e.all_day })
+        edit = false; draw(); render(); return toast("Сохранено в календаре")
+      }
+      queueOp("update_event", input); apply(); e.pending = false
+      edit = false; draw(); render(); toast("Внесётся в календарь iPhone при обновлении виджета")
+    }
+  }
+  const draw = () => edit ? form() : view()
+  draw()
+  return s
+}
+
+// ───── Напоминание: открыть любую позицию списка и поправить — текст, день, время (в т.ч. добавить время тому, что было без него), повтор, заметку
+const REM_REP = [["", "Нет"], ["daily", "Каждый день"], ["weekly", "Каждую неделю"], ["monthly", "Каждый месяц"], ["yearly", "Каждый год"]]
+function remSheet(id) {
+  const r = D.rems.find(x => x.id === id && !x.deleted); if (!r) return
+  const d0 = parseIso(r.due)
+  let rep = (r.repeat && r.repeat.freq) || ""
+  const s = sheet(`<h3>Напоминание</h3>
+    <div class="field"><label>Что сделать</label><input id="rm-t" value="${esc(r.title || "")}"></div>
+    <div class="grid2"><div class="field"><label>День</label><input id="rm-d" type="date" value="${d0 ? dayKey(d0) : ""}"></div>
+    <div class="field"><label>Время</label><input id="rm-h" type="time" value="${d0 && remHasTime(r) ? hm(d0) : ""}"></div></div>
+    <div class="chips rm-q"><button class="chip" data-q="0">Сегодня</button><button class="chip" data-q="1">Завтра</button><button class="chip" data-q="t">Без времени</button><button class="chip" data-q="x">Без срока</button></div>
+    <div class="muted small" id="rm-w"></div>
+    <div class="field"><label>Повтор</label><div class="chips" id="rm-r">${REM_REP.map(([k, n]) => `<button class="chip ${rep === k ? "on" : ""}" data-k="${k}">${n}</button>`).join("")}</div></div>
+    <div class="field"><label>Заметка</label><textarea id="rm-n" rows="2" placeholder="Необязательно">${esc(r.notes || "")}</textarea></div>
+    <div class="btns"><button class="btn red" data-a="del">Удалить</button><button class="btn" data-a="done">Выполнено</button><button class="btn primary" data-a="ok">Сохранить</button></div>`, { onClose: () => render() })
+  const Dd = $("#rm-d", s.el), H = $("#rm-h", s.el), W = $("#rm-w", s.el)
+  const due = () => { let day = Dd.value; const t = H.value
+    if (t && !day) { const n = new Date(), [h, m] = t.split(":").map(Number); day = dayKey(h * 60 + m > n.getHours() * 60 + n.getMinutes() ? n : addDays(n, 1)) }   // только время — ближайшее такое время
+    return day ? (t ? `${day}T${t}` : day) : null }
+  const hint = () => { const v = due(), d = parseIso(v)
+    W.textContent = !d ? "Без срока: остаётся в списке, пока не отметите" : /T/.test(v) ? `Напомню ${dayName(d)} в ${hm(d)}` : `На ${dayName(d)}, без времени — добавьте время, и напомню точно` }
+  Dd.oninput = H.oninput = hint; hint()
+  $$(".rm-q .chip", s.el).forEach(c => c.onclick = () => { const q = c.dataset.q
+    if (q === "x") { Dd.value = ""; H.value = "" } else if (q === "t") H.value = ""; else Dd.value = dayKey(addDays(new Date(), +q))
+    hint() })
+  $$("#rm-r .chip", s.el).forEach(c => c.onclick = () => { rep = c.dataset.k; $$("#rm-r .chip", s.el).forEach(z => z.classList.toggle("on", z === c)) })
+  $('[data-a="del"]', s.el).onclick = () => { remove("rems", r.id); s.close(); toast("Напоминание удалено") }
+  $('[data-a="done"]', s.el).onclick = () => { remSet(r.id, { completed: true }); s.close(); toast("Выполнено") }
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const title = $("#rm-t", s.el).value.trim(); if (!title) return toast("Напишите, что напомнить")
+    const v = due()
+    if (rep && !v) return toast("Для повтора выберите день")
+    const cur = D.rems.find(x => x.id === r.id) || r
+    const repeat = !rep ? null : cur.repeat && cur.repeat.freq === rep ? cur.repeat : { freq: rep }
+    upsert("rems", Object.assign({}, cur, { title, due: v, notes: $("#rm-n", s.el).value.trim(), repeat }, v !== (cur.due || null) ? { anchor: null } : {}))
+    s.close(); toast(v && /T/.test(v) ? `Напомню ${dayName(parseIso(v))} в ${hm(parseIso(v))}` : "Сохранено")
+  }
+  return s
 }
 async function addMenu() {
   const glass = H().glass || 250
@@ -2546,7 +2661,7 @@ function renderToday() {
   else rems = rems.filter(r => remDue(r) && sameDay(remDue(r), selDay))
   rems.sort((a, b) => (!remDue(a)) - (!remDue(b)) || (remDue(a) || 0) - (remDue(b) || 0))
   html += `<div class="card"><h2>Напоминания<button class="act" data-do="reminder">+ Добавить</button></h2>`
-  html += rems.length ? rems.slice(0, 25).map(r => `<div class="row ${r.pending ? "pending" : ""}"><button class="check ${remLate(r) ? "late" : ""}" data-check="${esc(r.id)}"></button>
+  html += rems.length ? rems.slice(0, 25).map(r => `<div class="row ${r.pending ? "pending" : ""}" data-rem="${esc(r.id)}"><button class="check ${remLate(r) ? "late" : ""}" data-check="${esc(r.id)}"></button>
     <div class="grow"><div class="t">${esc(r.title)}</div>${r.due || r.list ? `<div class="s ${remLate(r) ? "exp" : ""}">${esc(remLabel(r))}${r.due && r.list ? " · " : ""}${esc(r.list || "")}</div>` : ""}</div></div>`).join("")
     : `<div class="empty">${isToday ? "Всё сделано" : "На этот день напоминаний нет"}</div>`
   const bills = isToday ? recurSoon() : []
@@ -2861,6 +2976,7 @@ function bind() {
   $$("[data-hday]", v).forEach(b => b.onclick = () => { const d = addDays(healthDay(), +b.dataset.hday); if (d <= sod(new Date())) { selDay = d; render() } })
   $$("[data-report]", v).forEach(b => b.onclick = () => showReport(b.dataset.report, tab === "money" ? monthStart(monthKey) : healthDay()))
   $$("[data-ev]", v).forEach(el => el.onclick = () => eventSheet(dayEvsCache[+el.dataset.ev]))
+  $$("[data-rem]", v).forEach(el => el.onclick = () => remSheet(el.dataset.rem))
   $$("[data-check]", v).forEach(b => b.onclick = ev => {
     ev.stopPropagation()
     const id = b.dataset.check
@@ -3903,7 +4019,7 @@ function searchAll(q) {
   for (const e of live(D.money).sort((a, b) => b.date - a.date)) if (has(e.category, e.comment) || (n > 0 && Math.abs(e.amount - n) < 0.5))
     out.push({ g: "Деньги", t: `${e.type === "expense" ? "−" : "+"}${core.money(e.amount)} · ${e.category}`, s: `${dayName(new Date(e.date))}${e.comment ? " · " + e.comment : ""}`, open: () => moneyForm(null, e) })
   for (const r of live(D.recur)) if (has(r.title, r.category) || (n > 0 && Math.abs(r.amount - n) < 0.5)) out.push({ g: "Регулярные платежи", t: r.title, s: `${core.money(r.amount)} · ${recurLabel(r)}`, open: () => recurAsk(r) })
-  for (const r of live(D.rems).sort((a, b) => (b.u || 0) - (a.u || 0))) if (has(r.title, r.notes)) out.push({ g: "Напоминания", t: (r.done ? "✓ " : "") + r.title, s: remLabel(r) || (r.done ? "выполнено" : "без срока") })
+  for (const r of live(D.rems).sort((a, b) => (b.u || 0) - (a.u || 0))) if (has(r.title, r.notes)) out.push({ g: "Напоминания", t: (r.done ? "✓ " : "") + r.title, s: remLabel(r) || (r.done ? "выполнено" : "без срока"), open: () => remSheet(r.id) })
   for (const e of iphone().events) if (has(e.title, e.location)) out.push({ g: "Календарь", t: e.title, s: `${dayName(e.s)} ${e.all_day ? "" : hm(e.s)}${e.location ? " · " + e.location : ""}`, open: () => eventSheet(e) })
   for (const f of live(D.food).sort((a, b) => b.date - a.date)) if (has(f.title)) out.push({ g: "Еда", t: f.title, s: `${dayName(new Date(f.date))} · ${num(f.kcal)} ккал`, open: () => foodForm(f) })
   for (const h of live(D.habits)) if (has(h.title)) out.push({ g: "Привычки", t: h.title, s: h.bad ? "бросаю" : `${habitStreak(h)} дн. подряд` })
@@ -5297,7 +5413,7 @@ function top3Card(v, now = new Date()) {
     if (!cand.length || now.getHours() >= 15) return ""
     return `<div class="card top3"><h2>Три главных<button class="act" data-do="td-top3">Выбрать</button></h2><div class="muted small">Минута утром: выберите три дела, ради которых день будет удачным. Они встанут наверх.</div></div>`
   }
-  return `<div class="card top3"><h2>Три главных<button class="act" data-do="td-top3">Изменить</button></h2>${list.map((r, i) => `<div class="row ${r.completed ? "past" : ""}">
+  return `<div class="card top3"><h2>Три главных<button class="act" data-do="td-top3">Изменить</button></h2>${list.map((r, i) => `<div class="row ${r.completed ? "past" : ""}" data-rem="${esc(r.id)}">
     <button class="n ${r.completed ? "on" : ""}" ${r.completed ? "" : `data-check="${esc(r.id)}"`}>${r.completed ? tdIco("check", 14) : i + 1}</button>
     <div class="grow"><div class="t">${esc(r.title)}</div>${remDue(r) && remHasTime(r) ? `<div class="s">${hm(remDue(r))}</div>` : ""}</div></div>`).join("")}</div>`
 }
@@ -5388,7 +5504,7 @@ function timelineHTML(v, day, evs, now = new Date()) {
     else if (it.kind === "ev") { const e = it.ev, rain = wxRain(e.s, e.e)
       html += `${lbl}<div class="tl-it ev ${past ? "past" : ""} ${e.pending ? "pending" : ""}" data-ev="${it.i}" style="--c:${esc(evColor(e))}"><b>${esc(e.title || "(без названия)")}</b><small>${hm(e.s)}–${hm(e.e)}${e.location ? " · " + esc(e.location) : ""}${rain ? ` · ${tdIco("rain", 12)} ${rain.mm >= 4 ? "ливень" : "дождь"}` : ""}</small></div>` }
     else if (it.kind === "rem") { const r = it.r
-      html += `${lbl}<div class="tl-it task ${r.completed ? "past" : ""}"><button class="check ${r.completed ? "on" : ""}" ${r.completed ? "" : `data-check="${esc(r.id)}"`}></button><div><b>${esc(r.title)}</b><small>${hm(it.s)}</small></div></div>` }
+      html += `${lbl}<div class="tl-it task ${r.completed ? "past" : ""}" data-rem="${esc(r.id)}"><button class="check ${r.completed ? "on" : ""}" ${r.completed ? "" : `data-check="${esc(r.id)}"`}></button><div><b>${esc(r.title)}</b><small>${hm(it.s)}</small></div></div>` }
     else if (it.kind === "free") { const pick = undated[sugg++]
       html += `${lbl}<button class="tl-it free" data-gap="${+it.s}" data-gap-end="${+it.e}">+ Свободно ${hm(it.s)}–${hm(it.e)} · ${dur(it.s, it.e)}${pick ? ` · поставить «${esc(pick.title)}»?` : ""}</button>` }
   }
@@ -5552,6 +5668,7 @@ function bindToday(v) {
 Object.assign(TD_ICO, {
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/>',
   layers: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>', eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7-.4 1-1.2 2.3-2.4 3.6M6.6 6.6C4.4 8 2.8 10.2 2 12c1 2.5 5 7 10 7 1.8 0 3.4-.5 4.8-1.3"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>', shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/>',
+  note: '<path d="M5 6h14M5 11h14M5 16h9"/>', cal: '<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/>', lock: '<rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   share: '<path d="M12 15V3M7.5 7.5L12 3l4.5 4.5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   pin: '<path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>', bell: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   grid: '<rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M7.5 13.5h2M11 13.5h2M14.5 13.5h2M7.5 17h2M11 17h2"/>',
@@ -5829,9 +5946,10 @@ function undatedCard(v, now) {
 async function slotChoose(id) {
   const v = iphone(), r = v.reminders.find(x => x.id === id); if (!r) return
   const l = slotsFor(v, r, new Date(), [], 6)
-  if (!l.length) return ui.info("Окон нет", "В ближайшие 4 дня свободного времени под это дело нет")
-  const i = await ui.choose(r.title, "Когда поставить?", l.map(sl => `${core.cap(dayWord(sl.s))} ${hm(sl.s)}–${hm(sl.e)}${slotWhy(sl)}`))
+  if (!l.length) return remSheet(id)
+  const i = await ui.choose(r.title, "Когда поставить?", l.map(sl => `${core.cap(dayWord(sl.s))} ${hm(sl.s)}–${hm(sl.e)}${slotWhy(sl)}`).concat(["Изменить напоминание"]))
   if (i < 0) return
+  if (i === l.length) return remSheet(id)
   slotPut(r, l[i]); toast(`«${r.title}» — ${dayWord(l[i].s)} в ${hm(l[i].s)}`); render()
 }
 
@@ -5920,9 +6038,10 @@ async function calTap(it) {
   if (it.kind === "ktask") return FAM.isAdult() ? FAM.kidSheet(it.m.id) : ui.info(it.t, "Дела ребёнка на день. Отмечает их сам ребёнок, проверяют взрослые.")
   if (it.kind === "road") return ui.info(`Дорога ${it.min} мин`, `До «${it.ev.title}»${it.ev.location ? " (" + it.ev.location + ")" : ""}: выехать в ${hm(it.s)}.${it.late ? "\nПредыдущая встреча кончается позже — не успеваете. Сдвиньте одну из встреч." : ""}`)
   if (it.kind === "rem") {
-    const i = await ui.choose(it.r.title, `${core.cap(dayWord(it.s))} в ${hm(it.s)}`, ["Выполнено", "Другое время", "Убрать время"])
+    const i = await ui.choose(it.r.title, `${core.cap(dayWord(it.s))} в ${hm(it.s)}`, ["Выполнено", "Другое время", "Убрать время", "Изменить"])
     if (i === 0) { remSet(it.r.id, { completed: true }); toast("Выполнено") }
     if (i === 1) return slotChoose(it.r.id)
+    if (i === 3) return remSheet(it.r.id)
     if (i === 2) { const x = D.rems.find(z => z.id === it.r.id); if (x) upsert("rems", Object.assign({}, x, { due: dayKey(it.s), anchor: null })) }
     render()
   }
