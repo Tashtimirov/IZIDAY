@@ -2987,6 +2987,7 @@ function bind() {
     setTimeout(render, 380)
   })
   $$("[data-money]", v).forEach(el => el.onclick = () => moneyForm(null, D.money.find(e => e.id === el.dataset.money)))
+  moneySwipe(v)
   $$("[data-food]", v).forEach(el => el.onclick = () => foodForm(D.food.find(e => e.id === el.dataset.food)))
   $$("[data-wk]", v).forEach(el => el.onclick = () => workoutForm(D.workouts.find(e => e.id === el.dataset.wk)))
   $$("[data-mon]", v).forEach(b => b.onclick = () => {
@@ -5164,7 +5165,8 @@ function renderMoney() {
       <div class="mn-week" id="mn-week">${esc(weekText(mn.tone, weekMoney(now)))}</div></div>` }
   // Операции (4. валюты)
   const items = t.items.slice().reverse()
-  html += `<div class="card mn-in mn-ops" ${anim()}><h2>Операции<span class="muted small" style="text-transform:none;letter-spacing:0">${items.length}</span></h2>`
+  html += `<div class="card mn-in mn-ops${mnEdit && items.length ? " swd-all" : ""}" ${anim()}><h2>Операции<span class="muted small" style="text-transform:none;letter-spacing:0">${items.length}</span>${items.length ? `<button class="act" data-do="mn-edit">${mnEdit ? "Готово" : "Изменить"}</button>` : ""}</h2>`
+  if (items.length && !mnEdit && !MNY().swHint) html += `<div class="muted small swd-hint">Чтобы удалить операцию, смахните её влево или нажмите «Изменить».</div>`
   if (!items.length) html += `<div class="empty">Скажите помощнику «потратил 300 на такси» или «подарок маме 5000 рублей» — валюта пересчитается сама</div>`
   let last = ""
   for (const e of items) {
@@ -5201,6 +5203,58 @@ function bindMoney(v) {
     c.addEventListener("touchmove", e => { if (x0 == null) return; dx = e.touches[0].clientX - x0; c.style.transform = `translateX(${dx}px)`; c.style.opacity = 1 - Math.min(1, Math.abs(dx) / 240) }, { passive: true })
     c.addEventListener("touchend", () => { x0 = null; if (Math.abs(dx) > 90) { c.classList.add("gone"); mnDismiss(c.dataset.swipe); setTimeout(render, 250) } else { c.style.transform = ""; c.style.opacity = "" } }) })
 }
+// Удалить операцию прямо из списка (везде, где есть строки трат): смахнуть влево — красная кнопка «Удалить»,
+// длинное смахивание удаляет сразу; «Изменить» в «Операциях» показывает кнопки у всех строк. Вернуть — плашка «Отменить» (undo.js).
+let mnEdit = false, swdOpen = null
+const SWD_W = 96
+function moneyDel(id) {
+  const e = D.money.find(x => x.id === id); if (!e || e.deleted) return
+  remove("money", id); MNY().swHint = 1; save(false)
+  if (navigator.vibrate) navigator.vibrate(12)
+  toast("Операция удалена")
+  if (!live(D.money).length) mnEdit = false
+  render()
+}
+function moneySwipe(v) {
+  swdOpen = null
+  $$(".row[data-money]", v).forEach(row => {
+    if (row.parentNode.classList.contains("swd")) return
+    const w = document.createElement("div"); w.className = "swd"
+    row.parentNode.insertBefore(w, row); w.appendChild(row)
+    const del = document.createElement("button"); del.className = "swd-del"; del.type = "button"
+    del.innerHTML = `<i class="tdi" style="width:18px;height:18px">${ICO.trash}</i><span>Удалить</span>`; w.appendChild(del)
+    const set = dx => { row.style.transform = dx ? `translateX(${dx}px)` : ""; del.style.opacity = dx ? Math.min(1, -dx / 50) : ""; del.style.width = dx ? Math.max(0, -dx - 8) + "px" : "" }   // кнопка растёт из-под края, строку не перекрывает
+    const close = () => { w.classList.remove("open"); set(0); if (swdOpen === close) swdOpen = null }
+    const gone = () => { w.style.maxHeight = w.offsetHeight + "px"; void w.offsetWidth; w.classList.add("gone"); setTimeout(() => moneyDel(row.dataset.money), 220) }
+    del.onclick = ev => { ev.stopPropagation(); gone() }
+    let x0 = null, y0 = 0, dx = 0, base = 0, horiz = null, moved = false
+    w.addEventListener("pointerdown", ev => {
+      if (ev.target.closest(".swd-del") || w.closest(".swd-all") || (ev.pointerType === "mouse" && ev.button)) return
+      x0 = ev.clientX; y0 = ev.clientY; dx = 0; horiz = null; moved = false; base = w.classList.contains("open") ? -SWD_W : 0
+    })
+    w.addEventListener("pointermove", ev => {
+      if (x0 == null) return
+      const mx = ev.clientX - x0, my = ev.clientY - y0
+      if (horiz == null) { if (Math.abs(mx) < 8 && Math.abs(my) < 8) return; horiz = Math.abs(mx) > Math.abs(my); if (!horiz) { x0 = null; return }
+        if (swdOpen && swdOpen !== close) swdOpen(); row.classList.add("drag"); try { w.setPointerCapture(ev.pointerId) } catch (e) {} }
+      moved = true; dx = Math.min(0, base + mx); set(dx < -SWD_W ? -SWD_W + (dx + SWD_W) * 0.9 : dx)
+    })
+    const up = () => {
+      if (x0 == null) return; x0 = null; row.classList.remove("drag"); if (!moved) return
+      const full = w.offsetWidth * 0.6
+      if (dx < -full) { set(-w.offsetWidth); gone() }
+      else if (dx < -SWD_W / 2) { w.classList.add("open"); set(-SWD_W); swdOpen = close }
+      else close()
+    }
+    w.addEventListener("pointerup", up); w.addEventListener("pointercancel", up)
+    // после смахивания или при открытой кнопке нажатие на строку только закрывает её, а не открывает окно правки
+    w.addEventListener("click", ev => {
+      if (ev.target.closest(".swd-del")) return
+      if (moved) { ev.stopPropagation(); ev.preventDefault(); moved = false; return }   // щелчок в конце смахивания
+      if (w.classList.contains("open")) { ev.stopPropagation(); ev.preventDefault(); close() }
+    }, true)
+  })
+}
 function mnDismiss(k) {
   if (k === "alloc") { const a = allocPending(); if (a) allocApply(a, true); return }
   D.mnyOff = D.mnyOff || {}; D.mnyOff[k] = 1; save(false)
@@ -5211,6 +5265,7 @@ Object.assign(DO, {
   "jar-add": () => jarForm(), "plan-edit": () => planForm(), "acct-add": () => acctForm(), "debt-add": () => debtForm(),
   "mn-debts": () => { const el = $("#mn-debts"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }) },
   "mn-rules": () => rulesSheet(), "mn-family": () => familyForm(),
+  "mn-edit": () => { mnEdit = !mnEdit; render() },
   "mn-why": () => { const cs = canSpend(); if (!cs) return
     const t = core.monthTotals(live(D.money), core.monthKey(new Date()))
     ui.info("Как посчитано", `Доходы месяца ${core.money(t.income)}\n− уже потрачено ${core.money(t.expense - cs.spentToday)}\n− неоплаченные платежи ${core.money(cs.bills)}\n− копилки в этом месяце ${core.money(cs.jars)}\n= ${core.money(cs.left + cs.spentToday)} на ${cs.daysLeft} ${plural(cs.daysLeft, "день", "дня", "дней")}, то есть ${core.money(cs.perDay)} в день${cs.spentToday ? `.\nСегодня уже потрачено ${core.money(cs.spentToday)}` : ""}.`) },
