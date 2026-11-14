@@ -154,6 +154,92 @@ await kp.evaluate(() => { window.SpeechRecognition = window.webkitSpeechRecognit
 await kp.click(".kmic"); await kp.waitForTimeout(4500)
 const kv2 = await kp.evaluate(() => ({ said: window.__said.length, last: $$(".kmsg.u").pop().textContent, on: !!$(".kmic.on") }))
 check(kv2.said === 2 && /звёзд/.test(kv2.last) && !kv2.on, "голос без onend: фраза ушла после паузы, микрофон выключился", kv2)
+// Остановить разговор: пока Изи говорит, слушает или думает — видна кнопка «Стоп» с подписью; «Закрыть» и смахивание гасят всё
+await kp.evaluate(() => {
+  window.__stops = 0; const st0 = window.ttsStop; window.ttsStop = () => { window.__stops++; try { st0() } catch (e) {} }
+  window.speak = (t, o) => { window.__said.push(t); window.__sayEnd = o && o.onEnd }   // говорит, пока не нажмут «Стоп»
+  window.SpeechRecognition = window.webkitSpeechRecognition = class { start() { setTimeout(() => { this.onresult({ results: [[{ transcript: "Расскажи про копилку" }]] }); this.onend() }, 50) } stop() {} abort() {} }
+})
+check(await kp.evaluate(() => /Закрыть/.test($(".kclose").textContent) && /Стоп/.test($(".kstop").textContent)), "в чате ребёнка есть «Закрыть» и «Стоп» с подписями")
+await kp.click(".kmic"); await kp.waitForTimeout(900)
+const ks1 = await kp.evaluate(() => ({ vis: !$(".kstop").hidden, st: $(".kstop").dataset.st, t: $(".kstop").textContent, said: window.__said.length }))
+check(ks1.vis && ks1.st === "say" && /Стоп — Изи замолчит/.test(ks1.t) && ks1.said === 3, "Изи отвечает вслух — видна кнопка «Стоп — Изи замолчит»", ks1)
+await kp.screenshot({ path: SHOTS + "kstop-1-say.png" })
+await kp.click(".kstop"); await kp.waitForTimeout(300)
+const ks2 = await kp.evaluate(() => ({ hid: $(".kstop").hidden, stops: window.__stops, open: stack.length }))
+check(ks2.hid && ks2.stops >= 1 && ks2.open === 1, "«Стоп» — Изи замолкает, чат остаётся открытым", ks2)
+await kp.waitForTimeout(2600)   // подсказка «Разговор остановлен» уходит — снимок без неё
+// слушает — «Стоп» выключает микрофон, ничего не отправляя
+await kp.evaluate(() => { window.SpeechRecognition = window.webkitSpeechRecognition = class { start() { window.__rec = this } stop() {} abort() { setTimeout(() => this.onend && this.onend(), 0) } } })
+const n0 = await kp.evaluate(() => D.kchat.length)
+await kp.click(".kmic"); await kp.waitForTimeout(300)
+await kp.evaluate(() => window.__rec.onresult({ results: [[{ transcript: "ой, не то" }]] })); await kp.waitForTimeout(100)
+const ks3 = await kp.evaluate(() => ({ vis: !$(".kstop").hidden, st: $(".kstop").dataset.st, t: $(".kstop").textContent, on: !!$(".kmic.on") }))
+check(ks3.vis && ks3.st === "listen" && /не слушать/.test(ks3.t) && ks3.on, "Изи слушает — видна «Стоп — не слушать»", ks3)
+await kp.screenshot({ path: SHOTS + "kstop-2-listen.png" })
+await kp.click(".kstop"); await kp.waitForTimeout(2600)
+const ks4 = await kp.evaluate(() => ({ hid: $(".kstop").hidden, on: !!$(".kmic.on"), n: D.kchat.length, v: $("#kc-t").value }))
+check(ks4.hid && !ks4.on && ks4.n === n0 && !ks4.v, "«Стоп» во время слушания — микрофон выключен, ничего не отправилось", ks4)
+// спросил голосом и нажал «Стоп», пока Изи думает — ответ приходит текстом, вслух не звучит
+await kp.evaluate(() => { window.SpeechRecognition = window.webkitSpeechRecognition = class { start() { setTimeout(() => { this.onresult({ results: [[{ transcript: "Сколько стоит щенок?" }]] }); this.onend() }, 50) } stop() {} abort() {} } })
+const said0 = await kp.evaluate(() => window.__said.length)
+globalThis.__famFail = 1   // Claude перегружен — Изи думает дольше (повтор через 2,5 с)
+await kp.click(".kmic"); await kp.waitForTimeout(600)
+const ks5 = await kp.evaluate(() => ({ st: $(".kstop").dataset.st, vis: !$(".kstop").hidden }))
+await kp.click(".kstop"); await kp.waitForTimeout(3200)
+const ks6 = await kp.evaluate(() => ({ said: window.__said.length, hid: $(".kstop").hidden, last: $$(".kmsg.a").pop().textContent }))
+check(ks5.vis && ks5.st === "think" && ks6.said === said0 && ks6.hid && /зубов/.test(ks6.last), "«Стоп», пока Изи думает, — ответ только текстом, без голоса", { ks5, ks6 })
+// снова говорит — «Закрыть» закрывает окно и гасит голос
+await kp.evaluate(() => { window.SpeechRecognition = window.webkitSpeechRecognition = class { start() { setTimeout(() => { this.onresult({ results: [[{ transcript: "Ещё вопрос" }]] }); this.onend() }, 50) } stop() {} abort() {} } })
+await kp.click(".kmic"); await kp.waitForTimeout(900)
+const stc = await kp.evaluate(() => window.__stops)
+await kp.click(".kclose"); await kp.waitForTimeout(500)
+check(await kp.evaluate(s => !$(".kchat") && window.__stops > s, stc), "«Закрыть» — окно закрыто, Изи замолчал")
+await kp.click('#knav [data-kt="izi"]'); await kp.waitForTimeout(300)
+// Живой разговор у ребёнка: «Поговорить» — Изи слушает, отвечает голосом и снова слушает; «Закончить разговор» — всё выключено
+await kp.evaluate(() => {
+  window.__srN = 0
+  window.speak = (t, o) => { window.__said.push(t); setTimeout(() => o && o.onEnd && o.onEnd(), 150) }
+  window.SpeechRecognition = window.webkitSpeechRecognition = class { start() { const n = ++window.__srN; if (n === 1) setTimeout(() => { this.onresult({ results: [[{ transcript: "Давай поговорим" }]] }); this.onend() }, 50); else window.__rec = this } stop() {} abort() { setTimeout(() => this.onend && this.onend(), 0) } }
+})
+check(await kp.evaluate(() => /Поговорить/.test($(".kgo").textContent)), "в чате ребёнка есть кнопка «Поговорить» с подписью")
+const said1 = await kp.evaluate(() => window.__said.length)
+await kp.click(".kgo"); await kp.waitForTimeout(1200)
+const kl = await kp.evaluate(() => ({ live: $(".kchat").classList.contains("klive"), panel: !$(".klivep").hidden, inHid: getComputedStyle($(".kin")).display === "none", stop: $(".kstop").textContent, sr: window.__srN, st: $(".klivep").dataset.st }))
+check(kl.live && kl.panel && kl.inHid && /Закончить разговор/.test(kl.stop) && kl.sr >= 2 && kl.st === "listen" && await kp.evaluate(n => window.__said.length === n + 1, said1), "живой разговор: услышал, ответил вслух и снова слушает; внизу «Закончить разговор»", kl)
+await kp.evaluate(() => window.__rec.onresult({ results: [[{ transcript: "А что такое" }]] })); await kp.waitForTimeout(100)
+await kp.screenshot({ path: SHOTS + "kstop-3-live.png" })
+await kp.click(".kstop"); await kp.waitForTimeout(400)
+const kl2 = await kp.evaluate(() => ({ live: $(".kchat").classList.contains("klive"), panel: !$(".klivep").hidden, stop: !$(".kstop").hidden, inp: getComputedStyle($(".kin")).display }))
+check(!kl2.live && !kl2.panel && !kl2.stop && kl2.inp !== "none", "«Закончить разговор» — снова обычный чат, микрофон выключен", kl2)
+await kp.waitForTimeout(2600)
+// «+»: фото и файлы
+await kp.click(".kplus"); await kp.waitForTimeout(200)
+check(await kp.evaluate(() => !$(".kplusm").hidden && $$(".kplusm [data-kp]").length === 3 && /Камера/.test($(".kplusm").textContent) && /Файл/.test($(".kplusm").textContent)), "«+»: Камера, Фото, Файл")
+const PNG = Buffer.from((await kp.evaluate(() => { const c = document.createElement("canvas"); c.width = 400; c.height = 300; const g = c.getContext("2d")
+  g.fillStyle = "#fffdf4"; g.fillRect(0, 0, 400, 300); g.strokeStyle = "#cfe0ff"; for (let y = 30; y < 300; y += 26) { g.beginPath(); g.moveTo(0, y); g.lineTo(400, y); g.stroke() }
+  g.fillStyle = "#2b3a8c"; g.font = "bold 30px sans-serif"; g.fillText("Задача 3", 30, 70); g.font = "26px sans-serif"; g.fillText("24 + 18 = ?", 30, 130); g.fillText("56 − 29 = ?", 30, 185)
+  return c.toDataURL("image/png").split(",")[1] })), "base64")
+let fc = kp.waitForEvent("filechooser"); await kp.click('[data-kp="lib"]'); await (await fc).setFiles([{ name: "домашка.png", mimeType: "image/png", buffer: PNG }]); await kp.waitForTimeout(600)
+await kp.click(".kplus"); fc = kp.waitForEvent("filechooser"); await kp.click('[data-kp="doc"]'); await (await fc).setFiles([{ name: "расписание.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 test") }]); await kp.waitForTimeout(500)
+check(await kp.evaluate(() => $$(".ktray .kat").length === 2 && !!$(".ktray img")), "фото и PDF лежат карточками над строкой ввода")
+await kp.screenshot({ path: SHOTS + "kstop-4-files.png" })
+await kp.fill("#kc-t", "Помоги с задачей"); await kp.click(".ksend"); await kp.waitForTimeout(900)
+const lastU = (globalThis.__famAsk.body.messages || []).slice(-1)[0] || {}
+const types = Array.isArray(lastU.content) ? lastU.content.map(c => c.type) : []
+check(types.join() === "image,document,text" && lastU.content[2].text === "Помоги с задачей" && await kp.evaluate(() => $$(".ktray .kat").length === 0 && !!$$(".kmsg.u").pop().querySelector(".kthumbs img") && /расписание\.pdf/.test($$(".kmsg.u").pop().textContent)), "фото и файл ушли Изи вместе с сообщением, в переписке — миниатюра и имя файла", types)
+check((globalThis.__famAsk.body.messages || []).slice(0, -1).every(m => typeof m.content === "string"), "в старые сообщения вложения не попадают")
+await kp.screenshot({ path: SHOTS + "kstop-5-sent.png" })
+// iPad: окно на всю ширину карточки, ничего не обрезано
+await kp.setViewportSize({ width: 820, height: 1180 }); await kp.waitForTimeout(500)
+const ipw = await kp.evaluate(() => ({ chat: $(".kchat").getBoundingClientRect().width, sheet: $(".kchat").closest(".sheet").clientWidth, inBottom: $(".kin").getBoundingClientRect().bottom, sheetBottom: $(".kchat").closest(".sheet").getBoundingClientRect().bottom }))
+check(ipw.chat > ipw.sheet * .85 && ipw.inBottom <= ipw.sheetBottom + 1, "iPad: чат на всю ширину окна, строка ввода видна целиком", ipw)
+await kp.screenshot({ path: SHOTS + "kstop-ipad-1-chat.png" })
+await kp.click(".kgo"); await kp.waitForTimeout(500)
+await kp.evaluate(() => window.__rec && window.__rec.onresult({ results: [[{ transcript: "Расскажи, как решить задачу" }]] })); await kp.waitForTimeout(100)
+await kp.screenshot({ path: SHOTS + "kstop-ipad-2-live.png" })
+await kp.click(".kstop"); await kp.waitForTimeout(300)
+await kp.setViewportSize({ width: 390, height: 844 }); await kp.waitForTimeout(300)
 // Claude перегружен: один раз — спрашиваем ещё раз сами; два раза — понятная ошибка, и она не уходит в историю
 globalThis.__famFail = 1
 await kp.fill("#kc-t", "Расскажи сказку"); await kp.click(".ksend"); await kp.waitForTimeout(3500)
