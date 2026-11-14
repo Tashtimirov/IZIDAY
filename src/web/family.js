@@ -512,7 +512,7 @@ function kidIzi() {
       txt = a.join(" ").replace(/\s+/g, " ").trim(); inp.value = txt; $(".klst", lp).textContent = txt || "Слушаю — говори"; clearTimeout(t); t = setTimeout(stopNow, 2200) }
     r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { live = false; toast("Разреши микрофон в настройках Safari") } if (e.error !== "no-speech") end() }
     r.onend = end
-    recK = { finish: stopNow, cancel: () => { txt = ""; end() } }; mic.classList.add("on"); inp.placeholder = "Слушаю… нажми ещё раз — отправить"
+    recK = { finish: stopNow, cancel: () => { drop = true; end() } }; mic.classList.add("on"); inp.placeholder = "Слушаю… нажми ещё раз — отправить"; kvSet("listen")
     t = setTimeout(stopNow, 8000)   // ничего не сказал — выключаемся
     try { r.start() } catch (err) { end() }
   }

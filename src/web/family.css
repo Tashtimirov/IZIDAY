@@ -246,106 +246,6 @@ body.kidm .sheet input:focus { border-color: #8B6CFF; outline: none; }
 .kstop { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 54px; margin: 4px 0 6px; border: 0; border-radius: 27px; padding: 12px 18px;
   background: linear-gradient(135deg, #FF6FA8, #FF8A3D); color: #fff; font: 900 17px ui-rounded, system-ui; box-shadow: 0 10px 22px -10px rgba(255,111,168,.8); animation: kin .25s; transition: transform .15s; }
 .kstop[hidden] { display: none; }
-/* «Выйти из IZIDAY» внизу детского дня — тихая ссылка, не кнопка-приманка */
-.klink.kout { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 22px auto 6px; padding: 10px 16px; font-size: 15px; }
-/* кнопка «Сообщить об ошибке» плавает справа сверху — без clear чат-флекс сжимался до половины ширины */
-.kid-sheet > .kchat { clear: both; width: 100%; }
-.kchat-h { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 900; padding-bottom: 8px; }
-.kmsgs { flex: 1; overflow-y: auto; padding: 4px 0 10px; -webkit-overflow-scrolling: touch; }
-.kmsg { max-width: 82%; padding: 11px 14px; margin: 6px 0; border-radius: 20px; font-size: 16px; font-weight: 700; line-height: 1.35; animation: kin .3s; white-space: pre-wrap; }
-.kmsg.a { background: #fff; border-bottom-left-radius: 6px; box-shadow: 0 6px 16px -12px rgba(90,60,180,.5); }
-.kmsg.u { margin-left: auto; background: linear-gradient(135deg, #8B6CFF, #5B3FE0); color: #fff; border-bottom-right-radius: 6px; }
-.kquick { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
-.kquick button { border: 0; border-radius: 16px; padding: 9px 13px; background: #F1EDFF; color: #6A4BF2 !important; font-weight: 800 !important; font-size: 14px !important; }
-.kin { display: flex; gap: 8px; align-items: center; padding-top: 6px; }
-.kin input { flex: 1; min-width: 0; border: 2px solid #E2DBFF; border-radius: 22px; padding: 12px 16px; font: 700 16px ui-rounded, system-ui; background: #fff; color: #2A2350; outline: none; }
-.ksend { width: 48px; height: 48px; border-radius: 50%; border: 0; background: linear-gradient(135deg, #8B6CFF, #5B3FE0); display: grid; place-items: center; flex: none; }
-.kmic { width: 48px; height: 48px; border-radius: 50%; border: 0; background: #F0EBFF; color: #6A4BF2; display: grid; place-items: center; flex: none; transition: transform .15s, background .2s; }
-.kmic.on { background: linear-gradient(135deg, #FF6FA8, #FF8A3D); color: #fff; animation: kmicp 1.2s ease-in-out infinite; }
-@keyframes kmicp { 50% { transform: scale(1.08); box-shadow: 0 0 0 8px rgba(255,111,168,.18); } }
-.kdots i { display: inline-block; width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: #B7AEE8; animation: kdot 1s infinite; }
-.kdots i:nth-child(2) { animation-delay: .15s } .kdots i:nth-child(3) { animation-delay: .3s }
-@keyframes kdot { 50% { transform: translateY(-4px); opacity: .5 } }
-.kchat-h .kidorb { margin: 0 !important; }
-
-.fsteps div { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; font-size: 15px; }
-.fsteps b { width: 24px; height: 24px; border-radius: 50%; background: var(--accent, #0A9F6E); color: #fff; display: grid; place-items: center; font-size: 13px; flex: none; }
-
-/* ── Детский режим на iPad: без места под боковое меню взрослых, всё по центру ── */
-@media (min-width: 700px) {
-  body.kidm .kd { padding-left: max(24px, calc((100% - 860px) / 2)); padding-right: max(24px, calc((100% - 860px) / 2)); }
-  #knav { left: max(14px, calc((100% - 640px) / 2)); right: max(14px, calc((100% - 640px) / 2)); }
-}
-@media (min-width: 1024px) {
-  body.kidm, body.kidm.side { padding-left: 0; padding-right: 0; }
-  body.kidm .sheet, body.kidm .sheet.half { left: 0; right: 0; }
-  body.kidm #toast { left: 50%; }
-  body.kidm #side { display: none; }
-}
-
-/* Все окна в детском режиме (вопросы, подтверждения) — светлые и детские, даже если iPad в тёмной теме */
-body.kidm { color-scheme: light; --bg: #FBF8FF; --bg-glow: #EDE7FF; --card: #FFFFFF; --sand: #F1EDFF; --line: #E2DBFF; --track: #EFEAFF; --hair: rgba(106,75,242,.3);
-  --text: #2A2350; --sub: #7D76A6; --h2: #7D76A6; --accent: #6A4BF2; --accent-2: #8B6CFF; --glass: rgba(255,255,255,.82); --card-b: rgba(106,75,242,.12);
-  --shadow: 0 10px 30px -18px rgba(90,60,180,.45); }
-body.kidm .sheet { --sh-bg: #FBF8FF; font-family: ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif; color: #2A2350; background: linear-gradient(180deg, #EDE7FF, #FBF8FF 55%); }
-body.kidm .sheet h3 { font-weight: 900; color: #2A2350; } body.kidm .sheet .msg, body.kidm .sheet .sub { color: #4B4380; font-weight: 600; }
-body.kidm .sheet .btn { border-radius: 20px; font-weight: 800; background: #F1EDFF; color: #6A4BF2; border: 0; }
-body.kidm .sheet .btn.primary { background: linear-gradient(135deg, #8B6CFF, #5B3FE0); color: #fff; box-shadow: 0 10px 22px -12px rgba(91,63,224,.8); }
-body.kidm .sheet input, body.kidm .sheet textarea { background: #fff; color: #2A2350; border: 2px solid #E2DBFF; border-radius: 18px; font-weight: 700; }
-body.kidm .sheet input:focus { border-color: #8B6CFF; outline: none; }
-.kwhy2 { display: block; margin-top: 4px; font-size: 12px; font-weight: 600; color: #A19BC7; }
-
-/* ── Код-шар: приглашение в семью. Шар Изи в кольцах дуг; при подключении светится сильнее ── */
-.flink { display: block; margin: 10px auto 0; padding: 6px 10px; border: 0; background: none; color: var(--muted, #8a8a8e); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
-.ocode { position: relative; width: min(256px, 68vw); aspect-ratio: 1; margin: 6px auto 10px; border-radius: 50%; transition: opacity .35s, transform .5s cubic-bezier(.2, .9, .25, 1); }
-.ocode-c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 50%; transition: filter .6s, opacity .35s; }
-.ocode.wait .ocode-c { opacity: .25; }
-.ocode .ocode-orb { position: absolute !important; left: 50%; top: 50%; width: 35%; height: 35%; margin: -17.5% 0 0 -17.5%; transition: transform .7s cubic-bezier(.2, .9, .25, 1.15), filter .7s; }
-.ocode .ocode-orb::before { display: none; }
-.ocode-glow { position: absolute; inset: -26%; border-radius: 50%; pointer-events: none; opacity: 0; transform: scale(.7);
-  background: radial-gradient(circle, color-mix(in srgb, var(--izi2, #18b98a) 85%, #fff) 0%, color-mix(in srgb, var(--izi2, #18b98a) 70%, transparent) 45%, transparent 70%); transition: opacity .7s, transform .9s cubic-bezier(.2, .9, .25, 1); }
-.ocode.ok .ocode-glow { opacity: .95; transform: scale(1); animation: ocode-pulse 1.5s ease-in-out .7s infinite alternate; }
-.ocode.ok .ocode-c { filter: brightness(1.5) saturate(1.2); }
-.ocode-shine { position: absolute; inset: 0; border-radius: 50%; pointer-events: none; opacity: 0; mix-blend-mode: screen; transition: opacity .8s;
-  background: radial-gradient(circle, #fff 0%, color-mix(in srgb, var(--izi2, #18b98a) 80%, #fff) 22%, color-mix(in srgb, var(--izi2, #18b98a) 45%, transparent) 46%, transparent 72%); }
-.ocode.ok .ocode-shine, .oscan.ok .ocode-shine { opacity: .85; animation: ocode-pulse 1.5s ease-in-out .7s infinite alternate; }
-.ocode.ok .ocode-orb { transform: scale(1.25); filter: brightness(1.35) saturate(1.2); }
-@keyframes ocode-pulse { from { opacity: .95; transform: scale(1); } to { opacity: .7; transform: scale(1.06); } }
-.ocode-t { text-align: center; font-weight: 600; font-size: 16px; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
-.ocode-how { text-align: center; }
-.ocode-sheet .btns { justify-content: center; }
-.ocode.solo { width: 170px; margin: 0 auto 64px; }
-.ocode.solo .ocode-shine { inset: -45%; }
-.ocode.solo .ocode-glow { inset: -70%; }
-.ocode.solo .ocode-orb { width: 100%; height: 100%; margin: -50% 0 0 -50%; }
-.oscan { position: fixed; inset: 0; z-index: 200; background: #000; color: #fff; transform: translateY(100%); transition: transform .4s cubic-bezier(.2, .9, .25, 1); touch-action: none; overflow: hidden; }
-.oscan.show { transform: none; }
-.oscan video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.oscan-aim { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
-.oscan-aim i { width: min(76vw, 340px); aspect-ratio: 1; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .85); box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .45); transition: border-color .3s, transform .4s cubic-bezier(.2, .9, .25, 1.2); animation: oscan-breathe 2.4s ease-in-out infinite alternate; }
-.oscan.found .oscan-aim i { border-color: var(--izi2, #18b98a); border-width: 3px; transform: scale(.94); animation: none; }
-@keyframes oscan-breathe { from { transform: scale(1); } to { transform: scale(1.035); } }
-.oscan-top { position: absolute; left: 0; right: 0; top: 0; padding: calc(14px + env(safe-area-inset-top)) 16px 12px; text-align: center; font-size: 13px; opacity: .75; }
-.oscan-bot { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 24px calc(34px + env(safe-area-inset-bottom)); text-align: center; display: grid; gap: 6px; background: linear-gradient(transparent, rgba(0, 0, 0, .6)); }
-.oscan-bot b { font-size: 19px; } .oscan-bot span { font-size: 14px; opacity: .8; }
-.oscan-ok { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(4, 8, 16, .82); opacity: 0; pointer-events: none; transition: opacity .45s; }
-.oscan-ok > b { font-size: 22px; }
-.oscan.ok .oscan-ok { opacity: 1; }
-.oscan.ok .oscan-bot, .oscan.ok .oscan-top { opacity: 0; }
-.oscan-ok .ocode { transform: scale(.6); }
-.oscan.ok .oscan-ok .ocode { transform: none; }
-.oscan.ok .oscan-ok .ocode-orb { filter: brightness(1.3) saturate(1.2); }
-.oscan.ok .oscan-ok .ocode-glow { opacity: .95; transform: scale(1); animation: ocode-pulse 1.5s ease-in-out .7s infinite alternate; }
-@media (prefers-reduced-motion: reduce) { .oscan, .ocode, .ocode-glow, .oscan-aim i { transition: none; animation: none !important; } }
-.ksch .krow { padding: 8px 0; }
-.ksch .ktm { min-width: 52px; font-weight: 900; font-size: 16px; color: #5B5390; }
-.ksch .krow > i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
-
-/* детский чат: «Стоп» (голос Изи и микрофон) и «Закрыть» всегда на виду */
-.kchat-h .grow { flex: 1; min-width: 0; }
-.kstop, .kclose { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 18px; padding: 9px 14px; font: 900 15px ui-rounded, system-ui !important; flex: none; transition: transform .15s, opacity .2s; }
-.kstop { background: linear-gradient(135deg, #FF6FA8, #FF8A3D); color: #fff !important; animation: kin .25s; }
-.kstop[hidden] { display: none; }
 .kstop i { width: 16px; height: 16px; border-radius: 4px; background: #fff; flex: none; }
 .kstop[data-st="say"] i { animation: kstopp 1.1s ease-in-out infinite; }
 @keyframes kstopp { 50% { transform: scale(.78); } }
@@ -392,3 +292,5 @@ body.kidm[data-kth] .klst { color: var(--ka); }
 .kchat-h .kgo + .kclose { margin-left: 6px; }
 .kchat.klive .kclose { margin-left: auto; }
 @media (max-width: 400px) { .kchat-h .kname { display: none; } }
+/* «Выйти из IZIDAY» внизу детского дня — тихая ссылка, не кнопка-приманка */
+.klink.kout { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 22px auto 6px; padding: 10px 16px; font-size: 15px; }
