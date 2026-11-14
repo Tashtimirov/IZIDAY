@@ -71,7 +71,7 @@ function shareBind(el) {
 function shareSheet(first) {
   if (!famOn() || D.fam.role === "kid") return
   D.fam.shareAsked = 1; save(false)
-  const s = sheet(`<h3>Что делим с семьёй</h3><div class="msg">${first ? "Вы в семье. " : ""}Всё выключено, пока вы сами не включите. Каждый в семье решает только за себя.</div>
+  const s = sheet(`<h3>Что делим с семьёй</h3><div class="msg">${first === "old" ? "Теперь вы сами решаете, что делить с семьёй. Календарь семьи остался включённым, как был. Каждый в семье решает только за себя." : (first ? "Вы в семье. " : "") + "Всё выключено, пока вы сами не включите. Каждый в семье решает только за себя."}</div>
     <div class="fshare">${shareRows()}</div>
     <div class="btns"><button class="btn primary" data-a="ok">Готово</button></div>`, { onClose: () => render() })
   shareBind(s.el)
@@ -987,6 +987,11 @@ function init() {
   setInterval(() => { if (document.visibilityState === "visible") push(false) }, 60e3)
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") push(Date.now() - ((D.fam && D.fam.at) || 0) > 20e3) })
   if (pendingFam) setTimeout(join, 1000)
+  // семья была до «Что делим с семьёй»: календарь оставляем как был (включён), общий бюджет — если уже отмечали общее; окно — один раз
+  if (famOn() && D.fam.role !== "kid" && !D.fam.shareAsked) {
+    if (!D.fam.share) D.fam.share = { cal: 1, money: live(D.money).some(e => e.shared) || live(D.goals).some(g => g.kind === "jar" && g.shared) ? 1 : 0 }
+    save(false); setTimeout(() => { if (famOn() && !D.fam.shareAsked && !stack.length) shareSheet("old") }, 2500)
+  }
   window.FAM = { scan, orbInvite, on: famOn, share, shareSheet, members, meId, isAdult, L, tasksOn, COLORS, keyOn, ai, link, kidSheet, join, push, put, famDays, sumSince, goalProg, jars, kidStars, waits, approve, kidMode, openFam, LESSONS, lesson, credit, pocketTick }
 }
 })()
