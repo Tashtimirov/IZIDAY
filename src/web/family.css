@@ -239,3 +239,16 @@ body.kidm .sheet input:focus { border-color: #8B6CFF; outline: none; }
 .ksch .krow { padding: 8px 0; }
 .ksch .ktm { min-width: 52px; font-weight: 900; font-size: 16px; color: #5B5390; }
 .ksch .krow > i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+/* детский чат: «Стоп» (голос Изи и микрофон) и «Закрыть» всегда на виду */
+.kchat-h .grow { flex: 1; min-width: 0; }
+.kstop, .kclose { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 18px; padding: 9px 14px; font: 900 15px ui-rounded, system-ui !important; flex: none; transition: transform .15s, opacity .2s; }
+.kstop { background: linear-gradient(135deg, #FF6FA8, #FF8A3D); color: #fff !important; animation: kin .25s; }
+.kstop[hidden] { display: none; }
+.kclose { background: #F0EBFF; color: #6A4BF2 !important; }
+.kstop:active, .kclose:active { transform: scale(.94); }
+/* «Выйти из IZIDAY» внизу детского дня — тихая ссылка, не кнопка-приманка */
+.klink.kout { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 22px auto 6px; padding: 10px 16px; font-size: 15px; }
+body.kidm[data-kth] .kclose { background: var(--ksoft); color: var(--ka) !important; }
+/* кнопка «Сообщить об ошибке» плавает справа сверху — без clear чат-флекс сжимался до половины ширины */
+.kid-sheet > .kchat { clear: both; }

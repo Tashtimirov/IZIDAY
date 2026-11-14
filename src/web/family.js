@@ -39,7 +39,8 @@ const P = {
   pizza: '<path d="M12 21L3 6a14 14 0 0 1 18 0z"/><circle cx="10" cy="9" r="1"/><circle cx="14" cy="12" r="1"/>', tent: '<path d="M3 20L12 4l9 16zM12 4v16M9 20l3-6 3 6"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   share: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6h14v-6"/>', briefcase: '<rect x="3" y="7" width="18" height="13" rx="3"/><path d="M9 7V5h6v2M3 12h18"/>',
-  wand: '<path d="M4 20L15 9M14 4v3M19 9h-3M17.5 5.5l-2 2M12 3l.5 1.5M20 11l1.5.5"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>', scan: '<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.5"/>', link: '<path d="M10 14a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1 1"/><path d="M14 10a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1-1"/>',
+  wand: '<path d="M4 20L15 9M14 4v3M19 9h-3M17.5 5.5l-2 2M12 3l.5 1.5M20 11l1.5.5"/>', out: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/>', stopsq: '<rect x="6.5" y="6.5" width="11" height="11" rx="2.5" fill="currentColor"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>', scan: '<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.5"/>', link: '<path d="M10 14a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1 1"/><path d="M14 10a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1-1"/>',
 }
 const ic = (n, s = 20, c = "currentColor", sw = 2) => `<svg class="fi" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${P[n] || P.star}</svg>`
 const TASK_IC = [["tooth", "#2FB7FF"], ["bag", "#FF8A3D"], ["book", "#8B6CFF"], ["paw", "#18B57A"], ["home", "#FF5FA2"], ["bed", "#6A4BF2"], ["dish", "#FFB547"], ["plant", "#18B57A"], ["shirt", "#2FB7FF"], ["ball", "#FF8A3D"], ["music", "#AF52DE"], ["star", "#E89A00"]]
@@ -309,6 +310,7 @@ function kDay(me) {
   if (g) { const p = goalProg(g), gi = goalIc(g.title), mine = sumSince(g.start || "0000").by[me.id] || 0
     h += `<div class="kcard kgoal"><h2>Семейная цель</h2><div class="krow"><div class="kgi">${ic(g.ic || gi[0], 30, gi[1])}</div><div class="grow"><b>${esc(g.title)}</b><div class="kmuted">${num(p.have)} из ${num(p.need)}${mine ? ` · ты принёс ${num(mine)}` : ""}</div></div></div><div class="kbar"><i style="width:${Math.round(p.p * 100)}%"></i></div></div>` }
   if (les) h += `<button class="kcard krow kles" data-kles="${les.id}"><div class="kplay">${ic("play", 24, "#fff")}</div><div class="grow"><b>Урок дня: «${esc(les.t)}»</b><div class="kmuted">3 минуты · +${LESSON_STARS} звёзд</div></div>${ic("chev", 22, "#A19BC7")}</button>`
+  h += `<button class="klink kout" data-k="out">${ic("out", 18)}Выйти из IZIDAY</button>`
   return h
 }
 function kidTip(me, tasks, done) {
@@ -380,7 +382,7 @@ function kidBind(v) {
   $$("[data-k]", v).forEach(b => b.onclick = () => (KDO[b.dataset.k] || (() => {}))())
 }
 const KDO = {
-  paste: () => famPaste(), scan: () => scan(), adult: () => { D.who = "adult"; save(false); render() },
+  paste: () => famPaste(), scan: () => scan(), adult: () => { D.who = "adult"; save(false); render() }, out: () => window.EXIT && EXIT.out(),
   wish: async () => { const t = await ui.ask("Чего тебе хочется?", "Большое или маленькое — всё подходит.", "", { placeholder: "Например: лего-замок", ok: "В банку" }); if (!t) return
     put("dreams", { id: uid("dr"), kid: meId(), title: t.slice(0, 60), at: Date.now() }); burst(); render() },
   buy: () => buyForm(), hist: () => moneyHist(meId()),
@@ -438,10 +440,19 @@ const MIC_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" str
 function kidIzi() {
   const chat = D.kchat || (D.kchat = [])
   let busyK = false
-  const s = sheet(`<div class="ksheet kchat"><div class="kchat-h">${orb(44)}<b>${esc(iziName())}</b></div><div class="kmsgs"></div>
+  // Остановить и закрыть — всегда на виду: «Стоп» прерывает голос Изи и микрофон, «Закрыть» ещё и убирает окно
+  let recK = null
+  const hush = () => { try { if (recK) recK.cancel() } catch (e) {} ; try { if (typeof ttsStop === "function") ttsStop() } catch (e) {} }
+  const s = sheet(`<div class="ksheet kchat"><div class="kchat-h">${orb(44)}<b class="grow">${esc(iziName())}</b><button class="kstop" hidden>${ic("stopsq", 18)}Стоп</button><button class="kclose" aria-label="Закрыть">${ic("x", 20, "currentColor", 2.6)}<span>Закрыть</span></button></div><div class="kmsgs"></div>
     <div class="kin"><button class="kmic" aria-label="Сказать голосом">${MIC_SVG}</button><input id="kc-t" placeholder="Скажи или напиши ${esc(iziName())}…" enterkeyhint="send"><button class="ksend" aria-label="Отправить">${ic("chev", 22, "#fff", 3)}</button></div></div>`)
   s.el.classList.add("kid-sheet", "kfull")
   try { if (typeof ttsUnlock === "function") ttsUnlock() } catch (e) {}
+  const stopB = $(".kstop", s.el)
+  const live = () => { if (!s.el.isConnected) return clearInterval(tick); stopB.hidden = !(recK || (typeof TTS !== "undefined" && (TTS.speaking || TTS.wait))) }
+  const tick = setInterval(live, 250)
+  stopB.onclick = () => { hush(); live() }
+  $(".kclose", s.el).onclick = () => s.close()
+  const close0 = s.close; s.close = () => { hush(); clearInterval(tick); close0() }
   const box = $(".kmsgs", s.el), inp = $("#kc-t", s.el)
   const draw = () => {
     const l = chat.slice(-30)
@@ -450,7 +461,7 @@ function kidIzi() {
     $$("[data-q]", box).forEach(b => b.onclick = () => send(b.dataset.q))
     box.scrollTop = box.scrollHeight
   }
-  let byVoice = false, recK = null
+  let byVoice = false
   const say = t => { try { if (typeof speak === "function") speak(t, { force: true }) } catch (e) {} }
   // Голос: ребёнок говорит — Изи слушает до паузы, отправляет и отвечает вслух.
   // Как у взрослых: Safari слушает непрерывно, конец фразы — 2,2 с тишины. Синтез речи здесь не трогаем:
@@ -469,7 +480,7 @@ function kidIzi() {
       txt = a.join(" ").replace(/\s+/g, " ").trim(); inp.value = txt; clearTimeout(t); t = setTimeout(stopNow, 2200) }
     r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") toast("Разреши микрофон в настройках Safari"); if (e.error !== "no-speech") end() }
     r.onend = end
-    recK = { finish: stopNow }; mic.classList.add("on"); inp.placeholder = "Слушаю… нажми ещё раз — отправить"
+    recK = { finish: stopNow, cancel: () => { txt = ""; end() } }; mic.classList.add("on"); inp.placeholder = "Слушаю… нажми ещё раз — отправить"
     t = setTimeout(stopNow, 8000)   // ничего не сказал — выключаемся
     try { r.start() } catch (err) { end() }
   }
@@ -488,7 +499,7 @@ function kidIzi() {
     chat.push(Object.assign({ role: "assistant", content: ans, at: Date.now() }, err ? { err: true, why: String((r && r.error) || "нет ответа").slice(0, 120) } : {}))
     while (chat.length > 60) chat.shift()
     save(false); draw()
-    if (voiceNow) say(ans)
+    if (voiceNow && s.el.isConnected) say(ans)
   }
   $(".kmic", s.el).onclick = listen
   $(".ksend", s.el).onclick = () => send(inp.value)

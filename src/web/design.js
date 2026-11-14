@@ -224,7 +224,7 @@ window.DS = (function () {
       if (document.body.dataset.dsTab !== t) document.body.dataset.dsTab = t
       lastTab = t
       empties(v)
-      if (t === "more" && !$(".ds-ts", v)) { const last = v.lastElementChild; const box = document.createElement("div"); box.innerHTML = tsCard(); last && last.classList.contains("muted") ? v.insertBefore(box.firstChild, last) : v.append(box.firstChild) }
+      if (t === "more" && !$(".ds-ts", v)) { const last = v.lastElementChild; const box = document.createElement("div"); box.innerHTML = tsCard(); const ex = $(".exit-card", v), at = ex || (last && last.classList.contains("muted") ? last : null); at ? v.insertBefore(box.firstChild, at) : v.append(box.firstChild) }
       rings(v, fresh); numbers(v, fresh)
     } finally { mo.takeRecords(); busy = false }
   }

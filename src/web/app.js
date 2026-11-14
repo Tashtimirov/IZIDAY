@@ -2695,7 +2695,7 @@ function renderMore() {
       ${D.sync.error ? `<div class="msg exp small">${esc(D.sync.error)}</div>` : ""}
       <div class="btns" style="margin-top:10px"><button class="btn" data-do="sync">${ei("sync")}Обменяться сейчас</button>${!gcalOn() && pendingOps().length ? '<button class="btn primary" data-do="run-widget">${ei("phone")}Внести в iPhone сейчас</button>' : ""}</div>
       ${!gcalOn() && pendingOps().length ? `<div class="muted small" style="margin-top:8px">В очереди ${pendingOps().length}: ${esc(pendingOps().map(o => OP_LABEL[o.tool] || o.tool).join(", "))}. Виджет внесёт их сам при обновлении; кнопка «Внести сейчас» на секунду откроет Scriptable.</div>` : ""}`
-  html += `<div class="btns" style="margin-top:10px"><button class="btn ${c ? "" : "primary"}" data-do="connect">${c ? "Подключить заново" : ei("link") + "Подключить"}</button>${c ? '<button class="btn red" data-do="disconnect">Отключить</button>' : ""}</div>
+  html += `<div class="btns" style="margin-top:10px"><button class="btn ${c ? "" : "primary"}" data-do="connect">${c ? "Подключить заново" : ei("link") + "Подключить"}</button>${c ? '<button class="btn red" data-do="disconnect">Выйти</button>' : ""}</div>
     <div class="muted small" style="margin-top:8px">Код подключения даёт виджет: в Scriptable меню → 📱 Приложение «Мой день». В нём ключ Claude и ключ таблицы — он хранится только на этом телефоне.</div></div>`
   // Своя таблица подключена — можно один раз привязать к ней вход Google, чтобы на новом телефоне хватило одной кнопки
   if (c && window.FRIEND && FRIEND.on()) html += `<div class="card"><h2>Вход через Google</h2>
