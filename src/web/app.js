@@ -1561,6 +1561,19 @@ function waterGap(h, now = new Date()) {
   const gap = (now - last) / 3600e3
   return gap >= 3 ? Math.floor(gap) : 0
 }
+// Подсказки про воду (карточка на «Сегодня», пуши таблицы, подсказки Изи): молчат, если нажали «Больше не показывать»
+// (D.waterOff) или выключено «Здоровье». Записывать воду по просьбе можно всегда
+const waterTips = () => !D.waterOff && (!window.FEAT || FEAT.on("health"))
+const WATER_NUDGE = /💧|(^|[^а-яё])(вод[аыуе]|водой|стакан\S*|попе[йт]\S*|попить)([^а-яё]|$)|\bwater\b|\bhydrat/i
+function waterSync() {
+  if (!waterTips()) { const now = Date.now()
+    live(D.nudges).filter(n => n.date > now && !String(n.id).startsWith("pq") && WATER_NUDGE.test((n.title || "") + " " + (n.text || ""))).forEach(n => remove("nudges", n.id)) }
+  save(false); pushCfgSend()
+}
+function waterTipsSet(on) {
+  if (on) delete D.waterOff; else D.waterOff = 1
+  waterSync()
+}
 // Активность с часов за прошлый день — из истории, которую присылает виджет (там тренировки уже учтены)
 const histHealth = d => ((D.snap && D.snap.health) || []).find(h => h && h.day === dayKey(d)) || null
 const onDay = (list, d) => live(list).filter(x => sameDay(x.date, d)).sort((a, b) => a.date - b.date)
@@ -1597,7 +1610,7 @@ function agentSystem() {
 - Время без «утра/вечера»: встречи, спорт, свидания, ужины после 6 обычно вечером; созвоны и работа — днём. Если перепутать дорого и неясно — спроси.
 - Уточняй через ask_user, только если без ответа нельзя сделать правильно: не названо новое время переноса, несколько подходящих событий, не указан способ оплаты (наличные или перевод). Давай короткие варианты ответа.
 - Календарь — Google Календарь пользователя: события создаёшь, переносишь и удаляешь сразу (create_event/update_event/delete_event). «Убери/удали событие» — это всегда выполнимо: если календарь не даёт удалить (праздники, чужой или подписанный календарь), delete_event сам скрывает событие в IZIDAY — никогда не отвечай «не могу удалить», скажи одной фразой, что скрыл и что в исходном календаре оно осталось. Вернуть — unhide_event. Если инструмент ответил, что изменение ушло в очередь виджета, — скажи коротко «внесу при обновлении виджета».
-- Про воду НЕ создавай напоминаний (они захламляют список) — о воде напоминай сам: подсказки plan_day в нужное время и вопросы в чате.
+${waterTips() ? "- Про воду НЕ создавай напоминаний (они захламляют список) — о воде напоминай сам: подсказки plan_day в нужное время и вопросы в чате." : "- Подсказки про воду пользователь выключил: не напоминай пить воду, не ставь о ней подсказок plan_day и напоминаний, не спрашивай о воде сам. Записать воду по просьбе (add_water) и ответить на вопрос о ней — можно."}
 - Напоминания живут в IZIDAY, а не в Напоминаниях iPhone: create_reminder сохраняет их в приложении, уведомление в срок и контроль «Выполнил?» — от IZIDAY. Повторяющиеся (каждый день, по будням) — через repeat. В Напоминания iPhone ничего не вноси.
 ${cals.length ? `- Календари по словам пользователя: ${cals.map(x => `«${x.calendar}» (список напоминаний «${x.list}»)`).join(", ")}.${cals.filter(x => x.hint).map(x => ` ${x.hint} — «${x.calendar}».`).join("")} Если календарь не назван, не указывай его.
 ` : ""}- Деньги — ${c.currencyIn}. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.
@@ -1628,14 +1641,15 @@ ${cals.length ? `- Календари по словам пользователя
 function planDay(items) {
   const now = Date.now(), end = +addDays(sod(new Date()), 1)
   live(D.nudges).filter(n => n.date > now && n.date < end && !String(n.id).startsWith("pq")).forEach(n => remove("nudges", n.id))   // pq… — конец помидора, не трогаем
-  const ok = []
+  const ok = []; let skip = 0
   for (const it of items.slice(0, 14)) {
     const t = parseIso(it.time)
     if (!t || +t <= now || +t >= end || !String(it.text || "").trim()) continue
+    if (!waterTips() && WATER_NUDGE.test(String(it.text))) { skip++; continue }   // подсказки про воду выключены
     ok.push(upsert("nudges", { id: uid("n"), date: +t, text: String(it.text).trim().slice(0, 240) }))
   }
   D.planDay = dayKey(new Date()); save()
-  return { ok: true, planned: ok.map(n => ({ time: hm(new Date(n.date)), text: n.text })), note: "уведомления поставит виджет при следующем обновлении (обычно до 15 минут)" }
+  return { ok: true, planned: ok.map(n => ({ time: hm(new Date(n.date)), text: n.text })), note: "уведомления поставит виджет при следующем обновлении (обычно до 15 минут)", ...(skip ? { skipped_water: skip, why: "подсказки про воду пользователь выключил — не ставь их" } : {}) }
 }
 // Раз в день (при первом открытии после 6:00) помощник сам составляет план подсказок на день
 let planBusy = false
@@ -1647,7 +1661,7 @@ async function autoPlan() {
     const sys = chatSystem() + `
 
 Сейчас ты сам, без запроса, планируешь день пользователя. Посмотри календарь и напоминания на сегодня, еду и воду, активность и вчерашний день (get_history), память.
-Составь через plan_day 4–8 подсказок на оставшуюся часть дня: вода (с учётом выпитого и дел, не во время встреч), еда (если обычно пропускает — напомни), подготовка к важным встречам и дорога (за 30–60 мин), движение и шаги, одна идея или мысль дня по его целям из памяти, вечером — короткий итог. Не дублируй уведомления о встречах — они уже есть. Пиши тепло и коротко, на «ты»/«вы» — как пользователь привык. Ответь одной строкой, что запланировал.`
+Составь через plan_day 4–8 подсказок на оставшуюся часть дня: ${waterTips() ? "вода (с учётом выпитого и дел, не во время встреч), " : ""}еда (если обычно пропускает — напомни), подготовка к важным встречам и дорога (за 30–60 мин), движение и шаги, одна идея или мысль дня по его целям из памяти, вечером — короткий итог. Не дублируй уведомления о встречах — они уже есть. Пиши тепло и коротко, на «ты»/«вы» — как пользователь привык. Ответь одной строкой, что запланировал.`
     const msgs = [{ role: "user", content: `[${hm(now)}] Спланируй мне сегодняшний день подсказками.` }]
     const tools = chatTools().filter(t => /^(get_|plan_day|list_places|read_sheet|mail_search|search_chats)/.test(t.name))
     const r = await agentTurn(msgs, sys, tools)
@@ -2861,7 +2875,8 @@ function renderMore() {
   const g = H()
   html += `<div class="card"><h2>Уведомления</h2><div class="set"><span>Подсказки и напоминания</span><span id="push-state">…</span></div>
     <div class="muted small">Подсказки помощника, напоминания, вода и «пора выезжать» приходят прямо от IZIDAY: их по расписанию (каждые 5 минут) отправляет таблица. Для «пора выезжать» разрешите приложению место.</div>
-    <div class="btns" id="push-btns" style="margin-top:10px"></div></div>`
+    <div class="btns" id="push-btns" style="margin-top:10px"></div>
+    ${!window.FEAT || FEAT.on("health") ? `<button class="set tg-row water-tg" data-water-tg><span><b>Подсказки про воду</b><small>на «Сегодня» и уведомлениями, если давно не пили</small></span><i class="tgl ${waterTips() ? "on" : ""}" role="switch" aria-checked="${waterTips()}"></i></button>` : ""}</div>`
   html += `<div class="card"><h2>Цели</h2>
     <div class="set"><span>Вода в день, мл</span><input type="number" data-set="waterGoal" value="${g.waterGoal}"></div>
     <div class="set"><span>Белок в день, г</span><input type="number" data-set="proteinGoal" value="${proteinGoal()}"></div>
@@ -3008,6 +3023,8 @@ function bind() {
     D.izi = Object.assign({}, D.izi, { g: b.dataset.iziG }); save(false)
     const sg = b.parentNode; sg.querySelector("i").style.setProperty("--i", b.dataset.iziG === "f" ? 1 : 0); $$("button", sg).forEach(x => x.classList.toggle("on", x === b))
     setTimeout(render, 400); toast(iziG("Мужской род", "Женский род")) })
+  $$("[data-water-tg]", v).forEach(b => b.onclick = () => { const on = !waterTips(); waterTipsSet(on); const i = $(".tgl", b); i.classList.toggle("on", on); i.setAttribute("aria-checked", on)
+    toast(on ? "Подсказки про воду включены" : "Подсказки про воду выключены") })
   $$("[data-set]", v).forEach(inp => inp.onchange = () => {
     const n = Math.round(+inp.value)
     if (!(n > 0)) { inp.value = H()[inp.dataset.set]; return }
@@ -4081,7 +4098,7 @@ async function pushEnable() {
   } catch (e) { ui.info("Не получилось включить", String(e.message || e)) }
 }
 // Что таблица учитывает в пушах: цель по воде, валюта сводок
-const pushCfg = () => ({ waterGoal: H().waterGoal, currency: core.CONFIG.currency })
+const pushCfg = () => ({ waterGoal: H().waterGoal, currency: core.CONFIG.currency, water: waterTips() ? 1 : 0 })
 async function pushCfgSend() { try { if (D.conn && pushAble() && Notification.permission === "granted") { const sub = await pushSub(); if (sub) { await pushConn(); await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: pushCfg() } }) } } } catch (e) {} }
 async function pushTest() {
   try { const r = (await hubPost({ push: { action: "test" } })).push || {}; toast(r.sent ? "🔔 Отправил — сейчас придёт" : `Не дошло: ${(r.errors || [r.error || "нет подписки"]).join("; ")}`) }
@@ -5535,10 +5552,10 @@ function tipCard(v, now = new Date()) {
   for (const c of cats) { const b = budgetState(c); if (b && b.p >= 0.8 && b.p <= 1.5) tips.push({ k: "b:" + c, ico: "wallet", col: "#30B0C7", t: b.left >= 0 ? `До лимита «${c}» осталось ${core.money(b.left)}` : `«${c}»: лимит превышен на ${core.money(-b.left)}`, s: `Потрачено ${num(b.spent)} из ${core.money(b.limit)} в этом месяце` }) }
   const bill = recurSoon()[0]; if (bill) tips.push({ k: "r:" + bill.id, ico: "bill", col: "#FF9F0A", t: `${bill.title}: ${core.money(bill.amount)} ${recurLabel(bill)}`, s: "Регулярный платёж — нажмите «Оплачено» в напоминаниях, когда оплатите" })
   for (const d of debts()) { const due = parseIso(d.due); if (d.dir !== "loan" && due && sod(due) - sod(now) <= 2 * 864e5) { const x = debtLine(d, now); tips.push({ k: "d:" + d.id, ico: "hand", col: "#5E5CE6", t: `${x.t}: ${core.money(d.amount)}`, s: x.s }); break } }
-  const h = dayHealth(), gap = waterGap(h); if (gap) tips.push({ k: "w", ico: "drop", col: "#0A84FF", t: `${gap} ч без воды`, s: `Выпито ${liters(h.water)} из ${liters(H().waterGoal)} л — стакан сейчас` })
+  const h = dayHealth(), gap = waterTips() && waterGap(h); if (gap) tips.push({ k: "w", never: 1, ico: "drop", col: "#0A84FF", t: `${gap} ч без воды`, s: `Выпито ${liters(h.water)} из ${liters(H().waterGoal)} л — стакан сейчас` })
   const tip = tips.find(t => !off["tip:" + day + ":" + t.k])
   if (!tip) return ""
-  return `<div class="tip-card" data-tip="${esc(tip.k)}"><div class="ic" style="background:${tip.col}">${tdIco(tip.ico, 20)}</div><div class="grow"><b>${esc(tip.t)}</b><div class="small muted">${esc(tip.s)}</div></div><button class="x" data-tip-off="${esc(tip.k)}" aria-label="Скрыть">${ICO.x}</button></div>`
+  return `<div class="tip-card" data-tip="${esc(tip.k)}"><div class="ic" style="background:${tip.col}">${tdIco(tip.ico, 20)}</div><div class="grow"><b>${esc(tip.t)}</b><div class="small muted">${esc(tip.s)}</div>${tip.never ? `<button class="tip-never" data-tip-never="${esc(tip.k)}">Больше не показывать</button>` : ""}</div><button class="x" data-tip-off="${esc(tip.k)}" aria-label="Скрыть">${ICO.x}</button></div>`
 }
 
 // — 8. Шаблоны дня: набор дел со временем одним нажатием
@@ -5659,6 +5676,8 @@ function bindToday(v) {
   $$("[data-tip-off]", v).forEach(b => b.onclick = ev => { ev.stopPropagation(); D.tdOff = D.tdOff || {}; D.tdOff["tip:" + dayKey(new Date()) + ":" + b.dataset.tipOff] = 1
     for (const k of Object.keys(D.tdOff)) if (!k.includes(dayKey(new Date()))) delete D.tdOff[k]
     save(false); const c = b.closest(".tip-card"); c.classList.add("gone"); setTimeout(render, 250) })
+  $$("[data-tip-never]", v).forEach(b => b.onclick = ev => { ev.stopPropagation(); waterTipsSet(false)
+    const c = b.closest(".tip-card"); c.classList.add("gone"); setTimeout(render, 250); toast("Подсказки про воду выключены. Вернуть: Настройки → Уведомления") })
   $$(".tip-card", v).forEach(c => { let x0 = null
     c.addEventListener("touchstart", e => { x0 = e.touches[0].clientX }, { passive: true })
     c.addEventListener("touchmove", e => { if (x0 == null) return; const dx = e.touches[0].clientX - x0; c.style.transform = `translateX(${dx}px)`; c.style.opacity = 1 - Math.min(1, Math.abs(dx) / 220) }, { passive: true })

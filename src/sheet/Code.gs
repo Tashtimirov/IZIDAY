@@ -987,9 +987,11 @@ function pushTick() {
     const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
     const hourOf = t => Number(Utilities.formatDate(new Date(t), tz, "H")), dayOf = t => Utilities.formatDate(new Date(t), tz, "yyyy-MM-dd");
     const evHid = evHiddenCheck_(alive("goals"), tz);   // события, скрытые в приложении, — без сводок и «Пора выезжать»
+    const waterOff = (hubGet_("push_cfg") || {}).water === 0;   // в приложении «Больше не показывать» про воду или выключено «Здоровье»
+    const waterTxt = /💧|(^|[^а-яё])(вод[аыуе]|водой|стакан\S*|попе[йт]\S*|попить)([^а-яё]|$)|\bwater\b|\bhydrat/i;
     if (full) {
-      // 1. подсказки помощника (plan_day)
-      for (const n of alive("nudges")) if (n.date > from && n.date <= now + 60e3) once("n:" + n.id + ":" + n.date, { title: n.title || "💡 IZIDAY", body: n.text || "", url: "./#chat" });
+      // 1. подсказки помощника (plan_day); про воду — только если подсказки о ней не выключены
+      for (const n of alive("nudges")) if (n.date > from && n.date <= now + 60e3 && !(waterOff && !String(n.id).startsWith("pq") && waterTxt.test((n.title || "") + " " + (n.text || "")))) once("n:" + n.id + ":" + n.date, { title: n.title || "💡 IZIDAY", body: n.text || "", url: "./#chat" });
       // 2. напоминания: в срок, потом «Выполнил?» через 1 и 3 часа, дальше раз в день в 10:00 (до 3 дней);
       //    на день без времени — в 13:00 и 18:00. Отметили выполненным — вопросы прекращаются
       for (const r of alive("rems")) {
@@ -1004,7 +1006,7 @@ function pushTick() {
       }
       // 3. вода: через 2 ч после последнего стакана, потом настойчивее (9:00–21:00, пока не выпита норма)
       const h = hourOf(now), today = dayOf(now);
-      if (h >= PUSH.waterFrom && h < PUSH.waterTo) {
+      if (!waterOff && h >= PUSH.waterFrom && h < PUSH.waterTo) {
         const water = alive("water").filter(w => dayOf(w.date) === today), goal = Number((hubGet_("push_cfg") || {}).waterGoal) || 2000;
         const drank = water.reduce((s, w) => s + (Number(w.ml) || 0), 0);
         if (drank < goal) {
