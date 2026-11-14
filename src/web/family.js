@@ -311,6 +311,89 @@ const lessonsFor = kid => { const age = (member(kid) || {}).age || 10; return LE
 const lessonDone = (kid, id) => L("log").some(x => x.kid === kid && x.kind === "lesson" && x.task === id && x.st === "ok")
 function nextLesson(kid, c) { return lessonsFor(kid).find(l => (!c || l.c === c) && !lessonDone(kid, l.id)) }
 
+// ───────────── Моя неделя: календарь ребёнка на 7 дней вперёд ─────────────
+// Уроки — события семьи kind:"school" (одно на день недели: {who: id ребёнка, days:[d], time, lessons:[…], take}).
+// Остальное — кружки ребёнка и общие дела семьи (evOn). Ребёнок листает дни кнопками или смахиванием.
+let kWeekSel = 0
+const WDS2 = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
+const weekDays = () => { const t = new Date(); t.setHours(12, 0, 0, 0); return [...Array(7)].map((_, i) => { const d = new Date(t); d.setDate(t.getDate() + i); return d }) }
+const schoolOn = (id, d) => evOn(id, d).find(x => x.kind === "school" && x.who === id && (x.lessons || []).length)
+const dayName = (d, i) => i === 0 ? "сегодня" : i === 1 ? "завтра" : `${WDF[d.getDay()] === "среда" ? "среду" : WDF[d.getDay()] === "пятница" ? "пятницу" : WDF[d.getDay()] === "суббота" ? "субботу" : WDF[d.getDay()]}, ${d.getDate()} ${MONTHS_GEN[d.getMonth()]}`
+const lesEnd = (t, n) => { if (!/^\d{1,2}:\d\d$/.test(t || "") || !n) return ""; const [h, m] = t.split(":").map(Number), e = h * 60 + m + n * 45 + (n - 1) * 10; return `${Math.floor(e / 60)}:${String(e % 60).padStart(2, "0")}` }
+function kWeek(me) {
+  const days = weekDays(), i = Math.min(6, Math.max(0, kWeekSel)), d = days[i]
+  const strip = days.map((x, k) => { const sc = schoolOn(me.id, x), n = evOn(me.id, x).filter(e => e.kind !== "school").length
+    return `<button class="kwd${k === i ? " on" : ""}${k === 0 ? " now" : ""}${[0, 6].includes(x.getDay()) ? " we" : ""}" data-kwd="${k}" aria-label="${esc(dayName(x, k))}"><span>${WDS2[x.getDay()]}</span><b>${x.getDate()}</b><em>${sc ? `<i style="background:#6A4BF2"></i>` : ""}${n ? `<i style="background:#FF8A3D"></i>` : ""}</em></button>` }).join("")
+  const sc = schoolOn(me.id, d), other = evOn(me.id, d).filter(e => e.kind !== "school"), tk = i ? tasksOn(me.id, d).n : 0
+  const take = [sc && sc.take, ...other.map(x => x.take)].filter(Boolean)
+  let body = ""
+  if (sc) body += `<div class="kles2"><div class="kles2h">${ic("book", 20, "#6A4BF2", 2.4)}<b>Уроки в школе</b><span>${esc(sc.time || "")}${lesEnd(sc.time, sc.lessons.length) ? "–" + lesEnd(sc.time, sc.lessons.length) : ""}</span></div>
+    <ol>${sc.lessons.map(l => `<li>${esc(l)}</li>`).join("")}</ol></div>`
+  body += other.map(x => `<div class="krow" data-kev="${esc(x.id)}"><div class="ktm">${esc(x.time || "днём")}</div><div class="grow"><b>${esc(x.title)}</b>${x.who === "fam" || x.place ? `<div class="kmuted">${[x.who === "fam" && "вся семья", x.place].filter(Boolean).map(esc).join(" · ")}</div>` : ""}</div>${propWait(x.id) ? `<span class="kwait">${ic("clock", 13, "#C98500")}ждёт ответа</span>` : ""}<i style="background:${x.who === "fam" ? layerC("fam") : kidC(me.id)}"></i>${ic("chev", 18, "#A19BC7")}</div>`).join("")
+  if (take.length) body += `<div class="ktake">${ic("bag", 20, "#FF8A3D", 2.4)}<div><b>${i === 1 && new Date().getHours() >= 15 ? "Собери с вечера" : "Не забудь"}</b><div class="kmuted">${take.map(esc).join(", ")}</div></div></div>`
+  if (tk) body += `<div class="kmuted ktk">И ${tk} ${plural(tk, "дело", "дела", "дел")} из «Моих дел»</div>`
+  if (!sc && !other.length) body += `<div class="kfree">${[0, 6].includes(d.getDay()) ? "Выходной! Уроков нет." : "Ничего не запланировано. Можно добавить своё: кружок, встречу с другом."}${tk ? "" : " Можно пройти урок у Изи."}</div>`
+  const cnt = (sc ? sc.lessons.length : 0)
+  return `<div class="kcard ksch kweek"><h2>Моя неделя <button class="kadd" data-k="evnew">${ic("plus", 16, "#6A4BF2", 2.6)}Своё</button></h2><div class="kwstrip">${strip}</div>
+    <div class="kwday"><div class="kwt">Расписание на ${esc(dayName(d, i))}${cnt ? ` <span>${cnt} ${plural(cnt, "урок", "урока", "уроков")}</span>` : ""}</div>${body}</div></div>`
+}
+function kWeekBind(v) {
+  const card = $(".kweek", v); if (!card) return
+  const go = k => { if (k < 0 || k > 6 || k === kWeekSel) return; const dir = k > kWeekSel ? 1 : -1; kWeekSel = k
+    const me = member(meId()) || { id: meId() }, tmp = document.createElement("div"); tmp.innerHTML = kWeek(me); const nc = tmp.firstElementChild
+    $(".kwday", nc).classList.add(dir > 0 ? "kw-r" : "kw-l"); card.replaceWith(nc); kWeekBind(v)
+    $$("[data-kev]", nc).forEach(b => b.onclick = () => kidItemSheet("events", b.dataset.kev)); $$("[data-k]", nc).forEach(b => b.onclick = () => (KDO[b.dataset.k] || (() => {}))()) }
+  $$("[data-kwd]", card).forEach(b => b.onclick = () => go(+b.dataset.kwd))
+  let x0 = null, y0 = 0
+  const day = $(".kwday", card)
+  day.addEventListener("touchstart", e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY }, { passive: true })
+  day.addEventListener("touchend", e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) go(kWeekSel + (dx < 0 ? 1 : -1)) }, { passive: true })
+}
+// Для Изи и подсказок: уроки и расписание на неделю короткой строкой
+function weekText(id) {
+  return weekDays().map((d, i) => { const sc = schoolOn(id, d), o = evOn(id, d).filter(e => e.kind !== "school")
+    if (!sc && !o.length) return ""
+    return `${i === 0 ? "сегодня" : i === 1 ? "завтра" : WDS2[d.getDay()].toLowerCase() + " " + d.getDate()}: ${[sc && `уроки с ${sc.time || "утра"} — ${sc.lessons.join(", ")}${sc.take ? ` (взять: ${sc.take})` : ""}`, ...o.map(x => `${x.time || "днём"} ${x.title}${x.take ? ` (взять: ${x.take})` : ""}`)].filter(Boolean).join("; ")}` }).filter(Boolean).join(". ")
+}
+
+// ───────────── Уроки ребёнка (взрослый заполняет) ─────────────
+const SCH_DAYS = [1, 2, 3, 4, 5, 6]
+const schOf = (kid, d) => L("events").find(x => x.id === `sch:${kid}:${d}`)
+function lessonsForm(kidId) {
+  const kids = members().filter(m => m.role === "kid" || m.role === "teen")
+  if (!kids.length) return ui.info("Уроки", "Сначала добавьте ребёнка в семью: Планы → Семья → «Ребёнок».")
+  let kid = kids.find(k => k.id === kidId) ? kidId : kids[0].id
+  if (!isAdult()) return
+  const s = sheet(`<h3>Уроки</h3>${kids.length > 1 ? `<div class="chips" id="ls-k">${kids.map(m => `<button class="chip ly" data-kid="${esc(m.id)}" style="--c:${kidC(m.id)}"><em></em>${esc(short(m.name))}</button>`).join("")}</div>` : ""}
+    <div class="msg">Ребёнок увидит их у себя в «Моей неделе» на 7 дней вперёд. Каждый урок с новой строки.</div><div id="ls-days"></div>
+    <div class="btns"><button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
+  s.el.classList.add("fam-sheet")
+  const draw = () => {
+    $$("#ls-k .chip", s.el).forEach(z => z.classList.toggle("on", z.dataset.kid === kid))
+    const prev = (SCH_DAYS.map(d => schOf(kid, d)).find(Boolean) || {}).time || "08:00"
+    $("#ls-days", s.el).innerHTML = SCH_DAYS.map(d => { const x = schOf(kid, d) || {}
+      return `<div class="lsday" data-d="${d}"><div class="lsh"><b>${["", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"][d]}</b><input type="time" class="ls-t" value="${esc(x.time || prev)}" aria-label="Начало уроков"></div>
+        <textarea class="ls-l" rows="${Math.max(3, (x.lessons || []).length)}" placeholder="${d === 6 ? "Если в субботу уроков нет — оставьте пустым" : "Математика\nРусский язык\nЧтение"}">${esc((x.lessons || []).join("\n"))}</textarea>
+        <input class="ls-x" value="${esc(x.take || "")}" placeholder="Не забыть взять (необязательно)"></div>` }).join("")
+  }
+  draw()
+  s.el.addEventListener("input", e => { const t = e.target; if (t.classList && t.classList.contains("ls-l")) { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px" } })
+  $$("#ls-k .chip", s.el).forEach(c => c.onclick = () => { kid = c.dataset.kid; draw() })
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  $('[data-a="ok"]', s.el).onclick = () => {
+    let n = 0
+    for (const el of $$(".lsday", s.el)) {
+      const d = +el.dataset.d, old = schOf(kid, d), lessons = $(".ls-l", el).value.split(/[\n,;]+/).map(t => t.trim().replace(/^\d+[.)]\s*/, "").slice(0, 40)).filter(Boolean).slice(0, 10)
+      const time = $(".ls-t", el).value || "", take = $(".ls-x", el).value.trim().slice(0, 80)
+      if (!lessons.length) { if (old && !old.del) put("events", Object.assign({}, old, { del: true })); continue }
+      n += lessons.length
+      put("events", { id: `sch:${kid}:${d}`, kind: "school", title: "Школа", who: kid, days: [d], time, min: lessons.length * 45 + (lessons.length - 1) * 10, lessons, take, by: old ? old.by : meId(), at: old ? old.at : Date.now() })
+    }
+    push(true); s.close(); toast(n ? `Уроки сохранены — ${short((member(kid) || {}).name || "ребёнок")} увидит их у себя` : "Уроки убраны")
+  }
+}
+
 // ═════════════ Детский режим ═════════════
 let kTab = "day", kCourse = "goals"
 const star = (n, cls = "") => `<span class="kstar ${cls}">${ic("star", 16, "#E89A00", 2.4)}${n}</span>`
@@ -332,10 +415,9 @@ function kDay(me) {
   const g = famGoals().find(x => !x.done), les = nextLesson(me.id)
   let h = kHead(`${core.cap(WDF[d.getDay()])}, ${d.getDate()} ${MONTHS_GEN[d.getMonth()]}`, `Привет, ${short(me.name)}!`, `<div class="kmy">${star(num(kidStars(me.id)))}<span>мои звёзды</span></div>`)
   h += `<div class="ksay">${orb(64)}<div class="kbub">${esc(kidTip(me, tasks, done))}</div></div>`
+  h += kWeek(me)
   h += `<div class="kcard"><h2>Мои дела <span>${done} из ${tasks.length}</span></h2>${tasks.map(t => kTask(me, t)).join("") || `<div class="kmuted">Сегодня дел нет. Попроси маму или папу добавить их в приложении.</div>`}</div>`
-  const sch = evOn(me.id, d)
   h += propNews(me.id)
-  h += `<div class="kcard ksch"><h2>Расписание <button class="kadd" data-k="evnew">${ic("plus", 16, "#6A4BF2", 2.6)}Своё</button></h2>${sch.map(x => `<div class="krow" data-kev="${esc(x.id)}"><div class="ktm">${esc(x.time || "днём")}</div><div class="grow"><b>${esc(x.title)}</b>${x.who === "fam" || x.take || x.place ? `<div class="kmuted">${[x.who === "fam" && "вся семья", x.place, x.take && "взять: " + x.take].filter(Boolean).map(esc).join(" · ")}</div>` : ""}</div>${propWait(x.id) ? `<span class="kwait">${ic("clock", 13, "#C98500")}ждёт ответа</span>` : ""}<i style="background:${x.who === "fam" ? layerC("fam") : kidC(me.id)}"></i>${ic("chev", 18, "#A19BC7")}</div>`).join("") || `<div class="kmuted">На сегодня ничего нет. Можно добавить своё дело: кружок, встречу с другом.</div>`}</div>`
   if (g) { const p = goalProg(g), gi = goalIc(g.title), mine = sumSince(g.start || "0000").by[me.id] || 0
     h += `<div class="kcard kgoal"><h2>Семейная цель</h2><div class="krow"><div class="kgi">${ic(g.ic || gi[0], 30, gi[1])}</div><div class="grow"><b>${esc(g.title)}</b><div class="kmuted">${num(p.have)} из ${num(p.need)}${mine ? ` · ты принёс ${num(mine)}` : ""}</div></div></div><div class="kbar"><i style="width:${Math.round(p.p * 100)}%"></i></div></div>` }
   if (les) h += `<button class="kcard krow kles" data-kles="${les.id}"><div class="kplay">${ic("play", 24, "#fff")}</div><div class="grow"><b>Урок дня: «${esc(les.t)}»</b><div class="kmuted">3 минуты · +${LESSON_STARS} звёзд</div></div>${ic("chev", 22, "#A19BC7")}</button>`
@@ -344,6 +426,8 @@ function kDay(me) {
 }
 function kidTip(me, tasks, done) {
   const left = tasks.length - done, h = new Date().getHours()
+  const tm = weekDays()[1], sc = h >= 16 && schoolOn(me.id, tm)
+  if (sc && (!tasks.length || tasks.length === done)) return `Завтра ${sc.lessons.length} ${plural(sc.lessons.length, "урок", "урока", "уроков")} с ${sc.time || "утра"}. Посмотри в «Моей неделе» и собери рюкзак с вечера!`
   if (!tasks.length) return "Сегодня свободный день! Можно пройти урок и получить звёзды."
   if (!left) return "Все дела сделаны! Ты молодец. Звёзды уже идут в семейную цель."
   const t = tasks.find(t => !logOf(me.id, t.id))
@@ -475,6 +559,7 @@ function kidNav() {
   $$("[data-kt]", n).forEach(b => b.onclick = () => { if (b.dataset.kt === "izi") return kidIzi(); kTab = b.dataset.kt; render(); window.scrollTo(0, 0) })
 }
 function kidBind(v) {
+  kWeekBind(v)
   $$("[data-kev]", v).forEach(b => b.onclick = () => kidItemSheet("events", b.dataset.kev))
   $$("[data-kti]", v).forEach(b => b.onclick = () => kidItemSheet("tasks", b.dataset.kti))
   $$("[data-ktask]", v).forEach(b => b.onclick = () => { const t = L("tasks").find(x => x.id === b.dataset.ktask); if (t) { tick(t); render() } })
@@ -540,7 +625,8 @@ function kidTipText() {
 function kidCtx() {
   const j = jars(meId()), m = mainDream(meId()), les = nextLesson(meId())
   const t = todayTasks(meId()).map(x => { const st = (logOf(meId(), x.id) || {}).st; return `${x.title} — ${st === "ok" ? "сделано" : st === "wait" ? "ждёт проверки" : "не сделано"}` }).join("; ")
-  return `Сегодня ${fullDate(new Date())}. Дела: ${t || "нет"}. Звёзд всего: ${kidStars(meId())}. Копилки: Трачу ${j.spend}, Коплю ${j.save}, Делюсь ${j.share} ${core.CONFIG.currency || "฿"}. ${m ? `Главная мечта: ${m.title}${m.price ? `, стоит ${m.price}` : ""}.` : ""} Банка желаний: ${kidDreams(meId()).filter(d => !d.main && !d.done).map(d => d.title).join(", ") || "пусто"}. ${les ? `Следующий урок: ${les.t}.` : ""} Семейная цель: ${(famGoals().find(x => !x.done) || {}).title || "нет"}.`
+  const wk = weekText(meId())
+  return `Сегодня ${fullDate(new Date())}. Расписание на неделю: ${wk || "пусто"}. Дела: ${t || "нет"}. Звёзд всего: ${kidStars(meId())}. Копилки: Трачу ${j.spend}, Коплю ${j.save}, Делюсь ${j.share} ${core.CONFIG.currency || "฿"}. ${m ? `Главная мечта: ${m.title}${m.price ? `, стоит ${m.price}` : ""}.` : ""} Банка желаний: ${kidDreams(meId()).filter(d => !d.main && !d.done).map(d => d.title).join(", ") || "пусто"}. ${les ? `Следующий урок: ${les.t}.` : ""} Семейная цель: ${(famGoals().find(x => !x.done) || {}).title || "нет"}.`
 }
 const MIC_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>'
 // Детский чат с Изи. Как у взрослых: текст, голос одной фразой, живой разговор («Поговорить»), фото и файлы («+»).
@@ -767,17 +853,20 @@ function kidSheet(id) {
   <div class="msg">${esc(praise(k, tl, les))}</div>
   <h4>Дела и награды</h4>${[...kidTasks(id), ...kidEarn(id)].map(t => `<div class="row"><span class="ftile" style="background:${icColor(t.ic || taskIc(t.title))}1F">${ic(t.ic || taskIc(t.title), 20, icColor(t.ic || taskIc(t.title)))}</span><div class="grow"><div class="t">${esc(t.title)}</div><div class="s">${t.days && t.days.length && t.days.length < 7 ? t.days.map(d => WD7S[d - 1]).join(", ") : "каждый день"}${t.check || t.pay ? " · нужна проверка" : ""}</div></div><span class="fpts">${t.pay ? num(t.pay) + " " + esc(cur) : (t.stars || 5) + " ★"}</span>${adult ? `<button class="x-btn" data-ftdel="${esc(t.id)}" aria-label="Убрать">${ic("x", 16)}</button>` : ""}</div>`).join("") || '<div class="empty">Дел пока нет</div>'}
   ${adult ? `<div class="btns"><button class="btn" data-a="earn">Дело за деньги</button><button class="btn primary" data-a="task">Добавить дело</button></div>` : ""}
+  <h4>Расписание уроков</h4>${(() => { const l = SCH_DAYS.map(d => [d, schOf(id, d)]).filter(([, x]) => x && !x.del && (x.lessons || []).length)
+    return l.map(([d, x]) => `<div class="row"><div class="grow"><div class="t">${WD7S[d - 1]}${x.time ? " · " + esc(x.time) : ""}</div><div class="s">${esc(x.lessons.join(", "))}</div></div></div>`).join("") || '<div class="empty">Не заполнены. Ребёнок увидит их в своей «Моей неделе».</div>' })()}
+  ${adult ? `<div class="btns"><button class="btn" data-a="les">${ic("book", 16)} ${SCH_DAYS.some(d => schOf(id, d)) ? "Изменить уроки" : "Заполнить уроки"}</button></div>` : ""}
   <h4>Мечты</h4>${kidDreams(id).filter(d => !d.done).map(d => dreamRow(k, d)).join("") || '<div class="empty">Мечт пока нет</div>'}
   <h4>Деньги</h4><div class="row"><div class="grow t">Карманные</div><div class="s">${st.pocket > 0 ? `${num(st.pocket)} ${esc(cur)} ${["", "по пн", "по вт", "по ср", "по чт", "по пт", "по сб", "по вс"][st.wd]}` : "не заданы"}</div></div>
   <div class="row"><div class="grow t">Раскладка</div><div class="s">Трачу ${st.split[0]} · Коплю ${st.split[1]} · Делюсь ${st.split[2]}</div></div>
   <div class="row"><div class="grow t">Покупки без спроса</div><div class="s">до ${num(st.limit)} ${esc(cur)}</div></div>
   <div class="row"><div class="grow t">Копилки</div><div class="s">${JARS.map(([key, t]) => `${t} ${num(j[key])}`).join(" · ")}</div></div>
   ${adult ? `<div class="btns"><button class="btn" data-a="gift">Положить деньги</button><button class="btn" data-a="money">Настроить</button></div>` : ""}
-  <h4>Что видит ребёнок</h4><div class="msg">Свои дела, мечты, копилки и уроки, семейные цели и общий счёт. Ваши траты, дневник, здоровье и календарь ему не видны.</div>` : ""}
+  <h4>Что видит ребёнок</h4><div class="msg">Свои дела, неделю вперёд (уроки, кружки, общие дела семьи), мечты, копилки и уроки Изи, семейные цели и общий счёт. Ваши траты, дневник, здоровье и календарь ему не видны.</div>` : ""}
   ${adult ? `<div class="btns"><button class="btn" data-a="link">${ic("link", 16)} Ссылка для входа</button><button class="btn red" data-a="drop">Убрать из семьи</button></div>` : ""}`
   const s = sheet(html); s.el.classList.add("fam-sheet")
   const on = (a, f) => { const b = $(`[data-a="${a}"]`, s.el); if (b) b.onclick = f }
-  on("task", () => { s.close(); taskForm(id) }); on("earn", () => { s.close(); taskForm(id, true) }); on("money", () => { s.close(); moneyForm(id) })
+  on("les", () => { s.close(); lessonsForm(id) }); on("task", () => { s.close(); taskForm(id) }); on("earn", () => { s.close(); taskForm(id, true) }); on("money", () => { s.close(); moneyForm(id) })
   on("link", () => orbInvite(k)); on("gift", async () => { const v = Math.round(+(await ui.ask("Сколько положить?", "Разложится по копилкам по раскладке ребёнка.", "", { type: "number" })) || 0); if (v > 0) { credit(id, v, "gift", "Подарок", uid("gf")); s.close(); toast("Положено") } })
   on("drop", async () => { if (await ui.confirm(`Убрать ${k.name} из семьи?`, `<div class="msg">Дела и звёзды останутся в журнале, но в семье ${esc(short(k.name))} больше не будет.</div>`, ["Отмена", "Убрать"]) === "Убрать") { s.close(); push(true, { drop: id }) } })
   $$("[data-ftdel]", s.el).forEach(b => b.onclick = () => { const t = L("tasks").find(x => x.id === b.dataset.ftdel); if (t) { put("tasks", Object.assign({}, t, { del: true })); b.closest(".row").remove() } })
@@ -1162,6 +1251,6 @@ function init() {
     if (!D.fam.share) D.fam.share = { cal: 1, money: live(D.money).some(e => e.shared) || live(D.goals).some(g => g.kind === "jar" && g.shared) ? 1 : 0 }
     save(false); setTimeout(() => { if (famOn() && !D.fam.shareAsked && !stack.length) shareSheet("old") }, 2500)
   }
-  window.FAM = { scan, orbInvite, on: famOn, share, shareSheet, members, meId, isAdult, L, tasksOn, COLORS, keyOn, ai, link, kidSheet, join, push, put, famDays, sumSince, goalProg, jars, kidStars, waits, approve, kidMode, openFam, LESSONS, lesson, credit, pocketTick }
+  window.FAM = { lessonsForm, weekText, scan, orbInvite, on: famOn, share, shareSheet, members, meId, isAdult, L, tasksOn, COLORS, keyOn, ai, link, kidSheet, join, push, put, famDays, sumSince, goalProg, jars, kidStars, waits, approve, kidMode, openFam, LESSONS, lesson, credit, pocketTick }
 }
 })()

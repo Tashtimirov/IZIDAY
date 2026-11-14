@@ -6245,6 +6245,7 @@ function bindToday(v) {
 // В goals (синхронизируется без нового деплоя скрипта): kind "etpl" {title, min, location, remind, bring}, "pblk" {title, days:[1..7], from, to}
 // Настройки экрана — только на телефоне: D.cal {view, layers, tz, tzOn, map: {календарь: me|olya|kids|off}, names: {olya}}
 Object.assign(TD_ICO, {
+  book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5M19 19v2H6"/>',
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/>',
   layers: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>', eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7-.4 1-1.2 2.3-2.4 3.6M6.6 6.6C4.4 8 2.8 10.2 2 12c1 2.5 5 7 10 7 1.8 0 3.4-.5 4.8-1.3"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>', shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/>',
   note: '<path d="M5 6h14M5 11h14M5 16h9"/>', cal: '<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/>', lock: '<rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
@@ -6361,7 +6362,7 @@ function famEvents() {
       if (!d) continue
       const dk = dayKey(d), all = !/^\d{1,2}:\d\d$/.test(x.time || ""), st = all ? null : atHM(d, x.time)
       out.push({ id: "fam:" + x.id, title: x.title + (m && m.id !== me ? " · " + name1(m.name) : ""), start: all ? dk : iso(st), end: all ? dk + "T23:59" : iso(new Date(+st + (+x.min || 60) * 60e3)), all_day: all,
-        calendar: "Семья", location: x.place || "", notes: x.take ? "Взять с собой: " + x.take : "", repeats: !x.day, fam: x, L, c: m && m.role === "kid" ? kidC(m.id) : null })
+        calendar: "Семья", location: x.place || "", notes: [(x.lessons || []).map((l, i) => `${i + 1}. ${l}`).join("\n"), x.take && "Взять с собой: " + x.take].filter(Boolean).join("\n"), repeats: !x.day, fam: x, L, c: m && m.role === "kid" ? kidC(m.id) : null })
     }
   }
   return out
@@ -6943,16 +6944,19 @@ function famCalSheet() {
   const adult = FAM.isAdult()
   const s = sheet(`<h3>Календарь семьи</h3><div class="fc-leg">${calLayers().map(l => `<span><i style="background:${l.c}"></i>${esc(l.name)}</span>`).concat(famKids().map(m => `<span><i style="background:${kidC(m.id)}"></i>${esc(name1(m.name))}</span>`)).join("")}</div>
     <div>${list.map(x => { const [w, c] = famEvWho(x); return `<button class="row fc-row" data-fe="${esc(x.id)}"><i style="background:${c}"></i><div class="grow"><div class="t">${esc(x.title)}</div><div class="s">${esc(w)} · ${esc(famEvWhen(x))}${x.day ? "" : " · каждую неделю"}</div></div>${tdIco("chev", 15)}</button>` }).join("") || '<div class="empty">Пока пусто. Добавьте общее дело — поездку, ужин, день рождения бабушки — или расписание ребёнка: школу и кружки.</div>'}</div>
-    ${adult ? `<div class="btns"><button class="btn" data-a="sch">${tdIco("clock", 16)} Расписание ребёнка</button><button class="btn primary" data-a="ev">${tdIco("plus", 16)} Дело семьи</button></div>` : ""}
+    ${adult ? `<div class="btns"><button class="btn" data-a="sch">${tdIco("clock", 16)} Кружки ребёнка</button><button class="btn primary" data-a="ev">${tdIco("plus", 16)} Дело семьи</button></div>` : ""}
+    ${adult && famKids().length ? `<button class="btn fc-les" data-a="les">${tdIco("book", 16)} Уроки детей</button>` : ""}
     <button class="chip cq-mk" data-a="set">${tdIco("layers", 15)} Цвета и календари</button>`, { onClose: () => render() })
   $$("[data-fe]", s.el).forEach(b => b.onclick = () => { const x = FAM.L("events").find(x => x.id === b.dataset.fe); s.close(); famEvForm(x, null, true) })
   const A = k => $(`[data-a="${k}"]`, s.el)
   if (A("ev")) A("ev").onclick = () => { s.close(); famEvForm(null, { who: "fam" }, true) }
   if (A("sch")) A("sch").onclick = () => { s.close(); const k = famKids()[0] || FAM.members().find(m => m.role === "teen"); famEvForm(null, { who: k ? k.id : "fam", days: [] }, true) }
+  if (A("les")) A("les").onclick = () => { s.close(); FAM.lessonsForm() }
   A("set").onclick = () => { s.close(); calSettings() }
 }
 function famEvForm(x, pref, back) {
   if (!famCal()) return
+  if (x && x.kind === "school" && FAM.isAdult()) return FAM.lessonsForm(x.who)
   if (!FAM.isAdult()) { const [w] = famEvWho(x || {}); return ui.info(x ? x.title : "Календарь семьи", x ? `${w} · ${famEvWhen(x)}${x.place ? "\n" + x.place : ""}${x.take ? "\nВзять с собой: " + x.take : ""}\n\nМенять дела семьи могут взрослые.` : "Дела семьи добавляют взрослые.") }
   const b = Object.assign({ title: "", who: "fam", day: dayKey(selDay && selDay >= sod(new Date()) ? selDay : new Date()), time: "", min: 60, place: "", take: "" }, pref || {}, x || {})
   let who = b.who || "fam", weekly = !b.day || Array.isArray((pref || {}).days) && !x
