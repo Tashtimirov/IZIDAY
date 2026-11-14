@@ -77,7 +77,7 @@ check(r6.ok && (await titles()).some(t => /Йога/.test(t)), "unhide_event: с
 // 6. Изи в чате: ответ, когда удалить нельзя
 await page.evaluate(() => { const s = stack.slice(); s.forEach(x => x.close()) }); await page.waitForTimeout(300)
 await page.evaluate(() => { D.chat.push({ role: "user", text: "Удали Loy Krathong", at: Date.now() - 4000 }, { role: "assistant", text: "Скрыл «Loy Krathong» в IZIDAY — в календаре «Праздники Таиланда» оно осталось. Вернуть можно в Календаре → «Скрытые события».", at: Date.now() }); save(false); setTab("chat") })
-await page.waitForTimeout(900)
+await page.waitForTimeout(5600)
 await page.screenshot({ path: SHOTS + `hide-3-chat${sfx}.png` })
 
 check(!errors.length, "без ошибок на странице", errors)
