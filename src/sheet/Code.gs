@@ -401,6 +401,16 @@ function geo_(g) {
 // Отправку и корзину приложение показывает человеку на подтверждение до запроса сюда.
 // ── Google Календарь: события для приложения и виджета, создание/изменение/удаление ──
 // Время — строки "yyyy-MM-ddTHH:mm" в часовом поясе таблицы; день без времени — "yyyy-MM-dd"
+// Скрытые в приложении события (goals kind "evhide": {title, eid, start, cal, all}) — то же правило, что evHiddenBy в app.js
+function evHiddenCheck_(goals, tz) {
+  const H = (goals || []).filter(g => g && g.kind === "evhide");
+  return (e, calName) => {
+    if (!H.length) return false;
+    const id = e.getId(), t = e.getTitle(), st = Utilities.formatDate(e.getStartTime(), tz, e.isAllDayEvent() ? "yyyy-MM-dd" : "yyyy-MM-dd'T'HH:mm");
+    return H.some(h => h.all ? (h.eid && h.eid === id) || (h.title === t && (calName == null || (h.cal || "") === calName))
+      : String(h.start || "").slice(0, 16) === st && ((h.eid && h.eid === id) || h.title === t));
+  };
+}
 function cal_(c) {
   const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
   const fmt = (d, day) => Utilities.formatDate(d, tz, day ? "yyyy-MM-dd" : "yyyy-MM-dd'T'HH:mm");
@@ -976,6 +986,7 @@ function pushTick() {
     const alive = l => (hubGet_(l) || []).filter(x => x && !x.deleted);
     const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
     const hourOf = t => Number(Utilities.formatDate(new Date(t), tz, "H")), dayOf = t => Utilities.formatDate(new Date(t), tz, "yyyy-MM-dd");
+    const evHid = evHiddenCheck_(alive("goals"), tz);   // события, скрытые в приложении, — без сводок и «Пора выезжать»
     if (full) {
       // 1. подсказки помощника (plan_day)
       for (const n of alive("nudges")) if (n.date > from && n.date <= now + 60e3) once("n:" + n.id + ":" + n.date, { title: n.title || "💡 IZIDAY", body: n.text || "", url: "./#chat" });
@@ -1038,7 +1049,7 @@ function pushTick() {
       const spent = alive("money").filter(e => e.type === "expense" && dayOf(e.date) === dayOf(now));
       if (kind === "morning") {
         let ev = [];
-        try { ev = CalendarApp.getDefaultCalendar().getEventsForDay(new Date(now)).filter(e => !e.isAllDayEvent()); } catch (e) {}
+        try { ev = CalendarApp.getDefaultCalendar().getEventsForDay(new Date(now)).filter(e => !e.isAllDayEvent() && !evHid(e)); } catch (e) {}
         const first = ev[0] ? `Первое: ${Utilities.formatDate(ev[0].getStartTime(), tz, "HH:mm")} ${ev[0].getTitle()}. ` : "";
         once("b:m:" + dayOf(now), { title: "☀️ Утренняя сводка", body: `${ev.length ? `Сегодня ${ev.length} ${ev.length === 1 ? "встреча" : ev.length < 5 ? "встречи" : "встреч"}. ${first}` : "Встреч в календаре нет. "}Нажмите — расскажу план дня.`, url: "./#brief=morning" });
       } else {
@@ -1052,6 +1063,7 @@ function pushTick() {
     if (here) {
       for (const k of CalendarApp.getAllCalendars().filter(c => !c.isHidden())) for (const e of k.getEvents(new Date(now), new Date(now + PUSH.look))) {
         const loc = String(e.getLocation() || "").trim();
+        if (evHid(e, k.getName())) continue;
         if (!loc || e.isAllDayEvent() || /^https?:|zoom|meet\.google|teams|онлайн|online/i.test(loc)) continue;   // созвон — ехать не нужно
         const start = e.getStartTime().getTime(), key = e.getId() + ":" + start;
         const trip = TRIP_RE.test(e.getTitle()), arr = trip ? e.getEndTime().getTime() : start;   // во сколько надо быть на месте
