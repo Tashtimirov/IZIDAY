@@ -1368,7 +1368,7 @@ body.top-mini #top-sub, body.top-mini #bugq { max-height: 0; opacity: 0; margin-
 /* Контраст: серый поясняющий текст в светлой теме был 3,4 к 1 (норма 4,5) — на тон темнее; в тёмной белый текст
    на ярко-зелёной кнопке был 2 к 1 — фон кнопки темнее (4,4 к 1), цвет тот же */
 :root { --sub: #6C6C70; --h2: #6C6C70; }
-@media (prefers-color-scheme: dark) { :root { --sub: #8E8E93; --h2: #8E8E93; } .btn.primary { background: #248A3D; } }
+@media (prefers-color-scheme: dark) { :root { --sub: #8E8E93; --h2: #8E8E93; } .btn.primary, .chip.on { background: #248A3D; } }
 /* Деньги: незаполненные блоки строками в «Ещё» */
 .mn-more .mn-mi { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); width: 34px; height: 34px; border-radius: 10px; }
 .mn-more .row .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
