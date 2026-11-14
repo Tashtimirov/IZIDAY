@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="IZIDAY">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="referrer" content="no-referrer">
+<title>IZIDAY</title>
+<script>/* вход через Google: ответ приходит в адресе — забрать до app.js, чтобы он не принял его за команду */try{if(/(^|[#&])(id_token|error)=/.test(location.hash)&&/state=/.test(location.hash)){sessionStorage.setItem("izi-glogin",location.hash.slice(1));history.replaceState(null,"",location.pathname+location.search)}}catch(e){}</script>
+<script>/* подключение Google Календаря: Google возвращает ?code=…&state=… — забрать до app.js */try{if(/(^|[?&])(code|error)=/.test(location.search)&&/[?&]state=/.test(location.search)){sessionStorage.setItem("izi-gcal",location.search.slice(1));history.replaceState(null,"",location.pathname+location.hash)}}catch(e){}</script>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png?v=5">
+<link rel="icon" href="icon-192.png?v=5">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="gami.css">
+<link rel="stylesheet" href="quest.css">
+<link rel="stylesheet" href="onb.css">
+<link rel="stylesheet" href="health.css">
+<link rel="stylesheet" href="fast.css">
+<link rel="stylesheet" href="family.css">
+<link rel="stylesheet" href="album.css">
+<link rel="stylesheet" href="mem.css">
+<link rel="stylesheet" href="design.css">
+<link rel="stylesheet" href="order.css">
+<link rel="stylesheet" href="undo.css">
+<link rel="stylesheet" href="tablet.css">
+</head>
+<body>
+<header id="top">
+  <div class="top-row">
+    <div class="grow">
+      <div id="top-title">Мой день</div>
+      <div id="top-sub"></div>
+      <button id="bugq" type="button" data-bug="1"></button>
+    </div>
+    <button id="add" aria-label="Добавить"></button><button id="find" aria-label="Поиск"></button><button id="sync" aria-label="Обновить" hidden></button><button id="gear" aria-label="Настройки"></button>
+  </div>
+</header>
+<main id="view"></main>
+<aside id="side" hidden></aside>
+<nav id="tabs">
+  <button data-tab="today"><i data-ico="today"></i><span>Сегодня</span></button>
+  <button data-tab="plans"><i data-ico="plans"></i><span>Планы</span></button>
+  <button data-tab="chat" id="fab" aria-label="Изи: чат"><b class="orb"></b><span>Изи</span></button>
+  <button data-tab="money"><i data-ico="money"></i><span>Деньги</span></button>
+  <button data-tab="health"><i data-ico="health"></i><span>Здоровье</span></button>
+</nav>
+<input id="photo" type="file" accept="image/*" capture="environment" hidden>
+<input id="photo-lib" type="file" accept="image/*,video/*" multiple hidden>
+<input id="doc" type="file" multiple hidden>
+<div id="layer"></div>
+<div id="toast"></div>
+<script src="i18n-en.js"></script>
+<script src="i18n.js"></script>
+<script src="bug.js"></script>
+<script src="gami.js"></script>
+<script src="quest.js"></script>
+<script src="family.js"></script>
+<script src="docread.js"></script>
+<script src="core.js"></script>
+<script src="app.js"></script>
+<script src="stt.js"></script>
+<script src="friends.js"></script>
+<script src="onb.js"></script>
+<script src="health.js"></script>
+<script src="fast.js"></script>
+<script src="album.js"></script>
+<script src="mem.js"></script>
+<script src="design.js"></script>
+<script src="order.js"></script>
+<script src="undo.js"></script>
+<script src="tablet.js"></script>
+<script src="metrics.js"></script>
+</body>
+</html>

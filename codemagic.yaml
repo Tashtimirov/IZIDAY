@@ -1,0 +1,42 @@
+# Сборка IZIDAY для iPhone в облаке Codemagic: Mac и Xcode у себя не нужны.
+# Веб-часть уже собрана и лежит в ios-app/www (её кладёт ios-app/update_www.sh из dist/web), секретов в ней нет.
+# Подключается один раз: Codemagic → Teams → Integrations → Developer Portal → ключ App Store Connect API
+# с именем "iziday" (роль App Manager). Подпись и профили Codemagic создаёт сам.
+workflows:
+  ios-testflight:
+    name: IZIDAY → TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    integrations:
+      app_store_connect: iziday
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.tashtimirov.izi
+      vars:
+        XCODE_PROJECT: "ios-app/ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+      node: 22
+      xcode: latest
+    scripts:
+      - name: Capacitor
+        script: |
+          cd ios-app
+          npm ci
+          npx cap sync ios
+      - name: Подпись
+        script: xcode-project use-profiles
+      - name: Номер сборки
+        script: |
+          cd ios-app/ios/App
+          agvtool new-version -all $(($(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID") + 1))
+      - name: Сборка
+        script: |
+          xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false   # первую сборку смотрит только владелец; тестерам — после его «отправляй»
