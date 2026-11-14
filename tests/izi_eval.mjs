@@ -33,6 +33,8 @@ async function fresh(friend) {
     window.EV = { calls: [], ask: null, fail: "" }
     window.chatAsk = async (q, opts) => { EV.calls.push({ name: "ask_user", input: { question: q, options: opts } }); return EV.ask || (opts && opts[0]) || "Да" }
     ui.confirm = async (t, h, btns) => btns ? btns[btns.length - 1] : true
+    // Google Календарь на стенде: события из снимка, изменения принимаются (fake_sheet не умеет cal-запросы)
+    window.calDo = calDo = async (action, x) => action === "delete" ? { ok: true } : { ok: true, event: Object.assign({ id: x.id || "N" + Date.now() }, x) }
     const rt = runTool
     window.runTool = runTool = async (name, x) => { EV.calls.push({ name, input: x }); if (EV.fail === name) return { error: "таблица не ответила" }; return rt(name, x) }
   }).catch(() => {})
