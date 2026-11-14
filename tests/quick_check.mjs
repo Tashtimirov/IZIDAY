@@ -13,7 +13,7 @@ const args = process.argv.slice(2), ALL = args.includes("--all"), NOBUILD = args
 // Главные проверки. Порядок: сначала самые долгие, чтобы параллельный прогон кончился раньше
 const QUICK = ["family_test", "web_test", "money_test", "health2_test", "friends_web_test", "feat_test", "plans_test", "smoke_test",
   "i18n_en_test", "reliability_test", "today_test", "metrics_test", "sw_autoupdate_test", "bdays_test", "sw_cache_test",
-  "izi_errors_test", "friends_test", "sheet_test", "hub_test", "gs_test", "chat_test", "agent_test", "sw_test", "proxy_test", "ru_test"]
+  "izi_errors_test", "grow_web_test", "grow_test", "friends_test", "sheet_test", "hub_test", "gs_test", "chat_test", "agent_test", "sw_test", "proxy_test", "ru_test"]
 // Давно нестабильные (зависят от скорости машины) — в полном прогоне показываются, но выкладку не останавливают
 const FLAKY = new Set(["talk_swipe_test", "talk_barge_test"])
 const t0 = Date.now(), sec = ms => Math.round(ms / 1000) + " с"
