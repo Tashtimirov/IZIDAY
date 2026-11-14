@@ -155,9 +155,9 @@ window.FRIEND = (() => {
   async function remove() {
     const m = me()
     if (!m || !D.conn || !D.conn.secret) return
-    const b = await ui.confirm("Удалить аккаунт?", `<div class="msg">Все ваши записи будут удалены с сервера IZIDAY и с этого телефона: дела, события, деньги, здоровье, разговоры с ${esc(iziName())}. Вернуть их будет нельзя.</div><div class="msg small muted">Аккаунт: ${esc(m.email || "")}</div>`, ["Отмена", "Удалить навсегда"])
+    const b = await ui.confirm("Удалить аккаунт?", `<div class="msg">Все ваши записи будут удалены с сервера IZIDAY и с этого телефона: дела, события, деньги, здоровье, разговоры с ${esc(iziName())}. Вернуть их будет нельзя.</div><div class="msg small muted">Аккаунт: ${esc(m.email || "")}</div>`, ["Удалить навсегда", "Отмена"])
     if (b !== "Удалить навсегда") return
-    if (await ui.confirm("Точно удалить?", `<div class="msg">Это действие необратимо.</div>`, ["Отмена", "Да, удалить"]) !== "Да, удалить") return
+    if (await ui.confirm("Точно удалить?", `<div class="msg">Это действие необратимо.</div>`, ["Да, удалить", "Отмена"]) !== "Да, удалить") return
     const quiet = (url, body) => fetch(url, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, credentials: "omit", cache: "no-store", body: JSON.stringify(body) }).catch(() => {})
     try {   // из лиги и семьи человек выходит сам: там хранится только его имя и баллы
       if (D.league && D.league.code && D.league.url) await quiet(D.league.url, { league: { op: "leave", code: D.league.code, id: D.league.id } })
