@@ -252,7 +252,7 @@ const PAST = { add_money: x => `Записал ${x.type === "income" ? "дохо
   add_food: x => `Записал еду: ${x.title || ""}`, add_water: x => `Записал воду ${x.ml || ""} мл`, add_workout: x => `Записал тренировку: ${x.title || ""}`,
   remember: x => `Запомнил: «${String(x.text || "").slice(0, 80)}»`, forget: () => "Забыл факт", claude_code: x => `Передал задачу в Claude Code: «${String(x.task || "").slice(0, 60)}»`,
   mail_send: x => `Отправил письмо${x.to ? " " + x.to : ""}`, mail_reply: () => "Ответил на письмо", mail_draft: () => "Сохранил черновик письма", mail_modify: x => `Разобрал почту (${x.op || ""})`,
-  add_shopping: x => `Добавил в покупки: ${(x.items || []).join(", ")}`, add_goal: x => `Добавил цель: ${(x.items || []).join(", ")}`, log_weight: x => `Записал вес ${x.kg || ""} кг`,
+  add_shopping: x => `Добавил в покупки: ${(x.items || []).join(", ")}`, save_receipt: x => `Запомнил цены из чека: ${x.store || ""}`, add_goal: x => `Добавил цель: ${(x.items || []).join(", ")}`, log_weight: x => `Записал вес ${x.kg || ""} кг`,
   mark_habit: x => `Отметил привычку ${x.habit || x.title || ""}`, plan_day: () => "Составил план подсказок на день", delete_record: () => "Удалил запись" }
 function journal(cat, text, extra) {
   const r = Object.assign({ id: uid("j"), date: Date.now(), kind: "log", cat, text: String(text).slice(0, 300) }, extra || {})
