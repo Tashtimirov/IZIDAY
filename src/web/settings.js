@@ -9,6 +9,7 @@
   function groupOf(el) {
     if (el.id === "bug-card" || el.classList.contains("banner")) return "top"
     if (el.dataset.grp) return el.dataset.grp
+    if (el.classList.contains("grow-card")) return "acct"   // подписка и приглашения — рядом с аккаунтом
     if (el.classList.contains("izi-card") || el.id === "fkey" || el.classList.contains("fcard")) return "izi"
     if (q(el, '[data-do="connect"], [data-do="run-widget"]')) return "owner"
     if (q(el, '[data-do="glogin"], [data-do="glogout"], [data-fw]')) return "acct"
