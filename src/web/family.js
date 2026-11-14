@@ -540,7 +540,8 @@ function kidCtx() {
 }
 const MIC_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>'
 // Детский чат с Изи. Как у взрослых: текст, голос одной фразой, живой разговор («Поговорить»), фото и файлы («+»).
-// Остановить можно всегда кнопкой с подписью: «Стоп» / «Закончить разговор»; «Закрыть» и смахивание гасят голос и микрофон
+// Остановить можно всегда кнопкой с подписью: «Стоп» / «Закончить разговор»; «Закрыть» гасит голос и микрофон.
+// Смахивание вниз во время разговора — как «Закончить разговор»: окно чата остаётся, следующее смахивание закрывает
 const KATT_MAX = 3
 const KPLUS = [["cam", "Камера", "Сфотографировать"], ["lib", "Фото", "Из галереи"], ["doc", "Файл", "PDF, Word, текст"]]
 const KIC = {
@@ -562,7 +563,9 @@ function kidIzi() {
     <button class="kstop" hidden><i></i><span>Стоп</span></button>
     <div class="ktray" hidden></div>
     <div class="kplusm" hidden>${KPLUS.map(([k, t, sub]) => `<button data-kp="${k}">${KIC[k]}<span><b>${t}</b><small>${sub}</small></span></button>`).join("")}</div>
-    <div class="kin"><button class="kplus" aria-label="Добавить фото или файл">${KIC.plus}</button><button class="kmic" aria-label="Сказать голосом">${MIC_SVG}</button><input id="kc-t" placeholder="Скажи или напиши ${esc(iziName())}…" enterkeyhint="send"><button class="ksend" aria-label="Отправить">${ic("chev", 22, "#fff", 3)}</button></div></div>`, { onClose: () => stopAll() })
+    <div class="kin"><button class="kplus" aria-label="Добавить фото или файл">${KIC.plus}</button><button class="kmic" aria-label="Сказать голосом">${MIC_SVG}</button><input id="kc-t" placeholder="Скажи или напиши ${esc(iziName())}…" enterkeyhint="send"><button class="ksend" aria-label="Отправить">${ic("chev", 22, "#fff", 3)}</button></div></div>`, { onClose: () => stopAll(),
+    // смахнули вниз, пока идёт живой разговор или Изи говорит/слушает: Изи замолкает, микрофон гаснет, переписка остаётся — окно не закрывается
+    onSwipe: () => { if (!live && !kv) return false; const was = live; stopAll(); toast(was ? "Разговор закончен — переписка осталась в чате" : "Разговор остановлен"); return true } })
   s.el.classList.add("kid-sheet", "kfull")
   try { if (typeof ttsUnlock === "function") ttsUnlock() } catch (e) {}
   const box = $(".kmsgs", s.el), inp = $("#kc-t", s.el), stopB = $(".kstop", s.el), lp = $(".klivep", s.el), tray = $(".ktray", s.el), pm = $(".kplusm", s.el)

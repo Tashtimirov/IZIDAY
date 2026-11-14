@@ -491,7 +491,7 @@ function remLabel(r) {
 
 // ───────────── Окна (снизу экрана) ─────────────
 const stack = []
-function sheet(html, { onClose } = {}) {
+function sheet(html, { onClose, onSwipe } = {}) {   // onSwipe() → true: смахивание вниз забрано окном (не закрывать)
   const layer = $("#layer")
   const scrim = document.createElement("div"); scrim.className = "scrim"
   const el = document.createElement("div"); el.className = "sheet"
@@ -518,7 +518,8 @@ function sheet(html, { onClose } = {}) {
     if (e.timeStamp > lt) { vy = (y - ly) / (e.timeStamp - lt); ly = y; lt = e.timeStamp }
     if (dy > 0 && el.scrollTop <= 0) { el.classList.add("drag"); follow(dy) } else if (dy < 0) { y0 = null; el.classList.remove("drag"); el.style.transform = ""; scrim.style.opacity = "" } }, { passive: true })
   const release = () => { if (y0 == null) return; y0 = null; el.classList.remove("drag")
-    if (dy > Math.min(140, el.offsetHeight / 3) || (vy > 0.45 && dy > 24)) { el.classList.add("flick"); el.style.transform = ""; scrim.style.opacity = ""; entry.close() }
+    if ((dy > Math.min(140, el.offsetHeight / 3) || (vy > 0.45 && dy > 24)) && onSwipe && onSwipe()) { el.classList.add("spring"); el.style.transform = ""; scrim.style.opacity = ""; setTimeout(() => el.classList.remove("spring"), 500) }
+    else if (dy > Math.min(140, el.offsetHeight / 3) || (vy > 0.45 && dy > 24)) { el.classList.add("flick"); el.style.transform = ""; scrim.style.opacity = ""; entry.close() }
     else { el.classList.add("spring"); el.style.transform = ""; scrim.style.opacity = ""; setTimeout(() => el.classList.remove("spring"), 500) } }
   el.addEventListener("touchend", release, { passive: true }); el.addEventListener("touchcancel", release, { passive: true })
   stack.push(entry)
@@ -1921,7 +1922,7 @@ async function chatSend(text, opts = {}) {
   chatDraft = null
   if (TALK && TALK.sentAt && (TALK.state === "think" || live)) talkLat("total", Date.now() - TALK.sentAt)
   if (live) talkLiveEnd(live, reply); else talkHear(reply)
-  if (!TALK && opts.voice) speak(reply)   // спросили голосом в чате — ответ и вслух (если «Читать ответы вслух» включено)
+  if (!TALK && opts.voice && item.at > talkHushAt) speak(reply)   // спросили голосом в чате — ответ и вслух (если «Читать ответы вслух» включено)
   if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
   D.chat.filter(m => m.thumb || m.thumbs).slice(0, -12).forEach(m => { delete m.thumb; delete m.thumbs })   // миниатюры только у последних фото — память телефона
   save(false)
@@ -1964,7 +1965,7 @@ function chatAsk(question, options) {
     save(false)
     talkHear(question, options)
     // в обычном чате спросили голосом — вопрос Изи тоже вслух (ответить можно микрофоном: «да» / «нет»)
-    if (!TALK) { const u = D.chat.filter(m => m.role === "user").slice(-1)[0]; if (u && u.voice && Date.now() - u.at < 10 * 60e3) speak(question) }
+    if (!TALK) { const u = D.chat.filter(m => m.role === "user").slice(-1)[0]; if (u && u.voice && u.at > talkHushAt && Date.now() - u.at < 10 * 60e3) speak(question) }
     askWait = a => res(a)
     if (chatOn()) renderChat(); else if (!talkPinned()) setTab("chat")
     setBusyUI()
@@ -4531,7 +4532,7 @@ if (IS_DROID) {
     const sc = document.querySelector(".scam")
     if (sc) { sc.dispatchEvent(new CustomEvent("izi-back")); return true }
     if (stack.length) { stack[stack.length - 1].close(); return true }
-    if (TALK) { talkClose(); return true }
+    if (TALK) { talkEnd(); return true }
     if (side) { sideClose(); return true }
     if (tab !== "today") { setTab("today"); return true }
     return false
@@ -6452,13 +6453,15 @@ function talkOpen(o = {}) {
     <div class="tk-cap"><p class="tk-izi"></p><p class="tk-you"></p></div>
     <div class="tk-bar"><button class="tk-btn tk-mic" aria-label="Пауза">${ICO.mic}</button><button class="tk-btn tk-chat" aria-label="Перейти в чат">${ICO.chat}</button></div>
     <div class="tk-in"><button class="tk-plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea><button class="tk-dict" aria-label="Пауза">${CB_MIC}</button><button class="tk-send" aria-label="Отправить">${ICO.send}</button></div>
-    <div class="tk-hint">Вниз — закончить</div><div class="tk-dbg"></div></div>`
+    <button class="tk-end" aria-label="Закончить разговор — переписка останется в чате">${TK_END}<span>Закончить</span></button>
+    <div class="tk-hint">или смахните вниз — переписка останется в чате</div><div class="tk-dbg"></div></div>`
   document.body.append(el)
   TALK = { el, state: "", rec: null, timer: null, heard: "", n: 0, pin: false, t0: performance.now() }
   talkLog()
   silkCanvas($("canvas", el), "talk")
   requestAnimationFrame(() => el.classList.add("on"))
   $(".tk-orb", el).onclick = () => talkTap()
+  $(".tk-end", el).onclick = () => talkEnd()
   $(".tk-mic", el).onclick = () => TALK.state === "pause" ? talkListen() : talkPause()
   $(".tk-chat", el).onclick = () => { talkClose(); setTab("chat") }   // в чат — разговор заканчивается: панели «Изи · Пауза» над строкой ввода больше нет
   $(".tk-cap", el).onclick = () => { if (TALK && TALK.pin) talkPin(false) }
@@ -6482,7 +6485,7 @@ function talkOpen(o = {}) {
     if (y0 == null || !TALK) return
     y0 = null; sh.style.transition = ""
     const lim = TALK.pin ? 40 : 110, fast = performance.now() - tl < 120 ? vy : 0
-    if (dy > lim || (dy > 24 && fast > .45)) return talkClose()
+    if (dy > lim || (dy > 24 && fast > .45)) return talkEnd()
     back()
   }
   el.addEventListener("touchend", up, { passive: true })
@@ -6506,6 +6509,19 @@ function talkPin(on, quiet) {
   sh.classList.remove("tk-dock", "tk-grow"); void sh.offsetWidth; sh.classList.add(t.pin ? "tk-dock" : "tk-grow")
   $(".tk-chat", t.el).setAttribute("aria-label", t.pin ? "Чат" : "Перейти в чат")
   if (!quiet && navigator.vibrate) navigator.vibrate(10)
+}
+// Смахнули вниз или «Закончить» (просьба пользователя 2026-11-15): Изи сразу замолкает, микрофон гаснет,
+// а вся переписка разговора остаётся текстом в обычном чате — человек попадает в чат, а не на главный экран.
+// Недосказанная фраза или недописанный текст — в строку ввода чата. Ответ, который ещё пишется, придёт в чат без голоса
+var talkHushAt = 0
+function talkEnd() {
+  const t = TALK; if (!t) return
+  talkHushAt = Date.now()
+  const ta = $(".tk-in textarea", t.el), draft = (ta && ta.value.trim()) || (t.state === "listen" ? String(t.heard || "").trim() : "")
+  ttsStop()
+  talkClose()
+  if (!chatOn()) setTab("chat")
+  if (draft) setTimeout(() => { const inp = $("#chat-in"); if (inp && !inp.value.trim()) { inp.value = draft; grow(inp); setBusyUI() } }, 60)
 }
 // Сначала окно уезжает вниз — сразу, с того места, где его отпустил палец; голос и микрофон гасим следующим кадром,
 // а чат перерисовываем, когда окно уже скрылось: раньше всё это шло до анимации, и окно замирало на полпути
@@ -6532,6 +6548,7 @@ function talkState(s, izi, you) {
   talkLog()
 }
 const talkMute = () => !!(D.izi && D.izi.mute)
+const TK_END = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5l6 6 6-6"/></svg>'
 const TK_SND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3l4.5-4v13L7 14.5H4z"/><path class="w" d="M15 9.2a4 4 0 0 1 0 5.6M17.6 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="x" d="M15.5 9.5l5 5M20.5 9.5l-5 5"/></svg>'
 // Строка ввода в разговоре — та же, что в чате: «+», поле, микрофон, зелёная стрелка, когда есть текст.
 // Начали писать — Изи перестаёт слушать; отправили — ответит голосом и снова слушает. Микрофон: пауза / слушать

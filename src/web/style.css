@@ -1060,6 +1060,12 @@ em.sh { font-style: normal; color: #AF52DE; display: inline-flex; vertical-align
 #talk .tk-snd.off .x { display: inline; }
 #talk .tk-snd.off { background: rgba(255,255,255,.88); color: #0b4a33; }
 #talk.pin .tk-snd { display: none; }
+/* «Закончить» — под строкой ввода, с подписью: то же, что смахнуть вниз (Изи замолкает, переписка остаётся в чате) */
+#talk .tk-end { flex: none; height: 40px; border-radius: 20px; border: .5px solid rgba(255,255,255,.22); color: #fff; display: inline-flex; align-items: center; gap: 4px; padding: 0 18px 0 12px; margin: 0 0 6px;
+  font: 600 15px/1 system-ui, -apple-system, sans-serif; background: rgba(255,255,255,.12); -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%); transition: background .25s, transform .15s; }
+#talk .tk-end:active { transform: scale(.94); background: rgba(255,255,255,.2); }
+#talk .tk-end svg { width: 20px; height: 20px; }
+#talk.pin .tk-end, body.kb #talk .tk-end { display: none; }
 #talk .tk-opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 #talk .tk-opts button { border: .5px solid rgba(255,255,255,.28); background: rgba(255,255,255,.14); color: #fff; font: 600 15px/1 system-ui, -apple-system, sans-serif; padding: 9px 14px; border-radius: 16px; }
 #talk .tk-opts button:active { transform: scale(.95); }
