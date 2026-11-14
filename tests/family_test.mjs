@@ -32,6 +32,7 @@ check(await page.evaluate(() => plansF === "fam" && !!$(".pf-back") && !!$('[dat
 await page.click('[data-f="new"]'); await ask("Папа"); await ask("Ташимировы"); await page.waitForTimeout(600)
 check(await page.evaluate(() => D.fam && D.fam.code && D.fam.role === "adult" && !!$(".fhero")), "семья создана, у взрослого — счёт семьи")
 check(await page.evaluate(() => D.fam.key === true && /Один ключ Claude на семью/.test($("#view").textContent) && !JSON.stringify(D.fam.data).includes("sk-test")), "общий ключ Claude включён, в данных семьи ключа нет")
+await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await page.waitForTimeout(400)   // «Что делим с семьёй» после создания
 // ребёнок
 await page.click('[data-f="kid"]'); await ask("Миша"); await ask(9); await page.waitForTimeout(600)
 const kid = await page.evaluate(() => Object.entries(D.fam.data.members).find(([, m]) => m.name === "Миша"))

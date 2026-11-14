@@ -58,6 +58,25 @@ const L = k => (F()[k] || []).filter(x => x && !x.del)
 const meId = () => D.fam && D.fam.id
 const kidMode = () => (famOn() && D.fam.role === "kid") || (!famOn() && D.who === "kid")
 const isAdult = () => famOn() && D.fam.role === "adult"
+// Что делим с семьёй: каждый решает за себя, по умолчанию всё выключено. D.fam.share = { cal, money }
+const SHARE = [["cal", "Календарь семьи", "Общие дела семьи, расписание детей и календари близких — каждый своим цветом."],
+  ["money", "Общий бюджет", "Можно отмечать траты и копилки как общие и смотреть их отдельно. Остальные траты остаются только вашими."]]
+const share = k => famOn() && D.fam.role !== "kid" && !!(D.fam.share || {})[k]
+function shareSet(k, on) { D.fam.share = Object.assign({}, D.fam.share, { [k]: on ? 1 : 0 }); save(false) }
+const shareRows = () => SHARE.map(([k, t, sub]) => `<button class="set tg-row" data-fsh="${k}"><span><b>${t}</b><small>${sub}</small></span><i class="tgl ${share(k) ? "on" : ""}" role="switch" aria-checked="${share(k)}"></i></button>`).join("")
+function shareBind(el) {
+  $$("[data-fsh]", el).forEach(b => b.onclick = () => { const k = b.dataset.fsh, on = !share(k); shareSet(k, on); const i = $(".tgl", b); i.classList.toggle("on", on); i.setAttribute("aria-checked", on) })
+}
+// один раз после входа в семью; потом — в «Семье» и в «Деньги → Семья»
+function shareSheet(first) {
+  if (!famOn() || D.fam.role === "kid") return
+  D.fam.shareAsked = 1; save(false)
+  const s = sheet(`<h3>Что делим с семьёй</h3><div class="msg">${first ? "Вы в семье. " : ""}Всё выключено, пока вы сами не включите. Каждый в семье решает только за себя.</div>
+    <div class="fshare">${shareRows()}</div>
+    <div class="btns"><button class="btn primary" data-a="ok">Готово</button></div>`, { onClose: () => render() })
+  shareBind(s.el)
+  $('[data-a="ok"]', s.el).onclick = () => s.close()
+}
 const members = () => Object.entries(F().members || {}).map(([id, m]) => Object.assign({ id }, m)).sort((a, b) => (a.role === "adult" ? 0 : 1) - (b.role === "adult" ? 0 : 1) || (a.joined || 0) - (b.joined || 0))
 const kids = () => members().filter(m => m.role === "kid")
 const member = id => members().find(m => m.id === id)
@@ -556,6 +575,7 @@ function famPage() {
     return `<div class="row" data-fg="${esc(g.id)}"><span class="ftile" style="background:${gi[1]}1F">${ic(g.ic || gi[0], 22, gi[1])}</span><div class="grow"><div class="t">${esc(g.title)}${g.done ? " · достигнута" : ""}</div><div class="s">${g.repeat ? `каждые ${num(g.target)} баллов${p.times ? ` · было ${p.times} ${plural(p.times, "раз", "раза", "раз")}` : ""}` : `${num(p.have)} из ${num(g.target)} баллов${g.due ? " · до " + esc(g.due.split("-").reverse().slice(0, 2).join(".")) : ""}`}</div><div class="fgbar"><i style="width:${Math.round(p.p * 100)}%;background:${gi[1]}"></i></div></div></div>` }).join("") || `<div class="empty">Например: «Аквапарк всей семьёй» за 3 000 баллов или «Кино с попкорном» каждые 1 000.</div>`}</div>`
   const kd = kids().filter(k => mainDream(k.id) || kidDreams(k.id).length)
   if (kd.length) h += `<div class="card fcard"><h2>Мечты детей</h2>${kd.map(k => kidDreams(k.id).filter(d => !d.done).slice(0, 4).map(d => dreamRow(k, d)).join("")).join("")}</div>`
+  if (!kidMode()) h += `<div class="card fcard fshare"><h2>Что делим с семьёй</h2>${shareRows()}<div class="muted small" style="margin-top:6px">По умолчанию всё выключено. Каждый в семье решает за себя.</div></div>`
   if (D.fam.owner) h += `<div class="card fcard"><div class="row"><span class="ftile" style="background:#6A4BF21F">${ic("bulb", 22, "#6A4BF2")}</span><div class="grow"><div class="t">Один ключ Claude на семью</div><div class="s">${D.fam.key ? "взрослые без своего ключа и дети говорят с " + esc(iziName()) + " через ваш ключ (детям — до 30 сообщений в день). Ключ лежит в вашей таблице, на телефоны не попадает. Друзьям и лиге он не доступен" : D.conn && D.conn.key ? "выключен — дети видят только подсказки" : "нужен ключ Claude в вашем приложении"}</div></div>${D.conn && D.conn.key ? `<button class="btn small ${D.fam.key ? "" : "primary"}" data-f="${D.fam.key ? "keyoff" : "keyon"}">${D.fam.key ? "Выключить" : "Включить"}</button>` : ""}</div></div>`
   h += `<div class="muted small" style="text-align:center;margin:4px 0 14px">Семья «${esc(F().name || D.fam.fname || "")}»${D.fam.err ? ` · ${esc(D.fam.err)}` : ""} · <button class="linkbtn" data-f="leave">Выйти</button></div>`
   return h
@@ -672,7 +692,7 @@ async function famNew() {
   const r = await post(D.conn.hook, { op: "new", name }, D.conn.secret)
   if (!r || !r.ok || !r.family) return ui.info("Семья пока не создаётся", r && r.net ? `Не дозвался до таблицы (${r.error}), хотя пробовал трижды. Проверьте интернет и нажмите ещё раз.` : r && r.error ? `Таблица ответила: ${r.error}` : r && r.ok ? "В таблице ещё старая версия скрипта — после её обновления семья заработает." : "Нет связи с таблицей. Попробуйте позже.")
   D.fam = { url: D.conn.hook, code: r.family.code, id: uid("m"), role: "adult", name: me, owner: true, data: r.family, at: 0, out: {}, seen: {}, me: { color: COLORS[0], owner: true } }
-  save(false); await push(true); await shareKey(true); render()
+  save(false); await push(true); await shareKey(true); render(); shareSheet(true)
 }
 // Взрослый без своего ключа — к Claude через общий ключ семьи
 const keyOn = () => famOn() && D.fam.role !== "kid" && !!D.fam.key
@@ -756,7 +776,7 @@ async function join() {
   D.fam = { url: x.u, code: x.c, id: x.m || uid("m"), role: x.r || "adult", name: me, fname: x.n, data: null, at: 0, out: {}, seen: {}, me: x.m ? null : { color: COLORS[1] } }
   if (D.who === "kid") D.who = "adult"
   save(false); await push(true); if (D.fam.err) toast(`Семья: ${D.fam.err}`)
-  setTab("plans"); openFam()
+  setTab("plans"); openFam(); if (!D.fam.shareAsked) setTimeout(() => shareSheet(true), 400)
 }
 // Вход по ссылке вручную («У меня есть ссылка»)
 async function famPaste() {
@@ -906,6 +926,7 @@ function openFam() { plansF = "fam"; if (tab !== "plans") setTab("plans"); else 
 const FDO = { keyadd: () => keyAdd(), keydel: () => { delete D.myKey; save(false); render(); toast("Ключ убран") }, keyon: () => shareKey(true), keyoff: () => shareKey(false), new: () => famNew(), paste: () => famPaste(), scan: () => scan(), invite: () => orbInvite(null), kid: () => kidAdd(), goal: () => goalForm(), leave: () => leave(), open: () => openFam() }
 function bindFam(v) {
   $$("[data-f]", v).forEach(b => b.onclick = e => { e.stopPropagation(); const f = FDO[b.dataset.f]; if (f) f() })
+  shareBind(v)
   $$("[data-fm]", v).forEach(b => b.onclick = () => kidSheet(b.dataset.fm))
   $$("[data-fg]", v).forEach(b => b.onclick = () => goalOpen(b.dataset.fg))
   $$("[data-fwish]", v).forEach(b => b.onclick = e => { e.stopPropagation(); toWish(b.dataset.fwish) })
@@ -966,6 +987,6 @@ function init() {
   setInterval(() => { if (document.visibilityState === "visible") push(false) }, 60e3)
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") push(Date.now() - ((D.fam && D.fam.at) || 0) > 20e3) })
   if (pendingFam) setTimeout(join, 1000)
-  window.FAM = { scan, orbInvite, on: famOn, members, meId, isAdult, L, tasksOn, COLORS, keyOn, ai, link, kidSheet, join, push, put, famDays, sumSince, goalProg, jars, kidStars, waits, approve, kidMode, openFam, LESSONS, lesson, credit, pocketTick }
+  window.FAM = { scan, orbInvite, on: famOn, share, shareSheet, members, meId, isAdult, L, tasksOn, COLORS, keyOn, ai, link, kidSheet, join, push, put, famDays, sumSince, goalProg, jars, kidStars, waits, approve, kidMode, openFam, LESSONS, lesson, credit, pocketTick }
 }
 })()
