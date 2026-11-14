@@ -1359,3 +1359,7 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 .sh-tot b { font-size: 24px; font-variant-numeric: tabular-nums; }
 .sh-hint { margin: 0 2px 10px; }
 .sh-est { margin: 8px 4px 0; font-weight: 600; color: var(--text); }
+/* Нет сети: подпись в шапке с янтарной точкой — запись сохранена на телефоне, уйдёт сама */
+#top-sub.net-off { color: #B26A00; font-weight: 600; }
+#top-sub.net-off::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #F5A524; margin-right: 6px; vertical-align: 1px; }
+@media (prefers-color-scheme: dark) { #top-sub.net-off { color: #FFC266; } }

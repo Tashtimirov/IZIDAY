@@ -67,7 +67,7 @@ const short = n => String(n || "").split(" ")[0]
 
 let ver = 0
 function put(list, item) {
-  item.u = Date.now()
+  item.u = typeof nowSrv === "function" ? nowSrv() : Date.now()   // по часам сервера (app.js)
   const f = D.fam.data || (D.fam.data = F()), arr = f[list] || (f[list] = [])
   const i = arr.findIndex(x => x.id === item.id)
   if (i < 0) arr.push(item); else arr[i] = item
