@@ -131,7 +131,7 @@ await page.evaluate(() => { selDay = sod(new Date()); render() })
 // пустое состояние
 await page.evaluate(() => { D.goals = D.goals.filter(g => !["med", "medrec", "wplan", "sleep", "mood"].includes(g.kind)); D.weight = []; D.snap.health = []; delete D.snap.watch.sleep; delete D.snap.watch.rhr; save(false); render() })
 await page.waitForTimeout(600); t = await txt()
-check(/Нужен сон этой ночи/.test(t) && /Ищу закономерности/.test(t) && /Составит Изи/.test(t), "пустое состояние объясняет, что делать")
+check(/Запишите сон/.test(t) && /Можно добавить/.test(t) && /Изи составит/.test(t) && !/Ищу закономерности/.test(t), "пустое состояние: сон одной строкой, пустые блоки — в «Можно добавить»")
 await shot(page, SHOTS + "health-empty.png")
 check(!errors.filter(e => !/favicon/.test(e)).length, "без ошибок в консоли", errors)
 await browser.close(); server.close()

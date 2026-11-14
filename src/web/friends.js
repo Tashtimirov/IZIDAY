@@ -177,6 +177,8 @@ window.FRIEND = (() => {
     const r = await fetch(D.conn.hook, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, credentials: "omit", cache: "no-store", signal,
       body: JSON.stringify({ secret: D.conn.secret, ai: body }) })
     const j = JSON.parse(await r.text())
+    // остаток запросов на сегодня считаем и на телефоне: сервер спрашиваем не чаще раза в 10 минут
+    try { const m = me(); if (m && m.left != null && j && !j.error) { m.left = Math.max(0, m.left - 1); save(false) } } catch (e) {}
     if (j && j.ok === false && j.error === "forbidden") return { type: "error", error: { type: "forbidden", message: "вход устарел — войдите через Google заново (Настройки → Аккаунт)" } }
     return j
   }

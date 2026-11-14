@@ -111,7 +111,9 @@ await page.evaluate(() => { shopAdd(["Молоко", "Авокадо", "Кофе
   goalAdd("month", ["Пробежать 50 км", "Прочитать книгу", "Выучить 100 слов"]); goalToggle(goalsOf("month")[0].id, true); render() })
 await page.waitForTimeout(200)
 const lt = await page.textContent("#lists")
-check(/Покупки.*3/.test(lt) && /100 желаний.*3 желания/.test(lt) && /Дом у моря · шаги 1 из 3/.test(lt) && /На выходные.*1 из 4/.test(lt), "списки: покупки, желания, мечты, свой", lt)
+check(/Покупки.*3/.test(lt) && !/100 желаний|10 мечт/.test(lt) && /На выходные.*1 из 4/.test(lt), "списки: покупки и свой; желаний и мечт здесь нет (они в «Цели и мечты»)", lt)
+{ const gt = await page.evaluate(() => [...document.querySelectorAll("#view .card")].find(c => /Цели и мечты/.test(c.textContent))?.innerText || "")
+  check(/100 желаний/.test(gt) && /10 мечт/.test(gt), "желания и мечты — в «Цели и мечты»", gt) }
 await page.click('[data-list="shop"]'); await page.waitForTimeout(300)
 await page.fill("#it-t", "Хлеб"); await page.press("#it-t", "Enter"); await page.waitForTimeout(300)
 check(await page.evaluate(() => shopOpen().length === 4 && !!$(".sheet #it-t")), "покупки: добавил пункт прямо в списке")

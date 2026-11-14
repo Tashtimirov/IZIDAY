@@ -325,7 +325,7 @@ const medrecs = () => goals("medrec").filter(r => r.title).map(r => Object.assig
   .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"))
 const MR_PRE = ["Общий анализ крови", "Биохимия крови", "Терапевт", "Стоматолог", "Окулист", "Прививка", "Педиатр", "Флюорография", "Чек-ап"]
 const MR_EVERY = { "Общий анализ крови": 12, "Биохимия крови": 12, "Терапевт": 12, "Стоматолог": 6, "Окулист": 12, "Флюорография": 12, "Чек-ап": 12, "Педиатр": 6 }
-const family = () => { const s = new Set(["Я"]); const p = (D.mny && D.mny.partner) || "Оля"; s.add(p); for (const k of (typeof kidsList === "function" ? kidsList() : [])) if (k.kid) s.add(k.kid); for (const r of goals("medrec")) if (r.who) s.add(r.who); return [...s] }
+const family = () => { const s = new Set(["Я"]); const p = D.mny && D.mny.partner; if (p) s.add(p); for (const k of (typeof kidsList === "function" ? kidsList() : [])) if (k.kid) s.add(k.kid); for (const r of goals("medrec")) if (r.who) s.add(r.who); return [...s] }
 function medrecAdd(x) {
   const title = String(x.title || "").trim(); if (!title) return null
   const rec = { id: uid("mr"), date: Date.now(), kind: "medrec", who: String(x.who || "Я").trim(), title, last: /^\d{4}-\d\d-\d\d$/.test(x.last || "") ? x.last : "",

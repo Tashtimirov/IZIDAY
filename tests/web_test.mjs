@@ -225,7 +225,7 @@ await page.evaluate(() => chatSend("какие кафе рядом лучшие"
 await page.waitForSelector("text=Кафе рядом", { timeout: 8000 }).catch(() => {})
 { const ms = claudeSeen[n0] && claudeSeen[n0].body.messages, all = JSON.stringify(ms || [])
   check(ms && !all.includes("Разбери это вложение") && all.includes("уже разобрано") && typeof ms.at(-1).content === "string", "старые вложения в истории помечены как разобранные, новый вопрос без вложения", all.slice(-300)) }
-check(!/[☀🌙🧠🧹]/u.test(await page.textContent(".chat-tools")) && (await page.$$(".chat-tools .ei")).length === 4, "кнопки чата — с иконками, без смайликов")
+check(!/[☀🌙🧠🧹]/u.test(await page.textContent(".chat-tools")) && (await page.$$(".chat-tools .ei")).length === 3 && !/Очистить/.test(await page.textContent(".chat-tools")), "кнопки чата — с иконками, без смайликов; «Очистить» — в меню «+»")
 check(!JSON.stringify(claudeSeen.at(-1).body.messages.slice(0, -1)).includes('"type":"image"'), "старое фото не отправляется повторно")
 
 // помощник: сильная модель с размышлением, память и поиск по прошлым чатам
@@ -405,7 +405,7 @@ await page.fill("#chat-in", "тест")
 check(await page.evaluate(() => !!$(".chat-bar .send").offsetParent), "есть текст — зелёная стрелка «отправить»")
 await page.fill("#chat-in", "")
 await page.click(".chat-bar .cam"); await page.waitForTimeout(500)
-check(await page.evaluate(() => $(".chat-bar .cam").classList.contains("open") && $$(".plus-menu button").length === 3 && /Камера.*Фото и видео.*Файл/.test($(".plus-menu").textContent)), "«+»: камера, фото и видео, файл", await page.evaluate(() => $(".plus-menu") && $(".plus-menu").textContent))
+check(await page.evaluate(() => $(".chat-bar .cam").classList.contains("open") && $$(".plus-menu button").length === 4 && /Камера.*Фото и видео.*Файл.*Очистить чат/.test($(".plus-menu").textContent)), "«+»: камера, фото и видео, файл, очистить чат", await page.evaluate(() => $(".plus-menu") && $(".plus-menu").textContent))
 await page.mouse.click(300, 150); await page.waitForTimeout(450)
 check(await page.evaluate(() => !$(".plus-menu") && !$(".chat-bar .cam").classList.contains("open")), "нажали мимо — меню закрылось")
 // отмена записи: «‹ отмена» — ничего не ушло, поле пустое
@@ -527,7 +527,7 @@ await page.click('[data-tab="health"]')
 const hh = await page.textContent("#view")
 check(hh.includes("Вчера") && hh.includes("Том ям вчера") && hh.includes("Расходы за день") && hh.includes("12 345") && !hh.includes("+ Стакан"), "«Здоровье» листается на вчера, без кнопок добавления", hh.slice(0, 600))
 await page.click('[data-hday="1"]')
-await page.waitForTimeout(300); const hb = await page.textContent("#view"); check(hb.includes("Готовность сегодня") && hb.includes("Сегодня"), "› возвращает на сегодня", hb.slice(0, 300))
+await page.waitForTimeout(300); const hb = await page.textContent("#view"); check((hb.includes("Готовность сегодня") || hb.includes("Запишите сон")) && hb.includes("Сегодня"), "› возвращает на сегодня", hb.slice(0, 300))
 const rp = await page.evaluate(() => ["week", "month", "year"].map(k => { const st = periodStats(k, addDays(new Date(), -1)); return { k, exp: st.exp, w: st.workouts.length, steps: st.stepsDays, html: periodReportHTML(st).length } }))
 check(rp.every(r => r.exp >= 777 && r.w >= 1 && r.steps >= 1 && r.html > 1000), "отчёты за неделю, месяц и год считают расходы, тренировки и шаги", rp)
 await page.click('[data-report="week"]'); await page.waitForTimeout(300)

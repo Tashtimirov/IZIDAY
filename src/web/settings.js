@@ -15,8 +15,8 @@
     return "app"
   }
   // порядок внутри «Приложения»: язык, валюта, размер текста, уведомления, блоки, игра, знакомство, статистика
-  const rank = el => q(el, '[data-do="lang-pick"]') ? 0 : q(el, '[data-do="cur-pick"]') ? 1 : el.classList.contains("ds-ts") ? 2 : q(el, "#push-state") ? 3
-    : el.classList.contains("bk-set") ? 4 : el.classList.contains("goff") ? 5 : q(el, "[data-onb-who]") ? 6 : el.classList.contains("mtr") ? 8 : 7
+  const rank = el => q(el, '[data-do="lang-pick"]') ? 0 : q(el, '[data-do="cur-pick"]') ? 1 : el.classList.contains("ds-ts") ? 2 : q(el, "#push-state") ? 3 : el.classList.contains("ft-more") ? 3.5
+    : el.classList.contains("bk-set") ? 4 : el.classList.contains("goff") ? 5 : q(el, "[data-onb-who]") ? 6 : el.classList.contains("mtr") ? 8 : el.classList.contains("wn-card") ? 9 : 7
   let busy = false
   function arrange() {
     const v = document.getElementById("view")
@@ -25,6 +25,7 @@
     if (!kids.length) return
     const by = { top: [], izi: [], app: [], acct: [], owner: [] }, tail = []
     kids.forEach(el => { if (el.classList.contains("app-ver")) tail.push(el); else (by[groupOf(el)] || by.app).push(el) })
+    by.izi.sort((a, b) => b.classList.contains("izi-card") - a.classList.contains("izi-card"))
     by.app = by.app.map((el, i) => [rank(el), i, el]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2])
     const want = [...by.top]
     for (const [k, name] of GROUPS) if (by[k].length) {

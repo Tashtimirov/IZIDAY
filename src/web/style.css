@@ -1384,3 +1384,5 @@ html { touch-action: manipulation; }
 .card.line-card .s1 { color: var(--sub); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* «Очистить чат» в меню «+» чата */
 .c-clr { background: linear-gradient(160deg, #FF6B6B, #E0344F); }
+/* остаток запросов к Изи у друзей */
+.izi-left { text-align: center; color: var(--sub); font-size: 12.5px; margin: 2px 12px 8px; }

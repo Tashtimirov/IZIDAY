@@ -79,7 +79,7 @@ await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close()
 
 // ── «Мой путь» → «Квесты»
 await page.evaluate(() => GAMI.openGame("quest")); await page.waitForTimeout(300)
-check(await page.evaluate(() => $$(".gseg button").map(b => b.textContent).join(",") === "Путь,Квесты,Ачивки,Награды,Лига"), "в «Моём пути» — раздел «Квесты»")
+check(await page.evaluate(() => $$(".gseg button").map(b => b.textContent).join(",") === "Путь,Задания,Достижения,Награды,Лига"), "в «Моём пути» — раздел «Задания»")
 check(await page.evaluate(() => !!$(".gq") && !!$("[data-qmap=dr]") && !!$(".gwon")), "квесты: задания дня, боссы, карты целей")
 await shot(page, `${SHOTS}q-quests${sfx}.png`)
 

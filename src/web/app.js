@@ -2459,6 +2459,7 @@ var topMini = () => {}
   const set = m => { if (m === mini) return; mini = m; document.body.classList.toggle("top-mini", m) }
   v.addEventListener("scroll", () => {
     if (document.body.classList.contains("chat")) return set(false)
+    if (v.querySelector(".bk-lift")) return   // блок переносят пальцем — шапку не трогаем, иначе экран сдвинется под пальцем
     const y = v.scrollTop
     if (!mini && y > 48 && v.scrollHeight - v.clientHeight > 180) set(true)
     else if (mini && y < 8) set(false)
@@ -2580,8 +2581,15 @@ function stripInit(keep) {
   }
 }
 
+// У друзей Изи работает на общем ключе с дневным пределом: когда остаётся меньше 20 запросов — тихая строка над чатом
+function iziLeftHTML() {
+  const m = D.conn && D.conn.friend, n = m && m.left
+  if (n == null || n >= 20 || D.myKey) return ""
+  return `<div class="izi-left">${n ? `${esc(iziName())} на сегодня: осталось ${n} ${plural(n, "запрос", "запроса", "запросов")}` : `${esc(iziName())} на сегодня всё. Завтра снова на связи`}</div>`
+}
 function renderChatHTML() {
   return `<div class="chat-tools"><button data-do="talk" class="tk-chip"><b class="mini-orb"></b>Поговорить</button><button data-brief="morning">${ei("sun")}Утренняя сводка</button><button data-brief="evening">${ei("moon")}Вечерняя</button><button data-do="memory">${ei("brain")}Память</button></div>
+${iziLeftHTML()}
     <div class="chat-list" id="chat-list">${chatItems()}</div>
     <div class="chat-bar"><div class="att-tray" id="att-tray"></div><div class="cb-pill"><button class="cam plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
     <button class="dict" aria-label="Диктовать текст">${CB_MIC}</button><button class="send" aria-label="Отправить">${ICO.send}</button>
@@ -2593,7 +2601,7 @@ const CB_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 const CB_STOP = '<svg viewBox="0 0 24 24"><rect x="7.5" y="7.5" width="9" height="9" rx="1.8" fill="currentColor"/></svg>'
 const linkify = s => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`)
 function chatItems() {
-  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я — ${esc(iziName())}, ${iziG("ваш помощник", "ваша помощница")}: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Пишите в строке внизу или нажмите микрофон в ней и говорите, потом — зелёную стрелку. Например: «завтра в 10 встреча с Олей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
+  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я — ${esc(iziName())}, ${iziG("ваш помощник", "ваша помощница")}: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Пишите в строке внизу или нажмите микрофон в ней и говорите, потом — зелёную стрелку. Например: «завтра в 10 встреча с Иваном», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
   const last = D.chat.length - 1
   return D.chat.slice(-60).map((m, i, arr) => {
     const isLast = i === arr.length - 1 && askWait
@@ -2689,6 +2697,17 @@ function healthGoalsCard() {
     <div class="set"><span>Калории в день, ккал</span><input type="number" data-set="kcalGoal" value="${g.kcalGoal || 2000}"></div>
     <div class="set"><span>Вес, кг (для тренировок)</span><input type="number" data-set="weight" value="${g.weight}"></div></div>`
 }
+// «Что нового»: обновления приходят тихо, без окон, поэтому новое видно здесь, в Настройках. Свежее — сверху.
+const WHATS_NEW = [
+  ["2026-11-14", ["Настройки разложены по группам", "Новичку — задания знакомства на первые три дня", "Можно выбрать, какие функции включить", "Календарь семьи: у каждого свой цвет", "Пустые блоки занимают одну строку", "Экран можно увеличить двумя пальцами"]],
+  ["2026-11-13", ["Кнопка «Сообщить об ошибке» на каждом экране, можно голосом", "Дни рождения из контактов, Google и вручную", "Обновления ставятся сами, без сообщений"]],
+]
+function whatsNew() {
+  const d = k => { const x = parseIso(k); return `${x.getDate()} ${MONTHS_GEN[x.getMonth()]}` }
+  const s = sheet(`<h3>Что нового</h3>${WHATS_NEW.map(([k, l]) => `<div class="sub-h">${esc(d(k))}</div>${l.map(t => `<div class="row"><div class="grow"><div class="t">${esc(t)}</div></div></div>`).join("")}`).join("")}
+    <div class="btns" style="margin-top:12px"><button class="btn" data-a="no">Готово</button></div>`)
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+}
 // Версия внизу Настроек: тестер может назвать её в переписке. Дату ставит сборка, код версии — кэш приложения (как в отчёте о недочёте)
 const BUILD_DATE = "__BUILD_DATE__"
 let appVerCode = ""
@@ -2735,6 +2754,7 @@ function renderMore() {
     <div class="btns" id="push-btns" style="margin-top:10px"></div></div>`
   // карточка про виджет — только у владельца (у друзей виджета нет)
   if (c && !c.friend) html += `<div class="card" data-grp="owner"><h2>Кнопки виджета</h2><div class="muted small">🎤 и 💬 открывают помощника, 📷 — еду по фото, ${esc(core.CONFIG.currency)} — расход, 💧 — стакан воды. Ссылки из виджета открываются в Safari — данные там те же, через таблицу.</div></div>`
+  html += `<div class="card wn-card"><button class="set voice-row" data-do="whats-new"><span><b>Что нового</b><small>${esc(WHATS_NEW[0][1][0])}</small></span><i class="chev">${ICO.chev || "›"}</i></button></div>`
   html += `<div class="muted small app-ver">${esc(appVer())}</div>`
   return html
 }
@@ -2987,6 +3007,7 @@ const DO = {
       if ((await ui.confirm("Забыть?", `<div class="msg">${esc(f[i].text)}</div>`, ["Отмена", "Забыть"])) === "Забыть") { remove("memory", f[i].id); save() }
     }
   },
+  "whats-new": () => whatsNew(),
   "chat-clear": async () => {
     const b = await ui.confirm("Очистить чат?", `<div class="msg">Экран чата очистится. Помощник сохранит краткую сводку разговора в память и сможет найти его потом.</div>`, ["Отмена", "Очистить"])
     if (b === "Очистить") {
