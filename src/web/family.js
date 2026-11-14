@@ -187,7 +187,12 @@ const waits = () => {
   return out.sort((a, b) => (a.x.at || 0) - (b.x.at || 0))
 }
 function approve(w, yes) {
-  if (w.t === "log") {
+  if (w.t === "log" && w.x.kind === "prop") {   // просьба ребёнка изменить дело или расписание: «Да» вносит правку
+    const t = L(w.x.list).find(z => z.id === w.x.ref)
+    if (yes && t) put(w.x.list, Object.assign({}, t, w.x.patch || {}))
+    put("log", Object.assign({}, w.x, { st: yes ? "ok" : "no", by: meId() }))
+    toast(yes ? (t ? "Изменено — ребёнок увидит ответ" : "Этого дела уже нет") : "Оставили как было — ребёнок увидит ответ")
+  } else if (w.t === "log") {
     put("log", Object.assign({}, w.x, { st: yes ? "ok" : "no", by: meId() }))
     if (yes && w.x.pay) credit(w.x.kid, w.x.pay, "earn", w.x.title, "er:" + w.x.id)
   } else put("money", Object.assign({}, w.x, { st: yes ? "ok" : "no", by: meId() }))
@@ -305,7 +310,8 @@ function kDay(me) {
   h += `<div class="ksay">${orb(64)}<div class="kbub">${esc(kidTip(me, tasks, done))}</div></div>`
   h += `<div class="kcard"><h2>Мои дела <span>${done} из ${tasks.length}</span></h2>${tasks.map(t => kTask(me, t)).join("") || `<div class="kmuted">Сегодня дел нет. Попроси маму или папу добавить их в приложении.</div>`}</div>`
   const sch = evOn(me.id, d)
-  if (sch.length) h += `<div class="kcard ksch"><h2>Расписание <span>${sch.length}</span></h2>${sch.map(x => `<div class="krow"><div class="ktm">${esc(x.time || "днём")}</div><div class="grow"><b>${esc(x.title)}</b>${x.who === "fam" || x.take || x.place ? `<div class="kmuted">${[x.who === "fam" && "вся семья", x.place, x.take && "взять: " + x.take].filter(Boolean).map(esc).join(" · ")}</div>` : ""}</div><i style="background:${x.who === "fam" ? layerC("fam") : kidC(me.id)}"></i></div>`).join("")}</div>`
+  h += propNews(me.id)
+  h += `<div class="kcard ksch"><h2>Расписание <button class="kadd" data-k="evnew">${ic("plus", 16, "#6A4BF2", 2.6)}Своё</button></h2>${sch.map(x => `<div class="krow" data-kev="${esc(x.id)}"><div class="ktm">${esc(x.time || "днём")}</div><div class="grow"><b>${esc(x.title)}</b>${x.who === "fam" || x.take || x.place ? `<div class="kmuted">${[x.who === "fam" && "вся семья", x.place, x.take && "взять: " + x.take].filter(Boolean).map(esc).join(" · ")}</div>` : ""}</div>${propWait(x.id) ? `<span class="kwait">${ic("clock", 13, "#C98500")}ждёт ответа</span>` : ""}<i style="background:${x.who === "fam" ? layerC("fam") : kidC(me.id)}"></i>${ic("chev", 18, "#A19BC7")}</div>`).join("") || `<div class="kmuted">На сегодня ничего нет. Можно добавить своё дело: кружок, встречу с другом.</div>`}</div>`
   if (g) { const p = goalProg(g), gi = goalIc(g.title), mine = sumSince(g.start || "0000").by[me.id] || 0
     h += `<div class="kcard kgoal"><h2>Семейная цель</h2><div class="krow"><div class="kgi">${ic(g.ic || gi[0], 30, gi[1])}</div><div class="grow"><b>${esc(g.title)}</b><div class="kmuted">${num(p.have)} из ${num(p.need)}${mine ? ` · ты принёс ${num(mine)}` : ""}</div></div></div><div class="kbar"><i style="width:${Math.round(p.p * 100)}%"></i></div></div>` }
   if (les) h += `<button class="kcard krow kles" data-kles="${les.id}"><div class="kplay">${ic("play", 24, "#fff")}</div><div class="grow"><b>Урок дня: «${esc(les.t)}»</b><div class="kmuted">3 минуты · +${LESSON_STARS} звёзд</div></div>${ic("chev", 22, "#A19BC7")}</button>`
@@ -320,9 +326,84 @@ function kidTip(me, tasks, done) {
 }
 function kTask(me, t) {
   const l = logOf(me.id, t.id), st = l ? l.st : "", n = t.ic || taskIc(t.title), c = icColor(n)
-  return `<button class="ktask ${st === "ok" ? "done" : ""}" data-ktask="${esc(t.id)}"><div class="kic" style="background:${c}22">${ic(n, 24, c)}</div>
+  return `<div class="ktw"><button class="ktask ${st === "ok" ? "done" : ""}" data-ktask="${esc(t.id)}"><div class="kic" style="background:${c}22">${ic(n, 24, c)}</div>
   <div class="grow"><div class="kt">${esc(t.title)}</div><div class="km">${st === "wait" ? "ждёт проверки" : st === "no" ? "не засчитано — попробуй ещё" : esc(t.when || (t.check ? "проверит взрослый" : ""))}</div></div>
-  <span class="kplus">${ic("star", 15, "#E89A00", 2.4)}+${t.stars || 5}</span><span class="kcb ${st}">${st === "ok" ? ic("check", 18, "#fff", 3) : st === "wait" ? ic("clock", 16, "#C98500") : ""}</span></button>`
+  <span class="kplus">${ic("star", 15, "#E89A00", 2.4)}+${t.stars || 5}</span><span class="kcb ${st}">${st === "ok" ? ic("check", 18, "#fff", 3) : st === "wait" ? ic("clock", 16, "#C98500") : ""}</span></button><button class="kmore" data-kti="${esc(t.id)}" aria-label="Подробнее">${ic("chev", 20, propWait(t.id) ? "#C98500" : "#A19BC7")}</button></div>`
+}
+
+// ───────────── Ребёнок: открыть дело или расписание, своё — править, добавленное взрослыми — попросить изменить ─────────────
+// Просьба — запись в log: { id "pr…", kind "prop", kid, list "events"|"tasks", ref, patch, why, title, st "wait" → "ok"|"no", by }.
+// Взрослый видит её в «Ждут вашей проверки» (и плашкой на «Сегодня»); «Да» вносит правку, «Нет» оставляет как было.
+const PROP_F = { title: "название", day: "день", time: "время", place: "место", when: "когда" }
+const propsOf = ref => L("log").filter(x => x.kind === "prop" && x.ref === ref)
+const propWait = ref => propsOf(ref).find(x => x.st === "wait" && x.kid === meId())
+const propVal = (k, v) => !v ? "нет" : k === "day" ? shortDate(parseIso(v)) : String(v)
+const propText = x => Object.keys(x.patch || {}).map(k => `${PROP_F[k] || k}: ${propVal(k, x.patch[k])}`).join(" · ") + (x.why ? `${Object.keys(x.patch || {}).length ? " · " : ""}«${x.why}»` : "")
+const whoName = id => { const m = member(id); return !m ? "Взрослые" : /мам/i.test(m.name) ? "Мама" : /пап/i.test(m.name) ? "Папа" : short(m.name) }
+function propNews(kid) {   // ответы взрослых — сутки после ответа
+  const l = L("log").filter(x => x.kind === "prop" && x.kid === kid && (x.st === "ok" || x.st === "no") && Date.now() - (x.u || 0) < 864e5).sort((a, b) => (b.u || 0) - (a.u || 0)).slice(0, 3)
+  return l.length ? `<div class="kcard kans"><h2>Ответ взрослых</h2>${l.map(x => `<div class="krow"><span class="kcb ${x.st === "ok" ? "ok" : "no"}">${ic(x.st === "ok" ? "check" : "x", 16, "#fff", 3)}</span><div class="grow"><b>${esc(whoName(x.by))}: ${x.st === "ok" ? "да" : "нет"}</b><div class="kmuted">${esc(String(x.title || "").replace(/^изменить /, ""))}${x.st === "ok" ? " — изменено, как ты просил" : " — остаётся как было"}</div></div></div>`).join("")}</div>` : ""
+}
+function kidItemSheet(list, id) {
+  const x = L(list).find(z => z.id === id); if (!x) return
+  const ev = list === "events", mine = ev && x.by === meId(), w = propWait(id)
+  const rows = ev ? [["clock", (x.day ? core.cap(fullDate(parseIso(x.day))) : "Каждую неделю: " + (x.days || []).map(d => WD7[d - 1]).join(", ")) + (x.time ? " · " + x.time : " · весь день")],
+      x.place && ["map", x.place], x.take && ["bag", "Взять с собой: " + x.take], ["users", x.who === "fam" ? "Вся семья" : mine ? "Добавил ты" : "Для тебя"]]
+    : [["clock", x.when || ((x.days || []).length ? (x.days || []).map(d => WD7[d - 1]).join(", ") : "Каждый день")], ["star", `+${x.stars || 5} звёзд` + (x.check ? " · проверит взрослый" : "")]]
+  const s = sheet(`<h3>${esc(x.title)}</h3><div class="kinfo">${rows.filter(Boolean).map(([i, t]) => `<div class="krow">${ic(i, 20, "#6A4BF2")}<div class="grow">${esc(t)}</div></div>`).join("")}</div>
+    ${w ? `<div class="kask">${ic("clock", 18, "#C98500")}<div><b>Ты попросил изменить</b>${esc(propText(w))}<br>Ждём ответ мамы или папы.</div></div>` : ""}
+    ${mine ? `<button class="kbtn" data-a="edit">Изменить</button><button class="klink" data-a="del">Удалить</button>`
+      : `<div class="kmuted knote">${ic("lock", 15, "#8C86B3")} Это ${ev ? "дело" : "задание"} добавили взрослые. Убрать его нельзя, но можно попросить изменить.</div>
+        ${w ? `<button class="kbtn soft" data-a="undo">Отменить просьбу</button>` : `<button class="kbtn" data-a="ask">Попросить изменить</button>`}`}`)
+  s.el.classList.add("kid-sheet")
+  const on = (a, f) => { const b = $(`[data-a="${a}"]`, s.el); if (b) b.onclick = f }
+  on("edit", () => { s.close(); kidEvForm(x) })
+  on("del", async () => { if (await ui.confirm("Удалить?", `<div class="msg">«${esc(x.title)}» пропадёт из расписания.</div>`, ["Оставить", "Удалить"]) !== "Удалить") return
+    put("events", Object.assign({}, x, { del: true })); s.close(); render(); toast("Удалено") })
+  on("ask", () => { s.close(); kidPropForm(list, x) })
+  on("undo", () => { put("log", Object.assign({}, w, { del: true })); s.close(); render(); toast("Просьба отменена") })
+}
+// Своё дело в расписании (ребёнок добавляет и правит сам; взрослые видят его в календаре семьи)
+function kidEvForm(x) {
+  const b = x || { title: "", day: today(), time: "", place: "" }
+  const s = sheet(`<h3>${x ? "Изменить" : "Моё дело"}</h3>
+    <div class="field"><label>Что</label><input id="ke-t" value="${esc(b.title)}" placeholder="Кружок, встреча с другом…"></div>
+    <div class="grid2"><div class="field"><label>День</label><input id="ke-d" type="date" value="${esc(b.day || today())}"></div>
+    <div class="field"><label>Во сколько</label><input id="ke-h" type="time" value="${esc(b.time || "")}"></div></div>
+    <div class="field"><label>Где</label><input id="ke-p" value="${esc(b.place || "")}" placeholder="Можно не писать"></div>
+    <div class="kmuted">Мама и папа увидят это дело в календаре семьи.</div>
+    <button class="kbtn" data-a="ok">Сохранить</button>`)
+  s.el.classList.add("kid-sheet")
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const title = $("#ke-t", s.el).value.trim().slice(0, 60), day = $("#ke-d", s.el).value
+    if (!title) return toast("Напиши, что за дело"); if (!day) return toast("Выбери день")
+    put("events", Object.assign({}, x || { id: uid("fe"), who: meId(), by: meId(), at: Date.now(), min: 60 }, { title, day, time: $("#ke-h", s.el).value || "", place: $("#ke-p", s.el).value.trim().slice(0, 80) }))
+    s.close(); render(); toast("Сохранено")
+  }
+}
+// Просьба изменить то, что добавили взрослые
+function kidPropForm(list, x) {
+  const ev = list === "events"
+  const s = sheet(`<h3>Попросить изменить</h3><div class="kmuted">Напиши, как хочешь. Мама или папа ответят «да» или «нет».</div>
+    <div class="field"><label>Что</label><input id="kp-t" value="${esc(x.title)}"></div>
+    ${ev ? `<div class="grid2">${x.day ? `<div class="field"><label>День</label><input id="kp-d" type="date" value="${esc(x.day)}"></div>` : ""}
+      <div class="field"><label>Во сколько</label><input id="kp-h" type="time" value="${esc(x.time || "")}"></div></div>
+      <div class="field"><label>Где</label><input id="kp-p" value="${esc(x.place || "")}"></div>`
+      : `<div class="field"><label>Когда</label><input id="kp-w" value="${esc(x.when || "")}" placeholder="Например: после школы"></div>`}
+    <div class="field"><label>Почему</label><input id="kp-y" placeholder="Например: в это время у меня кружок"></div>
+    <button class="kbtn" data-a="ok">Отправить взрослым</button>`)
+  s.el.classList.add("kid-sheet")
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const v = q => { const el = $(q, s.el); return el ? el.value.trim() : null }
+    const patch = {}, set = (k, val, max) => { if (val != null && val !== String(x[k] || "")) patch[k] = val.slice(0, max || 80) }
+    const title = v("#kp-t"); if (!title) return toast("Название не может быть пустым")
+    set("title", title, 60); set("day", v("#kp-d")); set("time", v("#kp-h")); set("place", v("#kp-p")); set("when", v("#kp-w"), 40)
+    if (patch.day === "") delete patch.day
+    const why = (v("#kp-y") || "").slice(0, 120)
+    if (!Object.keys(patch).length && !why) return toast("Напиши, что изменить")
+    put("log", { id: uid("pr"), kind: "prop", kid: meId(), list, ref: x.id, patch, why, title: `изменить «${x.title}»`, day: today(), at: Date.now(), st: "wait" })
+    s.close(); render(); toast("Отправил — ответ придёт сюда")
+  }
 }
 function kLearn(me) {
   const ls = lessonsFor(me.id).filter(l => l.c === kCourse), cur = nextLesson(me.id, kCourse), [, , color] = COURSES.find(c => c[0] === kCourse)
@@ -369,6 +450,8 @@ function kidNav() {
   $$("[data-kt]", n).forEach(b => b.onclick = () => { if (b.dataset.kt === "izi") return kidIzi(); kTab = b.dataset.kt; render(); window.scrollTo(0, 0) })
 }
 function kidBind(v) {
+  $$("[data-kev]", v).forEach(b => b.onclick = () => kidItemSheet("events", b.dataset.kev))
+  $$("[data-kti]", v).forEach(b => b.onclick = () => kidItemSheet("tasks", b.dataset.kti))
   $$("[data-ktask]", v).forEach(b => b.onclick = () => { const t = L("tasks").find(x => x.id === b.dataset.ktask); if (t) { tick(t); render() } })
   $$("[data-kles]", v).forEach(b => b.onclick = () => { const l = LESSONS.find(x => x.id === b.dataset.kles), me = meId(); if (!l) return
     if (!lessonDone(me, l.id) && nextLesson(me, l.c) && nextLesson(me, l.c).id !== l.id) return toast("Сначала пройди предыдущий урок"); lesson(l) })
@@ -383,7 +466,7 @@ const KDO = {
   paste: () => famPaste(), scan: () => scan(), adult: () => { D.who = "adult"; save(false); render() },
   wish: async () => { const t = await ui.ask("Чего тебе хочется?", "Большое или маленькое — всё подходит.", "", { placeholder: "Например: лего-замок", ok: "В банку" }); if (!t) return
     put("dreams", { id: uid("dr"), kid: meId(), title: t.slice(0, 60), at: Date.now() }); burst(); render() },
-  buy: () => buyForm(), hist: () => moneyHist(meId()),
+  buy: () => buyForm(), hist: () => moneyHist(meId()), evnew: () => kidEvForm(),
 }
 function dreamTalk(d) {
   if (!d) return
@@ -549,8 +632,8 @@ function famPage() {
     ${kids().length ? `<div class="muted small" style="margin-top:8px">Звёзды детей идут в семейные баллы ×${KID_X}, чтобы вклад был честным.</div>` : ""}
     ${adult ? `<div class="btns" style="margin-top:10px"><button class="btn" data-f="invite">Пригласить взрослого</button><button class="btn primary" data-f="kid">Добавить ребёнка</button></div>` : ""}</div>`
   const w = waits()
-  if (adult && w.length) h += `<div class="card fcard" id="fwait"><h2>Ждут вашей проверки <span class="muted small">${w.length}</span></h2>${w.map((x, i) => { const m = member(x.x.kid) || {}, n = x.t === "money" ? "bag" : x.x.kind === "earn" ? "coins" : taskIc(x.x.title), c = icColor(n)
-    return `<div class="row"><span class="ftile" style="background:${c}1F">${ic(n, 22, c)}</span><div class="grow"><div class="t">${esc(short(m.name))} · ${esc(x.t === "money" ? "хочет купить: " + x.x.note : x.x.title)}</div><div class="s">${x.t === "money" ? `${num(-x.x.amount)} ${esc(cur)} из «Трачу»` : x.x.pay ? `+${num(x.x.pay)} ${esc(cur)}` : `+${x.x.stars} звёзд`}${!sameDay(x.x.at, Date.now()) ? " · " + esc(dayName(new Date(x.x.at))) : ""}</div></div><button class="btn small" data-fno="${i}">Нет</button><button class="btn small primary" data-fyes="${i}">Да</button></div>` }).join("")}</div>`
+  if (adult && w.length) h += `<div class="card fcard" id="fwait"><h2>Ждут вашей проверки <span class="muted small">${w.length}</span></h2>${w.map((x, i) => { const m = member(x.x.kid) || {}, pr = x.x.kind === "prop", n = pr ? "clock" : x.t === "money" ? "bag" : x.x.kind === "earn" ? "coins" : taskIc(x.x.title), c = pr ? "#6A4BF2" : icColor(n)
+    return `<div class="row"><span class="ftile" style="background:${c}1F">${ic(n, 22, c)}</span><div class="grow"><div class="t">${esc(short(m.name))} · ${esc(x.t === "money" ? "хочет купить: " + x.x.note : pr ? "просит " + x.x.title : x.x.title)}</div><div class="s">${pr ? esc(propText(x.x) || "без подробностей") : x.t === "money" ? `${num(-x.x.amount)} ${esc(cur)} из «Трачу»` : x.x.pay ? `+${num(x.x.pay)} ${esc(cur)}` : `+${x.x.stars} звёзд`}${!sameDay(x.x.at, Date.now()) ? " · " + esc(dayName(new Date(x.x.at))) : ""}</div></div><button class="btn small" data-fno="${i}">Нет</button><button class="btn small primary" data-fyes="${i}">Да</button></div>` }).join("")}</div>`
   const gs = famGoals()
   h += `<div class="card fcard"><h2>Семейные цели<button class="act" data-f="goal">Добавить</button></h2>${gs.map(g => { const p = goalProg(g), gi = goalIc(g.title)
     return `<div class="row" data-fg="${esc(g.id)}"><span class="ftile" style="background:${gi[1]}1F">${ic(g.ic || gi[0], 22, gi[1])}</span><div class="grow"><div class="t">${esc(g.title)}${g.done ? " · достигнута" : ""}</div><div class="s">${g.repeat ? `каждые ${num(g.target)} баллов${p.times ? ` · было ${p.times} ${plural(p.times, "раз", "раза", "раз")}` : ""}` : `${num(p.have)} из ${num(g.target)} баллов${g.due ? " · до " + esc(g.due.split("-").reverse().slice(0, 2).join(".")) : ""}`}</div><div class="fgbar"><i style="width:${Math.round(p.p * 100)}%;background:${gi[1]}"></i></div></div></div>` }).join("") || `<div class="empty">Например: «Аквапарк всей семьёй» за 3 000 баллов или «Кино с попкорном» каждые 1 000.</div>`}</div>`
@@ -926,7 +1009,7 @@ function wrap() {
   const top0 = todayTop
   todayTop = function () {
     const n = isAdult() ? waits().length : 0
-    return (n ? `<button class="card fnote" data-f="open"><span class="ftile" style="background:#0A9F6E1F">${ic("users", 22, "#0A9F6E")}</span><div class="grow"><div class="t">Семья: ${n} ${plural(n, "дело ждёт", "дела ждут", "дел ждут")} проверки</div><div class="s">${esc(waits().slice(0, 2).map(w => short((member(w.x.kid) || {}).name) + " · " + (w.t === "money" ? w.x.note : w.x.title)).join(", "))}</div></div>${ic("chev", 18, "#8A8A8E")}</button>` : "") + top0.apply(this, arguments)
+    return (n ? `<button class="card fnote" data-f="open"><span class="ftile" style="background:#0A9F6E1F">${ic("users", 22, "#0A9F6E")}</span><div class="grow"><div class="t">Семья: ${n} ${plural(n, "дело ждёт", "дела ждут", "дел ждут")} ${waits().every(w => w.x.kind === "prop") ? "ответа" : "проверки"}</div><div class="s">${esc(waits().slice(0, 2).map(w => short((member(w.x.kid) || {}).name) + " · " + (w.t === "money" ? w.x.note : w.x.kind === "prop" ? "просит " + w.x.title : w.x.title)).join(", "))}</div></div>${ic("chev", 18, "#8A8A8E")}</button>` : "") + top0.apply(this, arguments)
   }
   const more0 = renderMore
   renderMore = function () { const html = more0.apply(this, arguments), i = html.indexOf('<div class="card"><h2>Связь с виджетом'); return i < 0 ? keyCard() + html : html.slice(0, i) + keyCard() + html.slice(i) }
