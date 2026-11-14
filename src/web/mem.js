@@ -241,13 +241,13 @@ function sensitive(t) {
 LISTS.log = 90
 if (!Array.isArray(D.log)) D.log = []
 const LOG_CAT = { money: ["add_money", "update_money", "delete_money", "add_jar", "jar_deposit", "add_debt", "set_budget", "add_recurring", "pay_recurring", "skip_card_payment"],
-  cal: ["create_event", "update_event", "delete_event", "create_reminder", "update_reminder", "delete_reminder", "plan_day"],
+  cal: ["create_event", "update_event", "delete_event", "hide_event", "unhide_event", "create_reminder", "update_reminder", "delete_reminder", "plan_day"],
   mem: ["remember", "forget", "open_secret"], health: ["add_food", "add_water", "add_workout", "log_weight", "mark_habit", "delete_record", "set_protein_goal"] }
 const catOf = name => Object.keys(LOG_CAT).find(k => LOG_CAT[k].includes(name)) || "other"
 const READ_ONLY = /^(get_|search_|read_|list_|where_was_i|route_to|ask_user|recall|mail_search|mail_read)/
 const PAST = { add_money: x => `Записал ${x.type === "income" ? "доход" : "расход"} ${x.amount || ""}${x.category ? " · " + x.category : ""}${x.comment ? " · " + x.comment : ""}`,
   update_money: x => `Поправил операцию${x.category ? ": " + x.category : ""}`, delete_money: () => "Удалил операцию",
-  create_event: x => `Создал событие «${x.title || ""}»`, update_event: x => `Изменил событие${x.title ? " «" + x.title + "»" : ""}`, delete_event: () => "Удалил событие",
+  create_event: x => `Создал событие «${x.title || ""}»`, update_event: x => `Изменил событие${x.title ? " «" + x.title + "»" : ""}`, delete_event: () => "Удалил событие", hide_event: () => "Скрыл событие в IZIDAY", unhide_event: () => "Вернул скрытое событие",
   create_reminder: x => `Поставил напоминание «${x.title || ""}»`, update_reminder: () => "Изменил напоминание", delete_reminder: () => "Удалил напоминание",
   add_food: x => `Записал еду: ${x.title || ""}`, add_water: x => `Записал воду ${x.ml || ""} мл`, add_workout: x => `Записал тренировку: ${x.title || ""}`,
   remember: x => `Запомнил: «${String(x.text || "").slice(0, 80)}»`, forget: () => "Забыл факт", claude_code: x => `Передал задачу в Claude Code: «${String(x.task || "").slice(0, 60)}»`,
