@@ -1,7 +1,7 @@
 // Общий сервер для друзей (dist/Friends.gs из build_friends.py): вход через Google, своя таблица у каждого,
 // никакого доступа к данным другого, свой календарь, Изи через ключ владельца с лимитом, подсказки пушем
 import { friendsServer } from "./fake_friends.mjs"
-const { code, gs, post, books, props, mails, aiCalls, tokens, tzFmt } = friendsServer()
+const { code, gs, post, books, props, mails, aiCalls, tokens, tzFmt, trashed } = friendsServer()
 let fail = 0
 const check = (name, ok, got) => { console.log(`${ok ? "✓" : "✗"} ${name}${ok ? "" : "  → " + JSON.stringify(got)}`); if (!ok) fail++ }
 check("в сервере нет служб Почты и Календаря владельца", !/CalendarApp|GmailApp|getActiveSpreadsheet/.test(code))
@@ -113,5 +113,18 @@ const lg = post({ secret: A.secret, league: { op: "new", name: "Друзья" } 
 check("лигу создаёт вошедший друг", lg.ok && lg.league.code)
 const lg2 = post({ league: { op: "put", code: lg.league.code, id: "u1", name: "Боб", week: "2026-11-09", pts: 10 } })
 check("в лигу пишут по коду, без входа", lg2.ok && lg2.league.members.u1)
+
+// ── удаление аккаунта ──
+const nBooks = Object.keys(books).length, bobId = Object.keys(props).find(k => /^u:/.test(k) && /bob@/.test(props[k])).slice(2)
+props["p:" + bobId + ":X"] = "1"; props["ai:2026-11-14:" + bobId] = "3"
+check("удаление без подтверждения не срабатывает", post({ secret: B.secret, deleteMe: 1 }).ok === false && hub(B.secret, { since: 0 }).ok)
+check("чужой ключ ничего не удаляет", post({ secret: "x".repeat(40), deleteMe: "delete" }).error === "forbidden")
+const del = post({ secret: B.secret, deleteMe: "delete" })
+check("Боб удалил аккаунт", del.ok && del.deleted, del)
+check("таблица Боба ушла в корзину, Анина на месте", trashed.length === 1 && Object.keys(books).length === nBooks - 1 && hub(A.secret, { since: 0 }).ok)
+check("ключ Боба больше не работает", hub(B.secret, { since: 0 }).error === "forbidden")
+check("о Бобе на сервере не осталось записей", !Object.keys(props).some(k => k.indexOf(bobId) >= 0) && !JSON.stringify(props).includes("bob@example.com"), Object.keys(props).filter(k => k.indexOf(bobId) >= 0))
+const B3 = post({ login: { id_token: "bob" } })
+check("Боб может начать заново с пустого аккаунта", B3.ok && B3.isNew && hub(B3.secret, { since: 0 }).lists.money.length === 0, B3)
 
 console.log(fail ? `FRIENDS_FAIL ${fail}` : "FRIENDS_OK")

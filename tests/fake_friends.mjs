@@ -32,7 +32,7 @@ export function friendsServer(opt = {}) {
     getLastColumn() { return this.cells.reduce((m, r) => Math.max(m, r ? r.length : 0), 0) }
     getSheetId() { return 100 }
   }
-  const books = {}
+  const books = {}, trashed = []
   function book(name) {
     const id = "S" + (Object.keys(books).length + 1), sheets = [new Sheet("Лист1")]
     const ss = { name, tz: "Asia/Bangkok", getSheetByName: n => sheets.find(s => s.name === n) || null, insertSheet: n => { const s = new Sheet(n); sheets.push(s); return s },
@@ -56,7 +56,7 @@ export function friendsServer(opt = {}) {
   }
   const g = {
     SpreadsheetApp: { create: n => book(n), openById: id => { if (!books[id]) throw new Error("нет таблицы"); return books[id] } },
-    DriveApp: { createFolder: n => ({ getId: () => "FOLDER" }), getFolderById: () => ({}), getFileById: () => ({ moveTo: () => {} }) },
+    DriveApp: { createFolder: n => ({ getId: () => "FOLDER" }), getFolderById: () => ({}), getFileById: id => ({ moveTo: () => {}, setTrashed: v => { if (v) { trashed.push(id); delete books[id] } } }) },
     MailApp: { sendEmail: (...a) => mails.push(a) },
     Session: { getEffectiveUser: () => ({ getEmail: () => "owner@example.com" }) },
     Logger: { log: () => {} },
@@ -82,5 +82,5 @@ export function friendsServer(opt = {}) {
   }
   const gs = new Function(...Object.keys(g), code + "; return { doPost, doGet, pushTick, cal_, FR }")(...Object.values(g))
   const post = b => gs.doPost({ postData: { contents: JSON.stringify(b) } })
-  return { code, gs, post, books, props, mails, aiCalls, pushes, tokens, tzFmt }
+  return { code, gs, post, books, props, mails, aiCalls, pushes, tokens, tzFmt, trashed }
 }

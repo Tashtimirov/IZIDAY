@@ -82,6 +82,12 @@ function doPost(e) {
   if (body.ai) return out_(ai_(u, body.ai));
   if (body.me) return out_({ ok: true, me: meOut_(u) });
   if (body.logout) { logout_(u, body.secret); return out_({ ok: true }); }
+  if (body.deleteMe) {   // удаление аккаунта: только по явному слову, чтобы случайный запрос ничего не стёр
+    if (body.deleteMe !== "delete") return out_({ ok: false, error: "нужно подтверждение" });
+    const lk = LockService.getScriptLock();
+    lk.waitLock(25000);
+    try { return out_(deleteMe_(u)); } finally { lk.releaseLock(); }
+  }
   if (body.gcal) return out_(gcalLink_(u, body.gcal));
   if (!body.hub) return out_({ ok: false, error: "нужно обновить приложение" });
   const h = body.hub, mail = h.mail, fire = h.fire;
@@ -166,6 +172,19 @@ function logout_(u, secret) {
   GP_().deleteProperty("t:" + hash);
   u.tokens = (u.tokens || []).filter(x => x !== hash);
   userPut_(u);
+}
+// Удаление аккаунта (обязательно для App Store): таблица человека уходит в корзину Диска (Google сам стирает её через 30 дней),
+// ключи входа, личные настройки, счётчики Изи и доступ к его Google Календарю стираются сразу. Тем же входом можно начать заново с пустого аккаунта.
+function deleteMe_(u) {
+  const p = GP_(), g = gcalGet_(u);
+  if (g && g.rt) try { UrlFetchApp.fetch("https://oauth2.googleapis.com/revoke", { method: "post", contentType: "application/x-www-form-urlencoded", payload: gform_({ token: g.rt }), muteHttpExceptions: true }); } catch (e) {}
+  try { DriveApp.getFileById(u.sheet).setTrashed(true); } catch (e) {}
+  (u.tokens || []).forEach(h => p.deleteProperty("t:" + h));
+  const pre = "p:" + u.id + ":", tail = ":" + u.id;
+  p.getKeys().forEach(k => { if (k.indexOf(pre) === 0 || (/^ai:/.test(k) && k.slice(-tail.length) === tail)) p.deleteProperty(k); });
+  p.deleteProperty("u:" + u.id);
+  CUR = null; CUR_SS = null;
+  return { ok: true, deleted: true };
 }
 function meOut_(u) { const g = gcalGet_(u); return { id: u.id, name: u.name, email: u.email, pic: u.pic, left: aiLeft_(u), gcal: g ? g.email || "Google" : "" }; }
 

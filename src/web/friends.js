@@ -151,6 +151,24 @@ window.FRIEND = (() => {
     D = {}; localStorage.removeItem(STORE); load(); render()
   }
 
+  // Удаление аккаунта: сервер стирает таблицу, ключи и настройки человека; на телефоне не остаётся ничего
+  async function remove() {
+    const m = me()
+    if (!m || !D.conn || !D.conn.secret) return
+    const b = await ui.confirm("Удалить аккаунт?", `<div class="msg">Все ваши записи будут удалены с сервера IZIDAY и с этого телефона: дела, события, деньги, здоровье, разговоры с ${esc(iziName())}. Вернуть их будет нельзя.</div><div class="msg small muted">Аккаунт: ${esc(m.email || "")}</div>`, ["Отмена", "Удалить навсегда"])
+    if (b !== "Удалить навсегда") return
+    if (await ui.confirm("Точно удалить?", `<div class="msg">Это действие необратимо.</div>`, ["Отмена", "Да, удалить"]) !== "Да, удалить") return
+    const quiet = (url, body) => fetch(url, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, credentials: "omit", cache: "no-store", body: JSON.stringify(body) }).catch(() => {})
+    try {   // из лиги и семьи человек выходит сам: там хранится только его имя и баллы
+      if (D.league && D.league.code && D.league.url) await quiet(D.league.url, { league: { op: "leave", code: D.league.code, id: D.league.id } })
+      if (D.fam && D.fam.code && D.fam.url) await quiet(D.fam.url, { family: { op: "leave", code: D.fam.code, id: D.fam.id } })
+    } catch (e) {}
+    const r = await post({ secret: D.conn.secret, deleteMe: "delete" }, 60000)
+    if (!r.ok) return ui.info("Не получилось", r.error || "сервер не ответил — попробуйте ещё раз")
+    D = {}; localStorage.removeItem(STORE); load(); render()
+    ui.info("Аккаунт удалён", "Все записи стёрты. Если захотите вернуться, войдите снова: начнёте с чистого листа.")
+  }
+
   // Изи для друзей: запрос к Claude уходит на сервер, ключ и модель — у владельца
   async function ai(body, signal) {
     const r = await fetch(D.conn.hook, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, credentials: "omit", cache: "no-store", signal,
@@ -190,7 +208,8 @@ window.FRIEND = (() => {
       ${D.sync.error ? `<div class="msg exp small">${esc(D.sync.error)}</div>` : ""}
       <div class="btns" style="margin-top:10px"><button class="btn" data-do="sync">${ei("sync")}Обменяться сейчас</button><button class="btn red" data-do="glogout">Выйти</button></div>
       <div class="btns" style="margin-top:6px"><button class="btn small" data-fw="1">У меня свой виджет Scriptable</button></div>
-      <div class="muted small" style="margin-top:8px">Записи хранятся на сервере IZIDAY в вашем личном разделе. Войдите той же почтой на другом телефоне — и всё будет там.</div></div>`
+      <div class="muted small" style="margin-top:8px">Записи хранятся на сервере IZIDAY в вашем личном разделе. Войдите той же почтой на другом телефоне — и всё будет там.</div>
+      <div style="margin-top:10px"><button class="linkbtn" data-fdel="1">Удалить аккаунт и все данные</button></div></div>`
   }
 
   // вернулись от Google: index.html положил ответ в sessionStorage
@@ -198,6 +217,7 @@ window.FRIEND = (() => {
   try { pending = sessionStorage.getItem("izi-glogin"); sessionStorage.removeItem("izi-glogin") } catch (e) {}
   let gcPending = null
   try { gcPending = sessionStorage.getItem("izi-gcal"); sessionStorage.removeItem("izi-gcal") } catch (e) {}
+  document.addEventListener("click", e => { const b = e.target.closest && e.target.closest("[data-fdel]"); if (b) { e.stopPropagation(); remove() } }, true)
   document.addEventListener("click", e => { const b = e.target.closest && e.target.closest("[data-fw]"); if (b) { e.stopPropagation(); widget() } }, true)
   document.addEventListener("click", e => { const b = e.target.closest && e.target.closest("[data-gc]"); if (b) { e.stopPropagation(); if (b.dataset.gc === "hide") { D.gcHide = Date.now(); save(false); render() } else b.dataset.gc === "off" ? gcalOff() : gcalConnect() } }, true)
   if (gcPending) setTimeout(() => gcalFinish(gcPending), 300)
@@ -207,5 +227,5 @@ window.FRIEND = (() => {
     try { if (me() && !sessionStorage.getItem("izi-own") && await isOwner(me().email)) { sessionStorage.setItem("izi-own", "1"); if (await ownerAsk() === "Подключить виджет") widget(false) } } catch (e) {}
   }, 1500)
 
-  return { on, hook: () => CFG.hook, me, login, logout, finish, ai, ask, banner, card, widget, gcalConnect, gcalFinish, gico: GICO }
+  return { on, hook: () => CFG.hook, me, login, logout, remove, finish, ai, ask, banner, card, widget, gcalConnect, gcalFinish, gico: GICO }
 })()
