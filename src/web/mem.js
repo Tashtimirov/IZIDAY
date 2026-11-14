@@ -324,7 +324,7 @@ const remTool = AGENT_TOOLS.find(t => t.name === "remember")
 if (remTool) remTool.input_schema = { type: "object", required: ["text", "sphere"], properties: {
   text: { type: "string", description: "Факт коротко и самодостаточно" },
   sphere: { type: "string", enum: SPH_IDS, description: "me — о самом человеке (характер, предпочтения, привычки); goals; health; family; friends — друзья и знакомые, коллеги; work; money; values — ценности и правила жизни" },
-  person: { type: "string", description: "Если факт о конкретном человеке — его имя, как называет пользователь (Оля, Мама, Михаил)" },
+  person: { type: "string", description: "Если факт о конкретном человеке — его имя, как называет пользователь (Саша, Мама, Михаил)" },
   secret: { type: "boolean", description: "true — сокровенное: психология, ссоры, мнения о людях, интимное, диагнозы. Шифруется, читается только после Face ID" } } }
 AGENT_TOOLS.push(
   { name: "recall", description: "Достать из памяти факты по сфере, человеку или словам (когда в подборке памяти не хватает подробностей).",
@@ -472,7 +472,7 @@ function openKnow() {
     if (a === "export") return exportAll()
     if (a === "last") { const l = D.memLast; return ui.info("Последний разговор", !l ? "Разговоров ещё не было." : `${dshort(l.at)} в ${hm(new Date(l.at))} ${iziName()} ${iziG("взял", "взяла")} с собой ${l.n} ${plural(l.n, "факт", "факта", "фактов")}${l.names.length ? ", по теме: " + l.names.join(", ") : ""}. Остальная память в разговор не уходила.`) }
     if (a === "add-person") {
-      const nm = await ui.ask("Новый человек", "Как вы его называете?", "", { placeholder: "Оля, Мама, Михаил" }); if (!nm) return
+      const nm = await ui.ask("Новый человек", "Как вы его называете?", "", { placeholder: "Саша, Мама, Михаил" }); if (!nm) return
       const t = await ui.ask(nm, "Что о нём запомнить?", "", { multiline: true, placeholder: "кто он вам, что для него важно, даты" }); if (!t) return
       await runTool("remember", { text: t, sphere: "friends", person: nm }); memRefresh(); return
     }

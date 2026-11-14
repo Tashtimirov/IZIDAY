@@ -252,3 +252,10 @@ body.kidm .sheet input:focus { border-color: #8B6CFF; outline: none; }
 body.kidm[data-kth] .kclose { background: var(--ksoft); color: var(--ka) !important; }
 /* кнопка «Сообщить об ошибке» плавает справа сверху — без clear чат-флекс сжимался до половины ширины */
 .kid-sheet > .kchat { clear: both; }
+
+/* «Что делим с семьёй» в окне: строки-переключатели как в карточке */
+.fshare button.set { width: 100%; border: 0; border-top: .5px solid var(--line); background: none; text-align: left; padding: 11px 0; color: var(--text); font: inherit; border-radius: 0; -webkit-appearance: none; appearance: none; }
+.fshare button.set:first-of-type { border-top: 0; }
+.fshare button.set span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.fshare button.set b { font-weight: 500; font-size: 16px; }
+.fshare button.set small { color: var(--sub); font-size: 13px; line-height: 1.3; }

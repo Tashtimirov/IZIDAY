@@ -916,7 +916,7 @@ const AGENT_TOOLS = [
       category: { type: "string", description: "Строго одна из категорий из системного сообщения" },
       comment: { type: "string" }, date: { type: "string", description: "Только если не сегодня, YYYY-MM-DD" },
       currency: { type: "string", enum: CURS.map(c => c[0]), description: "Валюта суммы, если не основная («5000 рублей», «$12»): пересчитаю по курсу" },
-      shared: { type: "boolean", description: "Общая семейная трата (с женой)" } },
+      shared: { type: "boolean", description: "Общая семейная трата — только если в семье включён общий бюджет" } },
       required: ["type", "amount", "method", "category"] } },
   { name: "add_jar", description: "Копилка на цель со сроком («коплю на Японию 150 000 к июню»). Сама считает, сколько откладывать в месяц.",
     input_schema: { type: "object", properties: { title: { type: "string" }, target: { type: "number" }, due: { type: "string", description: "YYYY-MM — к какому месяцу" },
@@ -1573,7 +1573,7 @@ ${cals.length ? `- Календари по словам пользователя
 - Почта Gmail пользователя: mail_search → mail_read, ответы mail_reply, новые письма mail_send, черновики mail_draft, разбор mail_modify. Про письма отвечай по сути: от кого, что хотят, срок, что сделать; длинные — пересказывай. Найдёшь в письме встречу, срок оплаты или задачу — предложи событие или напоминание. Пиши письма сам, от первого лица пользователя, коротко и по-деловому; отправка — только когда пользователь попросил отправить или ответить (подтверждение приложение покажет само).
 - Письма с темой вида «… → IZIDAY» — сводки диспетчера рабочего проекта пользователя (название проекта стоит в теме до стрелки). На вопросы «что от диспетчера», «что по работе» или по названию рабочего проекта ищи их: mail_search «subject:IZIDAY» (свежие — newer_than:2d) и пересказывай главное, сроки и отдельно — что ждёт решения пользователя в рабочем чате.
 - Раскладка дохода — по плану в процентах (get_money.income_plan): статьи выбирает пользователь в «Деньги → Как раскладываю доход», проценты предлагаешь ты — платежи и копилки по факту, подушка 10% пока нет 6 месяцев расходов, инвестиции около 10%, благотворительность от 3%, на жизнь — остаток, но не меньше обычных трат. Пришёл доход — предложи разложить по плану и коротко назови суммы.
-- Деньги 2.0: «сколько можно потратить» — get_money.can_spend_today (после платежей и копилок). Копилки — add_jar и jar_deposit; долги и кредиты — add_debt. Сумма в рублях или долларах — add_money с currency (пересчитается по курсу). Общая с женой трата — shared=true. Итоги по деньгам за неделю — в тоне, который выбрал пользователь: ${{ praise: "похвали (тепло, с юмором)", roast: "пожури (по-дружески строго)", dry: "сухо, только цифры" }[MNY().tone]}.
+- Деньги 2.0: «сколько можно потратить» — get_money.can_spend_today (после платежей и копилок). Копилки — add_jar и jar_deposit; долги и кредиты — add_debt. Сумма в рублях или долларах — add_money с currency (пересчитается по курсу). ${famShare("money") ? "Общая семейная трата — shared=true. " : "Общий бюджет семьи выключен — shared не ставь. "}Итоги по деньгам за неделю — в тоне, который выбрал пользователь: ${{ praise: "похвали (тепло, с юмором)", roast: "пожури (по-дружески строго)", dry: "сухо, только цифры" }[MNY().tone]}.
 - Лимиты расходов по категориям — set_budget; при записи расхода, если инструмент вернул budget.warn, коротко скажи, сколько осталось. Регулярные платежи (аренда, подписки) — add_recurring и pay_recurring; список и лимиты — в get_money.
 - Привычки (зарядка, чтение; «бросаю пить/курить») — mark_habit; «сегодня не пил» для привычки «бросаю» — done=false. Вес («вешу 78,5») — log_weight. Серии и вес — в get_health.
 - «Съел», «выпил стакан воды» — add_food и add_water. «Удали лишнюю воду/еду/тренировку» — найди id через get_health (или get_history с details) и delete_record. На вопросы о калориях, шагах и воде смотри get_health.
@@ -2147,7 +2147,7 @@ function moneyForm(type, entry) {
       <div class="field"><input id="m-com" placeholder="Комментарий: такси, кафе, зарплата…" value="${esc(e.comment)}"></div>
       <div class="field"><div class="seg two" id="m-meth"><button data-m="cash">Наличные</button><button data-m="transfer">Перевод / карта</button></div></div>
       <div class="field"><label>Категория</label><div class="chips" id="m-cats">${cats.map(c => `<button class="chip" data-c="${esc(c)}">${esc(c)}</button>`).join("")}</div><div class="small muted" id="m-rule"></div></div>
-      <div class="field"><button class="chip ${shared ? "on" : ""}" id="m-sh">${tdIco("people", 14)} Общая с ${esc(partnerIns(MNY().partner))}</button></div>
+      ${famShare("money") ? `<div class="field"><button class="chip ${shared ? "on" : ""}" id="m-sh">${tdIco("people", 14)} Общая с ${esc(partnerIns(mnyPartner()))}</button></div>` : ""}
       <div class="field"><label>Дата</label><input id="m-date" type="date" value="${dayKey(new Date(e.date))}"></div>
       <div class="btns">${entry ? '<button class="btn red" data-a="del">Удалить</button>' : `<button class="btn small" data-a="swap">${type === "expense" ? "Это доход" : "Это расход"}</button>`}<button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`,
     { onClose: () => res(done) })
@@ -2162,7 +2162,7 @@ function moneyForm(type, entry) {
     $$("#m-meth button", s.el).forEach(b => b.onclick = () => { method = b.dataset.m; paint() })
     $$("#m-cur button", s.el).forEach(b => b.onclick = () => { cur = b.dataset.c; paint() })
     $("#m-amt", s.el).oninput = paint
-    $("#m-sh", s.el).onclick = ev => { shared = !shared; ev.currentTarget.classList.toggle("on", shared) }
+    if ($("#m-sh", s.el)) $("#m-sh", s.el).onclick = ev => { shared = !shared; ev.currentTarget.classList.toggle("on", shared) }
     $$("#m-cats .chip", s.el).forEach(b => b.onclick = () => { cat = b.dataset.c; manualCat = true; paint()
       const c = $("#m-com", s.el).value.trim(); $("#m-rule", s.el).textContent = c && cat !== "Другое" && ruleFor(c, type) !== cat ? `Запомню: «${c.split(/[,.;]/)[0].trim()}» → ${cat}` : "" })
     $("#m-com", s.el).oninput = ev => {
@@ -2584,7 +2584,7 @@ const CB_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 const CB_STOP = '<svg viewBox="0 0 24 24"><rect x="7.5" y="7.5" width="9" height="9" rx="1.8" fill="currentColor"/></svg>'
 const linkify = s => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`)
 function chatItems() {
-  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я — ${esc(iziName())}, ${iziG("ваш помощник", "ваша помощница")}: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Пишите в строке внизу или нажмите микрофон в ней и говорите, потом — зелёную стрелку. Например: «завтра в 10 встреча с Олей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
+  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я — ${esc(iziName())}, ${iziG("ваш помощник", "ваша помощница")}: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Пишите в строке внизу или нажмите микрофон в ней и говорите, потом — зелёную стрелку. Например: «завтра в 10 встреча с Сашей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
   const last = D.chat.length - 1
   return D.chat.slice(-60).map((m, i, arr) => {
     const isLast = i === arr.length - 1 && askWait
@@ -4479,7 +4479,12 @@ Object.assign(TD_ICO, {
   car2: '<path d="M5 16l1.5-5A2 2 0 0 1 8.4 9.5h7.2a2 2 0 0 1 1.9 1.5L19 16"/><rect x="3" y="15" width="18" height="4" rx="1.5"/>',
   trend: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>', plus: '<path d="M12 5v14M5 12h14"/>',
 })
-const MNY = () => (D.mny = Object.assign({ view: "all", tone: "praise", partner: "Оля" }, D.mny || {}))
+const MNY = () => { const m = D.mny = Object.assign({ view: "all", tone: "praise", partner: "" }, D.mny || {}); if (m.partner === "Оля") m.partner = ""; return m }   // «Оля» стояло по умолчанию у всех — убираем
+// Общее с семьёй включает сам человек в «Семье» (family.js, FAM.share); без семьи ничего общего не видно
+const famShare = k => !!(window.FAM && FAM.share && FAM.share(k))
+const mnyV = () => famShare("money") ? MNY().view : "all"
+// имя близкого для «Общие с …»: первый взрослый в семье, иначе своё имя из настроек
+function mnyPartner() { const f = window.FAM && FAM.on && FAM.on() ? FAM : null, m = f && f.members().find(m => m.id !== f.meId() && m.role !== "kid"); return m && m.name ? name1(m.name) : MNY().partner }
 const gk = kind => live(D.goals).filter(g => g.kind === kind)
 const sumBy = (l, f = x => x.amount) => l.reduce((s, x) => s + (+f(x) || 0), 0)
 const MONTHS_DAT = ["январю", "февралю", "марту", "апрелю", "маю", "июню", "июлю", "августу", "сентябрю", "октябрю", "ноябрю", "декабрю"]
@@ -4547,7 +4552,7 @@ function curCard() {
 }
 
 // — 8. Семейный бюджет: «Все / Мои / Общие с Олей»
-const mnyView = list => { const v = MNY().view; return v === "mine" ? list.filter(e => !e.shared) : v === "shared" ? list.filter(e => e.shared) : list }
+const mnyView = list => { const v = mnyV(); return v === "mine" ? list.filter(e => !e.shared) : v === "shared" ? list.filter(e => e.shared) : list }
 
 // — 2. Копилки
 const jars = () => gk("jar").filter(j => j.title && !j.env).sort((a, b) => (a.due || "9").localeCompare(b.due || "9") || a.date - b.date)
@@ -4889,7 +4894,7 @@ function weekMoney(now = new Date()) {
   const byCat = l => l.reduce((m, e) => (m[e.category] = (m[e.category] || 0) + e.amount, m), {})
   const c1 = byCat(w1), c0 = byCat(w0)
   const deltas = [...new Set([...Object.keys(c1), ...Object.keys(c0)])].map(c => [c, (c1[c] || 0) - (c0[c] || 0)]).filter(d => d[0] !== "Другое")
-  const v = MNY().view, js = jars().filter(j => (+j.saved || 0) < j.target && (v === "all" || (v === "shared") === !!j.shared)).map(j => ({ j, st: jarState(j, now) }))
+  const v = mnyV(), js = jars().filter(j => (+j.saved || 0) < j.target && (v === "all" || (v === "shared") === !!j.shared)).map(j => ({ j, st: jarState(j, now) }))
   return { s1: sumBy(w1), s0: sumBy(w0), n1: w1.length, top: Object.entries(c1).sort((x, y) => y[1] - x[1])[0],
     better: deltas.filter(d => d[1] < -200).sort((x, y) => x[1] - y[1])[0], worse: deltas.filter(d => d[1] > 200).sort((x, y) => y[1] - x[1])[0],
     good: js.find(z => !z.st.late), bad: js.find(z => z.st.late), cs: canSpend(now), had0: w0.length > 0 }
@@ -4936,8 +4941,8 @@ function renderMoney() {
     ${al.planned ? "" : `<div class="muted small" style="margin-top:4px">Изи предложил по вашим платежам и копилкам. Свои статьи — благотворительность, инвестиции, обучение — в «План».</div>`}
     <button class="btn primary wide" data-do="mn-alloc">Разложить так</button><button class="btn ghost wide" data-do="mn-alloc-no">Не сейчас</button></div>`
   // 8. Все / Мои / Общие
-  const vi = ["all", "mine", "shared"].indexOf(mn.view)
-  html += `<div class="seg mn-seg mn-in" ${anim()} style="--i:${vi}"><i></i><button data-mv="all" class="${vi === 0 ? "on" : ""}">Все</button><button data-mv="mine" class="${vi === 1 ? "on" : ""}">Мои</button><button data-mv="shared" class="${vi === 2 ? "on" : ""}">Общие с ${esc(partnerIns(mn.partner))}</button></div>`
+  const vi = ["all", "mine", "shared"].indexOf(mnyV())
+  if (famShare("money")) html += `<div class="seg mn-seg mn-in" ${anim()} style="--i:${vi}"><i></i><button data-mv="all" class="${vi === 0 ? "on" : ""}">Все</button><button data-mv="mine" class="${vi === 1 ? "on" : ""}">Мои</button><button data-mv="shared" class="${vi === 2 ? "on" : ""}">${mnyPartner() ? "Общие с " + esc(partnerIns(mnyPartner())) : "Общие"}</button></div>`
   // Месяц
   html += `<div class="card mn-in mn-tot" ${anim()}><div class="month mn-mon"><button data-mon="-1" aria-label="Месяц назад">‹</button><b>${esc(core.monthTitle(monthKey))}</b><button data-mon="1" ${isCur ? "disabled style=opacity:.3" : ""} aria-label="Месяц вперёд">›</button></div>
     <div class="totals"><div><div class="muted small">Расходы</div><div class="big exp">−${esc(core.money(t.expense))}</div></div>
@@ -4953,13 +4958,13 @@ function renderMoney() {
       <div class="grow"><b>Запомнил: ${esc(rule.label || rule.key)} → ${esc(rule.cat)}</b><div class="small muted">Дальше буду ставить так сам. «Другое» в этом месяце: ${o1} ${plural(o1, "трата", "траты", "трат")}${o0 ? `, в прошлом — ${o0}` : ""}.</div></div></div>`
   }
   // 2. Копилки
-  const jl = jars().filter(j => mn.view === "all" || (mn.view === "shared") === !!j.shared)
+  const jl = jars().filter(j => mnyV() === "all" || (mnyV() === "shared") === !!j.shared)
   html += `<div class="card mn-in" ${anim()}><h2>Копилки<button class="act" data-do="jar-add">+ Новая</button></h2>` + (jl.length ? jl.map(j => {
     const st = jarState(j, now)
-    return `<button class="mn-jar ${st.cls}" data-jar="${esc(j.id)}"><div class="top"><span>${tdIco("jar", 17)}<b>${esc(j.title)}</b>${j.shared ? `<em class="sh">${tdIco("people", 12)}</em>` : ""}</span><span class="am">${num(j.saved || 0)} / ${esc(core.money(j.target))}</span></div>
+    return `<button class="mn-jar ${st.cls}" data-jar="${esc(j.id)}"><div class="top"><span>${tdIco("jar", 17)}<b>${esc(j.title)}</b>${j.shared && famShare("money") ? `<em class="sh">${tdIco("people", 12)}</em>` : ""}</span><span class="am">${num(j.saved || 0)} / ${esc(core.money(j.target))}</span></div>
       <div class="bar"><i style="--w:${Math.round(st.p * 100)}%"></i></div><div class="s">${esc(st.txt)}</div></button>`
   }).join("") : `<div class="empty">Отпуск, подушка на полгода, новая машина: копилка со сроком сама посчитает, сколько откладывать в месяц и успеваете ли вы.</div>`) + `</div>`
-  if (isCur && mn.view === "all") html += planCard(anim)
+  if (isCur && mnyV() === "all") html += planCard(anim)
   // Лимиты по категориям
   const cats = Object.entries(t.cats.expense)
   for (const b of live(D.budgets)) if (b.limit > 0 && !cats.some(c => c[0] === b.category)) cats.push([b.category, 0])
@@ -5010,7 +5015,7 @@ function renderMoney() {
     const d = new Date(e.date), dk2 = dayKey(d)
     if (dk2 !== last) { html += `<div class="day-h">${esc(core.cap(dayName(d)))}</div>`; last = dk2 }
     const fc = e.cur && e.cur !== baseCur() && e.orig
-    html += `<div class="row" data-money="${esc(e.id)}"><div class="time">${hm(d)}</div><div class="grow"><div class="t">${esc(e.comment ? core.cap(e.comment) : e.category)}${e.shared ? ` <em class="sh">${tdIco("people", 12)}</em>` : ""}</div>
+    html += `<div class="row" data-money="${esc(e.id)}"><div class="time">${hm(d)}</div><div class="grow"><div class="t">${esc(e.comment ? core.cap(e.comment) : e.category)}${e.shared && famShare("money") ? ` <em class="sh">${tdIco("people", 12)}</em>` : ""}</div>
       <div class="s">${esc(e.comment ? e.category : e.method === "cash" ? "наличные" : "карта / перевод")}${fc ? ` · ${esc(fmtCur(e.orig, e.cur))} ≈ ${esc(core.money(e.amount))}` : ""}</div></div>
       <div class="amt ${e.type === "expense" ? "exp" : "inc"}">${e.type === "expense" ? "−" : "+"}${esc(fc ? fmtCur(e.orig, e.cur) : core.money(e.amount))}</div></div>`
   }
@@ -5063,9 +5068,9 @@ function jarForm(j) {
     <div class="field"><label>Цель, ${esc(core.CONFIG.currency)}</label><input id="j-a" type="number" inputmode="decimal" value="${e.target}"></div>
     <div class="field"><label>Уже отложено</label><input id="j-s" type="number" inputmode="decimal" value="${e.saved || ""}" placeholder="0"></div>
     <div class="field"><label>Собрать к</label><input id="j-d" type="month" value="${esc(e.due || "")}"></div>
-    <div class="field"><button class="chip ${shared ? "on" : ""}" id="j-sh">${tdIco("people", 14)} Общая с ${esc(partnerIns(MNY().partner))}</button></div>
+    ${famShare("money") ? `<div class="field"><button class="chip ${shared ? "on" : ""}" id="j-sh">${tdIco("people", 14)} Общая с ${esc(partnerIns(mnyPartner()))}</button></div>` : ""}
     <div class="btns">${j ? '<button class="btn red" data-a="del">Удалить</button>' : ""}<button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
-  $("#j-sh", s.el).onclick = ev => { shared = !shared; ev.currentTarget.classList.toggle("on", shared) }
+  if ($("#j-sh", s.el)) $("#j-sh", s.el).onclick = ev => { shared = !shared; ev.currentTarget.classList.toggle("on", shared) }
   if (!j) setTimeout(() => $("#j-t", s.el).focus(), 250)
   $('[data-a="no"]', s.el).onclick = () => s.close()
   if (j) $('[data-a="del"]', s.el).onclick = async () => { if ((await ui.confirm("Удалить копилку?", `<div class="msg">«${esc(j.title)}» и её история пропадут. Деньги на счетах не тронутся.</div>`, ["Отмена", "Удалить"])) !== "Удалить") return; remove("goals", j.id); s.close(); render() }
@@ -5166,12 +5171,11 @@ function rulesSheet() {
   $$("[data-del]", s.el).forEach(b => b.onclick = () => { remove("goals", b.dataset.del); b.closest(".row").remove() })
 }
 function familyForm() {
-  const mn = MNY()
-  const s = sheet(`<h3>Семейный бюджет</h3><div class="msg">Общие траты и копилки отмечаются в форме. Фильтр «Общие» показывает только их. Когда ${esc(mn.partner)} подключит IZIDAY к той же таблице, она увидит общее, а ваше личное — нет.</div>
-    <div class="field"><label>Имя</label><input id="fm-n" value="${esc(mn.partner)}"></div>
-    <div class="btns"><button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
+  if (window.FAM && FAM.on() && !FAM.kidMode()) return FAM.shareSheet()
+  const s = sheet(`<h3>Семейный бюджет</h3><div class="msg">Общий бюджет включается только по вашему выбору, когда близкие объединены в семью. Ваши траты остаются только вашими, общими становятся лишь те, что вы сами отметите.</div>
+    <div class="btns"><button class="btn" data-a="no">Не сейчас</button><button class="btn primary" data-a="ok">Перейти к семье</button></div>`)
   $('[data-a="no"]', s.el).onclick = () => s.close()
-  $('[data-a="ok"]', s.el).onclick = () => { mn.partner = $("#fm-n", s.el).value.trim() || "Оля"; save(false); s.close(); render() }
+  $('[data-a="ok"]', s.el).onclick = () => { s.close(); plansF = "fam"; setTab("plans") }
 }
 
 // — Погода (Open-Meteo, без ключа): по месту из телефона или виджета, раз в час
@@ -5534,12 +5538,13 @@ function calS() {
 const layerOn = k => calS().layers[k] !== 0
 const name1 = n => String(n || "").trim().split(/\s+/)[0]
 // семья из family.js: близкие (взрослые и подростки, кроме меня) и дети
-const famCal = () => window.FAM && FAM.on && FAM.on() ? FAM : null
+const famCal = () => famShare("cal") ? FAM : null   // семья в календаре — только если человек включил «Календарь семьи»
 const famOthers = () => { const f = famCal(); return f ? f.members().filter(m => m.id !== f.meId() && m.role !== "kid") : [] }
 const famKids = () => { const f = famCal(); return f ? f.members().filter(m => m.role === "kid") : [] }
 const persKey = m => { const i = famOthers().findIndex(x => x.id === m.id); return i <= 0 ? "olya" : "p:" + m.id }   // первый близкий — слой «olya» (так он хранился раньше)
 function calLayers() {
   const S = calS(), oth = famOthers()
+  if (!famCal()) return [{ k: "me", name: "Я", c: S.colors.me || LAYER_C.me }]   // без общего календаря — только свои события
   const out = [{ k: "me", name: "Я" }, { k: "fam", name: "Семья" }, { k: "olya", name: layerName("olya") }]
   oth.slice(1).forEach((m, i) => out.push({ k: "p:" + m.id, name: name1(m.name) || "Близкий", c: PERS_C[i % PERS_C.length] }))
   out.push({ k: "kids", name: "Дети" })
@@ -5568,6 +5573,7 @@ function tzHm(d, tz = calS().tz) { try { return new Intl.DateTimeFormat(((window
 function evLayer(e) {
   if (e.fam) return e.L
   const m = calS().map[e.calendar || ""]
+  if (!famCal()) return m === "off" ? "off" : "me"
   if (m && (m.slice(0, 2) !== "p:" || famOthers().some(x => "p:" + x.id === m))) return m
   const c = normT(e.calendar)
   if (/семь|семей|family/.test(c)) return "fam"
@@ -6085,7 +6091,7 @@ function calSettings() {
     <div id="cs-rows">${draw()}</div>
     <h4 class="cs-t">Календари Google</h4><div class="msg">Чтобы видеть календарь близкого целиком, пусть он откроет вам доступ в Google Календаре (Настройки → Открыть доступ конкретным людям). Календарь появится здесь, и его события пойдут цветом близкого.</div>
     ${names.map((n, i) => `<div class="field"><label>${esc(n)}</label><div class="chips" data-cal="${i}">${opts().map(([k, l, c]) => `<button class="chip ly ${evLayer({ calendar: n }) === k ? "on" : ""}" data-k="${esc(k)}" style="--c:${c}"><em></em>${esc(l)}</button>`).join("")}</div></div>`).join("") || '<div class="empty">Календари ещё не загружены</div>'}
-    ${famOthers().length ? "" : `<div class="field"><label>Имя близкого (второй слой)</label><input id="cs-o" value="${esc(layerName("olya"))}"></div>`}
+    ${famOthers().length || !famCal() ? "" : `<div class="field"><label>Имя близкого (второй слой)</label><input id="cs-o" value="${esc(layerName("olya"))}"></div>`}
     <div class="field"><label>Второй часовой пояс</label><div class="chips" id="cs-tz">${TZS.map(t => `<button class="chip ${S.tz === t[0] ? "on" : ""}" data-tz="${t[0]}">${t[1]}</button>`).join("")}</div></div>
     <div class="btns"><button class="btn primary" data-a="ok">Готово</button></div>`, { onClose: () => render() })
   let open = ""
@@ -6105,6 +6111,13 @@ const famEvWhen = x => (x.day ? shortDate(parseIso(x.day)) : (x.days || []).map(
 const famEvWho = x => { if (x.who === "fam" || !x.who) return ["Вся семья", layerC("fam")]
   const m = FAM.members().find(m => m.id === x.who); return m ? [name1(m.name), m.role === "kid" ? kidC(m.id) : m.id === FAM.meId() ? layerC("me") : layerC(persKey(m))] : ["Семья", layerC("fam")] }
 function famCalSheet() {
+  if (!famCal() && window.FAM && FAM.on() && !FAM.kidMode()) {   // семья есть, но общий календарь выключен
+    const s = sheet(`<h3>Календарь семьи</h3><div class="msg">Сейчас в календаре только ваши события. Если включить «Календарь семьи», появятся общие дела семьи, расписание детей и календари близких — каждый своим цветом. Выключить можно в любой момент.</div>
+      <div class="btns"><button class="btn" data-a="no">Не сейчас</button><button class="btn primary" data-a="ok">Что делим с семьёй</button></div>`)
+    $('[data-a="no"]', s.el).onclick = () => s.close()
+    $('[data-a="ok"]', s.el).onclick = () => { s.close(); FAM.shareSheet() }
+    return
+  }
   if (!famCal()) {
     const s = sheet(`<h3>Календарь семьи</h3><div class="msg">Объедините близких в семью — и в календаре появится общий слой «Семья»: дела, которые видят все. События каждого идут своим цветом, расписание и дела детей — отдельно.\n\nКалендарь близкого целиком подключается через Google: он открывает вам доступ, вы выбираете для него цвет.</div>
       <div class="btns"><button class="btn" data-a="set">Цвета и календари</button><button class="btn primary" data-a="new">Создать семью</button></div>`)
@@ -6180,7 +6193,7 @@ function iziStyle() {
   if (z.goals) out.push(`Цели: ты коуч по целям (подсказки включены пользователем). Когда речь о целях, мечтах, планах, деньгах на цель или застрявшем деле — подскажи, как поставить и достичь: цель конкретная и измеримая, со сроком (SMART); большой цели — веха на месяц и шаг на эту неделю; первый шаг — меньше 15 минут и в календарь; план «если — то» («если вечером устал, то хотя бы 10 минут»); заранее назвать главное препятствие и что делать с ним (WOOP); финансовая цель — сумма, срок и сколько откладывать в месяц (копилка add_jar). Застряло 2 недели — уменьшить шаг, а не ругать себя. Отмечай маленькие победы. Не больше одного совета за ответ и не в каждом сообщении — только к месту.`)
   if (z.psy) out.push(`Психология: опирайся на доказательные подходы (КПТ, мотивационное интервью, теория самодетерминации, привязанность, эмоциональный интеллект). Когда человеку тяжело — сначала услышь и назови чувство, потом спроси, чего он хочет: совета или просто выговориться. Мягко замечай искажения мышления («всё или ничего», катастрофизация, чтение мыслей) и предлагай взгляд шире. В отношениях с женой, детьми, родителями и людьми помогай понять другую сторону и подобрать слова; про токсичных людей — честно про границы. Ты не врач и не ставишь диагнозов. Если звучат мысли о самоповреждении или о том, что жить не хочется, — отнесись серьёзно, будь рядом и мягко предложи сразу связаться с близким человеком и специалистом или экстренной помощью (в Таиланде 1669, психологическая линия 1323).`)
   out.push(`Люди и сообщения: помочь написать кому-то (жене, родителям, другу, клиенту) — draft_message, в нужном тоне и с учётом того, что знаешь о человеке; в ответе черновик не повторяй. После встречи пользователь рассказывает, что договорились — сам создай дела и напоминания со сроками и запомни договорённости о человеке через remember.`)
-  out.push(`«Напомни, когда придёт зарплата / буду с Олей / приду в офис» — remind_when (по доходу, человеку или событию календаря); «когда буду рядом с местом» — remind_near. Фото договора — стороны, суммы и сроки, предложи напоминания; меню или этикетка — ккал и БЖУ; дневник или задание ребёнка — что и к какому сроку.`)
+  out.push(`«Напомни, когда придёт зарплата / буду с Сашей / приду в офис» — remind_when (по доходу, человеку или событию календаря); «когда буду рядом с местом» — remind_near. Фото договора — стороны, суммы и сроки, предложи напоминания; меню или этикетка — ккал и БЖУ; дневник или задание ребёнка — что и к какому сроку.`)
   out.push(z.learn ? "Самообучение включено: замечай, что работает с этим человеком (какие советы он принимает, что раздражает, как ему удобнее), и сохраняй выводы через remember как предпочтения." : "Самообучение выключено: сам выводы и предпочтения не запоминай — только факты, которые просят запомнить.")
   if (TALK) out.push(`Сейчас живой голосовой разговор: твой ответ сразу читается вслух голосом ${z.g === "f" ? "девушки" : "мужчины"}. Отвечай как в разговоре: 1–3 коротких предложения, без списков, Markdown, ссылок, эмодзи и сокращений («мин», «ч», «руб»); суммы и время — словами, как их говорят. Длинное (список, письмо, план) — коротко скажи суть и что подробности в чате. Варианты выбора называй голосом. Тебя могут перебить — это нормально. Речь человека распознаётся кусками и с паузами: никогда не говори «вы прервались», «вас перебили», «вы не договорили». Если фраза похожа на оборванную — ответь на то, что уже понятно, или коротко скажи «слушаю, продолжайте».`)
   return "\n" + out.filter(Boolean).map(s => "- " + s).join("\n")
@@ -7116,7 +7129,7 @@ var IZI_TOOLS = {
 }
 var IZI_TOOL_DEFS = [
   { name: "draft_message", description: "Показать пользователю черновик сообщения человеку (жене, родителям, другу, клиенту) карточкой с кнопками WhatsApp, Telegram, «Скопировать», «Мягче», «Короче». Используй, когда просят помочь написать кому-то. Пиши от первого лица пользователя, в нужном тоне, с учётом того, что знаешь о человеке.",
-    input_schema: { type: "object", properties: { to: { type: "string", description: "кому, как называет пользователь («Оля», «мама», «Михаил»)" }, text: { type: "string" }, phone: { type: "string", description: "номер в международном формате, если известен" } }, required: ["text"] } },
+    input_schema: { type: "object", properties: { to: { type: "string", description: "кому, как называет пользователь («Саша», «мама», «Михаил»)" }, text: { type: "string" }, phone: { type: "string", description: "номер в международном формате, если известен" } }, required: ["text"] } },
   { name: "remind_when", description: "Напомнить не по времени, а по событию: on=income — когда придёт доход (match — категория или слово из комментария, например «Зарплата»); on=person — когда пользователь будет с человеком (по событию календаря с его именем, match — имя); on=event — когда начнётся событие со словом match в названии («офис», «Big C»). Место «когда буду рядом» — это remind_near.",
     input_schema: { type: "object", properties: { text: { type: "string", description: "что напомнить" }, on: { type: "string", enum: ["income", "person", "event"] }, match: { type: "string" } }, required: ["text", "on"] } },
   { name: "list_when", description: "Список напоминаний «когда…» (по доходу, человеку, событию).", input_schema: { type: "object", properties: {} } },

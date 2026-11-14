@@ -41,6 +41,7 @@ await page.evaluate(() => { setTab("plans"); plansF = "fam"; render() }); await 
 check(await page.evaluate(() => !!$('[data-f="scan"]') && !!$('[data-f="new"]') && !!$('[data-f="paste"]')), "без семьи: «Сканировать шар», «Создать семью», вход по ссылке")
 await page.screenshot({ path: SHOTS + "orb-0-nofam.png" })
 await page.click('[data-f="new"]'); await ask(page, "Ильдар"); await ask(page, "Таштимировы"); await page.waitForTimeout(700)
+await page.evaluate(() => { while (stack.length) stack[stack.length - 1].close() }); await page.waitForTimeout(400)   // «Что делим с семьёй» после создания
 await page.click('[data-f="invite"]'); await page.waitForSelector(".ocode:not(.wait)"); await page.waitForTimeout(900)
 const tok = Object.keys(F.cache).filter(k => /^inv:/.test(k) && F.cache[k].exp > Date.now()).pop().slice(4)
 check(await page.evaluate(() => !!$(".ocode-sheet .ocode-c") && !!$(".ocode-orb canvas") && /Шар действует ещё \d:\d\d/.test($(".ocode-t").textContent)), "главный видит шар с кольцами и сколько он ещё действует")
