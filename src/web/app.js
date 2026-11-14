@@ -434,6 +434,23 @@ function queueOp(tool, input) {
   return op
 }
 const pendingOps = () => D.ops.filter(o => o.state !== "done")
+// ── Скрытые события: «убери» то, что нельзя удалить в источнике (праздники, чужой или подписанный календарь, только чтение).
+// Событие пропадает из IZIDAY (календарь, «Сегодня», Изи, виджет), в исходном календаре остаётся. Вернуть — Календарь → «Скрытые события».
+// В goals (синхронизируется без нового деплоя скрипта): kind "evhide" {title, eid, start, cal, all}. all — вся серия повторов.
+const evHides = () => live(D.goals).filter(g => g.kind === "evhide")
+const evMin = s => String(s || "").slice(0, 16)
+function evHiddenBy(e, H) {
+  return (H || evHides()).find(h => h.all
+    ? (h.eid && h.eid === e.id) || (h.title === e.title && (h.cal || "") === (e.calendar || ""))
+    : evMin(h.start) === evMin(e.start) && ((h.eid && h.eid === e.id) || h.title === e.title))
+}
+function evHide(e, all) {
+  return upsert("goals", { id: uid("h"), date: Date.now(), kind: "evhide", title: String(e.title || ""), eid: String(e.id || ""), start: e.start || "", cal: e.calendar || "", all: !!all })
+}
+// Удалить не вышло: сеть и таймаут — честная ошибка; всё остальное (нет прав, только чтение, событие не нашлось) — скрываем
+const CAL_NET = /не ответил|failed to fetch|load failed|networkerror|network request|сети|таблица не знает/i
+const calCantDelete = err => !!err && !CAL_NET.test(String(err))
+const evHideMsg = (e, all) => `Скрыл «${e.title || "событие"}»${all ? " и его повторения" : ""} в IZIDAY${e.calendar ? ` — в календаре «${e.calendar}» оно осталось` : ""}`
 // То, что видит приложение: снимок iPhone + ещё не внесённые команды
 function iphone() {
   const snap = D.snap || {}
@@ -455,6 +472,8 @@ function iphone() {
     if (o.tool === "delete_event") events = events.filter(v => !(v.id === x.id && (x.all_future || !x.occurrence_start || v.start === x.occurrence_start)))
   }
   try { for (const e of famEvents()) events.push(e) } catch (e) {}   // общие дела семьи и расписание детей (family.js)
+  const H = evHides()
+  if (H.length) events = events.filter(e => !evHiddenBy(e, H))
   events = events.map(e => Object.assign(e, { s: parseIso(e.start), e: parseIso(e.end) || parseIso(e.start) })).filter(e => e.s)
     .sort((a, b) => a.s - b.s)
   return { events, reminders, watch: snap.watch && snap.watch.day === dayKey(new Date()) ? snap.watch : null, at: snap.at || 0 }
@@ -890,6 +909,11 @@ const AGENT_TOOLS = [
     input_schema: { type: "object", properties: {
       id: { type: "string" }, occurrence_start: { type: "string" },
       all_future: { type: "boolean", description: "true — удалить это и все следующие повторения" } }, required: ["id", "occurrence_start"] } },
+  { name: "hide_event", description: "Скрыть событие только в IZIDAY (в исходном календаре оно остаётся). Для «убери из вида, но в календаре не трогай». Если пользователь просит удалить — сначала delete_event: когда удалить нельзя (чужой календарь, праздники, только чтение), он сам скроет событие.",
+    input_schema: { type: "object", properties: { id: { type: "string" }, occurrence_start: { type: "string" },
+      all: { type: "boolean", description: "true — скрыть все повторения серии" } }, required: ["id"] } },
+  { name: "unhide_event", description: "Вернуть скрытое в IZIDAY событие. Без query — список скрытых.",
+    input_schema: { type: "object", properties: { query: { type: "string", description: "часть названия" } } } },
   { name: "get_reminders", description: "Список невыполненных напоминаний (и выполненных сегодня, если include_completed).",
     input_schema: { type: "object", properties: { include_completed: { type: "boolean" }, query: { type: "string" } } } },
   { name: "create_reminder", description: "Создать напоминание в IZIDAY (напоминания живут в приложении; уведомление и контроль «Выполнил?» — от IZIDAY).",
@@ -1116,9 +1140,24 @@ async function runTool(name, x) {
       if (!(await chatConfirm(`Удалить «${e.title}»?\n${core.cap(fullDate(e.s))}, ${hm(e.s)}${x.all_future ? "\nи все следующие повторения" : ""}`)))
         return { cancelled: "пользователь отказался удалять" }
       setStatus("удаляю событие…")   // отсчёт секунд — с ответа «Да», а не с вопроса
-      if (gcalOn()) { const r = await calDo("delete", Object.assign({}, x, { occurrence_start: x.occurrence_start || e.start })); if (!r.error) evMade.forEach((ev, k) => { if (ev.id === x.id) evMade.delete(k) }); return r.error ? { error: r.error } : { ok: true } }
+      if (gcalOn()) { const r = await calDo("delete", Object.assign({}, x, { occurrence_start: x.occurrence_start || e.start })); if (!r.error) evMade.forEach((ev, k) => { if (ev.id === x.id) evMade.delete(k) })
+        if (r.error && calCantDelete(r.error)) { evHide(e, !!x.all_future); render(); return { ok: true, hidden: true, calendar: e.calendar || "", note: `Удалить в источнике нельзя (${r.error}). Событие скрыто в IZIDAY: его больше нет в календаре, на «Сегодня» и у тебя; в исходном календаре оно осталось. Скажи пользователю одной фразой: «${evHideMsg(e, !!x.all_future)}». Вернуть — Календарь → «Скрытые события» или попросить тебя.` } }
+        return r.error ? { error: r.error } : { ok: true } }
       queueOp("delete_event", Object.assign({}, x, { occurrence_start: x.occurrence_start || e.start }))
       return { ok: true, note: QUEUED }
+    }
+    case "hide_event": {
+      const e = v.events.find(ev => ev.id === x.id && (!x.occurrence_start || ev.start === x.occurrence_start)) || v.events.find(ev => ev.id === x.id)
+      if (!e) return { error: "событие не найдено" }
+      evHide(e, !!x.all); render()
+      return { ok: true, note: `Скрыто в IZIDAY, в исходном календаре осталось. Скажи: «${evHideMsg(e, !!x.all)}».` }
+    }
+    case "unhide_event": {
+      const H = evHides(), q = String(x.query || "").toLowerCase().trim()
+      const hit = q ? H.filter(h => h.title.toLowerCase().includes(q) || core.titleMatches(h.title, q)) : []
+      if (!hit.length) return { hidden: H.slice(-30).map(h => ({ title: h.title, start: h.start, calendar: h.cal, all: !!h.all })), note: q ? "такого скрытого нет — вот список" : "назови, какое вернуть" }
+      hit.forEach(h => remove("goals", h.id)); render()
+      return { ok: true, restored: hit.map(h => h.title) }
     }
     case "get_reminders": {
       let list = x.include_completed ? v.reminders : openRems(v)
@@ -1557,7 +1596,7 @@ function agentSystem() {
 - Поездка к сроку («отвезти детей в школу к 7:50», «быть в аэропорту к 9»): событие с названием-глаголом поездки («Отвезти детей в школу»), location — адрес назначения. Конец события = время прибытия, которое назвал пользователь; начало = прибытие минус дорога (route_to до места, с пробками), округли до минуты. Никаких своих запасов сверху: если пользователь сказал «за 10 минут до урока в 8:00» — прибытие 7:50, и всё. Пример: уроки в 8:00, приезжать за 10 минут, ехать 18 мин → событие 7:32–7:50. «Пора выезжать» приложение пришлёт само примерно за 3 минуты до выезда — не ставь для этого напоминаний и подсказок plan_day и не называй другое время пуша. «Каждый будний день» — обязательно repeat {freq: weekly, days: [MO,TU,WE,TH,FR]}, а не одно событие.
 - Время без «утра/вечера»: встречи, спорт, свидания, ужины после 6 обычно вечером; созвоны и работа — днём. Если перепутать дорого и неясно — спроси.
 - Уточняй через ask_user, только если без ответа нельзя сделать правильно: не названо новое время переноса, несколько подходящих событий, не указан способ оплаты (наличные или перевод). Давай короткие варианты ответа.
-- Календарь — Google Календарь пользователя: события создаёшь, переносишь и удаляешь сразу (create_event/update_event/delete_event). Если инструмент ответил, что изменение ушло в очередь виджета, — скажи коротко «внесу при обновлении виджета».
+- Календарь — Google Календарь пользователя: события создаёшь, переносишь и удаляешь сразу (create_event/update_event/delete_event). «Убери/удали событие» — это всегда выполнимо: если календарь не даёт удалить (праздники, чужой или подписанный календарь), delete_event сам скрывает событие в IZIDAY — никогда не отвечай «не могу удалить», скажи одной фразой, что скрыл и что в исходном календаре оно осталось. Вернуть — unhide_event. Если инструмент ответил, что изменение ушло в очередь виджета, — скажи коротко «внесу при обновлении виджета».
 - Про воду НЕ создавай напоминаний (они захламляют список) — о воде напоминай сам: подсказки plan_day в нужное время и вопросы в чате.
 - Напоминания живут в IZIDAY, а не в Напоминаниях iPhone: create_reminder сохраняет их в приложении, уведомление в срок и контроль «Выполнил?» — от IZIDAY. Повторяющиеся (каждый день, по будням) — через repeat. В Напоминания iPhone ничего не вноси.
 ${cals.length ? `- Календари по словам пользователя: ${cals.map(x => `«${x.calendar}» (список напоминаний «${x.list}»)`).join(", ")}.${cals.filter(x => x.hint).map(x => ` ${x.hint} — «${x.calendar}».`).join("")} Если календарь не назван, не указывай его.
@@ -1739,7 +1778,7 @@ const dropThinking = messages => messages.forEach(m => {
 // Один ход помощника: Claude думает и вызывает инструменты, пока не даст ответ
 let chatStopCtl = null
 // Что помощник делает прямо сейчас — подпись у «…» в чате
-const TOOL_STATUS = { get_events: "смотрю календарь", create_event: "создаю событие", update_event: "переношу событие", delete_event: "удаляю событие",
+const TOOL_STATUS = { get_events: "смотрю календарь", create_event: "создаю событие", update_event: "переношу событие", delete_event: "удаляю событие", hide_event: "скрываю событие", unhide_event: "возвращаю событие",
   get_reminders: "смотрю напоминания", create_reminder: "ставлю напоминание", update_reminder: "меняю напоминание", delete_reminder: "удаляю напоминание",
   add_money: "записываю расход", save_receipt: "запоминаю цены из чека", add_jar: "завожу копилку", jar_deposit: "откладываю в копилку", add_debt: "записываю долг", get_money: "смотрю деньги", delete_money: "удаляю операцию", set_budget: "ставлю лимит", add_recurring: "добавляю платёж", pay_recurring: "отмечаю оплату",
   add_food: "записываю еду", add_water: "записываю воду", add_workout: "записываю тренировку", get_health: "смотрю здоровье", get_history: "смотрю историю",
@@ -2340,6 +2379,7 @@ async function eventSheet(e) {
     if (gcalOn()) {
       toast("🗑 Удаляю…")
       const r = await calDo("delete", { id: e.id, occurrence_start: e.start, all_future: all })
+      if (r.error && calCantDelete(r.error)) { evHide(e, all); render(); toast(all ? "Серия скрыта в IZIDAY" : "Скрыто в IZIDAY"); return }
       toast(r.error ? `Не получилось: ${r.error}` : all ? "🗑 Удалено это и все следующие" : "🗑 Удалено"); return
     }
     queueOp("delete_event", { id: e.id, occurrence_start: e.start, all_future: all })
@@ -5511,7 +5551,7 @@ function bindToday(v) {
 // Настройки экрана — только на телефоне: D.cal {view, layers, tz, tzOn, map: {календарь: me|olya|kids|off}, names: {olya}}
 Object.assign(TD_ICO, {
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/>',
-  layers: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>', shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/>',
+  layers: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>', eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7-.4 1-1.2 2.3-2.4 3.6M6.6 6.6C4.4 8 2.8 10.2 2 12c1 2.5 5 7 10 7 1.8 0 3.4-.5 4.8-1.3"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>', shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/>',
   share: '<path d="M12 15V3M7.5 7.5L12 3l4.5 4.5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   pin: '<path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>', bell: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   grid: '<rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M7.5 13.5h2M11 13.5h2M14.5 13.5h2M7.5 17h2M11 17h2"/>',
@@ -5830,7 +5870,8 @@ function renderCal() {
     <button class="row" data-do="cal-fam"><span class="ic" style="background:${layerC("fam")}">${tdIco("fam", 18)}</span><div class="grow"><div class="t">Календарь семьи</div><div class="s">${famCal() ? "Общие дела и расписание детей — у каждого свой цвет" : "Общие дела, календарь близких и детей — каждый своим цветом"}</div></div>${tdIco("chev", 15)}</button>
     <button class="row" data-do="cal-free"><span class="ic" style="background:#0A84FF">${tdIco("share", 18)}</span><div class="grow"><div class="t">Когда я свободен</div><div class="s">Окна текстом — клиенту или другу в мессенджер</div></div>${tdIco("chev", 15)}</button>
     <button class="row" data-do="cal-tpls"><span class="ic" style="background:#5E5CE6">${tdIco("tpl", 18)}</span><div class="grow"><div class="t">Шаблоны событий</div><div class="s">${etpls().length ? esc(etpls().slice(0, 3).map(t => t.title).join(", ")) : "Длительность, адрес, напоминание и «взять с собой»"}</div></div>${tdIco("chev", 15)}</button>
-    <button class="row" data-do="cal-prot"><span class="ic" style="background:#FF9F0A">${tdIco("shield", 18)}</span><div class="grow"><div class="t">Защищённое время</div><div class="s">${pblks().length ? esc(pblks().slice(0, 3).map(p => p.title).join(", ")) : "Спорт, дети, вечер с женой — помощник его не займёт"}</div></div>${tdIco("chev", 15)}</button></div>`
+    <button class="row" data-do="cal-prot"><span class="ic" style="background:#FF9F0A">${tdIco("shield", 18)}</span><div class="grow"><div class="t">Защищённое время</div><div class="s">${pblks().length ? esc(pblks().slice(0, 3).map(p => p.title).join(", ")) : "Спорт, дети, вечер с женой — помощник его не займёт"}</div></div>${tdIco("chev", 15)}</button>${evHides().length ? `
+    <button class="row" data-do="cal-hidden"><span class="ic" style="background:#8E8E93">${tdIco("eyeoff", 18)}</span><div class="grow"><div class="t">Скрытые события</div><div class="s">${evHides().length} · ${esc(evHides().slice(-3).map(h => h.title).join(", "))}</div></div>${tdIco("chev", 15)}</button>` : ""}</div>`
   return html
 }
 function calShift(k) {
@@ -6070,6 +6111,19 @@ function freeSheet() {
   fill()
 }
 
+// Скрытые события: список с кнопкой «Вернуть». Разовые, чьё время прошло больше двух дней назад, убираются сами.
+function evHiddenList() {
+  const old = Date.now() - 2 * 864e5
+  for (const h of evHides()) if (!h.all && parseIso(h.start) && +parseIso(h.start) < old) remove("goals", h.id)
+  const l = evHides().sort((a, b) => b.date - a.date)
+  if (!l.length) return toast("Скрытых событий нет")
+  const when = h => h.all ? "все повторения" : (parseIso(h.start) ? `${shortDate(parseIso(h.start))}${/T/.test(h.start) ? ", " + hm(parseIso(h.start)) : ""}` : "")
+  const s = sheet(`<h3>Скрытые события</h3><div class="msg">Их нет в IZIDAY, но в исходном календаре они остались.</div>
+    <div>${l.map(h => `<div class="row"><div class="grow"><div class="t">${esc(h.title || "(без названия)")}</div><div class="s">${esc([when(h), h.cal].filter(Boolean).join(" · "))}</div></div><button class="chip" data-back="${esc(h.id)}">Вернуть</button></div>`).join("")}</div>
+    <div class="btns"><button class="btn primary" data-a="ok">Готово</button></div>`, { onClose: () => render() })
+  $$("[data-back]", s.el).forEach(b => b.onclick = () => { remove("goals", b.dataset.back); b.closest(".row").style.display = "none"; toast("Вернул в календарь IZIDAY"); if (!evHides().length) s.close() })
+  $('[data-a="ok"]', s.el).onclick = () => s.close()
+}
 // — 4 и 10. Цвета и слои семьи, календари Google и второй часовой пояс
 function calSettings() {
   const S = calS(), names = [...new Set(((D.gcal && D.gcal.calendars) || []).map(c => c.name || c).concat(iphone().events.filter(e => !e.fam).map(e => e.calendar).filter(Boolean)))]
@@ -6160,7 +6214,7 @@ function famEvForm(x, pref, back) {
 }
 Object.assign(DO, {
   event: () => calQuick(), "cal-open": () => { calStart = null; setTab("cal") }, "cal-today": () => { calStart = null; calAnim = "in-f"; render() },
-  "cal-set": () => calSettings(), "cal-fam": () => famCalSheet(), "cal-free": () => freeSheet(), "cal-tpls": () => etplList(), "cal-prot": () => protList(),
+  "cal-set": () => calSettings(), "cal-fam": () => famCalSheet(), "cal-hidden": () => evHiddenList(), "cal-free": () => freeSheet(), "cal-tpls": () => etplList(), "cal-prot": () => protList(),
 })
 
 // ═════════════ Изи: характер, голос и живой разговор ═════════════
