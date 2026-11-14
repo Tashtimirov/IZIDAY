@@ -28,6 +28,9 @@ export function friendsServer(opt = {}) {
       return obj
     }
     deleteRow(r) { this.cells.splice(r - 1, 1) }
+    setName(n) { this.name = n; return this }
+    getParent() { return this.parent }
+    appendRow(v) { this.cells[this.getLastRow()] = v.slice(); return this }
     setFrozenRows() {} hideColumns() {} showColumns() {} setColumnWidth() {} hideSheet() { this.hidden = true } isSheetHidden() { return !!this.hidden }
     getLastColumn() { return this.cells.reduce((m, r) => Math.max(m, r ? r.length : 0), 0) }
     getSheetId() { return 100 }
@@ -35,9 +38,10 @@ export function friendsServer(opt = {}) {
   const books = {}, trashed = [], cache = {}
   function book(name) {
     const id = "S" + (Object.keys(books).length + 1), sheets = [new Sheet("Лист1")]
-    const ss = { name, tz: "Asia/Bangkok", getSheetByName: n => sheets.find(s => s.name === n) || null, insertSheet: n => { const s = new Sheet(n); sheets.push(s); return s },
+    const ss = { name, tz: "Asia/Bangkok", getSheetByName: n => sheets.find(s => s.name === n) || null, insertSheet: n => { const s = new Sheet(n); s.parent = ss; sheets.push(s); return s },
       getSheets: () => sheets, deleteSheet: s => sheets.splice(sheets.indexOf(s), 1), getName: () => name, getId: () => id, getUrl: () => "https://docs.google.com/spreadsheets/d/" + id,
       setActiveSheet: s => { ss.active = s }, moveActiveSheet: () => {}, getSpreadsheetTimeZone: () => ss.tz, setSpreadsheetTimeZone: z => { ss.tz = z } }
+    sheets[0].parent = ss
     books[id] = ss
     return ss
   }
@@ -46,6 +50,8 @@ export function friendsServer(opt = {}) {
     ann: { aud: CLIENT, iss: "https://accounts.google.com", exp: String(Date.now() / 1000 + 3600 | 0), email_verified: "true", sub: "111", email: "Ann@example.com", name: "Аня", nonce: "n1" },
     bob: { aud: CLIENT, iss: "accounts.google.com", exp: String(Date.now() / 1000 + 3600 | 0), email_verified: "true", sub: "222", email: "bob@example.com", name: "Боб" },
     alien: { aud: "other-site", iss: "accounts.google.com", exp: String(Date.now() / 1000 + 3600 | 0), email_verified: "true", sub: "333", email: "x@example.com" },
+    cat: { aud: CLIENT, iss: "accounts.google.com", exp: String(Date.now() / 1000 + 3600 | 0), email_verified: "true", sub: "555", email: "cat@example.com", name: "Катя" },
+    dan: { aud: CLIENT, iss: "accounts.google.com", exp: String(Date.now() / 1000 + 3600 | 0), email_verified: "true", sub: "666", email: "dan@example.com", name: "Дэн" },
     old: { aud: CLIENT, iss: "accounts.google.com", exp: String(Date.now() / 1000 - 10 | 0), email_verified: "true", sub: "444", email: "y@example.com" },
   }
   const tzFmt = (d, tz, f) => {
@@ -55,11 +61,11 @@ export function friendsServer(opt = {}) {
     return f.replace("yyyy", p.year).replace("MM", p.month).replace("dd", p.day).replace("HH", p.hour).replace("mm", p.minute).replace("ss", p.second).replace("'T'", "T").replace("'Z'", "Z").replace(/^H$/, String(+p.hour)).replace(/^u$/, String(u))
   }
   const g = {
-    SpreadsheetApp: { create: n => book(n), openById: id => { if (!books[id]) throw new Error("нет таблицы"); return books[id] } },
+    SpreadsheetApp: { flush() {}, create: n => book(n), openById: id => { if (!books[id]) throw new Error("нет таблицы"); return books[id] } },
     DriveApp: { createFolder: n => ({ getId: () => "FOLDER" }), getFolderById: () => ({}), getFileById: id => ({ moveTo: () => {}, setTrashed: v => { if (v) { trashed.push(id); delete books[id] } } }) },
     MailApp: { sendEmail: (...a) => mails.push(a) },
     Session: { getEffectiveUser: () => ({ getEmail: () => "owner@example.com" }) },
-    Logger: { log: () => {} },
+    Logger: { log: (...a) => { if (process.env.GSLOG) console.log("LOG", ...a) } },
     Maps: {},
     Utilities: {
       formatDate: tzFmt,
@@ -72,7 +78,8 @@ export function friendsServer(opt = {}) {
     LockService: { getScriptLock: () => ({ waitLock() {}, tryLock() { return true }, releaseLock() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = String(v) }, deleteProperty: k => { delete props[k] }, getKeys: () => Object.keys(props) }) },
     ContentService: { createTextOutput: s => ({ setMimeType: () => JSON.parse(s) }), MimeType: { JSON: 1 } },
-    ScriptApp: { getProjectTriggers: () => [{ getHandlerFunction: () => "pushTick" }], newTrigger: () => ({ timeBased: () => ({ everyMinutes: () => ({ create() {} }) }) }) },
+    HtmlService: { createHtmlOutput: h => ({ html: h, setTitle() { return this } }) },
+    ScriptApp: { getService: () => ({ getUrl: () => "https://script.google.com/macros/s/TEST/exec" }), getProjectTriggers: () => [{ getHandlerFunction: () => "pushTick" }], newTrigger: () => ({ timeBased: () => ({ everyMinutes: () => ({ create() {} }) }) }) },
     UrlFetchApp: { fetchAll: reqs => reqs.map(q => g.UrlFetchApp.fetch(q.url, q)), fetch: (url, o = {}) => {
       if (opt.google) { const r = opt.google(url, o); if (r) return { getResponseCode: () => r.code || 200, getContentText: () => r.body == null ? "" : typeof r.body === "string" ? r.body : JSON.stringify(r.body) } }
       if (/tokeninfo/.test(url)) { const k = decodeURIComponent(url.split("id_token=")[1]); const t = tokens[k]

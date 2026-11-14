@@ -935,7 +935,12 @@ const AGENT_TOOLS = [
     input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "add_shopping", description: "Добавить в список покупок («купить молоко и хлеб» — два пункта). Рядом с магазином из списка (add_store) придёт напоминание.",
     input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } } }, required: ["items"] } },
-  { name: "get_shopping", description: "Что осталось купить и у каких магазинов напоминать.", input_schema: { type: "object", properties: {} } },
+  { name: "get_shopping", description: "Что осталось купить, у каких магазинов напоминать, примерная сумма по ценам из чеков и магазины с сохранёнными чеками.", input_schema: { type: "object", properties: {} } },
+  { name: "save_receipt", description: "Запомнить позиции и цены чека из МАГАЗИНА (не кафе): для списка покупок и примерной суммы. Вызывай вместе с ask_user «Записать расход?» в том же ответе. Совпавшие пункты списка покупок отметятся купленными. Расход этот инструмент НЕ записывает.",
+    input_schema: { type: "object", properties: { store: { type: "string", description: "Сеть коротко: «Big C», «Makro», «7-Eleven», «Tops», «Lotus's»; рынок — «Рынок»" },
+      date: { type: "string", description: "YYYY-MM-DD из чека" }, currency: { type: "string", description: "Валюта чека (THB, RUB, USD…), если не основная" },
+      items: { type: "array", items: { type: "object", properties: { name: { type: "string", description: "Коротко на языке пользователя, как пишут в списке покупок: «Молоко Meiji 2 л», «Яйца 30 шт»" },
+        price: { type: "number", description: "Цена за штуку после скидки на позицию" }, qty: { type: "number" }, total: { type: "number" } }, required: ["name"] } } }, required: ["store", "items"] } },
   { name: "shop_done", description: "Отметить купленным (done=false — вернуть в список).", input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } }, done: { type: "boolean" } }, required: ["items"] } },
   { name: "add_store", description: "Магазин, у которого напоминать о покупках («напоминай о покупках у Big C / Makro»). Находит филиалы рядом; виджет пришлёт список, когда пользователь будет рядом и есть что купить.",
     input_schema: { type: "object", properties: { query: { type: "string", description: "Сеть или адрес магазина" }, radius_m: { type: "number", description: "По умолчанию 400" } }, required: ["query"] } },
@@ -1368,7 +1373,10 @@ async function runTool(name, x) {
       return { ok: true, money_id: m.id }
     }
     case "add_shopping": { const added = shopAdd(x.items || []); return { ok: true, added: added.map(s => s.title), to_buy: shopOpen().map(s => s.title) } }
-    case "get_shopping": return { to_buy: shopOpen().map(s => s.title), stores: shopStores().map(p => p.query) }
+    case "get_shopping": { const st = shopStoreSel(), e = shopEstimate(st)
+      return { to_buy: shopOpen().map(s => s.title), stores: shopStores().map(p => p.query), receipt_stores: storeCats().map(g => ({ store: g.title, receipts: g.rc || 1, usual: (g.items || []).slice(0, 8).map(i => `${i.n} — ${Math.round(i.p)}`) })),
+        ...(e.known ? { estimate: { sum: e.sum, priced: e.known, of: e.all, store: st ? st.title : "" } } : {}) } }
+    case "save_receipt": return receiptSave(x)
     case "shop_done": {
       const done = x.done !== false, hit = []
       for (const t of x.items || []) { const s = done ? shopFind(t) : live(D.shop).filter(z => z.done).sort((a, b) => b.doneAt - a.doneAt).find(z => normT(z.title).includes(normT(t))); if (s) { shopToggle(s.id, done); hit.push(s.title) } }
@@ -1557,7 +1565,7 @@ ${cals.length ? `- Календари по словам пользователя
 - Фото или файл от пользователя — сначала пойми, что это, и действуй. Если к вложению есть подпись («это мой обед», «оплатить до пятницы», «это для Оли») — исходи из неё: она важнее догадок по картинке.
   • Еда или блюдо: что это, порция, ккал и БЖУ одной строкой; спроси ask_user «Записать в еду?» [Да, Нет] и при «Да» — add_food.
   • Счёт, инвойс, квитанция к оплате (коммуналка, интернет, аренда, штраф и т. п.): от кого, за что, сумма с валютой, срок оплаты (если есть — и сколько дней осталось), номер счёта/реквизиты кратко. Если есть срок или его можно понять — спроси ask_user «Напомнить об оплате?» [За день до срока, В день срока, Не нужно] и создай create_reminder «Оплатить <от кого> — <сумма>» на 10:00 нужного дня. Счёт ещё не оплачен — расход не записывай.
-  • Чек из магазина, кафе или ресторана: где и когда, позиции списком «название — цена» (переведи на русский, оригинал в скобках, если неясно), скидки и сервисный сбор, итог. Затем ask_user «Записать расход <итог>?» [Наличные, Карта / перевод, Не записывать] и add_money с подходящей категорией и коротким комментарием (магазин, 2–3 главных позиции). Дата — из чека, если не сегодня.
+  • Чек из магазина, кафе или ресторана: где и когда, позиции списком «название — цена» (переведи на русский, оригинал в скобках, если неясно), скидки и сервисный сбор, итог. Затем ask_user «Записать расход <итог>?» [Наличные, Карта / перевод, Не записывать] и add_money с подходящей категорией и коротким комментарием (магазин, 2–3 главных позиции). Дата — из чека, если не сегодня. Чек из магазина (не кафе) — в том же ответе, что и ask_user, вызови save_receipt (магазин, позиции с ценой за штуку и количеством): так в «Покупках» появятся цены. Расход записывай только через add_money, один раз. Если save_receipt отметил пункты списка купленными — скажи об этом одной фразой.
   • Другое (документ, скриншот, визитка…): кратко перескажи главное и предложи, что можно сделать (событие, напоминание, расход).
   Отвечай коротко, без лишних вступлений.
 - «Этот платёж не вноси / он по работе» про платёж, которого ещё нет в расходах (придёт по карте позже) — сразу skip_card_payment, не проси пользователя напомнить потом.
@@ -1733,7 +1741,7 @@ let chatStopCtl = null
 // Что помощник делает прямо сейчас — подпись у «…» в чате
 const TOOL_STATUS = { get_events: "смотрю календарь", create_event: "создаю событие", update_event: "переношу событие", delete_event: "удаляю событие",
   get_reminders: "смотрю напоминания", create_reminder: "ставлю напоминание", update_reminder: "меняю напоминание", delete_reminder: "удаляю напоминание",
-  add_money: "записываю расход", add_jar: "завожу копилку", jar_deposit: "откладываю в копилку", add_debt: "записываю долг", get_money: "смотрю деньги", delete_money: "удаляю операцию", set_budget: "ставлю лимит", add_recurring: "добавляю платёж", pay_recurring: "отмечаю оплату",
+  add_money: "записываю расход", save_receipt: "запоминаю цены из чека", add_jar: "завожу копилку", jar_deposit: "откладываю в копилку", add_debt: "записываю долг", get_money: "смотрю деньги", delete_money: "удаляю операцию", set_budget: "ставлю лимит", add_recurring: "добавляю платёж", pay_recurring: "отмечаю оплату",
   add_food: "записываю еду", add_water: "записываю воду", add_workout: "записываю тренировку", get_health: "смотрю здоровье", get_history: "смотрю историю",
   log_weight: "записываю вес", mark_habit: "отмечаю привычку", read_sheet: "читаю таблицу", route_to: "считаю дорогу", remind_near: "ищу места", where_was_i: "смотрю, где вы были",
   mail_search: "ищу в почте", mail_read: "читаю письмо", mail_send: "отправляю письмо", mail_reply: "отвечаю на письмо", mail_draft: "сохраняю черновик", mail_modify: "разбираю почту",
@@ -2576,7 +2584,7 @@ const CB_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 const CB_STOP = '<svg viewBox="0 0 24 24"><rect x="7.5" y="7.5" width="9" height="9" rx="1.8" fill="currentColor"/></svg>'
 const linkify = s => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`)
 function chatItems() {
-  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я — ${esc(iziName())}, ${iziG("ваш помощник", "ваша помощница")}: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Пишите в строке внизу или нажмите микрофон в ней и говорите, потом — зелёную стрелку. Например: «завтра в 10 встреча с Олей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
+  if (!D.chat.length) return `<div class="empty" style="text-align:center;padding:30px 10px">Я — ${esc(iziName())}, ${iziG("ваш помощник", "ваша помощница")}: встречи, напоминания, деньги, еда — и просто поговорить.<br><br>Пишите в строке внизу или нажмите микрофон в ней и говорите, потом — зелёную стрелку. Например: «завтра в 10 встреча с Сашей», «потратил 300 на такси наличными», «что у меня на неделе?»</div>`
   const last = D.chat.length - 1
   return D.chat.slice(-60).map((m, i, arr) => {
     const isLast = i === arr.length - 1 && askWait
@@ -2671,6 +2679,7 @@ function renderMore() {
     : `<div class="banner"><b>Поставьте на экран «Домой»</b>Нажмите «Поделиться» ⎋ внизу Safari → «На экран «Домой»». Приложение будет открываться отдельно и мгновенно.</div>`
   const z = IZI()
   html += iziCard()
+  if (window.GROW) html += GROW.cards()   // заявка на подписку и «Пригласить друга» (grow.js)
   html += langCard()
   html += curCard()
   if (c && c.friend) html += FRIEND.card()
@@ -3180,6 +3189,8 @@ function shopCard() {
   const list = shopOpen(), st = shopStores()
   let html = `<div class="card" id="shop"><h2>Покупки<button class="act" data-do="shop">+ Добавить</button></h2>`
   html += list.map(s => `<div class="row"><button class="check" data-shop="${esc(s.id)}"></button><div class="grow"><div class="t">${esc(s.title)}</div></div></div>`).join("")
+  const e = storeCats().length ? shopEstimate() : null, sel = shopStoreSel()
+  if (e && e.known) html += `<div class="sh-est small">≈ ${core.money(e.sum)} на кассе${sel ? " в " + esc(sel.title) : ""}${e.known < e.all ? ` · цены есть для ${e.known} из ${e.all}` : ""}</div>`
   html += `<div class="muted small" style="margin:8px 4px 0">${st.length ? ei("cart") + "Напомню у: " + st.map(p => esc(p.query)).join(", ") : "Скажите помощнику «напоминай о покупках у Big C» — пришлю список, когда будете рядом."}</div>`
   return html + `</div>`
 }
@@ -3188,6 +3199,79 @@ async function shopForm() {
   if (!t) return
   const a = shopAdd(t.split(/[,;\n]|\s+и\s+/))
   render(); toast(a.length ? `🛒 В списке: ${shopOpen().length}` : "Уже в списке")
+}
+
+// ── Магазины по чекам: Изи при разборе фото чека сохраняет позиции и цены (save_receipt) в goals kind "store".
+// В «Покупках» — выбор магазина, цены у пунктов, «обычно беру здесь» и примерная сумма на кассе.
+// Пункт каталога: { n: название, p: цена за штуку в базовой валюте, q: сколько обычно, c: в скольких чеках, at: дата чека }
+const shopKey = s => normT(s).replace(/[«»"'.,()]/g, " ").replace(/\s+/g, " ").trim()
+const storeCats = () => live(D.goals).filter(g => g.kind === "store" && g.title).sort((a, b) => (b.last || 0) - (a.last || 0))
+const storeFind = t => { const k = shopKey(t); if (!k) return null; const all = storeCats(); return all.find(g => shopKey(g.title) === k) || all.find(g => shopKey(g.title).includes(k) || k.includes(shopKey(g.title))) || null }
+// пункт каталога, подходящий к пункту списка: точное совпадение → одно содержит другое → совпало первое слово
+function catMatch(items, t) {
+  const k = shopKey(t); if (!k || !items || !items.length) return null
+  const w = k.split(" ")[0]
+  return items.find(i => shopKey(i.n) === k) || items.find(i => { const n = shopKey(i.n); return n.includes(k) || k.includes(n) }) ||
+    (w.length >= 3 ? items.find(i => shopKey(i.n).split(" ")[0] === w) : null) || null
+}
+const shopStoreSel = () => { const id = D.shopSt; return (id && storeCats().find(g => g.id === id)) || null }
+// цена пункта: из выбранного магазина, иначе самая свежая из любого (тогда other = true — показываем «≈»)
+function shopPrice(t, st) {
+  if (st) { const i = catMatch(st.items, t); if (i) return { p: i.p, q: i.q || 1, other: false, i } }
+  let best = null
+  for (const g of storeCats()) { if (st && g.id === st.id) continue; const i = catMatch(g.items, t); if (i && (!best || (i.at || 0) > (best.i.at || 0))) best = { p: i.p, q: i.q || 1, other: true, i, g } }
+  return best
+}
+function shopEstimate(st = shopStoreSel()) {
+  let sum = 0, known = 0
+  const list = shopOpen()
+  for (const s of list) { const r = shopPrice(s.title, st); if (r) { sum += r.p * r.q; known++ } }
+  return { sum: Math.round(sum), known, all: list.length }
+}
+function receiptSave(x) {
+  const store = String(x.store || "").trim()
+  if (!store) return { error: "нужно название магазина" }
+  const rows = (x.items || []).map(i => { const q = Math.max(1, Math.round(+i.qty || 1)); return { n: String(i.name || "").trim(), q, p: +i.price || (+i.total > 0 ? +i.total / q : 0) } }).filter(i => i.n && i.p > 0)
+  if (!rows.length) return { error: "нет позиций с ценой" }
+  const B = baseCur(), fc = x.currency && x.currency !== B && CUR[x.currency] ? x.currency : ""
+  const d = parseIso(x.date), at = d ? d.getTime() : Date.now()
+  const old = storeFind(store), items = old ? (old.items || []).map(i => Object.assign({}, i)) : []
+  let fresh = 0
+  for (const r of rows) {
+    const p = Math.round((fc ? fx(r.p, fc, B) : r.p) * 100) / 100
+    const i = items.find(z => shopKey(z.n) === shopKey(r.n))
+    if (i) { if (at >= (i.at || 0)) { i.p = p; i.q = r.q; i.at = at } i.c = (i.c || 1) + 1 }
+    else { items.push({ n: r.n.charAt(0).toUpperCase() + r.n.slice(1), p, q: r.q, c: 1, at }); fresh++ }
+  }
+  items.sort((a, b) => (b.c || 1) - (a.c || 1) || (b.at || 0) - (a.at || 0))
+  const g = upsert("goals", Object.assign({}, old || { id: uid("st"), date: Date.now(), kind: "store", title: store }, { items: items.slice(0, 300), rc: ((old && old.rc) || 0) + 1, last: Math.max(at, (old && old.last) || 0) }))
+  // что из списка покупок есть в чеке — отмечаем купленным
+  const marked = []
+  for (const s of shopOpen()) if (catMatch(rows, s.title)) { shopToggle(s.id, true); marked.push(s.title) }
+  if (D.shopSt == null) { D.shopSt = g.id; save() }
+  return { ok: true, store: g.title, remembered: rows.length, new_items: fresh, receipts: g.rc, marked_bought: marked, to_buy: shopOpen().map(s => s.title) }
+}
+// лист «Обычно в …»: отметить нужное → в список, внизу примерная сумма
+function shopUsual(st, onDone) {
+  const open = shopOpen()
+  const items = (st.items || []).filter(i => !open.some(s => catMatch([i], s.title))).slice(0, 60), on = new Set()
+  const tot = () => items.filter((_, k) => on.has(k)).reduce((a, i) => a + i.p * (i.q || 1), 0)
+  const meta = i => (i.c > 1 ? `в ${i.c} ${plural(i.c, "чеке", "чеках", "чеках")} из ${st.rc || i.c}` : "был в 1 чеке") + (i.q > 1 ? ` · обычно ${i.q} шт` : "")
+  const s = sheet(`<div class="sh-head">${icoBox("cart")}<div class="grow"><h3>${esc(st.title)}</h3><div class="muted small">Обычно берёте здесь · из ${st.rc || 1} ${plural(st.rc || 1, "чека", "чеков", "чеков")}, частое сверху</div></div></div>
+    <div>${items.length ? items.map((i, k) => `<div class="row"><button class="check" data-u="${k}"></button><div class="grow"><div class="t">${esc(i.n)}</div><div class="s">${meta(i)}</div></div><div class="sh-pr">${core.money(Math.round(i.p * (i.q || 1)))}</div></div>`).join("") : `<div class="empty">Всё, что вы здесь обычно берёте, уже в списке</div>`}</div>
+    <div class="sh-tot" id="u-tot"></div>
+    <div class="btns"><button class="btn" data-a="no">Закрыть</button><button class="btn primary" data-a="ok" disabled>Добавить в список</button></div>`)
+  const upd = () => {
+    const n = on.size, box = $("#u-tot", s.el)
+    box.innerHTML = n ? `<div><div class="muted small">Отмечено ${n} · примерно</div><b>≈ ${core.money(Math.round(tot()))}</b></div><div class="muted small" style="text-align:right">цены из чеков<br>${esc(st.title)}</div>` : ""
+    box.style.display = n ? "" : "none"
+    const ok = $('[data-a="ok"]', s.el); ok.disabled = !n; ok.textContent = n ? `Добавить ${n} в список` : "Добавить в список"
+  }
+  $$("[data-u]", s.el).forEach(b => b.onclick = () => { const k = +b.dataset.u; if (on.has(k)) on.delete(k); else on.add(k); b.classList.toggle("on", on.has(k)); if (navigator.vibrate) navigator.vibrate(10); upd() })
+  $('[data-a="no"]', s.el).onclick = () => s.close()
+  $('[data-a="ok"]', s.el).onclick = () => { const a = shopAdd(items.filter((_, k) => on.has(k)).map(i => i.n)); s.close(); toast(`В списке: ${shopOpen().length}`); if (onDone) onDone(a) }
+  upd()
+  return s
 }
 
 // ── Дела детей по дням недели: кружки, кто забирает, что взять. Пуш утром в 7:00 и за 30 минут (таблица) ──
@@ -3686,9 +3770,9 @@ function listOpen(key) {
 let undoRedraw = null
 function itemSheet(title, sub, items, h) {
   const open = items.filter(x => !x.done), done = items.filter(x => x.done)
-  const one = x => `<div class="row"><button class="check ${x.done ? "on" : ""}" data-it="${esc(x.id)}"></button><div class="grow"><div class="t ${x.done ? "struck" : ""}">${esc(x.t)}</div></div><button class="x-btn" data-ix="${esc(x.id)}" aria-label="Убрать">${ICO.x}</button></div>`
+  const one = x => `<div class="row"><button class="check ${x.done ? "on" : ""}" data-it="${esc(x.id)}"></button><div class="grow"><div class="t ${x.done ? "struck" : ""}">${esc(x.t)}</div>${x.s ? `<div class="s">${esc(x.s)}</div>` : ""}</div>${x.pr ? `<div class="sh-pr">${esc(x.pr)}</div>` : ""}<button class="x-btn" data-ix="${esc(x.id)}" aria-label="Убрать">${ICO.x}</button></div>`
   const s = sheet(`<div class="sh-head">${h.ico ? icoBox(h.ico) : ""}<div class="grow"><h3>${esc(title)}</h3><div class="muted small">${esc(sub)}</div></div></div>
-    <div class="add-line"><input id="it-t" placeholder="+ Добавить пункт" enterkeyhint="done"><button class="btn primary small" data-a="add">Добавить</button></div>
+    ${h.top || ""}<div class="add-line"><input id="it-t" placeholder="+ Добавить пункт" enterkeyhint="done"><button class="btn primary small" data-a="add">Добавить</button></div>
     <div>${open.map(one).join("") || (done.length ? "" : `<div class="empty">${esc(h.empty)}</div>`)}</div>
     ${done.length ? `<div class="sub-h">Отмечено · ${done.length}</div><div>${done.map(one).join("")}</div>` : ""}
     <div class="btns" style="margin-top:12px">${h.extra || ""}<button class="btn" data-a="no">Готово</button></div>`, { onClose: () => { if (undoRedraw === redraw) undoRedraw = null; render() } })
@@ -3719,11 +3803,27 @@ function listSheet(id, focus) {
     } })
 }
 function shopSheet(focus) {
-  const it = live(D.shop).filter(x => !x.done || (x.doneAt && x.doneAt > Date.now() - 3 * 864e5)).sort((a, b) => a.date - b.date).map(x => ({ id: x.id, t: x.title, done: !!x.done }))
-  const st = shopStores()
-  itemSheet("Покупки", st.length ? "Напомню у: " + st.map(p => p.query).join(", ") : `${it.filter(x => !x.done).length} купить`, it, { ico: "cart", focus, empty: "Скажите помощнику «купить молоко и хлеб» или добавьте здесь",
+  const st = shopStoreSel(), cats = storeCats()
+  const it = live(D.shop).filter(x => !x.done || (x.doneAt && x.doneAt > Date.now() - 3 * 864e5)).sort((a, b) => a.date - b.date).map(x => {
+    const r = !x.done && cats.length ? shopPrice(x.title, st) : null
+    return { id: x.id, t: x.title, done: !!x.done, pr: r ? (r.other ? "≈ " : "") + core.money(Math.round(r.p * r.q)) : "",
+      s: r ? (r.q > 1 ? `${r.q} шт · ${core.money(Math.round(r.p))} за шт` : "") + (r.other ? `${r.q > 1 ? " · " : ""}цена из ${r.g.title}` : "") : (st && !x.done ? `в ${st.title} ещё не брали` : "") }
+  })
+  const places = shopStores(), e = shopEstimate(st)
+  let top = ""
+  if (cats.length) {
+    top += `<div class="chips sh-st">${cats.map(g => `<button class="chip ${st && st.id === g.id ? "on" : ""}" data-st="${esc(g.id)}">${esc(g.title)}</button>`).join("")}<button class="chip ${st ? "" : "on"}" data-st="">Любой</button></div>`
+    if (e.known) top += `<div class="sh-tot"><div><div class="muted small">Примерно на кассе</div><b>≈ ${core.money(e.sum)}</b></div><div class="muted small" style="text-align:right">${e.known < e.all ? `цены есть для ${e.known} из ${e.all}` : "по прошлым чекам"}${st ? "<br>" + esc(st.title) : ""}</div></div>`
+  } else top = `<div class="muted small sh-hint">Сфотографируйте чек в чате с Изи: я запомню магазин и цены, и здесь будет видна примерная сумма.</div>`
+  const sub = st ? `${st.title} · ${it.filter(x => !x.done).length} купить` : places.length ? "Напомню у: " + places.map(p => p.query).join(", ") : `${it.filter(x => !x.done).length} купить`
+  itemSheet("Покупки", sub, it, { ico: "cart", focus, top, empty: "Скажите помощнику «купить молоко и хлеб» или добавьте здесь",
+    extra: st && (st.items || []).length ? `<button class="btn primary" data-a="usual">Выбрать из обычных покупок</button>` : "",
     toggle: iid => { const x = it.find(z => z.id === iid); shopToggle(iid, !x.done) }, del: iid => remove("shop", iid), add: t => shopAdd(t.split(/[,;\n]/)),
-    again: (s, f) => { s.close(); shopSheet(f) } })
+    again: (s, f) => { s.close(); shopSheet(f) },
+    bind: s => {
+      $$("[data-st]", s.el).forEach(b => b.onclick = () => { D.shopSt = b.dataset.st; save(); s.close(); shopSheet() })
+      const u = $('[data-a="usual"]', s.el); if (u) u.onclick = () => { s.close(); shopUsual(st, () => shopSheet()) }
+    } })
 }
 function listForm() {
   let ico = "list"
@@ -6093,7 +6193,7 @@ function iziStyle() {
   if (z.goals) out.push(`Цели: ты коуч по целям (подсказки включены пользователем). Когда речь о целях, мечтах, планах, деньгах на цель или застрявшем деле — подскажи, как поставить и достичь: цель конкретная и измеримая, со сроком (SMART); большой цели — веха на месяц и шаг на эту неделю; первый шаг — меньше 15 минут и в календарь; план «если — то» («если вечером устал, то хотя бы 10 минут»); заранее назвать главное препятствие и что делать с ним (WOOP); финансовая цель — сумма, срок и сколько откладывать в месяц (копилка add_jar). Застряло 2 недели — уменьшить шаг, а не ругать себя. Отмечай маленькие победы. Не больше одного совета за ответ и не в каждом сообщении — только к месту.`)
   if (z.psy) out.push(`Психология: опирайся на доказательные подходы (КПТ, мотивационное интервью, теория самодетерминации, привязанность, эмоциональный интеллект). Когда человеку тяжело — сначала услышь и назови чувство, потом спроси, чего он хочет: совета или просто выговориться. Мягко замечай искажения мышления («всё или ничего», катастрофизация, чтение мыслей) и предлагай взгляд шире. В отношениях с женой, детьми, родителями и людьми помогай понять другую сторону и подобрать слова; про токсичных людей — честно про границы. Ты не врач и не ставишь диагнозов. Если звучат мысли о самоповреждении или о том, что жить не хочется, — отнесись серьёзно, будь рядом и мягко предложи сразу связаться с близким человеком и специалистом или экстренной помощью (в Таиланде 1669, психологическая линия 1323).`)
   out.push(`Люди и сообщения: помочь написать кому-то (жене, родителям, другу, клиенту) — draft_message, в нужном тоне и с учётом того, что знаешь о человеке; в ответе черновик не повторяй. После встречи пользователь рассказывает, что договорились — сам создай дела и напоминания со сроками и запомни договорённости о человеке через remember.`)
-  out.push(`«Напомни, когда придёт зарплата / буду с Олей / приду в офис» — remind_when (по доходу, человеку или событию календаря); «когда буду рядом с местом» — remind_near. Фото договора — стороны, суммы и сроки, предложи напоминания; меню или этикетка — ккал и БЖУ; дневник или задание ребёнка — что и к какому сроку.`)
+  out.push(`«Напомни, когда придёт зарплата / буду с Сашей / приду в офис» — remind_when (по доходу, человеку или событию календаря); «когда буду рядом с местом» — remind_near. Фото договора — стороны, суммы и сроки, предложи напоминания; меню или этикетка — ккал и БЖУ; дневник или задание ребёнка — что и к какому сроку.`)
   out.push(z.learn ? "Самообучение включено: замечай, что работает с этим человеком (какие советы он принимает, что раздражает, как ему удобнее), и сохраняй выводы через remember как предпочтения." : "Самообучение выключено: сам выводы и предпочтения не запоминай — только факты, которые просят запомнить.")
   if (TALK) out.push(`Сейчас живой голосовой разговор: твой ответ сразу читается вслух голосом ${z.g === "f" ? "девушки" : "мужчины"}. Отвечай как в разговоре: 1–3 коротких предложения, без списков, Markdown, ссылок, эмодзи и сокращений («мин», «ч», «руб»); суммы и время — словами, как их говорят. Длинное (список, письмо, план) — коротко скажи суть и что подробности в чате. Варианты выбора называй голосом. Тебя могут перебить — это нормально. Речь человека распознаётся кусками и с паузами: никогда не говори «вы прервались», «вас перебили», «вы не договорили». Если фраза похожа на оборванную — ответь на то, что уже понятно, или коротко скажи «слушаю, продолжайте».`)
   return "\n" + out.filter(Boolean).map(s => "- " + s).join("\n")
@@ -7029,7 +7129,7 @@ var IZI_TOOLS = {
 }
 var IZI_TOOL_DEFS = [
   { name: "draft_message", description: "Показать пользователю черновик сообщения человеку (жене, родителям, другу, клиенту) карточкой с кнопками WhatsApp, Telegram, «Скопировать», «Мягче», «Короче». Используй, когда просят помочь написать кому-то. Пиши от первого лица пользователя, в нужном тоне, с учётом того, что знаешь о человеке.",
-    input_schema: { type: "object", properties: { to: { type: "string", description: "кому, как называет пользователь («Оля», «мама», «Михаил»)" }, text: { type: "string" }, phone: { type: "string", description: "номер в международном формате, если известен" } }, required: ["text"] } },
+    input_schema: { type: "object", properties: { to: { type: "string", description: "кому, как называет пользователь («Саша», «мама», «Михаил»)" }, text: { type: "string" }, phone: { type: "string", description: "номер в международном формате, если известен" } }, required: ["text"] } },
   { name: "remind_when", description: "Напомнить не по времени, а по событию: on=income — когда придёт доход (match — категория или слово из комментария, например «Зарплата»); on=person — когда пользователь будет с человеком (по событию календаря с его именем, match — имя); on=event — когда начнётся событие со словом match в названии («офис», «Big C»). Место «когда буду рядом» — это remind_near.",
     input_schema: { type: "object", properties: { text: { type: "string", description: "что напомнить" }, on: { type: "string", enum: ["income", "person", "event"] }, match: { type: "string" } }, required: ["text", "on"] } },
   { name: "list_when", description: "Список напоминаний «когда…» (по доходу, человеку, событию).", input_schema: { type: "object", properties: {} } },

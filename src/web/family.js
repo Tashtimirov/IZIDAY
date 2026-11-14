@@ -771,7 +771,7 @@ async function join() {
     D.who = "kid"; save(false); await push(true); render(); window.scrollTo(0, 0)
     return
   }
-  const me = x.m ? x.nm : await ui.ask(`Вступить в семью «${x.n || "Семья"}»?`, "Как вас подписать?", D.gamiName || "", { placeholder: "Например: Оля", ok: "Вступить" })
+  const me = x.m ? x.nm : await ui.ask(`Вступить в семью «${x.n || "Семья"}»?`, "Как вас подписать?", D.gamiName || "", { placeholder: "Например: Мама", ok: "Вступить" })
   if (!me) return
   D.fam = { url: x.u, code: x.c, id: x.m || uid("m"), role: x.r || "adult", name: me, fname: x.n, data: null, at: 0, out: {}, seen: {}, me: x.m ? null : { color: COLORS[1] } }
   if (D.who === "kid") D.who = "adult"

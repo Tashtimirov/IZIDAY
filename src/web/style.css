@@ -1347,3 +1347,15 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 .fc-row { width: 100%; border: 0; background: none; text-align: left; color: var(--text); gap: 12px; }
 .fc-row > .tdi { color: var(--sub); opacity: .6; }
 .sheet #fe-r { margin: 4px 0 12px; }
+
+/* IZIDAY Плюс (заявка) и «Пригласить друга» — grow.js */
+.grow-price { font-size: 22px; font-weight: 700; letter-spacing: -.2px; margin: 2px 0 6px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.grow-price span { font-size: 13px; font-weight: 600; color: var(--sub); }
+
+/* Покупки: магазины по чекам, цены и примерная сумма */
+.sh-st { margin: 2px 0 10px; }
+.sh-pr { flex: none; font-variant-numeric: tabular-nums; color: var(--text); font-size: 15px; margin-left: 8px; }
+.sh-tot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 14px; margin: 0 0 12px; border-radius: 16px; background: color-mix(in srgb, var(--accent) 14%, var(--card)); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.sh-tot b { font-size: 24px; font-variant-numeric: tabular-nums; }
+.sh-hint { margin: 0 2px 10px; }
+.sh-est { margin: 8px 4px 0; font-weight: 600; color: var(--text); }

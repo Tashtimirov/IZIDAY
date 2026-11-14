@@ -9,7 +9,8 @@
 //
 // Свойства скрипта (задаёт владелец): ANTHROPIC_KEY — ключ Claude для Изи, GOOGLE_CLIENT — номер входа Google, GOOGLE_SECRET — его секрет
 // (для подключения Google Календаря друга); необязательно: MODEL, ALLOW (почты через запятую:
-// войти смогут только они), AI_DAY (запросов к Claude в день на человека).
+// войти смогут только они и приглашённые с одобрения), AI_DAY (запросов к Claude в день на человека),
+// REF_PER / REF_AUTO / REF_ONLY / SITE / SELF_URL — приглашения друзей (см. раздел «Пригласить друга» внизу).
 
 const FR = { client: "__GOOGLE_CLIENT__", max: 30, aiDay: 80, aiAll: 1500, model: "claude-haiku-5-5", maxTokens: 4000,
   folder: "IZIDAY Друзья", tokens: 5, pushBudget: 270e3 };
@@ -62,7 +63,11 @@ function userBySecret_(secret) {
   return id ? userGet_(id) : null;
 }
 
-function doGet() { return out_({ ok: true, friends: true }); }
+function doGet(e) {
+  const q = (e && e.parameter) || {};
+  if (q.ok && (q.a === "yes" || q.a === "no")) return growPage_(refDecide_(q.ok, q.a === "yes"));   // владелец: ссылка из письма о приглашении
+  return out_({ ok: true, friends: true });
+}
 
 function doPost(e) {
   let body;
@@ -72,6 +77,7 @@ function doPost(e) {
   if (body.metrics) return out_(metrics_(body.metrics, body.secret ? userBySecret_(body.secret) : null));   // журнал действий — без доступа к данным
   if (body.bug) return out_(bug_(body.bug, body.secret));   // недочёты: можно и без входа
   if (body.inv) return out_(inv_(body.inv));                 // код-шар: одноразовое приглашение в семью на 10 минут
+  if (body.lead) return out_(lead_(body.lead, body.secret ? userBySecret_(body.secret) : null));   // заявка на подписку: можно и без входа
   // Лиги и семьи общие для всех: хранятся в общей таблице и общих свойствах
   if (body.league && !body.secret) return out_(league_(body.league, false));
   if (body.family && !body.secret) return out_(family_(body.family, false));
@@ -90,6 +96,7 @@ function doPost(e) {
     try { return out_(deleteMe_(u)); } finally { lk.releaseLock(); }
   }
   if (body.gcal) return out_(gcalLink_(u, body.gcal));
+  if (body.ref) return out_(ref_(u, body.ref));   // «Пригласить друга»: своя ссылка и кого уже пригласил
   if (!body.hub) return out_({ ok: false, error: "нужно обновить приложение" });
   const h = body.hub, mail = h.mail, fire = h.fire;
   delete h.mail; delete h.fire; delete h.snap;   // почты, Claude Code и iPhone-виджета у друзей нет
@@ -128,8 +135,21 @@ function login_(q) {
     if (setup) return { ok: true, owner: true, setup, me: { id: "owner", name: String(t.name || "").slice(0, 60), email } };
   }
   const allow = String(GP_().getProperty("ALLOW") || "").toLowerCase().split(/[\s,;]+/).filter(Boolean);
-  if (allow.length && allow.indexOf(email) < 0) return { ok: false, error: "этой почте вход пока не открыт — напишите тому, кто прислал приложение" };
   const id = "f" + sha_("sub:" + t.sub).slice(0, 12);
+  // одобрен владельцем по приглашению (ok:<почта>) — пускаем, даже если почты нет в ALLOW
+  let approved = GP_().getProperty("ok:" + email) === "1";
+  const listed = allow.length > 0 && allow.indexOf(email) >= 0;
+  const refBy = q.ref ? refOwner_(q.ref) : null, known = !!userGet_(id);
+  if (!known && !approved && !listed && refBy && refBy.email !== email) {   // пришёл по ссылке-приглашению
+    const lk = LockService.getScriptLock(); lk.waitLock(25000);
+    try {
+      const r = refAsk_(refBy, email, String(t.name || t.given_name || email.split("@")[0]), GP_().getProperty("REF_AUTO") === "1");
+      if (!r.auto) return r;
+      approved = true;
+    } finally { lk.releaseLock(); }
+  }
+  if (allow.length && !listed && !approved) return { ok: false, error: "этой почте вход пока не открыт — попросите у друга ссылку-приглашение в IZIDAY" };
+  if (!known && !listed && !approved && GP_().getProperty("REF_ONLY") === "1") return { ok: false, error: "вход в IZIDAY по приглашению — попросите у друга ссылку" };
   const lock = LockService.getScriptLock();
   lock.waitLock(25000);
   try {
@@ -153,6 +173,7 @@ function login_(q) {
     GP_().setProperty("t:" + hash, id);
     u.seen = Date.now();
     userPut_(u);
+    if (isNew && refBy) { u.by = refBy.id; userPut_(u); refJoined_(email, q.ref); }
     if (isNew) try { MailApp.sendEmail(Session.getEffectiveUser().getEmail(), "IZIDAY: новый друг — " + u.name,
       `${u.name} (${email}) вошёл в IZIDAY. Всего друзей: ${users_().length} из ${FR.max}.`); } catch (e) {}
     return { ok: true, secret, isNew, me: meOut_(u) };
@@ -757,4 +778,153 @@ function bugWhisper_(blob) {
       headers: { Authorization: "Bearer " + key }, payload: { file: blob, model: "whisper-large-v3", language: "ru", response_format: "text" } });
     return r.getResponseCode() === 200 ? bugTxt_(String(r.getContentText()).trim(), 4000) : "";
   } catch (e) { return ""; }
+}
+
+// ═════════════ Спрос на подписку и «Пригласить друга» ═════════════
+// Подписки пока нет: кнопка в Настройках только собирает заявки {lead:{…}}, денег никто не берёт.
+// Приглашения: у каждого друга своя ссылка iziday.pages.dev/?r=КОД. Новый человек входит через Google с этим кодом —
+// сервер не пускает его сразу, а пишет владельцу письмо со ссылками «Открыть доступ» / «Отказать».
+// Предел: REF_PER приглашений на человека (по умолчанию 3) и общий FR.max на сервер. REF_AUTO=1 — пускать без одобрения,
+// REF_ONLY=1 — новые люди без приглашения не входят (кроме почт из ALLOW). Всё видно в таблице «IZIDAY — Заявки и приглашения».
+const GROW = { sheet: "IZIDAY — Заявки и приглашения", per: 3, leadHour: 60, askHour: 40, site: "https://iziday.pages.dev/",
+  leadHead: ["Когда", "Кто", "Почта", "Тариф", "Сколько комфортно платить", "Язык", "Версия", "Устройство"],
+  refHead: ["Когда", "Кто пригласил", "Почта пригласившего", "Кого", "Почта", "Статус"],
+  st: { wait: "ждёт одобрения", ok: "доступ открыт", "in": "вошёл", no: "отказано" } };
+const growPer_ = () => { const v = GP_().getProperty("REF_PER"); return v === null || v === "" ? GROW.per : Math.max(0, Number(v) || 0); };
+const growSite_ = () => GP_().getProperty("SITE") || GROW.site;
+function growBook_() {
+  const p = GP_(), id = p.getProperty("GROW_SHEET");
+  if (id) { try { return SpreadsheetApp.openById(id); } catch (e) {} }
+  const ss = SpreadsheetApp.create(GROW.sheet);
+  try { DriveApp.getFileById(ss.getId()).moveTo(folder_()); } catch (e) {}
+  try { ss.setSpreadsheetTimeZone("Asia/Bangkok"); } catch (e) {}
+  const a = ss.getSheets()[0];
+  a.setName("Подписка");
+  a.getRange(1, 1, 1, GROW.leadHead.length).setValues([GROW.leadHead]).setFontWeight("bold").setBackground("#eef2ff");
+  a.setFrozenRows(1);
+  const b = ss.insertSheet("Приглашения");
+  b.getRange(1, 1, 1, GROW.refHead.length).setValues([GROW.refHead]).setFontWeight("bold").setBackground("#eef2ff");
+  b.setFrozenRows(1);
+  p.setProperty("GROW_SHEET", ss.getId());
+  return ss;
+}
+const growTab_ = n => { const ss = growBook_(); return ss.getSheetByName(n) || ss.insertSheet(n); };
+function growBump_(k, max) {
+  const cache = CacheService.getScriptCache(), hk = k + ":" + Utilities.formatDate(new Date(), "UTC", "yyyyMMddHH"), n = Number(cache.get(hk) || 0);
+  if (n >= max) return false;
+  cache.put(hk, String(n + 1), 3700);
+  return true;
+}
+
+// ── Заявка на подписку: одна строка на человека (повторное нажатие обновляет ответ о цене, письмо не дублируется) ──
+//   {lead:{price, lang, ver, dev, id}} (+ secret, если человек вошёл)  → {ok, n}
+function lead_(q, u) {
+  if (!q || typeof q !== "object") return { ok: false, error: "пустая заявка" };
+  const key = u ? u.id : "a" + String(q.id || "").replace(/[^0-9a-z]/gi, "").slice(0, 24);
+  if (key.length < 7) return { ok: false, error: "нужно обновить приложение" };
+  if (!growBump_("lead", GROW.leadHour)) return { ok: false, error: "слишком много заявок за час — попробуйте позже" };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  let row, isNew = false, n, sh;
+  try {
+    sh = growTab_("Подписка");
+    const who = u ? u.name : bugTxt_(q.name, 60) || "без входа", mail = u ? u.email : bugTxt_(q.email, 100);
+    const vals = [new Date(), who, mail, "Плюс · 6,99 $ в месяц", bugTxt_(q.price, 40), bugTxt_(q.lang, 8), bugTxt_(q.ver, 40), bugTxt_(q.dev, 120)];
+    row = Number(GP_().getProperty("ld:" + key)) || 0;
+    if (row > 1 && row <= sh.getLastRow()) sh.getRange(row, 1, 1, vals.length).setValues([vals]);
+    else { sh.appendRow(vals); row = sh.getLastRow(); isNew = true; GP_().setProperty("ld:" + key, String(row)); }
+    n = Math.max(0, sh.getLastRow() - 1);
+    SpreadsheetApp.flush();
+    if (isNew) try { MailApp.sendEmail(Session.getEffectiveUser().getEmail(), `IZIDAY: заявка на подписку — ${who} (всего ${n})`,
+      `${who}${mail ? " (" + mail + ")" : ""} оставил(а) заявку на IZIDAY Плюс.\nКомфортная цена: ${q.price || "не указал(а)"}\n\nВсе заявки: ${sh.getParent().getUrl()}`); } catch (e) {}
+  } finally { lock.releaseLock(); }
+  return { ok: true, n };
+}
+
+// ── Приглашения ──
+function refCode_(u) {
+  if (u.ref && GP_().getProperty("r:" + u.ref) === u.id) return u.ref;
+  let c = "";
+  for (let i = 0; i < 6 && !c; i++) { const t = Utilities.getUuid().replace(/-/g, "").slice(0, 6); if (!GP_().getProperty("r:" + t)) c = t; }
+  u.ref = c; GP_().setProperty("r:" + c, u.id); userPut_(u);
+  return c;
+}
+const refUsed_ = u => (u.inv || []).filter(x => x.st !== "no").length;
+const refPending_ = () => GP_().getKeys().filter(k => /^rq:/.test(k)).length;
+function refOut_(u) {
+  const per = growPer_();
+  return { ok: true, code: refCode_(u), link: growSite_() + "?r=" + u.ref, per, left: Math.max(0, per - refUsed_(u)),
+    list: (u.inv || []).slice(-10).map(x => ({ name: x.n, st: x.st, at: x.at })) };
+}
+//   {secret, ref:{op:"get"}} → {ok, code, link, per, left, list:[{name, st, at}]}
+function ref_(u, q) { return refOut_(u); }
+function refOwner_(code) {
+  const c = String(code || "").toLowerCase();
+  if (!/^[0-9a-f]{6}$/.test(c)) return null;
+  const id = GP_().getProperty("r:" + c);
+  return id ? userGet_(id) : null;
+}
+// Новый человек пришёл по приглашению: заявка владельцу, сам человек пока не входит
+function refAsk_(by, email, name, auto) {
+  const p = GP_(), old = p.getProperty("rqe:" + email);
+  if (old && p.getProperty("rq:" + old)) return { ok: false, wait: true, error: `Заявка уже у создателя IZIDAY. Когда он откроет доступ, на ${email} придёт письмо — тогда нажмите «Войти через Google» ещё раз.` };
+  if (refUsed_(by) >= growPer_()) return { ok: false, error: `У ${by.name} закончились приглашения. Попросите его написать создателю IZIDAY.` };
+  if (users_().length + refPending_() >= FR.max) return { ok: false, error: "мест пока нет — напишите тому, кто прислал приложение" };
+  if (!growBump_("refask", GROW.askHour)) return { ok: false, error: "слишком много заявок за час — попробуйте позже" };
+  const sh = growTab_("Приглашения");
+  if (auto) {   // REF_AUTO=1: без одобрения, но в пределах REF_PER и мест
+    sh.appendRow([new Date(), by.name, by.email, bugTxt_(name, 60), email, GROW.st.ok]);
+    p.setProperty("ok:" + email, "1");
+    by.inv = (by.inv || []).filter(x => x.e !== email).concat([{ e: email, n: String(name).slice(0, 60), st: "ok", at: Date.now() }]).slice(-20);
+    userPut_(by);
+    return { auto: true };
+  }
+  const token = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, "").slice(0, 40);
+  sh.appendRow([new Date(), by.name, by.email, bugTxt_(name, 60), email, GROW.st.wait]);
+  const row = sh.getLastRow();
+  p.setProperty("rq:" + token, JSON.stringify({ email, name: String(name).slice(0, 60), by: by.id, at: Date.now(), row }));
+  p.setProperty("rqe:" + email, token);
+  by.inv = (by.inv || []).filter(x => x.e !== email).concat([{ e: email, n: String(name).slice(0, 60), st: "wait", at: Date.now() }]).slice(-20);
+  userPut_(by);
+  let base = "";
+  try { base = ScriptApp.getService().getUrl(); } catch (e) {}
+  base = p.getProperty("SELF_URL") || base;
+  try { MailApp.sendEmail(Session.getEffectiveUser().getEmail(), `IZIDAY: ${by.name} приглашает ${name}`,
+    `${by.name} (${by.email}) пригласил(а) в IZIDAY: ${name} (${email}).\n` +
+    `Занято мест: ${users_().length} из ${FR.max}, ждут одобрения: ${refPending_()}. У ${by.name} осталось приглашений: ${Math.max(0, growPer_() - refUsed_(by))}.\n\n` +
+    `Открыть доступ: ${base}?ok=${token}&a=yes\nОтказать: ${base}?ok=${token}&a=no\n\nВсе приглашения: ${sh.getParent().getUrl()}`); } catch (e) { Logger.log(e) }
+  return { ok: false, wait: true, error: `Создатель IZIDAY получил заявку. Когда он откроет доступ, на ${email} придёт письмо — тогда нажмите «Войти через Google» ещё раз.` };
+}
+// Владелец нажал ссылку в письме
+function refDecide_(token, yes) {
+  token = String(token || "").replace(/[^0-9a-f]/g, "");
+  const p = GP_(), raw = token ? p.getProperty("rq:" + token) : null;
+  if (!raw) return "Эта заявка уже решена или ссылка устарела.";
+  const rq = JSON.parse(raw), by = userGet_(rq.by);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    if (yes && users_().length >= FR.max) return `Мест нет: занято ${users_().length} из ${FR.max}. Удалите кого-нибудь или поднимите предел.`;
+    if (yes) p.setProperty("ok:" + rq.email, "1");
+    p.deleteProperty("rq:" + token); p.deleteProperty("rqe:" + rq.email);
+    if (by) { by.inv = (by.inv || []).map(x => x.e === rq.email ? Object.assign(x, { st: yes ? "ok" : "no" }) : x); userPut_(by); }
+    try { growTab_("Приглашения").getRange(rq.row, 6).setValue(yes ? GROW.st.ok : GROW.st.no); } catch (e) {}
+  } finally { lock.releaseLock(); }
+  if (yes) try { MailApp.sendEmail(rq.email, "IZIDAY: доступ открыт",
+    `Здравствуйте${rq.name ? ", " + rq.name : ""}!\n\nДоступ в IZIDAY открыт${by ? " по приглашению " + by.name : ""}. Откройте ${growSite_()} и нажмите «Войти через Google» той же почтой (${rq.email}).`); } catch (e) {}
+  return yes ? `Готово: ${rq.name || rq.email} может войти в IZIDAY. Ему ушло письмо.` : `Отказано: ${rq.name || rq.email} не войдёт.`;
+}
+// Человек вошёл после одобрения — отмечаем у пригласившего
+function refJoined_(email, refCode) {
+  const by = refOwner_(refCode);
+  if (!by || !(by.inv || []).some(x => x.e === email)) return;
+  by.inv = by.inv.map(x => x.e === email ? Object.assign(x, { st: "in" }) : x);
+  userPut_(by);
+  try { const sh = growTab_("Приглашения"), v = sh.getRange(2, 5, Math.max(1, sh.getLastRow() - 1), 1).getValues();
+    for (let i = v.length - 1; i >= 0; i--) if (String(v[i][0]).toLowerCase() === email) { sh.getRange(i + 2, 6).setValue(GROW.st["in"]); break; } } catch (e) {}
+}
+function growPage_(msg) {
+  const html = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>IZIDAY</title>` +
+    `<div style="font:17px -apple-system,system-ui,sans-serif;max-width:460px;margin:60px auto;padding:0 20px;color:#1d1d1f"><h2 style="margin:0 0 12px">IZIDAY</h2><p>${String(msg).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</p></div>`;
+  return HtmlService.createHtmlOutput(html).setTitle("IZIDAY");
 }

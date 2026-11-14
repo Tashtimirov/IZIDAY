@@ -78,8 +78,11 @@ window.FRIEND = (() => {
     const nonce = st.state && st.state === p.get("state") ? st.nonce : ""
     const wait = sheet(`<h3>Настраиваю IZIDAY…</h3><div class="msg">Готовлю ваш календарь, деньги, здоровье и ${esc(iziName())}. Это 5–15 секунд.</div>`)
     const own = mySetup()   // подключены к своей таблице — сервер запомнит её для входа владельца (чужим почтам не сохранит)
-    const r = await post({ login: { id_token: token, nonce, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "" , setup: own || undefined, own: 1 } }, 90000)
+    const r = await post({ login: { id_token: token, nonce, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "" , setup: own || undefined, own: 1,
+      ref: (window.GROW && GROW.ref()) || undefined } }, 90000)   // пришёл по ссылке «Пригласить друга»
     wait.close()
+    if (!r.ok && window.GROW && GROW.loginWait(r)) return
+    if (r.ok && window.GROW) GROW.refDone()
     if (!r.ok) return ui.info("Не получилось войти", (r.error || "сервер не ответил") + "\n\nНажмите «Войти через Google» ещё раз.")
     // владелец: сервер вернул код его основной таблицы — подключаемся к ней, как кодом из виджета
     if (r.owner && r.setup) {
