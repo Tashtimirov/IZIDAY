@@ -81,6 +81,7 @@ check(plan.b === 1 && plan.c === 2 && plan.d === 2, "оборванная поп
 check(plan.e === 2, "план с другого устройства — не составляем заново", plan)
 
 // 9. Утро и вечер: по одному заходу Изи в день
+await page.evaluate(() => { D.briefs = {} })
 const day2 = await page.evaluate(async () => {
   let calls = [], prompts = []
   window.agentTurn = async (msgs, sys, tools) => { calls.push(tools.some(t => t.name === "plan_day")); prompts.push(JSON.stringify(msgs).slice(-400)); return "Сегодня три встречи, первая в 10:00. Подсказки поставил." }
@@ -102,6 +103,28 @@ check(day2.push === 1, "уведомление утром после готов�
 check(day2.eve.calls === 2 && /Итоги дня/.test(day2.eve.sheet) && day2.eve.photo, "вечером: разбор дня, потом окно «Итоги дня» с фото дня", day2.eve)
 check(day2.eve2 === 2 && /Итоги дня/.test(day2.sheet2), "повторное нажатие вечером — сразу «Итоги дня», без запроса", day2)
 await snap("3-close")
+
+// 10. Вечером отложили — утром напоминаем разобрать вчера
+await page.evaluate(() => { stack.slice().forEach(x => x.close()); const y = dayKey(addDays(sod(new Date()), -1)); D.goals = D.goals.filter(g => !(g.kind === "daynote" && g.day === y)); D.briefs = { evening: y }; setTab("today"); render() })
+await page.waitForTimeout(400); await page.evaluate(() => document.querySelector('[data-do="td-yday"]').scrollIntoView({ block: "center" }))
+await snap("4-yday")
+const yd = await page.evaluate(async () => {
+  stack.slice().forEach(x => x.close())
+  const y = dayKey(addDays(sod(new Date()), -1))
+  D.goals = D.goals.filter(g => !(g.kind === "daynote" && g.day === y)); D.briefs = { evening: y }
+  setTab("today"); render(); await new Promise(r => setTimeout(r, 300))
+  const card = !!document.querySelector('[data-do="td-yday"]')
+  const mp = morningPrompt()
+  let got = ""; window.agentTurn = async msgs => { got = JSON.stringify(msgs).slice(-900); return "Разобрали вчера." }
+  await brief("yesterday"); await new Promise(r => setTimeout(r, 900))
+  const sh = (document.querySelector(".sheet.show h3") || {}).textContent
+  stack.slice().forEach(x => x.close())
+  upsert("goals", { id: uid("n"), date: Date.now(), kind: "daynote", day: y, text: "ок", mood: 3 }); setTab("today"); render(); await new Promise(r => setTimeout(r, 300))
+  return { card, mp: /не разобрал/.test(mp), got: /отложил разбор/.test(got), sh, after: !!document.querySelector('[data-do="td-yday"]') }
+})
+check(yd.card && yd.mp, "утром карточка «Вчерашний день не разобран» и напоминание в утреннем плане", yd)
+check(yd.got && /Снимок дня|Итоги дня/.test(yd.sh || ""), "«Разобрать вчера»: Изи разбирает вчера, потом снимок вчерашнего дня", yd)
+check(!yd.after, "вчера закрыт — карточки нет", yd)
 
 check(!errors.length, "без ошибок на странице", errors)
 await browser.close(); server.close()

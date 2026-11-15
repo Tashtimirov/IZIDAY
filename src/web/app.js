@@ -1674,7 +1674,7 @@ async function autoPlan() {
     const sys = chatSystem() + `
 
 Сейчас утро, ты сам, без запроса, готовишь пользователю утренний план: он прочитает его в чате, когда откроет приложение. Пиши тепло и коротко.`
-    const msgs = [{ role: "user", content: `[${hm(now)}] ${BRIEFS.morning.prompt}` }]
+    const msgs = [{ role: "user", content: `[${hm(now)}] ${morningPrompt()}` }]
     const tools = chatTools().filter(t => /^(get_|plan_day|list_places|read_sheet|mail_search|search_chats)/.test(t.name))
     const r = await agentTurn(msgs, sys, tools)
     D.planTry.end = 1; save(false)   // ответ получен — больше сегодня не пробуем, даже если Изи не вызвал plan_day
@@ -2018,13 +2018,31 @@ async function chatConfirm(question) {
 }
 // Утром и вечером Изи работает по одному разу в день. Нажали уведомление, а утренний план уже составлен
 // (сам при первом открытии после 6:00) — просто открываем чат с ним, без нового запроса. Кнопка в чате — по желанию, всегда.
+// Вчерашний день не закрыт («Позже» вечером или не дошли руки), хотя в нём что-то было: утром напоминаем разобрать
+function yUnclosed(now = new Date()) {
+  const y = dayKey(addDays(sod(now), -1))
+  if (goalOf("daynote", y) || (D.briefs || {}).yskip === dayKey(now)) return ""
+  const had = (D.briefs || {}).evening === y || live(D.money).some(e => dayKey(new Date(e.date)) === y) || live(D.rems).some(r => { const d = remDue(r); return d && dayKey(d) === y })
+  return had ? y : ""
+}
+const morningPrompt = () => BRIEFS.morning.prompt + (yUnclosed() ? " Вчерашний день пользователь не разобрал: в самом начале одной фразой напомни об этом — на экране «Сегодня» есть кнопка «Разобрать вчера» (пара минут: дела, траты, фото дня)." : "")
+const yPrompt = y => `Вчера (${fullDate(new Date(y + "T12:00"))}) пользователь отложил разбор дня — разбери вчерашний день сейчас. Посмотри вчерашние события и напоминания (вместе с выполненными), деньги, еду, воду и активность за вчера. ` +
+  "Расскажи коротко: что сделано, что нет; сколько потрачено вчера. Невыполненные вчерашние напоминания предложи через ask_user перенести на сегодня (варианты: «Перенести всё на сегодня», «Выберу сам», «Оставить как есть») и сделай, как ответят; время сохраняй. " +
+  "Каждую вчерашнюю трату с категорией «Другое» или непонятным комментарием по одной спроси через ask_user (3–4 вероятные категории) и запиши через update_money. Скажи, какие привычки вчера отмечены, а какие нет. " +
+  "В конце одной фразой скажи, что сейчас откроется снимок вчерашнего дня: фото, фраза и настроение."
 async function brief(kind, fromPush) {
-  const b = BRIEFS[kind]; if (!b) return
   const k = dayKey(new Date()), done = D.briefs = D.briefs || {}
+  if (kind === "yesterday") {
+    const y = yUnclosed(); if (!y) return toast("Вчерашний день уже закрыт")
+    await chatSend(yPrompt(y), { label: "🌙 Разбор вчерашнего дня" })
+    setTimeout(() => { if (goalOf("daynote", y)) return; if (window.ALBUM && ALBUM.snapEdit) ALBUM.snapEdit(y); else closeDay() }, 600)
+    return
+  }
+  const b = BRIEFS[kind]; if (!b) return
   if (fromPush && done[kind] === k) { setTab("chat"); if (kind === "evening" && !goalOf("daynote", k)) closeDay(); return }
   if (kind === "morning" && planBusy) { setTab("chat"); return toast("Изи как раз составляет план дня") }
   done[kind] = k; save(false)
-  await chatSend(b.prompt, { label: b.label })
+  await chatSend(kind === "morning" ? morningPrompt() : b.prompt, { label: b.label })
   if (kind === "morning") { D.planDay = k; save(false) }
   if (kind === "evening" && !goalOf("daynote", k)) setTimeout(() => closeDay(), 600)
 }
@@ -5616,8 +5634,13 @@ function tplForm(t) {
 // — 5. Вечернее закрытие дня (с 19:00): что сделано, что перенести, строка о дне и настроение
 const MOODS = [["#FF453A", "M8 16c2-2 6-2 8 0"], ["#FF9F0A", "M8 16h8"], ["#E5B800", "M8 15.5c2 1 6 1 8 0"], ["#34C759", "M8 14.5c2 2.5 6 2.5 8 0"], ["#0A9F6E", "M7.5 13.5c2 4 7 4 9 0"]]
 const moodFace = (i, s = 28) => { const [c, m] = MOODS[i]; return `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.5"/><circle cx="9" cy="10" r=".7" fill="${c}"/><circle cx="15" cy="10" r=".7" fill="${c}"/><path d="${m}"/></svg>` }
+function yDayCard(now = new Date()) {
+  const y = now.getHours() < 19 && yUnclosed(now); if (!y) return ""
+  return `<div class="hero-eve" data-do="td-yday"><div class="k">Вчерашний день не разобран</div><div class="s2">Пара минут с ${esc(iziName())}: что сделано, что перенести, траты без категории и фото дня.</div>
+    <span class="pill">Разобрать вчера →</span><button class="link" data-do="td-yskip" style="margin-left:12px">Не сейчас</button></div>`
+}
 function closeDayCard(v, now = new Date()) {
-  if (now.getHours() < 19) return ""
+  if (now.getHours() < 19) return yDayCard(now)
   const day = dayKey(now), note = goalOf("daynote", day)
   const st = dayStats(v, now)
   return `<div class="hero-eve" data-do="td-close"><div class="k">${note ? "День закрыт" : "Закрыть день"}</div><div class="v">${st.done} из ${st.total}</div>
@@ -5683,6 +5706,8 @@ Object.assign(DO, {
   "td-load-off": () => { D.tdOff = D.tdOff || {}; D.tdOff["load:" + dayKey(new Date())] = 1; save(false); render() },
   "td-tpl-new": () => tplForm(),
   "td-close": () => closeDay(),
+  "td-yday": () => { setTab("chat"); brief("yesterday") },
+  "td-yskip": () => { D.briefs = Object.assign(D.briefs || {}, { yskip: dayKey(new Date()) }); save(false); render() },
   "td-week-plan": () => { setTab("chat"); setTimeout(() => chatSend("Составь со мной план на следующую неделю: посмотри мой календарь, дела, цели месяца и итоги этой недели. Предложи три главных цели недели и разложи их по дням."), 50) },
 })
 function bindToday(v) {
