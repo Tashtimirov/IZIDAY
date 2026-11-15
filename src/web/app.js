@@ -1659,7 +1659,7 @@ function planDay(items) {
 // и прошло больше 30 минут. План, составленный на другом устройстве (подсказки с отметкой pd пришли из таблицы), тоже считается.
 let planBusy = false
 function planDone(k) {
-  if (D.planDay === k) return true
+  if (D.planDay === k || (D.briefs || {}).morning === k) return true
   if (live(D.nudges || []).some(n => n.pd === k)) { D.planDay = k; save(false); return true }
   const t = D.planTry || {}
   return t.day === k && (t.end || t.n >= 2 || Date.now() - (t.at || 0) < 30 * 60e3)
@@ -1673,13 +1673,12 @@ async function autoPlan() {
   try {
     const sys = chatSystem() + `
 
-Сейчас ты сам, без запроса, планируешь день пользователя. Посмотри календарь и напоминания на сегодня, еду и воду, активность и вчерашний день (get_history), память.
-Составь через plan_day 4–8 подсказок на оставшуюся часть дня: вода (с учётом выпитого и дел, не во время встреч), еда (если обычно пропускает — напомни), подготовка к важным встречам и дорога (за 30–60 мин), движение и шаги, одна идея или мысль дня по его целям из памяти, вечером — короткий итог. Не дублируй уведомления о встречах — они уже есть. Пиши тепло и коротко, на «ты»/«вы» — как пользователь привык. Ответь одной строкой, что запланировал.`
-    const msgs = [{ role: "user", content: `[${hm(now)}] Спланируй мне сегодняшний день подсказками.` }]
+Сейчас утро, ты сам, без запроса, готовишь пользователю утренний план: он прочитает его в чате, когда откроет приложение. Пиши тепло и коротко.`
+    const msgs = [{ role: "user", content: `[${hm(now)}] ${BRIEFS.morning.prompt}` }]
     const tools = chatTools().filter(t => /^(get_|plan_day|list_places|read_sheet|mail_search|search_chats)/.test(t.name))
     const r = await agentTurn(msgs, sys, tools)
     D.planTry.end = 1; save(false)   // ответ получен — больше сегодня не пробуем, даже если Изи не вызвал plan_day
-    if (D.planDay === dayKey(now) && r) { D.chat.push({ role: "assistant", text: `🗓 ${r}`, at: Date.now() }); save(false); if (chatOn()) renderChat() }
+    if (r) { D.briefs = Object.assign(D.briefs || {}, { morning: k }); D.chat.push({ role: "user", text: BRIEFS.morning.label, at: Date.now() - 1, auto: true }); D.chat.push({ role: "assistant", text: r, at: Date.now() }); save(false); if (chatOn()) renderChat() }
   } catch (e) {} finally { planBusy = false }
 }
 
@@ -1767,17 +1766,18 @@ ${r.length ? `- Интернета у тебя нет, а у Claude Code ест�
   : "- Передавать задачи в Claude Code пока нельзя: маршруты не подключены (в виджете: меню → 🤖 Задачи в Claude Code, потом подключить приложение заново). Сложную задачу честно назови сложной и предложи подключить."}` + iziStyle()
 }
 const BRIEFS = {
-  morning: { label: "☀️ Утренняя сводка", prompt: "Сделай утреннюю сводку на сегодня. Посмотри события и напоминания на сегодня (и просроченные), " +
+  morning: { label: "☀️ Утренний план", prompt: "Сделай утреннюю сводку на сегодня. Посмотри события и напоминания на сегодня (и просроченные), " +
     "траты за месяц (и лимиты, если близко к превышению), регулярные платежи к оплате в ближайшие дни, важные непрочитанные письма за сутки (mail_search «is:unread newer_than:1d -category:promotions -category:social», если почта доступна). Проверь письма от диспетчера рабочего проекта (mail_search «subject:IZIDAY newer_than:1d», если почта доступна; это письма с темой вида «… → IZIDAY»): перескажи главное и отдельно — что ждёт решения пользователя в рабочем чате. Расскажи: что сегодня по порядку со временем, что важно не забыть, что просрочено; сколько потрачено в этом месяце. " +
-    "В конце одна короткая дружеская мысль или совет на день. Ничего не меняй." },
-  evening: { label: "🌙 Вечерняя сводка", prompt: "Сделай вечернюю сводку за сегодня. Посмотри события и напоминания (вместе с выполненными), " +
+    "В конце одна короткая дружеская мысль или совет на день. Затем поставь через plan_day 4–8 подсказок на оставшуюся часть дня: вода (с учётом выпитого и дел, не во время встреч), еда, подготовка к важным встречам и дорога (за 30–60 мин), движение, одна мысль дня по целям из памяти. Не дублируй уведомления о встречах. Кроме подсказок, ничего не меняй." },
+  evening: { label: "🌙 Закрытие дня", prompt: "Сделай вечернюю сводку за сегодня. Посмотри события и напоминания (вместе с выполненными), " +
     "деньги и еду с водой и активностью за сегодня, события на завтра. " +
     "Проверь письма от диспетчера рабочего проекта (mail_search «subject:IZIDAY newer_than:1d», если почта доступна; это письма с темой вида «… → IZIDAY»): перескажи главное и отдельно — что ждёт решения пользователя в рабочем чате. Расскажи: что сделано, что не сделано; сколько потрачено сегодня " +
     "(итог и главные траты); сколько съедено ккал и БЖУ, вода, активность; что завтра. Если есть невыполненные напоминания на сегодня " +
     "или просроченные — спроси через ask_user, перенести ли их на завтра (варианты: «Перенести всё на завтра», «Выберу сам», «Оставить как есть») " +
     "и сделай, как ответят; время у перенесённых сохраняй, без времени — на завтра. " +
     "Обязательно разбери расходы за сегодня (и вчера, если не разбирали): каждую трату с категорией «Другое» или с непонятным комментарием (платёж по карте без описания, перевод без пояснения) " +
-    "по одной спроси через ask_user, на что она была, — с 3–4 самыми вероятными категориями как вариантами; ответ запиши через update_money (категория и короткий комментарий)." },
+    "по одной спроси через ask_user, на что она была, — с 3–4 самыми вероятными категориями как вариантами; ответ запиши через update_money (категория и короткий комментарий). " +
+    "Скажи, какие привычки сегодня отмечены, а какие нет. В конце одной фразой скажи, что сейчас откроется «Итоги дня»: фото дня, фраза и настроение." },
 }
 function chatContext() {
   const out = []
@@ -2016,9 +2016,17 @@ async function chatConfirm(question) {
   confirmSaid = a && (yn === null || talkNorm(a).split(" ").length > 3) ? a : ""
   return yn === true
 }
-function brief(kind) {
-  const b = BRIEFS[kind]
-  if (b) chatSend(b.prompt, { label: b.label })
+// Утром и вечером Изи работает по одному разу в день. Нажали уведомление, а утренний план уже составлен
+// (сам при первом открытии после 6:00) — просто открываем чат с ним, без нового запроса. Кнопка в чате — по желанию, всегда.
+async function brief(kind, fromPush) {
+  const b = BRIEFS[kind]; if (!b) return
+  const k = dayKey(new Date()), done = D.briefs = D.briefs || {}
+  if (fromPush && done[kind] === k) { setTab("chat"); if (kind === "evening" && !goalOf("daynote", k)) closeDay(); return }
+  if (kind === "morning" && planBusy) { setTab("chat"); return toast("Изи как раз составляет план дня") }
+  done[kind] = k; save(false)
+  await chatSend(b.prompt, { label: b.label })
+  if (kind === "morning") { D.planDay = k; save(false) }
+  if (kind === "evening" && !goalOf("daynote", k)) setTimeout(() => closeDay(), 600)
 }
 
 // ── Голос: распознавание речи Safari, иначе — диктовка с клавиатуры ──
@@ -2755,7 +2763,7 @@ function stripInit(keep) {
 }
 
 function renderChatHTML() {
-  return `<div class="chat-tools"><button data-do="talk" class="tk-chip"><b class="mini-orb"></b>Поговорить</button><button data-brief="morning">${ei("sun")}Утренняя сводка</button><button data-brief="evening">${ei("moon")}Вечерняя</button><button data-do="memory">${ei("brain")}Память</button><button data-do="chat-clear">${ei("eraser")}Очистить</button></div>
+  return `<div class="chat-tools"><button data-do="talk" class="tk-chip"><b class="mini-orb"></b>Поговорить</button><button data-brief="morning">${ei("sun")}План дня</button><button data-brief="evening">${ei("moon")}Закрыть день</button><button data-do="memory">${ei("brain")}Память</button><button data-do="chat-clear">${ei("eraser")}Очистить</button></div>
     <div class="chat-list" id="chat-list">${chatItems()}</div>
     <div class="chat-bar"><div class="att-tray" id="att-tray"></div><div class="cb-pill"><button class="cam plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
     <button class="dict" aria-label="Диктовать текст">${CB_MIC}</button><button class="send" aria-label="Отправить">${ICO.send}</button>
@@ -4230,7 +4238,7 @@ async function hashAction(given) {
     if (/\?/.test(t)) setTimeout(() => { if (!voice && !TALK && chatOn()) micStart(true, { reply: true }) }, 250)
     return
   }
-  if (a === "brief") { setTab("chat"); return brief(arg) }
+  if (a === "brief") { setTab("chat"); return brief(arg, true) }
   if (a === "money") return moneyForm("expense")
   if (a === "water") return addWater(H().glass || 250, "widget")
   if (a === "camera") return photoPrompt()

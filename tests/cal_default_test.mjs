@@ -80,6 +80,29 @@ check(plan.a === 1, "три открытия подряд — один запр�
 check(plan.b === 1 && plan.c === 2 && plan.d === 2, "оборванная попытка повторяется один раз через 30 мин, не больше двух", plan)
 check(plan.e === 2, "план с другого устройства — не составляем заново", plan)
 
+// 9. Утро и вечер: по одному заходу Изи в день
+const day2 = await page.evaluate(async () => {
+  let calls = [], prompts = []
+  window.agentTurn = async (msgs, sys, tools) => { calls.push(tools.some(t => t.name === "plan_day")); prompts.push(JSON.stringify(msgs).slice(-400)); return "Сегодня три встречи, первая в 10:00. Подсказки поставил." }
+  D.planDay = ""; D.planTry = null; D.briefs = {}; D.nudges = (D.nudges || []).filter(n => !n.pd)
+  const n0 = D.chat.length
+  await autoPlan()                                 // первое открытие утром: план дня сам, в чат
+  const auto = { calls: calls.length, plan: calls[0], chat: D.chat.slice(n0).map(m => m.text) }
+  await brief("morning", true)                     // уведомление в 8:00 — план уже есть, Изи не зовём
+  const push = calls.length
+  await brief("evening", true)                     // вечер: один заход
+  await new Promise(r => setTimeout(r, 900))
+  const eve = { calls: calls.length, sheet: (document.querySelector(".sheet.show h3") || {}).textContent, photo: /Фото дня/.test((document.querySelector(".sheet.show") || {}).textContent || "") }
+  stack.slice().forEach(x => x.close())
+  await new Promise(r => setTimeout(r, 500)); await brief("evening", true); await new Promise(r => setTimeout(r, 500))   // второе нажатие вечером — без нового запроса, сразу «Итоги дня»
+  return { auto, push, eve, eve2: calls.length, sheet2: (document.querySelector(".sheet.show h3") || {}).textContent }
+})
+check(day2.auto.calls === 1 && day2.auto.plan && /Утренний план/.test(day2.auto.chat[0]) && /три встречи/.test(day2.auto.chat[1]), "утром один заход: сводка и подсказки, ответ ждёт в чате", day2.auto)
+check(day2.push === 1, "уведомление утром после готового плана — без нового запроса", day2)
+check(day2.eve.calls === 2 && /Итоги дня/.test(day2.eve.sheet) && day2.eve.photo, "вечером: разбор дня, потом окно «Итоги дня» с фото дня", day2.eve)
+check(day2.eve2 === 2 && /Итоги дня/.test(day2.sheet2), "повторное нажатие вечером — сразу «Итоги дня», без запроса", day2)
+await snap("3-close")
+
 check(!errors.length, "без ошибок на странице", errors)
 await browser.close(); server.close()
 console.log(ok ? "CALDEF_OK" : "CALDEF_FAIL")
