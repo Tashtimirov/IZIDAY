@@ -63,6 +63,7 @@ function set(k, v, quiet) {
   else { if (v) delete F()[k]; else F()[k] = 0 }
   if (D.featAsk) delete D.featAsk[k]
   syncPlans(); save(false)
+  if (typeof tipsSync === "function") try { tipsSync() } catch (e) {}   // выключенная функция — без подсказок по ней (и на сервере)
   if (!quiet) { toast(v ? `${NAME(k)}: подключено` : `${NAME(k)}: выключено, данные сохранены`); render() }
 }
 const offList = () => kid() ? [] : LIST.map(x => x[0]).filter(k => !on(k))
@@ -135,8 +136,10 @@ function showHTML(k) {
   let extra = ""
   if (k === "money") {
     // траты, которые человек уже назвал Изи, видны и удаляются прямо здесь
+    // если в приложении есть смахивание для удаления (moneySwipe), своя кнопка не нужна: вид как во всём приложении
+    const swipe = typeof moneySwipe === "function"
     const ops = live(D.money || []).sort((a, b) => b.date - a.date).slice(0, 30)
-    if (ops.length) extra = `<div class="card ft-ops"><h2>Уже записано</h2>${ops.map(e => `<div class="row" data-money="${esc(e.id)}"><div class="grow"><div class="t">${e.type === "income" ? "+" : "−"}${esc(core.money(e.amount))} · ${esc(e.category || "")}</div><div class="s">${esc(dayName(new Date(e.date)))}${e.comment ? " · " + esc(e.comment) : ""}</div></div><button type="button" class="ft-del" data-ft-del="${esc(e.id)}" aria-label="Удалить">${I("trash", 18)}<span>Удалить</span></button></div>`).join("")}</div>`
+    if (ops.length) extra = `<div class="card ft-ops"><h2>Уже записано</h2>${ops.map(e => `<div class="row" data-money="${esc(e.id)}"><div class="grow"><div class="t">${e.type === "income" ? "+" : "−"}${esc(core.money(e.amount))} · ${esc(e.category || "")}</div><div class="s">${esc(dayName(new Date(e.date)))}${e.comment ? " · " + esc(e.comment) : ""}</div></div>${swipe ? "" : `<button type="button" class="ft-del" data-ft-del="${esc(e.id)}" aria-label="Удалить">${I("trash", 18)}<span>Удалить</span></button>`}</div>`).join("")}</div>`
   }
   return `<div class="card ft-show"><div class="ft-sh"><span class="ft-b ft-bb">${I(m[1], 24)}</span><div><h2>${m[2]}</h2><div class="muted small">Раздел выключен. Подключается одним касанием</div></div></div>
     ${(m[4] || []).map(([ic, t, s]) => `<div class="ft-li"><span class="ft-b">${I(ic, 19)}</span><div><b>${t}</b><span>${fill(s)}</span></div></div>`).join("")}

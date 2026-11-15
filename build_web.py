@@ -126,6 +126,9 @@ shell = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.p
 for f in re.findall(r'<(?:script|link)[^>]+(?:src|href)="([^"?#:]+)', html):
     if f not in shell:
         shell.append(f)
+# английский словарь подключает i18n.js только при английском языке — в кэш кладём всегда, чтобы он работал и без сети
+if (OUT / "i18n-en.js").is_file() and "i18n-en.js" not in shell:
+    shell.append("i18n-en.js")
 missing = [f for f in shell if f != "./" and not (OUT / f).is_file()]
 if missing:
     sys.exit(f"sw.js: в сборке нет файлов оболочки: {missing}")

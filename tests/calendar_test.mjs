@@ -23,7 +23,7 @@ const mk = (when, dark = false) => boot2({ root, time: when, dark,
   events: ctx => EVS.map(f => f(ctx)) })
 
 let { page, browser, server, errors } = await mk(new Date("2026-11-05T03:11:00Z"))   // чт 10:11 по Бангкоку
-await page.evaluate(() => { D.gcal.calendars = ["Личное", "Работа", "Оля", "Дети"].map(name => ({ name })); window.__created = []
+await page.evaluate(() => { D.fam = Object.assign({ code: "T", url: "https://script.google.com/macros/s/TEST/exec", role: "adult", share: { cal: 1 }, shareAsked: 1, data: { members: {} } }, D.fam || {}); D.gcal.calendars = ["Личное", "Работа", "Оля", "Дети"].map(name => ({ name })); window.__created = []
   window.calDo = async (a, x) => { if (a === "create") { const e = Object.assign({ id: "N" + __created.length }, x); __created.push(e); D.gcal.events.push(e); save(false); return { ok: true, event: e } } return { ok: true } } })
 await page.waitForTimeout(1200)
 await page.click('[data-do="cal-open"]'); await page.waitForTimeout(1800); await page.evaluate(() => render()); await page.waitForTimeout(500)

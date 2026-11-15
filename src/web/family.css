@@ -148,7 +148,7 @@ body.kidm #view { padding: 0 !important; max-width: none; }
 .kid-sheet h3, .kid-sheet .msg { color: #2A2350; }
 
 /* детский чат с Изи */
-.kchat { display: flex; flex-direction: column; height: 80vh; }
+.kchat { display: flex; flex-direction: column; height: calc(80vh - 40px); clear: both; width: 100%; }   /* clear: иначе плашка «Сообщить об ошибке» (float) сжимала чат до половины ширины */
 .kchat-h { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 900; padding-bottom: 8px; }
 .kmsgs { flex: 1; overflow-y: auto; padding: 4px 0 10px; -webkit-overflow-scrolling: touch; }
 .kmsg { max-width: 82%; padding: 11px 14px; margin: 6px 0; border-radius: 20px; font-size: 16px; font-weight: 700; line-height: 1.35; animation: kin .3s; white-space: pre-wrap; }
@@ -239,3 +239,76 @@ body.kidm .sheet input:focus { border-color: #8B6CFF; outline: none; }
 .ksch .krow { padding: 8px 0; }
 .ksch .ktm { min-width: 52px; font-weight: 900; font-size: 16px; color: #5B5390; }
 .ksch .krow > i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+/* детский чат: остановить разговор (кнопка с подписью) и закрыть окно */
+.kchat-h .kclose { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 18px; padding: 8px 14px 8px 11px; background: #F0EBFF; color: #6A4BF2; font: 800 15px ui-rounded, system-ui; }
+.kchat-h .kclose:active, .kstop:active { transform: scale(.95); }
+.kstop { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 54px; margin: 4px 0 6px; border: 0; border-radius: 27px; padding: 12px 18px;
+  background: linear-gradient(135deg, #FF6FA8, #FF8A3D); color: #fff; font: 900 17px ui-rounded, system-ui; box-shadow: 0 10px 22px -10px rgba(255,111,168,.8); animation: kin .25s; transition: transform .15s; }
+.kstop[hidden] { display: none; }
+.kstop i { width: 16px; height: 16px; border-radius: 4px; background: #fff; flex: none; }
+.kstop[data-st="say"] i { animation: kstopp 1.1s ease-in-out infinite; }
+@keyframes kstopp { 50% { transform: scale(.78); } }
+@media (prefers-reduced-motion: reduce) { .kstop, .kstop i { animation: none !important; } }
+body.kidm[data-kth] .kchat-h .kclose { background: var(--ksoft); color: var(--ka); }
+
+/* детский чат: «Поговорить» (живой разговор), «+» фото и файлы */
+.kchat-h .kgo { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 18px; padding: 8px 13px 8px 10px; background: linear-gradient(135deg, #8B6CFF, #5B3FE0); color: #fff; font: 800 15px ui-rounded, system-ui; transition: transform .15s; }
+.kchat-h .kgo + .kclose { margin-left: 8px; }
+.kchat-h .kgo:active { transform: scale(.95); }
+.kchat.klive .kgo, .kchat.klive .kin, .kchat.klive .ktray, .kchat.klive .kplusm { display: none; }
+.klivep { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 0 2px; cursor: pointer; animation: kin .3s; }
+.klivep[hidden] { display: none; }
+.klivep .kidorb { margin: 0 !important; transition: transform .4s cubic-bezier(.2,.8,.2,1); }
+.klivep[data-st="listen"] .kidorb { transform: scale(1.08); }
+.klivep[data-st="say"] .kidorb { animation: klorb 1.6s ease-in-out infinite; }
+@keyframes klorb { 50% { transform: scale(1.06); } }
+.klst { font: 800 16px ui-rounded, system-ui; color: #6A4BF2; text-align: center; min-height: 22px; max-width: 90%; }
+.kstop[data-st="live"] { background: linear-gradient(135deg, #FF6FA8, #FF8A3D); }
+.kplus { width: 48px; height: 48px; border-radius: 50%; border: 0; background: #F0EBFF; color: #6A4BF2; display: grid; place-items: center; flex: none; transition: transform .15s; }
+.kplus:active { transform: scale(.92); }
+.kin { gap: 6px; }
+.ktray { display: flex; gap: 8px; overflow-x: auto; padding: 6px 2px 2px; }
+.ktray[hidden], .kplusm[hidden] { display: none; }
+.kat { position: relative; flex: none; width: 76px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.kat img, .kat .kdoc { width: 68px; height: 68px; border-radius: 16px; object-fit: cover; background: #fff; display: grid; place-items: center; color: #6A4BF2; box-shadow: 0 6px 14px -10px rgba(90,60,180,.6); }
+.kat small { font: 700 11px ui-rounded, system-ui; color: #7A70A8; max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kat button { position: absolute; top: -6px; right: -2px; width: 24px; height: 24px; border-radius: 50%; border: 0; padding: 0; background: #2A2350; color: #fff; display: grid; place-items: center; }
+.kplusm { display: flex; gap: 8px; padding: 6px 0 2px; animation: kin .2s; }
+.kplusm button { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: 0; border-radius: 18px; padding: 10px; background: #fff; color: #6A4BF2; text-align: left; box-shadow: 0 6px 16px -12px rgba(90,60,180,.6); }
+.kplusm button svg { flex: none; }
+.kplusm b { display: block; font: 800 14px ui-rounded, system-ui; color: #2A2350; }
+.kplusm small { display: block; font: 700 11px ui-rounded, system-ui; color: #7A70A8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kthumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.kthumbs img { width: 92px; height: 92px; object-fit: cover; border-radius: 14px; }
+.kfile { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 14px; opacity: .9; }
+body.kidm[data-kth] :is(.kplus, .kplusm button) { color: var(--ka); }
+body.kidm[data-kth] .kplus { background: var(--ksoft); }
+body.kidm[data-kth] .kchat-h .kgo { background: linear-gradient(135deg, var(--ka2), var(--ka3)); }
+body.kidm[data-kth] .klst { color: var(--ka); }
+.kchat-h { gap: 8px; min-width: 0; }
+.kchat-h .kname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kchat-h .kgo, .kchat-h .kclose { flex: none; font-size: 14.5px; padding: 8px 11px 8px 9px; gap: 5px; }
+.kchat-h .kgo + .kclose { margin-left: 6px; }
+.kchat.klive .kclose { margin-left: auto; }
+@media (max-width: 400px) { .kchat-h .kname { display: none; } }
+/* «Выйти из IZIDAY» внизу детского дня — тихая ссылка, не кнопка-приманка */
+.klink.kout { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 22px auto 6px; padding: 10px 16px; font-size: 15px; }
+
+/* «Что делим с семьёй» в окне: строки-переключатели как в карточке */
+.fshare button.set { width: 100%; border: 0; border-top: .5px solid var(--line); background: none; text-align: left; padding: 11px 0; color: var(--text); font: inherit; border-radius: 0; -webkit-appearance: none; appearance: none; }
+.fshare button.set:first-of-type { border-top: 0; }
+.fshare button.set span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.fshare button.set b { font-weight: 500; font-size: 16px; }
+.fshare button.set small { color: var(--sub); font-size: 13px; line-height: 1.3; }
+
+/* Ребёнок: открыть дело или расписание, попросить изменить */
+.ktw { display: flex; align-items: center; gap: 4px; } .ktw .ktask { flex: 1; min-width: 0; }
+.kmore { border: 0; background: none; padding: 12px 4px; margin-top: 8px; flex: none; }
+.kcard h2 .kadd { width: auto; height: auto; flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; border: 0; background: #F1EDFF; color: #6A4BF2 !important; font-weight: 900 !important; font-size: 14px !important; padding: 7px 12px; border-radius: 14px; }
+.ksch .krow[data-kev] { cursor: pointer; }
+.kwait { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 800; color: #C98500; background: #FFF3D6; border-radius: 10px; padding: 3px 7px; white-space: nowrap; }
+.kinfo { background: #fff; border-radius: 20px; padding: 6px 14px; margin: 10px 0; } .kinfo .krow { padding: 10px 0; font-weight: 700; } .kinfo .krow + .krow { border-top: 1px solid #EFEAFF; }
+.kask { display: flex; gap: 10px; background: #FFF3D6; border-radius: 18px; padding: 12px 14px; margin: 10px 0; font-size: 14.5px; line-height: 1.35; } .kask b { display: block; }
+.knote { margin: 12px 2px 2px; font-size: 14px; line-height: 1.35; } .knote .fi { vertical-align: -2px; }
+.kans .krow { padding: 7px 0; } .kans .kcb { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none; } .kans .kcb.ok { background: #18B57A; } .kans .kcb.no { background: #F2607A; }

@@ -101,7 +101,7 @@ window.DS = (function () {
 
   // ── 54. Пустые экраны: шар Изи, короткая фраза, примеры — нажали, и пример уже в строке чата
   const EX_CHAT = ["что у меня на неделе?", "потратил 300 на такси", "напомни завтра в 9 позвонить маме", "составь план на день"].map(x => window.L && L.en ? L.t(x) : x)
-  const EX_EMPTY = { "Ничего не запланировано": ["завтра в 10 встреча с Олей"], "За этот день ничего не записано": ["выпил стакан воды", "обед 450"] }
+  const EX_EMPTY = { "Ничего не запланировано": ["завтра в 10 встреча с Сашей"], "За этот день ничего не записано": ["выпил стакан воды", "обед 450"] }
   DS.say = function (text) {
     while (typeof stack !== "undefined" && stack.length) stack[stack.length - 1].close()
     if (typeof setTab === "function") setTab("chat")
@@ -224,7 +224,7 @@ window.DS = (function () {
       if (document.body.dataset.dsTab !== t) document.body.dataset.dsTab = t
       lastTab = t
       empties(v)
-      if (t === "more" && !$(".ds-ts", v)) { const last = v.lastElementChild; const box = document.createElement("div"); box.innerHTML = tsCard(); last && last.classList.contains("muted") ? v.insertBefore(box.firstChild, last) : v.append(box.firstChild) }
+      if (t === "more" && !$(".ds-ts", v)) { const last = v.lastElementChild; const box = document.createElement("div"); box.innerHTML = tsCard(); const ex = $(".exit-card", v), at = ex || (last && last.classList.contains("muted") ? last : null); at ? v.insertBefore(box.firstChild, at) : v.append(box.firstChild) }
       rings(v, fresh); numbers(v, fresh)
     } finally { mo.takeRecords(); busy = false }
   }

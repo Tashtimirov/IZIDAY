@@ -39,7 +39,8 @@ const P = {
   pizza: '<path d="M12 21L3 6a14 14 0 0 1 18 0z"/><circle cx="10" cy="9" r="1"/><circle cx="14" cy="12" r="1"/>', tent: '<path d="M3 20L12 4l9 16zM12 4v16M9 20l3-6 3 6"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   share: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6h14v-6"/>', briefcase: '<rect x="3" y="7" width="18" height="13" rx="3"/><path d="M9 7V5h6v2M3 12h18"/>',
-  wand: '<path d="M4 20L15 9M14 4v3M19 9h-3M17.5 5.5l-2 2M12 3l.5 1.5M20 11l1.5.5"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>', scan: '<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.5"/>', link: '<path d="M10 14a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1 1"/><path d="M14 10a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1-1"/>',
+  wand: '<path d="M4 20L15 9M14 4v3M19 9h-3M17.5 5.5l-2 2M12 3l.5 1.5M20 11l1.5.5"/>', out: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/>', stopsq: '<rect x="6.5" y="6.5" width="11" height="11" rx="2.5" fill="currentColor"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>', scan: '<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.5"/>', link: '<path d="M10 14a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1 1"/><path d="M14 10a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1-1"/>',
 }
 const ic = (n, s = 20, c = "currentColor", sw = 2) => `<svg class="fi" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${P[n] || P.star}</svg>`
 const TASK_IC = [["tooth", "#2FB7FF"], ["bag", "#FF8A3D"], ["book", "#8B6CFF"], ["paw", "#18B57A"], ["home", "#FF5FA2"], ["bed", "#6A4BF2"], ["dish", "#FFB547"], ["plant", "#18B57A"], ["shirt", "#2FB7FF"], ["ball", "#FF8A3D"], ["music", "#AF52DE"], ["star", "#E89A00"]]
@@ -58,6 +59,25 @@ const L = k => (F()[k] || []).filter(x => x && !x.del)
 const meId = () => D.fam && D.fam.id
 const kidMode = () => (famOn() && D.fam.role === "kid") || (!famOn() && D.who === "kid")
 const isAdult = () => famOn() && D.fam.role === "adult"
+// Что делим с семьёй: каждый решает за себя, по умолчанию всё выключено. D.fam.share = { cal, money }
+const SHARE = [["cal", "Календарь семьи", "Общие дела семьи, расписание детей и календари близких — каждый своим цветом."],
+  ["money", "Общий бюджет", "Можно отмечать траты и копилки как общие и смотреть их отдельно. Остальные траты остаются только вашими."]]
+const share = k => famOn() && D.fam.role !== "kid" && !!(D.fam.share || {})[k]
+function shareSet(k, on) { D.fam.share = Object.assign({}, D.fam.share, { [k]: on ? 1 : 0 }); save(false) }
+const shareRows = () => SHARE.map(([k, t, sub]) => `<button class="set tg-row" data-fsh="${k}"><span><b>${t}</b><small>${sub}</small></span><i class="tgl ${share(k) ? "on" : ""}" role="switch" aria-checked="${share(k)}"></i></button>`).join("")
+function shareBind(el) {
+  $$("[data-fsh]", el).forEach(b => b.onclick = () => { const k = b.dataset.fsh, on = !share(k); shareSet(k, on); const i = $(".tgl", b); i.classList.toggle("on", on); i.setAttribute("aria-checked", on) })
+}
+// один раз после входа в семью; потом — в «Семье» и в «Деньги → Семья»
+function shareSheet(first) {
+  if (!famOn() || D.fam.role === "kid") return
+  D.fam.shareAsked = 1; save(false)
+  const s = sheet(`<h3>Что делим с семьёй</h3><div class="msg">${first === "old" ? "Теперь вы сами решаете, что делить с семьёй. Календарь семьи остался включённым, как был. Каждый в семье решает только за себя." : (first ? "Вы в семье. " : "") + "Всё выключено, пока вы сами не включите. Каждый в семье решает только за себя."}</div>
+    <div class="fshare">${shareRows()}</div>
+    <div class="btns"><button class="btn primary" data-a="ok">Готово</button></div>`, { onClose: () => render() })
+  shareBind(s.el)
+  $('[data-a="ok"]', s.el).onclick = () => s.close()
+}
 const members = () => Object.entries(F().members || {}).map(([id, m]) => Object.assign({ id }, m)).sort((a, b) => (a.role === "adult" ? 0 : 1) - (b.role === "adult" ? 0 : 1) || (a.joined || 0) - (b.joined || 0))
 const kids = () => members().filter(m => m.role === "kid")
 const member = id => members().find(m => m.id === id)
@@ -67,9 +87,10 @@ const short = n => String(n || "").split(" ")[0]
 
 let ver = 0
 function put(list, item) {
-  item.u = Date.now()
   const f = D.fam.data || (D.fam.data = F()), arr = f[list] || (f[list] = [])
   const i = arr.findIndex(x => x.id === item.id)
+  // по часам сервера (app.js) и всегда новее версии, которую правили
+  item.u = Math.max(typeof nowSrv === "function" ? nowSrv() : Date.now(), i >= 0 ? (arr[i].u || 0) + 1 : 0)
   if (i < 0) arr.push(item); else arr[i] = item
   const out = D.fam.out || (D.fam.out = {}), q = out[list] || (out[list] = [])
   const j = q.findIndex(x => x.id === item.id); if (j < 0) q.push(item); else q[j] = item
@@ -111,9 +132,12 @@ async function push(force, extra) {
     const pts = myPts(); if (pts) q.me.pts = pts
     if (D.fam.me) Object.assign(q.me, D.fam.me)
     for (const k in out) if (out[k] && out[k].length) { q[k] = out[k].slice(); sent[k] = new Set(q[k].map(x => x.id + ":" + x.u)) }
-    const r = await post(D.fam.url, q)
+    const t0 = Date.now(), r = await post(D.fam.url, q), t1 = Date.now()
     if (r && r.ok && r.family) {
       const f = r.family
+      // поправка часов и у тех, у кого нет своей таблицы (ребёнок): сервер ставит members[id].at = время сервера
+      const mm = f.members && f.members[D.fam.id]
+      if (mm && mm.at && typeof skewOf === "function" && D.sync) D.sync.skew = skewOf(mm.at, t0, t1, D.sync.skew)
       // события семьи: пока таблица семьи их не хранит (старая версия скрипта), держим у себя и шлём снова
       for (const k in sent) if (k !== "events" || Array.isArray(f.events)) D.fam.out[k] = (D.fam.out[k] || []).filter(x => !sent[k].has(x.id + ":" + x.u))
       for (const k in D.fam.out) for (const x of D.fam.out[k] || []) { const arr = f[k] || (f[k] = []), i = arr.findIndex(y => y.id === x.id); if (i < 0) arr.push(x); else if ((arr[i].u || 0) <= x.u) arr[i] = x }
@@ -187,7 +211,12 @@ const waits = () => {
   return out.sort((a, b) => (a.x.at || 0) - (b.x.at || 0))
 }
 function approve(w, yes) {
-  if (w.t === "log") {
+  if (w.t === "log" && w.x.kind === "prop") {   // просьба ребёнка изменить дело или расписание: «Да» вносит правку
+    const t = L(w.x.list).find(z => z.id === w.x.ref)
+    if (yes && t) put(w.x.list, Object.assign({}, t, w.x.patch || {}))
+    put("log", Object.assign({}, w.x, { st: yes ? "ok" : "no", by: meId() }))
+    toast(yes ? (t ? "Изменено — ребёнок увидит ответ" : "Этого дела уже нет") : "Оставили как было — ребёнок увидит ответ")
+  } else if (w.t === "log") {
     put("log", Object.assign({}, w.x, { st: yes ? "ok" : "no", by: meId() }))
     if (yes && w.x.pay) credit(w.x.kid, w.x.pay, "earn", w.x.title, "er:" + w.x.id)
   } else put("money", Object.assign({}, w.x, { st: yes ? "ok" : "no", by: meId() }))
@@ -305,10 +334,12 @@ function kDay(me) {
   h += `<div class="ksay">${orb(64)}<div class="kbub">${esc(kidTip(me, tasks, done))}</div></div>`
   h += `<div class="kcard"><h2>Мои дела <span>${done} из ${tasks.length}</span></h2>${tasks.map(t => kTask(me, t)).join("") || `<div class="kmuted">Сегодня дел нет. Попроси маму или папу добавить их в приложении.</div>`}</div>`
   const sch = evOn(me.id, d)
-  if (sch.length) h += `<div class="kcard ksch"><h2>Расписание <span>${sch.length}</span></h2>${sch.map(x => `<div class="krow"><div class="ktm">${esc(x.time || "днём")}</div><div class="grow"><b>${esc(x.title)}</b>${x.who === "fam" || x.take || x.place ? `<div class="kmuted">${[x.who === "fam" && "вся семья", x.place, x.take && "взять: " + x.take].filter(Boolean).map(esc).join(" · ")}</div>` : ""}</div><i style="background:${x.who === "fam" ? layerC("fam") : kidC(me.id)}"></i></div>`).join("")}</div>`
+  h += propNews(me.id)
+  h += `<div class="kcard ksch"><h2>Расписание <button class="kadd" data-k="evnew">${ic("plus", 16, "#6A4BF2", 2.6)}Своё</button></h2>${sch.map(x => `<div class="krow" data-kev="${esc(x.id)}"><div class="ktm">${esc(x.time || "днём")}</div><div class="grow"><b>${esc(x.title)}</b>${x.who === "fam" || x.take || x.place ? `<div class="kmuted">${[x.who === "fam" && "вся семья", x.place, x.take && "взять: " + x.take].filter(Boolean).map(esc).join(" · ")}</div>` : ""}</div>${propWait(x.id) ? `<span class="kwait">${ic("clock", 13, "#C98500")}ждёт ответа</span>` : ""}<i style="background:${x.who === "fam" ? layerC("fam") : kidC(me.id)}"></i>${ic("chev", 18, "#A19BC7")}</div>`).join("") || `<div class="kmuted">На сегодня ничего нет. Можно добавить своё дело: кружок, встречу с другом.</div>`}</div>`
   if (g) { const p = goalProg(g), gi = goalIc(g.title), mine = sumSince(g.start || "0000").by[me.id] || 0
     h += `<div class="kcard kgoal"><h2>Семейная цель</h2><div class="krow"><div class="kgi">${ic(g.ic || gi[0], 30, gi[1])}</div><div class="grow"><b>${esc(g.title)}</b><div class="kmuted">${num(p.have)} из ${num(p.need)}${mine ? ` · ты принёс ${num(mine)}` : ""}</div></div></div><div class="kbar"><i style="width:${Math.round(p.p * 100)}%"></i></div></div>` }
   if (les) h += `<button class="kcard krow kles" data-kles="${les.id}"><div class="kplay">${ic("play", 24, "#fff")}</div><div class="grow"><b>Урок дня: «${esc(les.t)}»</b><div class="kmuted">3 минуты · +${LESSON_STARS} звёзд</div></div>${ic("chev", 22, "#A19BC7")}</button>`
+  h += `<button class="klink kout" data-k="out">${ic("out", 18)}Выйти из IZIDAY</button>`
   return h
 }
 function kidTip(me, tasks, done) {
@@ -320,9 +351,84 @@ function kidTip(me, tasks, done) {
 }
 function kTask(me, t) {
   const l = logOf(me.id, t.id), st = l ? l.st : "", n = t.ic || taskIc(t.title), c = icColor(n)
-  return `<button class="ktask ${st === "ok" ? "done" : ""}" data-ktask="${esc(t.id)}"><div class="kic" style="background:${c}22">${ic(n, 24, c)}</div>
+  return `<div class="ktw"><button class="ktask ${st === "ok" ? "done" : ""}" data-ktask="${esc(t.id)}"><div class="kic" style="background:${c}22">${ic(n, 24, c)}</div>
   <div class="grow"><div class="kt">${esc(t.title)}</div><div class="km">${st === "wait" ? "ждёт проверки" : st === "no" ? "не засчитано — попробуй ещё" : esc(t.when || (t.check ? "проверит взрослый" : ""))}</div></div>
-  <span class="kplus">${ic("star", 15, "#E89A00", 2.4)}+${t.stars || 5}</span><span class="kcb ${st}">${st === "ok" ? ic("check", 18, "#fff", 3) : st === "wait" ? ic("clock", 16, "#C98500") : ""}</span></button>`
+  <span class="kplus">${ic("star", 15, "#E89A00", 2.4)}+${t.stars || 5}</span><span class="kcb ${st}">${st === "ok" ? ic("check", 18, "#fff", 3) : st === "wait" ? ic("clock", 16, "#C98500") : ""}</span></button><button class="kmore" data-kti="${esc(t.id)}" aria-label="Подробнее">${ic("chev", 20, propWait(t.id) ? "#C98500" : "#A19BC7")}</button></div>`
+}
+
+// ───────────── Ребёнок: открыть дело или расписание, своё — править, добавленное взрослыми — попросить изменить ─────────────
+// Просьба — запись в log: { id "pr…", kind "prop", kid, list "events"|"tasks", ref, patch, why, title, st "wait" → "ok"|"no", by }.
+// Взрослый видит её в «Ждут вашей проверки» (и плашкой на «Сегодня»); «Да» вносит правку, «Нет» оставляет как было.
+const PROP_F = { title: "название", day: "день", time: "время", place: "место", when: "когда" }
+const propsOf = ref => L("log").filter(x => x.kind === "prop" && x.ref === ref)
+const propWait = ref => propsOf(ref).find(x => x.st === "wait" && x.kid === meId())
+const propVal = (k, v) => !v ? "нет" : k === "day" ? shortDate(parseIso(v)) : String(v)
+const propText = x => Object.keys(x.patch || {}).map(k => `${PROP_F[k] || k}: ${propVal(k, x.patch[k])}`).join(" · ") + (x.why ? `${Object.keys(x.patch || {}).length ? " · " : ""}«${x.why}»` : "")
+const whoName = id => { const m = member(id); return !m ? "Взрослые" : /мам/i.test(m.name) ? "Мама" : /пап/i.test(m.name) ? "Папа" : short(m.name) }
+function propNews(kid) {   // ответы взрослых — сутки после ответа
+  const l = L("log").filter(x => x.kind === "prop" && x.kid === kid && (x.st === "ok" || x.st === "no") && Date.now() - (x.u || 0) < 864e5).sort((a, b) => (b.u || 0) - (a.u || 0)).slice(0, 3)
+  return l.length ? `<div class="kcard kans"><h2>Ответ взрослых</h2>${l.map(x => `<div class="krow"><span class="kcb ${x.st === "ok" ? "ok" : "no"}">${ic(x.st === "ok" ? "check" : "x", 16, "#fff", 3)}</span><div class="grow"><b>${esc(whoName(x.by))}: ${x.st === "ok" ? "да" : "нет"}</b><div class="kmuted">${esc(String(x.title || "").replace(/^изменить /, ""))}${x.st === "ok" ? " — изменено, как ты просил" : " — остаётся как было"}</div></div></div>`).join("")}</div>` : ""
+}
+function kidItemSheet(list, id) {
+  const x = L(list).find(z => z.id === id); if (!x) return
+  const ev = list === "events", mine = ev && x.by === meId(), w = propWait(id)
+  const rows = ev ? [["clock", (x.day ? core.cap(fullDate(parseIso(x.day))) : "Каждую неделю: " + (x.days || []).map(d => WD7[d - 1]).join(", ")) + (x.time ? " · " + x.time : " · весь день")],
+      x.place && ["map", x.place], x.take && ["bag", "Взять с собой: " + x.take], ["users", x.who === "fam" ? "Вся семья" : mine ? "Добавил ты" : "Для тебя"]]
+    : [["clock", x.when || ((x.days || []).length ? (x.days || []).map(d => WD7[d - 1]).join(", ") : "Каждый день")], ["star", `+${x.stars || 5} звёзд` + (x.check ? " · проверит взрослый" : "")]]
+  const s = sheet(`<h3>${esc(x.title)}</h3><div class="kinfo">${rows.filter(Boolean).map(([i, t]) => `<div class="krow">${ic(i, 20, "#6A4BF2")}<div class="grow">${esc(t)}</div></div>`).join("")}</div>
+    ${w ? `<div class="kask">${ic("clock", 18, "#C98500")}<div><b>Ты попросил изменить</b>${esc(propText(w))}<br>Ждём ответ мамы или папы.</div></div>` : ""}
+    ${mine ? `<button class="kbtn" data-a="edit">Изменить</button><button class="klink" data-a="del">Удалить</button>`
+      : `<div class="kmuted knote">${ic("lock", 15, "#8C86B3")} Это ${ev ? "дело" : "задание"} добавили взрослые. Убрать его нельзя, но можно попросить изменить.</div>
+        ${w ? `<button class="kbtn soft" data-a="undo">Отменить просьбу</button>` : `<button class="kbtn" data-a="ask">Попросить изменить</button>`}`}`)
+  s.el.classList.add("kid-sheet")
+  const on = (a, f) => { const b = $(`[data-a="${a}"]`, s.el); if (b) b.onclick = f }
+  on("edit", () => { s.close(); kidEvForm(x) })
+  on("del", async () => { if (await ui.confirm("Удалить?", `<div class="msg">«${esc(x.title)}» пропадёт из расписания.</div>`, ["Оставить", "Удалить"]) !== "Удалить") return
+    put("events", Object.assign({}, x, { del: true })); s.close(); render(); toast("Удалено") })
+  on("ask", () => { s.close(); kidPropForm(list, x) })
+  on("undo", () => { put("log", Object.assign({}, w, { del: true })); s.close(); render(); toast("Просьба отменена") })
+}
+// Своё дело в расписании (ребёнок добавляет и правит сам; взрослые видят его в календаре семьи)
+function kidEvForm(x) {
+  const b = x || { title: "", day: today(), time: "", place: "" }
+  const s = sheet(`<h3>${x ? "Изменить" : "Моё дело"}</h3>
+    <div class="field"><label>Что</label><input id="ke-t" value="${esc(b.title)}" placeholder="Кружок, встреча с другом…"></div>
+    <div class="grid2"><div class="field"><label>День</label><input id="ke-d" type="date" value="${esc(b.day || today())}"></div>
+    <div class="field"><label>Во сколько</label><input id="ke-h" type="time" value="${esc(b.time || "")}"></div></div>
+    <div class="field"><label>Где</label><input id="ke-p" value="${esc(b.place || "")}" placeholder="Можно не писать"></div>
+    <div class="kmuted">Мама и папа увидят это дело в календаре семьи.</div>
+    <button class="kbtn" data-a="ok">Сохранить</button>`)
+  s.el.classList.add("kid-sheet")
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const title = $("#ke-t", s.el).value.trim().slice(0, 60), day = $("#ke-d", s.el).value
+    if (!title) return toast("Напиши, что за дело"); if (!day) return toast("Выбери день")
+    put("events", Object.assign({}, x || { id: uid("fe"), who: meId(), by: meId(), at: Date.now(), min: 60 }, { title, day, time: $("#ke-h", s.el).value || "", place: $("#ke-p", s.el).value.trim().slice(0, 80) }))
+    s.close(); render(); toast("Сохранено")
+  }
+}
+// Просьба изменить то, что добавили взрослые
+function kidPropForm(list, x) {
+  const ev = list === "events"
+  const s = sheet(`<h3>Попросить изменить</h3><div class="kmuted">Напиши, как хочешь. Мама или папа ответят «да» или «нет».</div>
+    <div class="field"><label>Что</label><input id="kp-t" value="${esc(x.title)}"></div>
+    ${ev ? `<div class="grid2">${x.day ? `<div class="field"><label>День</label><input id="kp-d" type="date" value="${esc(x.day)}"></div>` : ""}
+      <div class="field"><label>Во сколько</label><input id="kp-h" type="time" value="${esc(x.time || "")}"></div></div>
+      <div class="field"><label>Где</label><input id="kp-p" value="${esc(x.place || "")}"></div>`
+      : `<div class="field"><label>Когда</label><input id="kp-w" value="${esc(x.when || "")}" placeholder="Например: после школы"></div>`}
+    <div class="field"><label>Почему</label><input id="kp-y" placeholder="Например: в это время у меня кружок"></div>
+    <button class="kbtn" data-a="ok">Отправить взрослым</button>`)
+  s.el.classList.add("kid-sheet")
+  $('[data-a="ok"]', s.el).onclick = () => {
+    const v = q => { const el = $(q, s.el); return el ? el.value.trim() : null }
+    const patch = {}, set = (k, val, max) => { if (val != null && val !== String(x[k] || "")) patch[k] = val.slice(0, max || 80) }
+    const title = v("#kp-t"); if (!title) return toast("Название не может быть пустым")
+    set("title", title, 60); set("day", v("#kp-d")); set("time", v("#kp-h")); set("place", v("#kp-p")); set("when", v("#kp-w"), 40)
+    if (patch.day === "") delete patch.day
+    const why = (v("#kp-y") || "").slice(0, 120)
+    if (!Object.keys(patch).length && !why) return toast("Напиши, что изменить")
+    put("log", { id: uid("pr"), kind: "prop", kid: meId(), list, ref: x.id, patch, why, title: `изменить «${x.title}»`, day: today(), at: Date.now(), st: "wait" })
+    s.close(); render(); toast("Отправил — ответ придёт сюда")
+  }
 }
 function kLearn(me) {
   const ls = lessonsFor(me.id).filter(l => l.c === kCourse), cur = nextLesson(me.id, kCourse), [, , color] = COURSES.find(c => c[0] === kCourse)
@@ -369,6 +475,8 @@ function kidNav() {
   $$("[data-kt]", n).forEach(b => b.onclick = () => { if (b.dataset.kt === "izi") return kidIzi(); kTab = b.dataset.kt; render(); window.scrollTo(0, 0) })
 }
 function kidBind(v) {
+  $$("[data-kev]", v).forEach(b => b.onclick = () => kidItemSheet("events", b.dataset.kev))
+  $$("[data-kti]", v).forEach(b => b.onclick = () => kidItemSheet("tasks", b.dataset.kti))
   $$("[data-ktask]", v).forEach(b => b.onclick = () => { const t = L("tasks").find(x => x.id === b.dataset.ktask); if (t) { tick(t); render() } })
   $$("[data-kles]", v).forEach(b => b.onclick = () => { const l = LESSONS.find(x => x.id === b.dataset.kles), me = meId(); if (!l) return
     if (!lessonDone(me, l.id) && nextLesson(me, l.c) && nextLesson(me, l.c).id !== l.id) return toast("Сначала пройди предыдущий урок"); lesson(l) })
@@ -380,10 +488,10 @@ function kidBind(v) {
   $$("[data-k]", v).forEach(b => b.onclick = () => (KDO[b.dataset.k] || (() => {}))())
 }
 const KDO = {
-  paste: () => famPaste(), scan: () => scan(), adult: () => { D.who = "adult"; save(false); render() },
+  paste: () => famPaste(), scan: () => scan(), adult: () => { D.who = "adult"; save(false); render() }, out: () => window.EXIT && EXIT.out(),
   wish: async () => { const t = await ui.ask("Чего тебе хочется?", "Большое или маленькое — всё подходит.", "", { placeholder: "Например: лего-замок", ok: "В банку" }); if (!t) return
     put("dreams", { id: uid("dr"), kid: meId(), title: t.slice(0, 60), at: Date.now() }); burst(); render() },
-  buy: () => buyForm(), hist: () => moneyHist(meId()),
+  buy: () => buyForm(), hist: () => moneyHist(meId()), evnew: () => kidEvForm(),
 }
 function dreamTalk(d) {
   if (!d) return
@@ -435,50 +543,130 @@ function kidCtx() {
   return `Сегодня ${fullDate(new Date())}. Дела: ${t || "нет"}. Звёзд всего: ${kidStars(meId())}. Копилки: Трачу ${j.spend}, Коплю ${j.save}, Делюсь ${j.share} ${core.CONFIG.currency || "฿"}. ${m ? `Главная мечта: ${m.title}${m.price ? `, стоит ${m.price}` : ""}.` : ""} Банка желаний: ${kidDreams(meId()).filter(d => !d.main && !d.done).map(d => d.title).join(", ") || "пусто"}. ${les ? `Следующий урок: ${les.t}.` : ""} Семейная цель: ${(famGoals().find(x => !x.done) || {}).title || "нет"}.`
 }
 const MIC_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>'
+// Детский чат с Изи. Как у взрослых: текст, голос одной фразой, живой разговор («Поговорить»), фото и файлы («+»).
+// Остановить можно всегда кнопкой с подписью: «Стоп» / «Закончить разговор»; «Закрыть» гасит голос и микрофон.
+// Смахивание вниз во время разговора — как «Закончить разговор»: окно чата остаётся, следующее смахивание закрывает
+const KATT_MAX = 3
+const KPLUS = [["cam", "Камера", "Сфотографировать"], ["lib", "Фото", "Из галереи"], ["doc", "Файл", "PDF, Word, текст"]]
+const KIC = {
+  live: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg>',
+  plus: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  cam: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+  lib: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="M20 16l-5-5-8 8.5"/></svg>',
+  doc: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h7l4.5 4.5v12.5H7z"/><path d="M14 3.5V8h4.5M10 13h6M10 16.5h6"/></svg>',
+}
 function kidIzi() {
   const chat = D.kchat || (D.kchat = [])
-  let busyK = false
-  const s = sheet(`<div class="ksheet kchat"><div class="kchat-h">${orb(44)}<b>${esc(iziName())}</b></div><div class="kmsgs"></div>
-    <div class="kin"><button class="kmic" aria-label="Сказать голосом">${MIC_SVG}</button><input id="kc-t" placeholder="Скажи или напиши ${esc(iziName())}…" enterkeyhint="send"><button class="ksend" aria-label="Отправить">${ic("chev", 22, "#fff", 3)}</button></div></div>`)
+  let busyK = false, kv = "", hush = 0, recK = null, live = false, quiet = 0, att = []
+  const stopAll = () => { hush++; live = false; try { if (typeof ttsStop === "function") ttsStop() } catch (e) {}; if (recK) recK.cancel(); kvSet("") }
+  const s = sheet(`<div class="ksheet kchat"><div class="kchat-h">${orb(44)}<b class="kname">${esc(iziName())}</b>
+      <button class="kgo" aria-label="Живой разговор">${KIC.live}<span>Поговорить</span></button>
+      <button class="kclose" aria-label="Закрыть">${ic("x", 18, "currentColor", 3)}<span>Закрыть</span></button></div>
+    <div class="kmsgs"></div>
+    <div class="klivep" hidden>${orb(88)}<div class="klst"></div></div>
+    <button class="kstop" hidden><i></i><span>Стоп</span></button>
+    <div class="ktray" hidden></div>
+    <div class="kplusm" hidden>${KPLUS.map(([k, t, sub]) => `<button data-kp="${k}">${KIC[k]}<span><b>${t}</b><small>${sub}</small></span></button>`).join("")}</div>
+    <div class="kin"><button class="kplus" aria-label="Добавить фото или файл">${KIC.plus}</button><button class="kmic" aria-label="Сказать голосом">${MIC_SVG}</button><input id="kc-t" placeholder="Скажи или напиши ${esc(iziName())}…" enterkeyhint="send"><button class="ksend" aria-label="Отправить">${ic("chev", 22, "#fff", 3)}</button></div></div>`, { onClose: () => stopAll(),
+    // смахнули вниз, пока идёт живой разговор или Изи говорит/слушает: Изи замолкает, микрофон гаснет, переписка остаётся — окно не закрывается
+    onSwipe: () => { if (!live && !kv) return false; const was = live; stopAll(); toast(was ? "Разговор закончен — переписка осталась в чате" : "Разговор остановлен"); return true } })
   s.el.classList.add("kid-sheet", "kfull")
   try { if (typeof ttsUnlock === "function") ttsUnlock() } catch (e) {}
-  const box = $(".kmsgs", s.el), inp = $("#kc-t", s.el)
+  const box = $(".kmsgs", s.el), inp = $("#kc-t", s.el), stopB = $(".kstop", s.el), lp = $(".klivep", s.el), tray = $(".ktray", s.el), pm = $(".kplusm", s.el)
+  // kv: listen — слушаю, think — Изи думает над голосовым вопросом, say — Изи говорит; кнопка «Стоп» видна во всех трёх.
+  // В живом разговоре вместо строки ввода — шар с подписью, что сейчас происходит, и «Закончить разговор»
+  function kvSet(v) { kv = v; $(".kchat", s.el).classList.toggle("klive", live)
+    lp.hidden = !live; stopB.hidden = !v && !live; stopB.dataset.st = live ? "live" : v; lp.dataset.st = v
+    $(".klst", lp).textContent = v === "listen" ? "Слушаю — говори" : v === "think" ? "Думаю…" : v === "say" ? "Говорю. Нажми на шар, чтобы перебить" : "Пауза"
+    $("span", stopB).textContent = live ? "Закончить разговор" : v === "say" ? `Стоп — ${iziName()} замолчит` : v === "listen" ? "Стоп — не слушать" : "Стоп — ответ без голоса" }
+  stopB.onclick = () => { const was = live; stopAll(); toast(was ? "Разговор закончен" : "Разговор остановлен") }
+  $(".kclose", s.el).onclick = () => s.close()
+  // Изи заговорил не через этот чат (подсказка, чтение вслух) — «Стоп» всё равно появляется; замолчал — прячется
+  let sayAt = 0
+  const tick = setInterval(() => { if (!s.el.isConnected) return clearInterval(tick)
+    const sp = typeof TTS !== "undefined" && (TTS.speaking || TTS.wait)
+    if (sp && !kv) kvSet("say"); else if (!sp && kv === "say" && !live && Date.now() - sayAt > 1500) kvSet("") }, 300)
+  $(".kgo", s.el).onclick = () => { if (live) return; pm.hidden = true; live = true; quiet = 0; if (kv === "say") { hush++; try { ttsStop() } catch (e) {} }
+    if (recK) return kvSet("listen"); kvSet(""); listen() }
+  // шар в живом разговоре: пока Изи говорит — перебить и слушать; пока слушает — отправить сразу
+  lp.onclick = (() => { if (!live) return; if (kv === "say") { hush++; try { ttsStop() } catch (e) {}; listen() } else if (kv === "listen" && recK) recK.finish() })
   const draw = () => {
     const l = chat.slice(-30)
     box.innerHTML = (l.length ? "" : `<div class="kmsg a">${esc(kidTipText())}</div><div class="kquick">${["Что мне сделать сейчас?", "Как быстрее накопить на мечту?", "Придумай мне цель на неделю"].map(q => `<button data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>`) +
-      l.map(x => `<div class="kmsg ${x.role === "user" ? "u" : "a"}">${esc(x.content)}${x.why ? `<small class="kwhy2">${esc(x.why)}</small>` : ""}</div>`).join("") + (busyK ? `<div class="kmsg a kdots"><i></i><i></i><i></i></div>` : "")
+      l.map(x => `<div class="kmsg ${x.role === "user" ? "u" : "a"}">${(x.thumbs || []).length ? `<div class="kthumbs">${x.thumbs.map(t => `<img src="${esc(t)}" alt="">`).join("")}</div>` : ""}${(x.files || []).map(n => `<div class="kfile">${KIC.doc}<span>${esc(n)}</span></div>`).join("")}${esc(x.content)}${x.why ? `<small class="kwhy2">${esc(x.why)}</small>` : ""}</div>`).join("") + (busyK ? `<div class="kmsg a kdots"><i></i><i></i><i></i></div>` : "")
     $$("[data-q]", box).forEach(b => b.onclick = () => send(b.dataset.q))
     box.scrollTop = box.scrollHeight
   }
-  let byVoice = false, recK = null
-  const say = t => { try { if (typeof speak === "function") speak(t, { force: true }) } catch (e) {} }
-  // Голос: ребёнок говорит — Изи слушает до паузы, отправляет и отвечает вслух.
+  let byVoice = false
+  const say = t => { const my = hush; sayAt = Date.now(); try { if (typeof speak === "function") { kvSet("say"); speak(t, { force: true, onEnd: () => { if (my !== hush || kv !== "say") return; kvSet(""); if (live) setTimeout(() => { if (live && my === hush && !recK) listen() }, 350) } }) } } catch (e) { kvSet("") } }
+  // Голос: ребёнок говорит — Изи слушает до паузы, отправляет и отвечает вслух. В живом разговоре — снова слушает.
   // Как у взрослых: Safari слушает непрерывно, конец фразы — 2,2 с тишины. Синтез речи здесь не трогаем:
   // на iPhone/iPad «говорить» и «слушать» в одно касание вешают страницу — синтез будится при открытии окна.
   const listen = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition, mic = $(".kmic", s.el)
     if (recK) return recK.finish()
-    if (!SR) { inp.focus(); return toast("Нажми микрофон на клавиатуре и говори") }
+    if (!SR) { live = false; kvSet(""); inp.focus(); return toast("Нажми микрофон на клавиатуре и говори") }
     try { if (typeof TTS !== "undefined" && TTS.speaking && typeof ttsStop === "function") ttsStop() } catch (e) {}
     const r = new SR(); r.lang = ((window.L && L.loc) || "ru-RU"); r.interimResults = true; r.continuous = true
-    let txt = "", t = null, done = false
+    let txt = "", t = null, done = false, drop = false
     const stopNow = () => { clearTimeout(t); try { r.stop() } catch (e) {} ; t = setTimeout(end, 1500) }   // Safari не прислал onend — закончим сами
     const end = () => { if (done) return; done = true; clearTimeout(t); try { r.abort() } catch (e) {}
-      recK = null; mic.classList.remove("on"); inp.placeholder = `Скажи или напиши ${iziName()}…`; if (txt) { byVoice = true; send(txt) } }
+      recK = null; mic.classList.remove("on"); inp.placeholder = `Скажи или напиши ${iziName()}…`; if (kv === "listen") kvSet("")
+      if (drop) { inp.value = ""; return }
+      if (txt) { quiet = 0; byVoice = true; send(txt); return }
+      // живой разговор: молчит — слушаем ещё раз, потом пауза до касания шара
+      if (live && ++quiet < 2) setTimeout(() => { if (live && !recK) listen() }, 300)
+      else if (live) { live = false; kvSet(""); toast("Не слышу. Нажми «Поговорить», когда захочешь") } }
     r.onresult = e => { const a = []; for (let i = 0; i < e.results.length; i++) a.push(e.results[i][0].transcript)
-      txt = a.join(" ").replace(/\s+/g, " ").trim(); inp.value = txt; clearTimeout(t); t = setTimeout(stopNow, 2200) }
-    r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") toast("Разреши микрофон в настройках Safari"); if (e.error !== "no-speech") end() }
+      txt = a.join(" ").replace(/\s+/g, " ").trim(); inp.value = txt; $(".klst", lp).textContent = txt || "Слушаю — говори"; clearTimeout(t); t = setTimeout(stopNow, 2200) }
+    r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { live = false; toast("Разреши микрофон в настройках Safari") } if (e.error !== "no-speech") end() }
     r.onend = end
-    recK = { finish: stopNow }; mic.classList.add("on"); inp.placeholder = "Слушаю… нажми ещё раз — отправить"
+    recK = { finish: stopNow, cancel: () => { drop = true; end() } }; mic.classList.add("on"); inp.placeholder = "Слушаю… нажми ещё раз — отправить"; kvSet("listen")
     t = setTimeout(stopNow, 8000)   // ничего не сказал — выключаемся
     try { r.start() } catch (err) { end() }
   }
+  // ── Фото и файлы: до трёх за раз, карточки над строкой ввода; уходят Изи вместе со следующим сообщением ──
+  const drawTray = () => { tray.hidden = !att.length
+    tray.innerHTML = att.map((a, i) => `<div class="kat">${a.thumb ? `<img src="${esc(a.thumb)}" alt="">` : `<span class="kdoc">${KIC.doc}</span>`}<small>${esc(a.thumb ? "Фото" : a.name)}</small><button data-kx="${i}" aria-label="Убрать">${ic("x", 14, "currentColor", 3)}</button></div>`).join("")
+    $$("[data-kx]", tray).forEach(b => b.onclick = () => { att.splice(+b.dataset.kx, 1); drawTray() }) }
+  const addFiles = async fs => {
+    for (const f of fs) {
+      if (att.length >= KATT_MAX) { toast(`За раз — до ${KATT_MAX} фото или файлов`); break }
+      try {
+        const name = (f.name || "файл").slice(0, 60)
+        if (/pdf$/i.test(f.type) || /\.pdf$/i.test(f.name || "")) {
+          if (f.size > 8e6) { toast("Файл слишком большой. Сфотографируй нужную страницу"); continue }
+          att.push({ t: "pdf", d: (await fileB64(f)).split(",")[1], name })
+        } else if (/^image\//.test(f.type) || /\.(jpe?g|png|heic|webp|gif)$/i.test(f.name || "")) {
+          const url = await shrinkPhoto(f, 1280); att.push({ t: "image", d: url.split(",")[1], thumb: await shrinkData(url, 220), name })
+        } else if (window.DOCREAD) {
+          const d = await DOCREAD.read(f)
+          if (d.image) { const url = await shrinkPhoto(d.image, 1280); att.push({ t: "image", d: url.split(",")[1], thumb: await shrinkData(url, 220), name }) }
+          else att.push({ t: "text", text: String(d.text || "").slice(0, 20000), name })
+        } else toast("Такой файл не открыть")
+      } catch (e) { toast("Не получилось открыть файл") }
+    }
+    drawTray()
+  }
+  const pick = (accept, cam) => { const i = document.createElement("input"); i.type = "file"; i.accept = accept; if (cam) i.setAttribute("capture", "environment"); else i.multiple = true
+    i.style.display = "none"; i.onchange = () => { addFiles([...i.files]); i.remove() }; s.el.append(i); i.click() }
+  $(".kplus", s.el).onclick = () => { pm.hidden = !pm.hidden }
+  $$("[data-kp]", pm).forEach(b => b.onclick = () => { pm.hidden = true; const k = b.dataset.kp
+    k === "cam" ? pick("image/*", true) : k === "lib" ? pick("image/*") : pick(".pdf,.doc,.docx,.txt,.rtf,.xls,.xlsx,.ppt,.pptx,.pages,.numbers,.key,.csv,.md,application/pdf,text/*") })
   const send = async text => {
-    text = String(text || "").trim(); if (!text || busyK) return
-    const voiceNow = byVoice; byVoice = false
-    chat.push({ role: "user", content: text.slice(0, 500), at: Date.now() }); inp.value = ""; busyK = true; draw()
-    // в историю для Claude — только настоящий разговор, без наших «не получилось»
-    const ask = () => post(D.fam.url, { op: "ask", code: D.fam.code, id: D.fam.id, ctx: kidCtx(), messages: chat.filter(x => !x.err).slice(-12).map(x => ({ role: x.role, content: x.content })) })
+    text = String(text || "").trim(); if (busyK) return
+    const files = att.splice(0); drawTray()
+    if (!text && files.length) text = files.length > 1 ? "Посмотри, пожалуйста, это" : files[0].t === "image" ? "Посмотри, пожалуйста, фото" : "Посмотри, пожалуйста, файл"
+    if (!text) return
+    const voiceNow = byVoice, my = hush; byVoice = false; pm.hidden = true
+    try { if (typeof ttsStop === "function" && kv === "say") { ttsStop(); kvSet("") } } catch (e) {}
+    const msg = { role: "user", content: text.slice(0, 500), at: Date.now() }
+    if (files.some(a => a.thumb)) msg.thumbs = files.filter(a => a.thumb).map(a => a.thumb)
+    if (files.some(a => !a.thumb)) msg.files = files.filter(a => !a.thumb).map(a => a.name)
+    chat.push(msg); inp.value = ""; busyK = true; draw(); if (voiceNow) kvSet("think")
+    // в историю для Claude — только настоящий разговор, без наших «не получилось»; вложения — только к этому сообщению
+    const ask = () => post(D.fam.url, { op: "ask", code: D.fam.code, id: D.fam.id, ctx: kidCtx(), messages: chat.filter(x => !x.err).slice(-12).map(x => ({ role: x.role, content: x.content })),
+      att: files.length ? files.map(a => ({ t: a.t, d: a.d, text: a.text, name: a.name })) : undefined })
     let r = await ask()
     // Claude перегружен или упёрся в минутный лимит ключа — подождать и спросить ещё раз
     if (r && !r.ok && /overload|rate|529|429|занята|долго/i.test(r.error || "")) { await new Promise(z => setTimeout(z, 2500)); r = await ask() }
@@ -488,7 +676,8 @@ function kidIzi() {
     chat.push(Object.assign({ role: "assistant", content: ans, at: Date.now() }, err ? { err: true, why: String((r && r.error) || "нет ответа").slice(0, 120) } : {}))
     while (chat.length > 60) chat.shift()
     save(false); draw()
-    if (voiceNow) say(ans)
+    if ((voiceNow || live) && my === hush && document.body.contains(s.el)) say(ans)   // нажали «Стоп» или закрыли — ответ только текстом
+    else if (kv === "think") kvSet("")
   }
   $(".kmic", s.el).onclick = listen
   $(".ksend", s.el).onclick = () => send(inp.value)
@@ -549,13 +738,14 @@ function famPage() {
     ${kids().length ? `<div class="muted small" style="margin-top:8px">Звёзды детей идут в семейные баллы ×${KID_X}, чтобы вклад был честным.</div>` : ""}
     ${adult ? `<div class="btns" style="margin-top:10px"><button class="btn" data-f="invite">Пригласить взрослого</button><button class="btn primary" data-f="kid">Добавить ребёнка</button></div>` : ""}</div>`
   const w = waits()
-  if (adult && w.length) h += `<div class="card fcard" id="fwait"><h2>Ждут вашей проверки <span class="muted small">${w.length}</span></h2>${w.map((x, i) => { const m = member(x.x.kid) || {}, n = x.t === "money" ? "bag" : x.x.kind === "earn" ? "coins" : taskIc(x.x.title), c = icColor(n)
-    return `<div class="row"><span class="ftile" style="background:${c}1F">${ic(n, 22, c)}</span><div class="grow"><div class="t">${esc(short(m.name))} · ${esc(x.t === "money" ? "хочет купить: " + x.x.note : x.x.title)}</div><div class="s">${x.t === "money" ? `${num(-x.x.amount)} ${esc(cur)} из «Трачу»` : x.x.pay ? `+${num(x.x.pay)} ${esc(cur)}` : `+${x.x.stars} звёзд`}${!sameDay(x.x.at, Date.now()) ? " · " + esc(dayName(new Date(x.x.at))) : ""}</div></div><button class="btn small" data-fno="${i}">Нет</button><button class="btn small primary" data-fyes="${i}">Да</button></div>` }).join("")}</div>`
+  if (adult && w.length) h += `<div class="card fcard" id="fwait"><h2>Ждут вашей проверки <span class="muted small">${w.length}</span></h2>${w.map((x, i) => { const m = member(x.x.kid) || {}, pr = x.x.kind === "prop", n = pr ? "clock" : x.t === "money" ? "bag" : x.x.kind === "earn" ? "coins" : taskIc(x.x.title), c = pr ? "#6A4BF2" : icColor(n)
+    return `<div class="row"><span class="ftile" style="background:${c}1F">${ic(n, 22, c)}</span><div class="grow"><div class="t">${esc(short(m.name))} · ${esc(x.t === "money" ? "хочет купить: " + x.x.note : pr ? "просит " + x.x.title : x.x.title)}</div><div class="s">${pr ? esc(propText(x.x) || "без подробностей") : x.t === "money" ? `${num(-x.x.amount)} ${esc(cur)} из «Трачу»` : x.x.pay ? `+${num(x.x.pay)} ${esc(cur)}` : `+${x.x.stars} звёзд`}${!sameDay(x.x.at, Date.now()) ? " · " + esc(dayName(new Date(x.x.at))) : ""}</div></div><button class="btn small" data-fno="${i}">Нет</button><button class="btn small primary" data-fyes="${i}">Да</button></div>` }).join("")}</div>`
   const gs = famGoals()
   h += `<div class="card fcard"><h2>Семейные цели<button class="act" data-f="goal">Добавить</button></h2>${gs.map(g => { const p = goalProg(g), gi = goalIc(g.title)
     return `<div class="row" data-fg="${esc(g.id)}"><span class="ftile" style="background:${gi[1]}1F">${ic(g.ic || gi[0], 22, gi[1])}</span><div class="grow"><div class="t">${esc(g.title)}${g.done ? " · достигнута" : ""}</div><div class="s">${g.repeat ? `каждые ${num(g.target)} баллов${p.times ? ` · было ${p.times} ${plural(p.times, "раз", "раза", "раз")}` : ""}` : `${num(p.have)} из ${num(g.target)} баллов${g.due ? " · до " + esc(g.due.split("-").reverse().slice(0, 2).join(".")) : ""}`}</div><div class="fgbar"><i style="width:${Math.round(p.p * 100)}%;background:${gi[1]}"></i></div></div></div>` }).join("") || `<div class="empty">Например: «Аквапарк всей семьёй» за 3 000 баллов или «Кино с попкорном» каждые 1 000.</div>`}</div>`
   const kd = kids().filter(k => mainDream(k.id) || kidDreams(k.id).length)
   if (kd.length) h += `<div class="card fcard"><h2>Мечты детей</h2>${kd.map(k => kidDreams(k.id).filter(d => !d.done).slice(0, 4).map(d => dreamRow(k, d)).join("")).join("")}</div>`
+  if (!kidMode()) h += `<div class="card fcard fshare"><h2>Что делим с семьёй</h2>${shareRows()}<div class="muted small" style="margin-top:6px">По умолчанию всё выключено. Каждый в семье решает за себя.</div></div>`
   if (D.fam.owner) h += `<div class="card fcard"><div class="row"><span class="ftile" style="background:#6A4BF21F">${ic("bulb", 22, "#6A4BF2")}</span><div class="grow"><div class="t">Один ключ Claude на семью</div><div class="s">${D.fam.key ? "взрослые без своего ключа и дети говорят с " + esc(iziName()) + " через ваш ключ (детям — до 30 сообщений в день). Ключ лежит в вашей таблице, на телефоны не попадает. Друзьям и лиге он не доступен" : D.conn && D.conn.key ? "выключен — дети видят только подсказки" : "нужен ключ Claude в вашем приложении"}</div></div>${D.conn && D.conn.key ? `<button class="btn small ${D.fam.key ? "" : "primary"}" data-f="${D.fam.key ? "keyoff" : "keyon"}">${D.fam.key ? "Выключить" : "Включить"}</button>` : ""}</div></div>`
   h += `<div class="muted small" style="text-align:center;margin:4px 0 14px">Семья «${esc(F().name || D.fam.fname || "")}»${D.fam.err ? ` · ${esc(D.fam.err)}` : ""} · <button class="linkbtn" data-f="leave">Выйти</button></div>`
   return h
@@ -672,7 +862,7 @@ async function famNew() {
   const r = await post(D.conn.hook, { op: "new", name }, D.conn.secret)
   if (!r || !r.ok || !r.family) return ui.info("Семья пока не создаётся", r && r.net ? `Не дозвался до таблицы (${r.error}), хотя пробовал трижды. Проверьте интернет и нажмите ещё раз.` : r && r.error ? `Таблица ответила: ${r.error}` : r && r.ok ? "В таблице ещё старая версия скрипта — после её обновления семья заработает." : "Нет связи с таблицей. Попробуйте позже.")
   D.fam = { url: D.conn.hook, code: r.family.code, id: uid("m"), role: "adult", name: me, owner: true, data: r.family, at: 0, out: {}, seen: {}, me: { color: COLORS[0], owner: true } }
-  save(false); await push(true); await shareKey(true); render()
+  save(false); await push(true); await shareKey(true); render(); shareSheet(true)
 }
 // Взрослый без своего ключа — к Claude через общий ключ семьи
 const keyOn = () => famOn() && D.fam.role !== "kid" && !!D.fam.key
@@ -751,12 +941,12 @@ async function join() {
     D.who = "kid"; save(false); await push(true); render(); window.scrollTo(0, 0)
     return
   }
-  const me = x.m ? x.nm : await ui.ask(`Вступить в семью «${x.n || "Семья"}»?`, "Как вас подписать?", D.gamiName || "", { placeholder: "Например: Оля", ok: "Вступить" })
+  const me = x.m ? x.nm : await ui.ask(`Вступить в семью «${x.n || "Семья"}»?`, "Как вас подписать?", D.gamiName || "", { placeholder: "Например: Мама", ok: "Вступить" })
   if (!me) return
   D.fam = { url: x.u, code: x.c, id: x.m || uid("m"), role: x.r || "adult", name: me, fname: x.n, data: null, at: 0, out: {}, seen: {}, me: x.m ? null : { color: COLORS[1] } }
   if (D.who === "kid") D.who = "adult"
   save(false); await push(true); if (D.fam.err) toast(`Семья: ${D.fam.err}`)
-  setTab("plans"); openFam()
+  setTab("plans"); openFam(); if (!D.fam.shareAsked) setTimeout(() => shareSheet(true), 400)
 }
 // Вход по ссылке вручную («У меня есть ссылка»)
 async function famPaste() {
@@ -906,6 +1096,7 @@ function openFam() { plansF = "fam"; if (tab !== "plans") setTab("plans"); else 
 const FDO = { keyadd: () => keyAdd(), keydel: () => { delete D.myKey; save(false); render(); toast("Ключ убран") }, keyon: () => shareKey(true), keyoff: () => shareKey(false), new: () => famNew(), paste: () => famPaste(), scan: () => scan(), invite: () => orbInvite(null), kid: () => kidAdd(), goal: () => goalForm(), leave: () => leave(), open: () => openFam() }
 function bindFam(v) {
   $$("[data-f]", v).forEach(b => b.onclick = e => { e.stopPropagation(); const f = FDO[b.dataset.f]; if (f) f() })
+  shareBind(v)
   $$("[data-fm]", v).forEach(b => b.onclick = () => kidSheet(b.dataset.fm))
   $$("[data-fg]", v).forEach(b => b.onclick = () => goalOpen(b.dataset.fg))
   $$("[data-fwish]", v).forEach(b => b.onclick = e => { e.stopPropagation(); toWish(b.dataset.fwish) })
@@ -926,7 +1117,7 @@ function wrap() {
   const top0 = todayTop
   todayTop = function () {
     const n = isAdult() ? waits().length : 0
-    return (n ? `<button class="card fnote" data-f="open"><span class="ftile" style="background:#0A9F6E1F">${ic("users", 22, "#0A9F6E")}</span><div class="grow"><div class="t">Семья: ${n} ${plural(n, "дело ждёт", "дела ждут", "дел ждут")} проверки</div><div class="s">${esc(waits().slice(0, 2).map(w => short((member(w.x.kid) || {}).name) + " · " + (w.t === "money" ? w.x.note : w.x.title)).join(", "))}</div></div>${ic("chev", 18, "#8A8A8E")}</button>` : "") + top0.apply(this, arguments)
+    return (n ? `<button class="card fnote" data-f="open"><span class="ftile" style="background:#0A9F6E1F">${ic("users", 22, "#0A9F6E")}</span><div class="grow"><div class="t">Семья: ${n} ${plural(n, "дело ждёт", "дела ждут", "дел ждут")} ${waits().every(w => w.x.kind === "prop") ? "ответа" : "проверки"}</div><div class="s">${esc(waits().slice(0, 2).map(w => short((member(w.x.kid) || {}).name) + " · " + (w.t === "money" ? w.x.note : w.x.kind === "prop" ? "просит " + w.x.title : w.x.title)).join(", "))}</div></div>${ic("chev", 18, "#8A8A8E")}</button>` : "") + top0.apply(this, arguments)
   }
   const more0 = renderMore
   renderMore = function () { const html = more0.apply(this, arguments), i = html.indexOf('<div class="card"><h2>Связь с виджетом'); return i < 0 ? keyCard() + html : html.slice(0, i) + keyCard() + html.slice(i) }
@@ -966,6 +1157,11 @@ function init() {
   setInterval(() => { if (document.visibilityState === "visible") push(false) }, 60e3)
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") push(Date.now() - ((D.fam && D.fam.at) || 0) > 20e3) })
   if (pendingFam) setTimeout(join, 1000)
-  window.FAM = { scan, orbInvite, on: famOn, members, meId, isAdult, L, tasksOn, COLORS, keyOn, ai, link, kidSheet, join, push, put, famDays, sumSince, goalProg, jars, kidStars, waits, approve, kidMode, openFam, LESSONS, lesson, credit, pocketTick }
+  // семья была до «Что делим с семьёй»: календарь оставляем как был (включён), общий бюджет — если уже отмечали общее; окно — один раз
+  if (famOn() && D.fam.role !== "kid" && !D.fam.shareAsked) {
+    if (!D.fam.share) D.fam.share = { cal: 1, money: live(D.money).some(e => e.shared) || live(D.goals).some(g => g.kind === "jar" && g.shared) ? 1 : 0 }
+    save(false); setTimeout(() => { if (famOn() && !D.fam.shareAsked && !stack.length) shareSheet("old") }, 2500)
+  }
+  window.FAM = { scan, orbInvite, on: famOn, share, shareSheet, members, meId, isAdult, L, tasksOn, COLORS, keyOn, ai, link, kidSheet, join, push, put, famDays, sumSince, goalProg, jars, kidStars, waits, approve, kidMode, openFam, LESSONS, lesson, credit, pocketTick }
 }
 })()

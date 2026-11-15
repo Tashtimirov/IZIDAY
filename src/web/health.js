@@ -302,18 +302,18 @@ let nudgeBusy = false
 function medNudges() {
   if (nudgeBusy) return; nudgeBusy = true
   try {
-    const now = Date.now(), want = new Map()
+    const now = Date.now(), want = new Map(), on = k => typeof tipOn !== "function" || tipOn(k)   // блок скрыт — подсказок по нему нет
     for (let i = 0; i < 2; i++) {
       const d = addDays(sod(new Date()), i), k = dayKey(d)
-      for (const m of meds()) for (const t of m.times || []) {
+      if (on("meds")) for (const m of meds()) for (const t of m.times || []) {
         if (slotTaken(m, k, t)) continue
         const at = +d + (hmToMin(t) || 0) * 60e3; if (at <= now) continue
         want.set(`md${m.id}${k}${t.replace(":", "")}`, { date: at, title: "Лекарства", text: `Пора принять: ${m.title}${m.dose ? " — " + m.dose : ""}. Ответь «принял» — отмечу.` })
       }
       const c = CFG()
-      if (c.sleepPush !== false) { let m = hmToMin(bedtime()) - 30; if (m < 12 * 60) m += 1440; const at = +d + m * 60e3
+      if (c.sleepPush !== false && on("sleep")) { let m = hmToMin(bedtime()) - 30; if (m < 12 * 60) m += 1440; const at = +d + m * 60e3
         if (at > now) want.set(`sl${k}`, { date: at, title: "Скоро спать", text: `Чтобы встать в ${c.wake} выспавшимся, лечь лучше до ${bedtime()}. Через 30 минут — экран в сторону.` }) }
-      for (const r of medrecs()) if (r.due === k) { const at = +d + 10 * 3600e3; if (at > now) want.set(`mr${r.id}${k}`, { date: at, title: "Медкарта", text: `Пора: ${r.title}${r.who && r.who !== "Я" ? " — " + r.who : ""}. Записаться сегодня?` }) }
+      if (on("medrec")) for (const r of medrecs()) if (r.due === k) { const at = +d + 10 * 3600e3; if (at > now) want.set(`mr${r.id}${k}`, { date: at, title: "Медкарта", text: `Пора: ${r.title}${r.who && r.who !== "Я" ? " — " + r.who : ""}. Записаться сегодня?` }) }
     }
     for (const n of live(D.nudges)) if (/^(md|sl|mr)/.test(String(n.id)) && n.date > now && !want.has(n.id)) remove("nudges", n.id)
     for (const [id, x] of want) { const o = live(D.nudges).find(n => n.id === id); if (!o || o.date !== x.date || o.text !== x.text) upsert("nudges", Object.assign({ id }, x)) }
@@ -325,7 +325,7 @@ const medrecs = () => goals("medrec").filter(r => r.title).map(r => Object.assig
   .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"))
 const MR_PRE = ["Общий анализ крови", "Биохимия крови", "Терапевт", "Стоматолог", "Окулист", "Прививка", "Педиатр", "Флюорография", "Чек-ап"]
 const MR_EVERY = { "Общий анализ крови": 12, "Биохимия крови": 12, "Терапевт": 12, "Стоматолог": 6, "Окулист": 12, "Флюорография": 12, "Чек-ап": 12, "Педиатр": 6 }
-const family = () => { const s = new Set(["Я"]); const p = (D.mny && D.mny.partner) || "Оля"; s.add(p); for (const k of (typeof kidsList === "function" ? kidsList() : [])) if (k.kid) s.add(k.kid); for (const r of goals("medrec")) if (r.who) s.add(r.who); return [...s] }
+const family = () => { const s = new Set(["Я"]); const p = D.mny && D.mny.partner !== "Оля" && D.mny.partner; if (p) s.add(p); for (const k of (typeof kidsList === "function" ? kidsList() : [])) if (k.kid) s.add(k.kid); for (const r of goals("medrec")) if (r.who) s.add(r.who); return [...s] }
 function medrecAdd(x) {
   const title = String(x.title || "").trim(); if (!title) return null
   const rec = { id: uid("mr"), date: Date.now(), kind: "medrec", who: String(x.who || "Я").trim(), title, last: /^\d{4}-\d\d-\d\d$/.test(x.last || "") ? x.last : "",
@@ -781,7 +781,7 @@ function init() {
   const top0 = renderTop
   renderTop = function () {
     const out = top0.apply(this, arguments)
-    if (tab === "health" && D.conn && !D.sync.error) { const rd = sameDay(healthDay(), new Date()) && readiness(); $("#top-sub").textContent = rd ? `Сегодня · готовность ${rd.score}` : "Сон, вода, лекарства, тренировки" }
+    if (tab === "health" && D.conn && !D.sync.error && !(typeof netDown === "function" && netDown())) { const rd = sameDay(healthDay(), new Date()) && readiness(); $("#top-sub").textContent = rd ? `Сегодня · готовность ${rd.score}` : "Сон, вода, лекарства, тренировки" }
     return out
   }
   const render0 = render

@@ -729,7 +729,17 @@ async function getCalendar(days) {
   const from = new Date(Math.min(days[0], startOfDay(new Date())))
   const end = new Date(days[days.length - 1]); end.setDate(end.getDate() + 1)
   const near = startOfDay(new Date()); near.setDate(near.getDate() + CONFIG.daysAhead + 1)
-  try { return await CalendarEvent.between(from, new Date(Math.max(end, near)), []) } catch (e) { return [] }
+  try { return await evShown(await CalendarEvent.between(from, new Date(Math.max(end, near)), [])) } catch (e) { return [] }
+}
+// Скрытые в приложении события (goals kind "evhide": {title, start, cal, all}) виджет тоже не показывает.
+// В исходном календаре они остаются; сверяем по названию и минуте начала (или по названию и календарю — вся серия).
+async function evShown(list) {
+  let H = []
+  try { H = (await loadJSON("goals.json")).filter(g => g && g.kind === "evhide" && !g.deleted) } catch (e) {}
+  if (!H.length) return list
+  const p2 = n => String(n).padStart(2, "0")
+  const st = e => { const d = e.startDate; return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}` + (e.isAllDay ? "" : `T${p2(d.getHours())}:${p2(d.getMinutes())}`) }
+  return list.filter(e => !H.some(h => h.title === e.title && (h.all ? (h.cal || "") === ((e.calendar && e.calendar.title) || "") : String(h.start || "").slice(0, 16) === st(e))))
 }
 
 // В календаре — только события, которые ещё не закончились. Напоминания живут в своём разделе.
@@ -2950,7 +2960,7 @@ async function answerQuery(a) {
   const day = a.day || startOfDay(new Date())
   const next = new Date(day.getTime() + 864e5)
   let evs = [], rems = []
-  try { evs = await CalendarEvent.between(day, next, []) } catch (e) {}
+  try { evs = await evShown(await CalendarEvent.between(day, next, [])) } catch (e) {}
   try { rems = (await appRems()).filter(r => r.dueDate && sameDay(r.dueDate, day)) } catch (e) {}
   evs.sort((x, y) => x.startDate - y.startDate)
   const lines = evs.map(e => `📅 ${e.isAllDay ? "весь день" : TIME.string(e.startDate) + "–" + TIME.string(e.endDate)} ${e.title}`)
@@ -3439,7 +3449,7 @@ function makeRuleFull(rep) {
 // ── Календарь ──
 async function evRange(from, to) {
   let list = []
-  try { list = await CalendarEvent.between(from, to, []) } catch (e) {}
+  try { list = await evShown(await CalendarEvent.between(from, to, [])) } catch (e) {}
   return list
 }
 
