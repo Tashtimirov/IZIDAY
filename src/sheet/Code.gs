@@ -987,12 +987,20 @@ function pushTick() {
     const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
     const hourOf = t => Number(Utilities.formatDate(new Date(t), tz, "H")), dayOf = t => Utilities.formatDate(new Date(t), tz, "yyyy-MM-dd");
     const evHid = evHiddenCheck_(alive("goals"), tz);   // события, скрытые в приложении, — без сводок и «Пора выезжать»
+    // скрытые в приложении блоки (и выключенные функции): по ним пушей нет. push_cfg.off — список видов: rems, trip, kids, bdays,
+    // water, meds, sleep, medrec, fast, pomo… Старое приложение шлёт только water: 0
+    const offL = (hubGet_("push_cfg") || {}).off, off = k => Array.isArray(offL) && offL.indexOf(k) >= 0;
+    const waterOff = off("water") || (hubGet_("push_cfg") || {}).water === 0;
+    const waterTxt = /💧|(^|[^а-яё])(вод[аыуе]|водой|стакан\S*|попе[йт]\S*|попить)([^а-яё]|$)|\bwater\b|\bhydrat/i;
+    const nudgeKind = { md: "meds", sl: "sleep", mr: "medrec", fs: "fast", pq: "pomo" };
+    const nudgeOff = n => { const id = String(n.id || ""), k = nudgeKind[id.slice(0, 2)];
+      return k ? off(k) : waterOff && /^n/.test(id) && waterTxt.test((n.title || "") + " " + (n.text || "")); };
     if (full) {
-      // 1. подсказки помощника (plan_day)
-      for (const n of alive("nudges")) if (n.date > from && n.date <= now + 60e3) once("n:" + n.id + ":" + n.date, { title: n.title || "💡 IZIDAY", body: n.text || "", url: "./#chat" });
+      // 1. подсказки помощника (plan_day); про воду — только если подсказки о ней не выключены
+      for (const n of alive("nudges")) if (n.date > from && n.date <= now + 60e3 && !nudgeOff(n)) once("n:" + n.id + ":" + n.date, { title: n.title || "💡 IZIDAY", body: n.text || "", url: "./#chat" });
       // 2. напоминания: в срок, потом «Выполнил?» через 1 и 3 часа, дальше раз в день в 10:00 (до 3 дней);
       //    на день без времени — в 13:00 и 18:00. Отметили выполненным — вопросы прекращаются
-      for (const r of alive("rems")) {
+      for (const r of off("rems") ? [] : alive("rems")) {   // блок «Напоминания» скрыт — молчим, сами напоминания целы
         if (r.done || !r.due) continue;
         const d = pushParse_(r.due, tz); if (!d) continue;
         const due = d.getTime(), timed = /T/.test(r.due), url = "./#rem=" + encodeURIComponent(r.id), times = [];
@@ -1004,7 +1012,7 @@ function pushTick() {
       }
       // 3. вода: через 2 ч после последнего стакана, потом настойчивее (9:00–21:00, пока не выпита норма)
       const h = hourOf(now), today = dayOf(now);
-      if (h >= PUSH.waterFrom && h < PUSH.waterTo) {
+      if (!waterOff && h >= PUSH.waterFrom && h < PUSH.waterTo) {
         const water = alive("water").filter(w => dayOf(w.date) === today), goal = Number((hubGet_("push_cfg") || {}).waterGoal) || 2000;
         const drank = water.reduce((s, w) => s + (Number(w.ml) || 0), 0);
         if (drank < goal) {
@@ -1022,7 +1030,7 @@ function pushTick() {
     }
     // 5. дела детей: утром в 7:00 — что сегодня (кружки, кто забирает, что взять); за 30 минут до дела со временем — ещё раз
     const wd = Number(Utilities.formatDate(new Date(now), tz, "u"));   // 1 — понедельник … 7 — воскресенье
-    const kids = alive("kids").filter(k => (k.days || []).map(Number).includes(wd) && k.title);
+    const kids = off("kids") ? [] : alive("kids").filter(k => (k.days || []).map(Number).includes(wd) && k.title);
     if (kids.length) {
       const line = k => `${k.time ? k.time + " " : ""}${k.title}${k.kid ? " (" + k.kid + ")" : ""}${k.who ? ", забирает " + k.who : ""}${k.take ? " — взять: " + k.take : ""}`;
       const morning = pushParse_(dayOf(now) + "T" + String(PUSH.kidsAt).padStart(2, "0") + ":00", tz).getTime();
@@ -1035,7 +1043,7 @@ function pushTick() {
       }
     }
     // 6. интервальное голодание: окно открылось — пуш
-    for (const f of alive("fast")) if (!f.end && f.start && f.hours) {
+    for (const f of off("fast") ? [] : alive("fast")) if (!f.end && f.start && f.hours) {
       const at = Number(f.start) + Number(f.hours) * 3600e3;
       if (at <= now + 60e3 && at > now - 6 * 3600e3) once("f:" + f.id, { title: "🍽 Окно открыто", body: `${f.hours} ч голодания позади — можно есть. Записать еду — по фото или словами.`, url: "./#health" });
     }
@@ -1060,7 +1068,7 @@ function pushTick() {
     // 4. «Пора выезжать»: события с адресом в ближайшие 3 часа, дорога от того места, где пользователь сейчас
     const here = pushHere_(), travel = hubGet_("push_travel") || {};
     const oldNote = here && here.old ? ` Считаю от места, где вы были ${here.old} ч назад — откройте IZIDAY, чтобы уточнить.` : "";
-    if (here) {
+    if (here && !off("trip")) {
       for (const k of CalendarApp.getAllCalendars().filter(c => !c.isHidden())) for (const e of k.getEvents(new Date(now), new Date(now + PUSH.look))) {
         const loc = String(e.getLocation() || "").trim();
         if (evHid(e, k.getName())) continue;
@@ -1090,7 +1098,7 @@ function pushTick() {
       hubSet_("push_travel", travel);
     }
     // 9. дни рождения: за неделю в 10:00, накануне в 19:00 и в сам день в 9:00 (bdayPush_ — ниже, у помощников дней рождения)
-    try { bdayPush_(now, from, tz, once, alive, snap); } catch (e) {}   // сбой здесь не должен остановить остальные пуши
+    if (!off("bdays")) try { bdayPush_(now, from, tz, once, alive, snap); } catch (e) {}   // сбой здесь не должен остановить остальные пуши
     // 8. Claude Code закончил переданную задачу (итог появился на листе «Ответы Claude Code»)
     for (const j of ccCheck_(SpreadsheetApp.getActiveSpreadsheet(), now))
       if (j.state === "done" && j.doneAt > now - 6 * 3600e3) once("cc:" + j.id, { title: "Задача готова", body: `«${j.title}»: ${String(j.text || "").split("\n")[0].slice(0, 140)}`, url: "./#chat" });

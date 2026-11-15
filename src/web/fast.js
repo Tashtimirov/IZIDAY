@@ -74,7 +74,7 @@ function fastNudges() {
   if (busy) return; busy = true
   try {
     const now = Date.now(), f = fastNow(), want = new Map(), horizon = now + 60 * 3600e3
-    if (f && f.hours >= 20) {
+    if (f && f.hours >= 20 && (typeof tipOn !== "function" || tipOn("fast"))) {   // блок «Голодание» скрыт — без подсказок
       const end = endOf(f)
       // вода: каждые 3 часа с 9 до 21, не позже чем за час до конца
       for (let t = f.start + 3 * 3600e3; t < Math.min(end - 3600e3, horizon); t += 3 * 3600e3) {
