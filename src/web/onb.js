@@ -275,7 +275,7 @@ function setWho(w) {
 // ───────────── Первые шаги ─────────────
 const has = k => live(D[k] || []).length > 0
 const STEPS = () => [
-  ["voice", "mic", kid() ? `Скажи ${nm()} первое дело` : `Скажите ${nm()} первое дело`, () => (D.chat || []).some(m => m.role === "user"), () => setTab("chat")],
+  ["voice", "mic", kid() ? `Скажи ${nm()} первое дело` : `Скажите ${nm()} первое дело`, () => (D.chat || []).some(m => m.role === "user" && !m.auto), () => setTab("chat")],
   ["water", "drop", kid() ? "Отметь стакан воды" : "Отметьте стакан воды", () => has("water"), () => addWater(H().glass || 250)],
   ["money", "money", kid() ? "Запиши, что потратил" : "Запишите первую трату", () => has("money"), () => moneyForm("expense")],
   ["top3", "star", kid() ? "Выбери три главных дела" : "Выберите три главных дела", () => live(D.goals || []).some(g => g.kind === "top3"), () => top3Pick()],
@@ -362,7 +362,7 @@ function start() {
   const o = O()
   if (!o.intro && !o.seen) {
     o.seen = Date.now()
-    const used = ["money", "water", "food", "rems", "goals"].some(has) || (D.chat || []).some(m => m.role === "user")
+    const used = ["money", "water", "food", "rems", "goals"].some(has) || (D.chat || []).some(m => m.role === "user" && !m.auto)
     if (used) { o.intro = Date.now(); o.steps = "old"; o.tips = { plans: 1, money: 1, health: 1, chat: 1, cal: 1 }; if (!D.who) D.who = "adult" }
     save(false)
   }

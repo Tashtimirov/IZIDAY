@@ -707,10 +707,13 @@ function monthTotals(list, key) {
   const items = list.filter(e => monthKey(new Date(e.date)) === key).sort((a, b) => a.date - b.date)
   const t = { items, income: 0, expense: 0, cash: { income: 0, expense: 0 }, transfer: { income: 0, expense: 0 },
     cats: { income: {}, expense: {} } }
+  // одна странная запись (способ «card», тип не доход/расход, сумма строкой — из таблицы или от Изи) не должна ронять экраны
   items.forEach(e => {
-    t[e.type] += e.amount
-    t[e.method][e.type] += e.amount
-    t.cats[e.type][e.category] = (t.cats[e.type][e.category] || 0) + e.amount
+    if (e.type !== "income" && e.type !== "expense") return
+    const a = Number(e.amount) || 0
+    t[e.type] += a
+    t[e.method === "cash" ? "cash" : "transfer"][e.type] += a
+    t.cats[e.type][e.category] = (t.cats[e.type][e.category] || 0) + a
   })
   return t
 }
