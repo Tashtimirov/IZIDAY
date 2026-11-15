@@ -362,7 +362,8 @@ function editSheet(wk = viewWk(), openId = null) {
       save1(t, { dn }); return draw()
     }
     quiet(() => save1(t, { [f]: f === "pm" ? +el.value : el.value.trim() }))
-    if (f === "pm" || f === "tm") draw()
+    // время не перерисовываем: колёсико выбора на iPhone закрывалось после часа (поле пересоздавалось)
+    if (f === "pm") draw()
   })
   box.addEventListener("click", async e => {
     const b = e.target.closest("button"); if (!b) return
