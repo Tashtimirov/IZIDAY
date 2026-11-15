@@ -25,8 +25,21 @@ const closeAll = async () => { await page.evaluate(() => { while (stack.length) 
 const todayColor = t => page.evaluate(t => { const el = [...document.querySelectorAll(".daycard [data-ev]")].find(e => e.textContent.includes(t)); return el ? (el.style.getPropertyValue("--c") || (el.querySelector(".bar-l") || {}).style?.background || "") : null }, t)
 
 // — до настройки (без семьи): всё цветом «Я», в ленте дней — точки
-check(await todayColor("Показ виллы") === "#0A9F6E" && await todayColor("Забрать детей") === "#0A9F6E", "без настройки всё цветом «Я»", [await todayColor("Показ виллы"), await todayColor("Забрать детей")])
-check(await page.$$eval(".week.strip .day.on .cdots i", l => l.length) === 1, "в ленте дней у дня точка цвета календаря")
+// без настройки календари не сливаются: основной («Личное», первый в списке Google) — цветом «Я», остальные — свои цвета
+const c0 = [await todayColor("Падел"), await todayColor("Показ виллы"), await todayColor("Забрать детей")]
+check(c0[0] === "#0A9F6E" && c0[1] && c0[2] && new Set(c0).size === 3, "без настройки: основной календарь цветом «Я», рабочий и другие — каждый своим", c0)
+check(await page.$$eval(".week.strip .day.on .cdots i", l => l.length) === 3, "в ленте дней у дня точки цветов календарей", await page.$$eval(".week.strip .day.on .cdots i", l => l.length))
+await shot(page, SHOTS + `cc-1-today${SUF}.png`, ".daycard")
+await page.evaluate(() => { D.gcal.calendars = [{ name: "Работа" }, { name: "Личное", primary: true }, { name: "Ильдар" }]; render() }); await page.waitForTimeout(300)
+check(await todayColor("Падел") === "#0A9F6E" && await todayColor("Показ виллы") !== "#0A9F6E", "основной календарь Google (primary) — цветом «Я»", [await todayColor("Падел"), await todayColor("Показ виллы")])
+await page.evaluate(() => { D.gcal.calendars = ["Личное", "Работа", "Ильдар"].map(name => ({ name })); render() }); await page.waitForTimeout(300)
+// «Свой цвет» в «Цвета и календари»; выбор «Я» делает календарь зелёным, «+» — категорией
+await page.evaluate(() => calSettings()); await page.waitForTimeout(400)
+await page.evaluate(() => { const s = document.querySelector(".sheet"); s.scrollTop = s.scrollHeight }); await page.waitForTimeout(200); await shot(page, SHOTS + `cc-2-settings${SUF}.png`, ".sheet")
+check(await page.$$eval('.sheet [data-cal="1"] .chip.on', l => l.map(b => b.textContent.trim()).join("|")) === "Свой цвет", "у рабочего календаря выбран «Свой цвет»")
+await page.click('.sheet [data-cal="1"] [data-k="me"]'); await page.waitForTimeout(250)
+check(await page.evaluate(() => D.cal.map["Работа"]) === "me" && await page.$$eval('.sheet [data-cal="1"] [data-k="auto"]', l => l.length) === 0, "выбор «Я» — календарь цветом «Я», «Свой цвет» пропал")
+await page.evaluate(() => { delete D.cal.map["Работа"]; save(false) }); await closeAll(); await page.evaluate(() => render()); await page.waitForTimeout(300)
 
 // — «Цвета и календари»: «+» у календаря «Ильдар» → своя категория «Муж»
 await page.evaluate(() => calSettings()); await page.waitForTimeout(400)
