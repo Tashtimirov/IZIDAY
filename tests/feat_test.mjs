@@ -145,7 +145,9 @@ await p3.route("https://script.google.com/**", r => r.fulfill({ status: 200, con
 await p3.goto(BASE + "#setup=" + encodeURIComponent(setup)); await p3.waitForTimeout(1500)
 const s3 = await p3.evaluate(() => window.FEAT && Object.fromEntries(FEAT.LIST.map(x => [x[0], FEAT.on(x[0])])))
 check(s3 && s3.money && s3.health && s3.fast, "у старого пользователя всё включено как было", s3)
-check(!(await p3.isVisible(".ft-tray")) || /Игра|Семья/.test(await p3.textContent(".ft-tray")), "Деньги и Здоровье не в выключенных")
+// в лотке могут быть функции, выключенные по умолчанию (Игра, Семья, План недели), но не Деньги и Здоровье
+const tray3 = (await p3.isVisible(".ft-tray")) ? await p3.textContent(".ft-tray") : ""
+check(!/Деньги|Здоровье/.test(tray3), "Деньги и Здоровье не в выключенных", tray3)
 
 check(!errors.length, "без ошибок на странице", errors)
 await browser.close(); server.close()
