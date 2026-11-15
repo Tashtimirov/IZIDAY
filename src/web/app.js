@@ -1069,7 +1069,7 @@ const AGENT_TOOLS = [
       method: { type: "string", enum: ["cash", "transfer"] }, category: { type: "string" }, paid_now: { type: "boolean" } }, required: ["title", "amount", "day", "category"] } },
   { name: "pay_recurring", description: "Отметить регулярный платёж оплаченным в этом месяце (запишет расход). id из get_money.recurring.",
     input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
-  { name: "add_shopping", description: "Добавить в список покупок («купить молоко и хлеб» — два пункта). Рядом с магазином из списка (add_store) придёт напоминание.",
+  { name: "add_shopping", description: "Добавить в основной список покупок (его могли переименовать — название в get_shopping, list_name; удалённый появится снова) («купить молоко и хлеб» — два пункта). Рядом с магазином из списка (add_store) придёт напоминание.",
     input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } } }, required: ["items"] } },
   { name: "get_shopping", description: "Что осталось купить, у каких магазинов напоминать, примерная сумма по ценам из чеков и магазины с сохранёнными чеками.", input_schema: { type: "object", properties: {} } },
   { name: "save_receipt", description: "Запомнить позиции и цены чека из МАГАЗИНА (не кафе): для списка покупок и примерной суммы. Вызывай вместе с ask_user «Записать расход?» в том же ответе. Совпавшие пункты списка покупок отметятся купленными. Расход этот инструмент НЕ записывает.",
@@ -1585,7 +1585,7 @@ async function runTool(name, x) {
     }
     case "add_shopping": { const added = shopAdd(x.items || []); return { ok: true, added: added.map(s => s.title), to_buy: shopOpen().map(s => s.title) } }
     case "get_shopping": { const st = shopStoreSel(), e = shopEstimate(st)
-      return { to_buy: shopOpen().map(s => s.title), stores: shopStores().map(p => p.query), receipt_stores: storeCats().map(g => ({ store: g.title, receipts: g.rc || 1, usual: (g.items || []).slice(0, 8).map(i => `${i.n} — ${Math.round(i.p)}`) })),
+      return { list_name: shopName(), ...(shopOff() ? { deleted: true } : {}), to_buy: shopOpen().map(s => s.title), stores: shopStores().map(p => p.query), receipt_stores: storeCats().map(g => ({ store: g.title, receipts: g.rc || 1, usual: (g.items || []).slice(0, 8).map(i => `${i.n} — ${Math.round(i.p)}`) })),
         ...(e.known ? { estimate: { sum: e.sum, priced: e.known, of: e.all, store: st ? st.title : "" } } : {}) } }
     case "save_receipt": return receiptSave(x)
     case "shop_done": {
@@ -1641,7 +1641,9 @@ async function runTool(name, x) {
       const at = /^\d{4}-\d\d-\d\d$/.test(x.date || "") ? +new Date(x.date + "T12:00") : Date.now(), r = choreDone(c.id, at); return { ok: true, title: r.title, next: choreWhen(r) } }
     case "get_chores": return { items: chores().map(c => ({ id: c.id, title: c.title, every_days: c.every, last_done: c.last ? dayKey(new Date(c.last)) : null, next: choreWhen(c) })) }
     case "delete_chore": { const c = chores().find(z => z.id === x.id); if (!c) return { error: "нет такого" }; remove("goals", c.id); return { ok: true } }
-    case "add_list_items": { let l = listFind(x.list); if (!l && x.create !== false) l = listNew(x.list); if (!l) return { error: "нет такого списка", have: myLists().map(z => z.title) }
+    case "add_list_items": {
+      if (normT(x.list) === normT(shopName()) && !myLists().some(z => normT(z.title) === normT(x.list))) { const added = shopAdd(x.items || []); return { ok: true, list: shopName(), added: added.map(z => z.title), to_buy: shopOpen().map(z => z.title) } }   // основной список покупок под своим названием
+      let l = listFind(x.list); if (!l && x.create !== false) l = listNew(x.list); if (!l) return { error: "нет такого списка", have: myLists().map(z => z.title) }
       const a = listItems(l.id, x.items || []); return { ok: true, list: l.title, added: a.map(z => z.t), total: itemsOf(D.goals.find(z => z.id === l.id)).length } }
     case "list_item_done": { const l = listFind(x.list); if (!l) return { error: "нет такого списка", have: myLists().map(z => z.title) }
       const got = []; for (const t of x.items || []) { const n = normT(t), it = itemsOf(D.goals.find(z => z.id === l.id)), i = it.find(z => normT(z.t) === n) || it.find(z => normT(z.t).includes(n) || n.includes(normT(z.t)))
@@ -3783,7 +3785,14 @@ async function weightForm() {
 const normT = s => String(s || "").toLowerCase().replace(/ё/g, "е").trim()
 const shopOpen = () => live(D.shop).filter(s => !s.done).sort((a, b) => a.date - b.date)
 const shopStores = () => live(D.places).filter(p => p.shop && !p.done)
+// Основной список покупок можно переименовать и удалить. Название и «удалён» — запись goals kind "shopmeta" (уходит в таблицу).
+// Удалённый список не показывается; попросили что-то купить — он появляется снова (пустой, со старым названием). Цены из чеков не трогаем.
+const shopMeta = () => live(D.goals).find(g => g.kind === "shopmeta") || null
+const shopName = () => { const m = shopMeta(); return (m && String(m.title || "").trim()) || "Покупки" }
+const shopOff = () => { const m = shopMeta(); return !!(m && m.off) && !shopOpen().length }
+function shopMetaSet(patch) { const m = shopMeta(); return upsert("goals", Object.assign({}, m || { id: "shopmeta", date: Date.now(), kind: "shopmeta" }, patch)) }
 function shopAdd(items) {
+  const m = shopMeta(); if (m && m.off) shopMetaSet({ off: false })
   const out = []
   for (const t of items.map(s => String(s).replace(/^(купить|ещё|еще)\s+/i, "").trim()).filter(Boolean))
     if (!shopOpen().some(s => normT(s.title) === normT(t))) out.push(upsert("shop", { id: uid("b"), date: Date.now() + out.length, title: t.charAt(0).toUpperCase() + t.slice(1), done: false }))
@@ -3793,7 +3802,7 @@ function shopFind(t) { const n = normT(t); return shopOpen().find(s => normT(s.t
 function shopToggle(id, done = true) { const s = D.shop.find(x => x.id === id); if (s) upsert("shop", Object.assign({}, s, { done, doneAt: done ? Date.now() : 0 })) }
 function shopCard() {
   const list = shopOpen(), st = shopStores()
-  let html = `<div class="card" id="shop"><h2>Покупки<button class="act" data-do="shop">+ Добавить</button></h2>`
+  let html = `<div class="card" id="shop"><h2>${esc(shopName())}<button class="act" data-do="shop">+ Добавить</button></h2>`
   html += list.map(s => `<div class="row"><button class="check" data-shop="${esc(s.id)}"></button><div class="grow"><div class="t">${esc(s.title)}</div></div></div>`).join("")
   const e = storeCats().length ? shopEstimate() : null, sel = shopStoreSel()
   if (e && e.known) html += `<div class="sh-est small">≈ ${core.money(e.sum)} на кассе${sel ? " в " + esc(sel.title) : ""}${e.known < e.all ? ` · цены есть для ${e.known} из ${e.all}` : ""}</div>`
@@ -4361,7 +4370,7 @@ function listsCard() {
   const sh = shopOpen()
   const row = (k, key, title, sub, n = "") => `<button class="row list-row" data-list="${esc(key)}">${icoBox(k)}<div class="grow"><div class="t">${esc(title)}</div><div class="s">${esc(sub)}</div></div>${n ? `<span class="cnt">${esc(n)}</span>` : ""}<span class="chev">${ICO.chev}</span></button>`
   let html = `<div class="card" id="lists"><h2>Списки<button class="act" data-do="list-add">+ Список</button></h2>`
-  html += row("cart", "shop", "Покупки", sh.length ? sh.slice(0, 3).map(s => s.title).join(", ") + (sh.length > 3 ? "…" : "") : "Пусто — скажите «купить молоко»", sh.length ? String(sh.length) : "")
+  if (!shopOff()) html += row("cart", "shop", shopName(), sh.length ? sh.slice(0, 3).map(s => s.title).join(", ") + (sh.length > 3 ? "…" : "") : "Пусто — скажите «купить молоко»", sh.length ? String(sh.length) : "")
   // «100 желаний» и «10 мечт» живут только в «Цели и мечты» (раньше были и здесь — новичок думал, что это разное)
   html += myLists().map(l => { const it = itemsOf(l), done = it.filter(x => x.done).length, open = it.filter(x => !x.done)
     return row(l.ico || "list", l.id, l.title, it.length ? open.slice(0, 3).map(x => x.t).join(", ") || "всё отмечено" : "Пустой список", it.length ? `${done} из ${it.length}` : "") }).join("")
@@ -4421,13 +4430,26 @@ function shopSheet(focus) {
     if (e.known) top += `<div class="sh-tot"><div><div class="muted small">Примерно на кассе</div><b>≈ ${core.money(e.sum)}</b></div><div class="muted small" style="text-align:right">${e.known < e.all ? `цены есть для ${e.known} из ${e.all}` : "по прошлым чекам"}${st ? "<br>" + esc(st.title) : ""}</div></div>`
   } else top = `<div class="muted small sh-hint">Сфотографируйте чек в чате с Изи: я запомню магазин и цены, и здесь будет видна примерная сумма.</div>`
   const sub = st ? `${st.title} · ${it.filter(x => !x.done).length} купить` : places.length ? "Напомню у: " + places.map(p => p.query).join(", ") : `${it.filter(x => !x.done).length} купить`
-  itemSheet("Покупки", sub, it, { ico: "cart", focus, top, empty: "Скажите помощнику «купить молоко и хлеб» или добавьте здесь",
-    extra: st && (st.items || []).length ? `<button class="btn primary" data-a="usual">Выбрать из обычных покупок</button>` : "",
+  itemSheet(shopName(), sub, it, { ico: "cart", focus, top, empty: "Скажите помощнику «купить молоко и хлеб» или добавьте здесь",
+    extra: (st && (st.items || []).length ? `<button class="btn primary" data-a="usual">Выбрать из обычных покупок</button>` : "") + `<button class="btn" data-a="ren">Переименовать</button><button class="btn red" data-a="del">Удалить</button>`,
     toggle: iid => { const x = it.find(z => z.id === iid); shopToggle(iid, !x.done) }, del: iid => remove("shop", iid), add: t => shopAdd(t.split(/[,;\n]/)),
     again: (s, f) => { s.close(); shopSheet(f) },
     bind: s => {
       $$("[data-st]", s.el).forEach(b => b.onclick = () => { D.shopSt = b.dataset.st; save(); s.close(); shopSheet() })
       const u = $('[data-a="usual"]', s.el); if (u) u.onclick = () => { s.close(); shopUsual(st, () => shopSheet()) }
+      $('[data-a="ren"]', s.el).onclick = async () => {
+        s.close()
+        const t = await ui.ask("Название списка", "", shopName(), { ok: "Сохранить" })
+        if (t && t !== shopName()) { const f = () => shopMetaSet({ title: t.charAt(0).toUpperCase() + t.slice(1) }); window.UNDO ? UNDO.quiet(f) : f() }   // переименование — без плашки «Отменить»
+        shopSheet()
+      }
+      $('[data-a="del"]', s.el).onclick = async () => {
+        const n = live(D.shop).filter(x => !x.done).length
+        if ((await ui.confirm("Удалить список?", `<div class="msg">«${esc(shopName())}»${n ? " и все пункты в нём" : ""}. Цены из чеков останутся. Попросите Изи что-то купить, и список появится снова.</div>`, ["Отмена", "Удалить"])) !== "Удалить") return
+        const name = shopName()
+        for (const x of live(D.shop)) remove("shop", x.id)
+        shopMetaSet({ off: true }); s.close(); render(); toast(`Список «${name}» удалён`)
+      }
     } })
 }
 function listForm() {
