@@ -108,7 +108,9 @@ console.log("Витрина «Денег»: уже записанное можн
 await tab("money")
 check(await page.isVisible(".ft-ops"), "список уже записанного", await page.evaluate(() => [tab, FEAT.on("money"), $("#view").innerHTML.slice(0, 300), live(D.money).length]))
 await shot2("f5-money-off")
-const delOk = await page.evaluate(() => { const id = live(D.money).find(e => e.amount === 350).id; document.querySelector(`.ft-del[data-ft-del="${id}"]`).click(); return !live(D.money).some(e => e.id === id) && !document.querySelector(`.ft-del[data-ft-del="${id}"]`) })
+const delOk = await page.evaluate(async () => { const id = live(D.money).find(e => e.amount === 350).id   // кнопка витрины или общая «Удалить» смахиванием (moneySwipe)
+  const b = document.querySelector(`.ft-del[data-ft-del="${id}"]`) || document.querySelector(`[data-money="${id}"] + .swd-del`); b.click(); await new Promise(r => setTimeout(r, 500))
+  return !live(D.money).some(e => e.id === id) })
 check(delOk, "«Удалить» убирает трату")
 
 console.log("Карточка «Можно подключить»")

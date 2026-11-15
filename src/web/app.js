@@ -209,11 +209,25 @@ const proteinGoal = () => H().proteinGoal || Math.round((H().weight || 80) * 1.6
 const live = list => list.filter(x => x && !x.deleted)
 function upsert(key, rec) {
   if (window.UNDO) UNDO.note(key, rec)   // отмена действия (undo.js): запомнить прежнюю версию
+  if (key === "money") try { acctApply(D.money.find(x => x.id === rec.id), rec) } catch (e) { console.error("acct", e) }   // остаток счёта следует за операцией
   rec.u = Date.now()
   const i = D[key].findIndex(x => x.id === rec.id)
   if (i >= 0) D[key][i] = rec; else D[key].push(rec)
   save()
   return rec
+}
+// Остаток счёта всегда актуален: трата со счёта уменьшает его, доход увеличивает; правка, удаление и отмена возвращают разницу.
+// Считаем в валюте счёта. Меняем запись счёта напрямую (не через upsert), чтобы «Отменить» не вернуло остаток дважды
+function acctEffect(e) {
+  if (!e || e.deleted || !e.acct || !(e.amount > 0)) return null
+  const a = (D.goals || []).find(g => g.id === e.acct && g.kind === "acct" && !g.deleted); if (!a) return null
+  const B = baseCur(), c = a.cur && CUR[a.cur] ? a.cur : B
+  const v = e.cur === c && e.orig > 0 ? +e.orig : c === B ? +e.amount : fx(+e.amount, B, c)
+  return { a, v: e.type === "income" ? v : -v }
+}
+function acctApply(old, rec) {
+  const o = acctEffect(old), n = acctEffect(rec && !rec.deleted ? rec : null)
+  for (const [x, k] of [[o, -1], [n, 1]]) if (x) { x.a.amount = Math.round(((+x.a.amount || 0) + k * x.v) * 100) / 100; x.a.u = Date.now() }
 }
 function remove(key, id) { upsert(key, { id, deleted: true }) }
 // Слияние как в виджете (mergeSynced): по id побеждает более позднее изменение
@@ -339,13 +353,14 @@ function calPick(n) {   // «с», «календарь С», «рабочий»
   return hit ? hit.name : null
 }
 const calDef = () => { const d = (D.cal || {}).def; return d && calWritable().some(c => c.name === d) ? d : "" }
-async function calDo(action, input) {
+// once — без повторной отправки при обрыве связи: повтор «создать» мог поставить событие второй раз (проверяет calCreate)
+async function calDo(action, input, once) {
   if (action === "create") { input = Object.assign({}, input)
     if (input.calendar) { const c = calPick(input.calendar); if (c) input.calendar = c; else if (calWritable().length) delete input.calendar }
     if (!input.calendar && calDef()) input.calendar = calDef() }
   let res
-  try { res = await hubPost({ cal: Object.assign({ action }, input) }, 25000) }
-  catch (e) { return { error: e.name === "AbortError" ? "Google Календарь не ответил за 25 секунд — проверьте календарь, возможно, изменение всё же прошло" : String(e.message || e) } }
+  try { res = await (once ? hubPostOnce : hubPost)({ cal: Object.assign({ action }, input) }, 25000) }
+  catch (e) { return { error: e.name === "AbortError" ? "Google Календарь не ответил за 25 секунд — проверьте календарь, возможно, изменение всё же прошло" : String(e.message || e), net: e.name === "TypeError" } }
   const r = res.cal || { error: "таблица не знает календарь — нужно обновить скрипт" }
   if (!r.error) { calForce = true; syncSoon() }
   return r
@@ -504,7 +519,7 @@ function remLabel(r) {
 
 // ───────────── Окна (снизу экрана) ─────────────
 const stack = []
-function sheet(html, { onClose } = {}) {
+function sheet(html, { onClose, onSwipe } = {}) {   // onSwipe() → true: смахивание вниз забрано окном (не закрывать)
   const layer = $("#layer")
   const scrim = document.createElement("div"); scrim.className = "scrim"
   const el = document.createElement("div"); el.className = "sheet"
@@ -531,7 +546,8 @@ function sheet(html, { onClose } = {}) {
     if (e.timeStamp > lt) { vy = (y - ly) / (e.timeStamp - lt); ly = y; lt = e.timeStamp }
     if (dy > 0 && el.scrollTop <= 0) { el.classList.add("drag"); follow(dy) } else if (dy < 0) { y0 = null; el.classList.remove("drag"); el.style.transform = ""; scrim.style.opacity = "" } }, { passive: true })
   const release = () => { if (y0 == null) return; y0 = null; el.classList.remove("drag")
-    if (dy > Math.min(140, el.offsetHeight / 3) || (vy > 0.45 && dy > 24)) { el.classList.add("flick"); el.style.transform = ""; scrim.style.opacity = ""; entry.close() }
+    if ((dy > Math.min(140, el.offsetHeight / 3) || (vy > 0.45 && dy > 24)) && onSwipe && onSwipe()) { el.classList.add("spring"); el.style.transform = ""; scrim.style.opacity = ""; setTimeout(() => el.classList.remove("spring"), 500) }
+    else if (dy > Math.min(140, el.offsetHeight / 3) || (vy > 0.45 && dy > 24)) { el.classList.add("flick"); el.style.transform = ""; scrim.style.opacity = ""; entry.close() }
     else { el.classList.add("spring"); el.style.transform = ""; scrim.style.opacity = ""; setTimeout(() => el.classList.remove("spring"), 500) } }
   el.addEventListener("touchend", release, { passive: true }); el.addEventListener("touchcancel", release, { passive: true })
   stack.push(entry)
@@ -904,7 +920,7 @@ const AGENT_TOOLS = [
       start: { type: "string", description: "Начало диапазона, YYYY-MM-DDTHH:MM (местное время)" },
       end: { type: "string", description: "Конец диапазона, YYYY-MM-DDTHH:MM" },
       query: { type: "string" } }, required: ["start", "end"] } },
-  { name: "create_event", description: "Создать событие в Google Календаре пользователя.",
+  { name: "create_event", description: "Создать событие в Google Календаре пользователя. Если похожее событие на это время уже есть, второе не создаётся (ответ duplicate) — скажи, что оно уже стоит. Если такое же есть в этот день в другое время — придёт warning: при поправке времени или названия меняй его через update_event.",
     input_schema: { type: "object", properties: {
       title: { type: "string" }, start: { type: "string" }, end: { type: "string" },
       all_day: { type: "boolean" }, location: { type: "string" }, notes: { type: "string" },
@@ -953,6 +969,7 @@ const AGENT_TOOLS = [
       category: { type: "string", description: "Строго одна из категорий из системного сообщения" },
       comment: { type: "string" }, date: { type: "string", description: "Только если не сегодня, YYYY-MM-DD" },
       currency: { type: "string", enum: CURS.map(c => c[0]), description: "Валюта суммы, если не основная («5000 рублей», «$12»): пересчитаю по курсу" },
+      account: { type: "string", description: "Название счёта или карты, с которой оплачено, если пользователь назвал (счета — в get_money capital.accounts)" },
       shared: { type: "boolean", description: "Общая семейная трата — только если в семье включён общий бюджет" } },
       required: ["type", "amount", "method", "category"] } },
   { name: "add_jar", description: "Копилка на цель со сроком («коплю на Японию 150 000 к июню»). Сама считает, сколько откладывать в месяц.",
@@ -1023,8 +1040,9 @@ const AGENT_TOOLS = [
       done: { type: "boolean" }, create: { type: "boolean" }, bad: { type: "boolean", description: "При создании: true — привычка, которую бросают" } }, required: ["habit"] } },
   { name: "get_money", description: "Операции и итоги по деньгам за месяц.",
     input_schema: { type: "object", properties: { month: { type: "string", description: "YYYY-MM, по умолчанию текущий" } } } },
-  { name: "update_money", description: "Исправить операцию по id (из get_money или get_history details): категорию и/или комментарий. Для разбора непонятных трат.",
-    input_schema: { type: "object", properties: { id: { type: "string" }, category: { type: "string", description: "Одна из категорий из системного сообщения" }, comment: { type: "string" } }, required: ["id"] } },
+  { name: "update_money", description: "Исправить операцию по id (из get_money или get_history details): категорию, комментарий, дату (перенести в другой день или месяц), сумму в основной валюте, счёт. Для разбора непонятных трат и правок «это было в октябре», «вышло 3600, а не 3500».",
+    input_schema: { type: "object", properties: { id: { type: "string" }, category: { type: "string", description: "Одна из категорий из системного сообщения" }, comment: { type: "string" },
+      date: { type: "string", description: "YYYY-MM-DD" }, amount: { type: "number", description: "Сумма в основной валюте" }, account: { type: "string", description: "Название счёта, с которого оплачено" } }, required: ["id"] } },
   { name: "delete_money", description: "Удалить ошибочную операцию по id.",
     input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "get_history", description: "Сводка по дням за период (до 92 дней): еда (ккал, БЖУ), вода, тренировки, шаги и активность с часов, расходы и доходы. " +
@@ -1105,9 +1123,46 @@ const evOut = e => ({ id: e.id, title: e.title, start: e.start, end: e.end, all_
   repeats: !!e.repeats, ...(e.pending ? { pending: "ещё не внесено в iPhone" } : {}) })
 const QUEUED = "Записано в очередь: виджет внесёт это в iPhone при ближайшем обновлении (обычно в течение 15 минут)."
 
-// Ключ события для защиты от дублей: название без эмодзи и регистра + минута начала
+// Защита от дублей событий. По журналам друзей (13.11): ход Изи обрывался уже ПОСЛЕ записи в календарь — перебили голосом,
+// свернули приложение, пропала связь, — ответа человек не видел и просил ещё раз, а Изи ставил второе, часто с другим
+// названием («Читка «Дождь»» → «Встреча: читка дождь»). Поэтому сравниваем не точное название, а смысл: значимые слова по основе
+const EV_STOP = new Set("в во на с со по и для к ко у о об от до из за под при про а но или же ли не мой моя моё мои встреча встречи событие".split(" "))
+const evWords = t => String(t || "").toLowerCase().replace(/ё/g, "е").split(/[^\p{L}\p{N}]+/u).filter(w => w && !EV_STOP.has(w)).map(w => w.length > 5 ? w.slice(0, 5) : w.length === 4 ? w.slice(0, 3) : w)   // основа: «Леры»/«Лера», «партнёрами»/«партнёры»
+function evSimilar(a, b) {
+  const A = new Set(evWords(a)), B = new Set(evWords(b))
+  if (!A.size || !B.size) return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase()
+  let n = 0; A.forEach(w => { if (B.has(w)) n++ })
+  return n / Math.min(A.size, B.size) >= 0.75
+}
 const evKey = (title, start) => { const d = parseIso(start); return String(title || "").toLowerCase().replace(/[^a-zа-яё0-9]+/gi, " ").trim() + "|" + (d ? Math.round(d / 6e4) : start) }
 const evMade = new Map()   // созданные в этом сеансе (Google отдаёт их в список не сразу)
+const evBusy = []          // создаются прямо сейчас: второй такой же вызов ждёт первый, а не создаёт ещё одно
+// Такое же событие: похожее название и начало ±5 минут (то же самое) или тот же день (вероятно, человек поправил время)
+function evTwin(x, list) {
+  const s = parseIso(x.start); if (!s) return null
+  const day = dayKey(s), near = [], sameDay = []
+  for (const e of list) {
+    const es = e.s || parseIso(e.start); if (!es || !e.title || !evSimilar(x.title, e.title)) continue
+    if (Math.abs(es - s) <= 5 * 60e3) near.push(e); else if (dayKey(es) === day && !x.all_day && !e.all_day) sameDay.push(e)
+  }
+  return near[0] ? { same: near[0] } : sameDay[0] ? { day: sameDay[0] } : null
+}
+const evList = v => v.events.concat([...evMade.values()].map(e => Object.assign({}, e, { s: parseIso(e.start) })))
+const evDup = e => ({ ok: true, duplicate: true, id: e.id, event: { id: e.id, title: e.title, start: e.start },
+  note: `такое событие уже есть в календаре («${e.title}», ${e.start}) — второе не создано. Скажи пользователю, что оно уже стоит.` })
+// Календарь ответил ошибкой или не ответил — событие могло всё же создаться: смотрим день заново, прежде чем пробовать снова
+async function calCreate(x) {
+  let r = await calDo("create", x, true)
+  if (!r.error) return r
+  const s = parseIso(x.start)
+  try {
+    const l = (await hubPostOnce({ since: 9e15, snapAt: 9e15, cal: { action: "list", from: dayKey(s), to: dayKey(s) } }, 25000)).cal
+    const hit = l && l.events && evTwin(x, l.events.map(e => Object.assign({}, e, { s: parseIso(e.start) })))
+    if (hit && hit.same) return { event: hit.same, recovered: true }
+    if (l && l.events && r.net) r = await calDo("create", x, true)   // связь вернулась, события нет — одна повторная попытка
+  } catch (e) {}
+  return r
+}
 async function runTool(name, x) {
   if (IZI_TOOLS[name]) return IZI_TOOLS[name](x)
   const v = iphone()
@@ -1123,14 +1178,24 @@ async function runTool(name, x) {
       if (!parseIso(x.start)) return { error: "неверное начало" }
       { const hit = !x.force && !x.all_day && protHit(parseIso(x.start), parseIso(x.end) || new Date(+parseIso(x.start) + 3600e3))
         if (hit) return { warning: `Это время защищено: «${hit.p.title}» ${hm(hit.s)}–${hm(hit.e)}. Спроси пользователя: поставить всё равно (повтори с force: true) или найти другое время.` } }
+      const force = !!x.force
       x = Object.assign({}, x); delete x.force
       { // такое же событие уже есть (ход повторился после обрыва, или Изи забыл, что уже поставил) — второй раз не создаём
-        const key = evKey(x.title, x.start), same = v.events.find(e => evKey(e.title, e.start) === key) || evMade.get(key)
-        if (same && same.id) return { ok: true, id: same.id, note: "такое событие уже есть в календаре — второй раз не создано", event: { id: same.id, title: same.title, start: same.start } } }
+        const busy = evBusy.find(b => evTwin(x, [b.ev]) && evTwin(x, [b.ev]).same)
+        if (busy) { const r = await busy.p; if (r && r.ok && r.id) return evDup(Object.assign({ id: r.id }, r.event || busy.ev)) }
+        const t = evTwin(x, evList(v))
+        if (t && t.same && t.same.id) return evDup(t.same)
+        if (t && t.day && !force) return { warning: `В этот день уже есть «${t.day.title}» в ${hm(t.day.s || parseIso(t.day.start))} (id ${t.day.id}). Если пользователь поправил время или название — измени это событие через update_event, второе не создавай. Если нужно именно ещё одно — повтори create_event с force: true.` } }
       if (gcalOn() && x.calendar && !calPick(x.calendar) && calWritable().length) return { error: `календаря «${x.calendar}» нет. Есть: ${calWritable().map(c => "«" + c.name + "»").join(", ")}. Спроси пользователя, в какой записать` }
-      if (gcalOn()) { const r = await calDo("create", x); if (!r.error && r.event) evMade.set(evKey(x.title, x.start), r.event); return r.error ? { error: r.error } : { ok: true, id: r.event.id, event: r.event } }
-      const op = queueOp("create_event", x)
-      return { ok: true, id: "op:" + op.id, note: QUEUED }
+      const ev = { title: x.title, start: x.start }, job = { ev }
+      job.p = (async () => {
+        if (gcalOn()) { const r = await calCreate(x); if (!r.error && r.event) evMade.set(evKey(x.title, x.start), r.event)
+          return r.error ? { error: r.error } : Object.assign({ ok: true, id: r.event.id, event: r.event }, r.recovered ? { note: "календарь ответил с задержкой, но событие создано (один раз)" } : {}) }
+        const op = queueOp("create_event", x)
+        return { ok: true, id: "op:" + op.id, note: QUEUED }
+      })()
+      evBusy.push(job)
+      try { return await job.p } finally { evBusy.splice(evBusy.indexOf(job), 1) }
     }
     case "update_event": {
       if (String(x.id).startsWith("fam:")) return { error: "это событие семьи — оно меняется в приложении: Календарь → нажать на событие" }
@@ -1207,9 +1272,16 @@ async function runTool(name, x) {
       if (!e) return { error: "нет такой операции" }
       const names = (core.CONFIG.categories[e.type] || []).map(c => c[0])
       if (x.category != null && !names.includes(x.category)) return { error: `категория должна быть одной из: ${names.join(", ")}` }
-      const rec = upsert("money", Object.assign({}, e, x.category != null ? { category: x.category } : {}, x.comment != null ? { comment: String(x.comment).trim() } : {}))
+      const ud = x.date != null ? parseIso(x.date) : null
+      if (x.date != null && !ud) return { error: "date — YYYY-MM-DD" }
+      if (ud) { const o = new Date(e.date); ud.setHours(o.getHours(), o.getMinutes(), 0, 0) }
+      if (x.amount != null && !(x.amount > 0)) return { error: "сумма должна быть больше нуля" }
+      const ua = x.account != null ? acctFind(x.account) : null
+      if (x.account && !ua) return { error: "нет такого счёта", have: payAccts().map(a => a.title) }
+      const rec = upsert("money", Object.assign({}, e, x.category != null ? { category: x.category } : {}, x.comment != null ? { comment: String(x.comment).trim() } : {},
+        ud ? { date: ud.getTime() } : {}, x.amount > 0 ? { amount: Math.round(x.amount * 100) / 100 } : {}, ua ? { acct: ua.id } : {}))
       const learned = x.category != null && x.category !== e.category && rec.comment ? ruleLearn(rec.comment, rec.category, rec.type) : null
-      return { ok: true, id: rec.id, category: rec.category, comment: rec.comment || "", ...(learned ? { learned: `дальше «${learned.label}» сам ставлю в «${learned.cat}» — скажи об этом коротко` } : {}) }
+      return { ok: true, id: rec.id, category: rec.category, comment: rec.comment || "", date: iso(new Date(rec.date)).slice(0, 10), amount: rec.amount, ...(rec.acct ? { account: acctName(rec.acct) } : {}), ...(learned ? { learned: `дальше «${learned.label}» сам ставлю в «${learned.cat}» — скажи об этом коротко` } : {}) }
     }
     case "add_money": {
       const names = core.CONFIG.categories[x.type] ? core.CONFIG.categories[x.type].map(c => c[0]) : []
@@ -1219,10 +1291,13 @@ async function runTool(name, x) {
       if (d) d.setHours(12, 0, 0, 0)
       const B = baseCur(), fc = x.currency && x.currency !== B && CUR[x.currency]
       const ruled = x.category === "Другое" && x.comment ? ruleFor(x.comment, x.type) : null
+      const pa = payAccts(), ac = (x.account && acctFind(x.account)) || pa.find(a => a.id === acctDef()) || null
       const rec = upsert("money", Object.assign({ id: `f${now}-${Math.random().toString(36).slice(2, 6)}`, date: d ? d.getTime() : now, type: x.type, amount: fc ? Math.round(fx(x.amount, x.currency, B)) : x.amount,
-        method: x.method, category: ruled && names.includes(ruled) ? ruled : x.category, comment: x.comment || "" }, fc ? { cur: x.currency, orig: x.amount } : {}, x.shared ? { shared: true } : {}))
+        method: x.method, category: ruled && names.includes(ruled) ? ruled : x.category, comment: x.comment || "" }, fc ? { cur: x.currency, orig: x.amount } : {}, x.shared ? { shared: true } : {}, ac ? { acct: ac.id } : {}))
+      if (fc) multiSet(1)
       const bs = x.type === "expense" && budgetState(x.category, core.monthKey(new Date(rec.date)))
-      return { ok: true, id: rec.id, category: rec.category, ...(fc ? { converted: `${fmtCur(x.amount, x.currency)} ≈ ${core.money(rec.amount)}` } : {}), ...(bs ? { budget: { limit: bs.limit, spent_this_month: bs.spent, left: bs.left, warn: bs.p >= 0.8 ? "скажи пользователю, сколько осталось по лимиту" : undefined } } : {}) }
+      return { ok: true, id: rec.id, category: rec.category, ...(fc ? { converted: `${fmtCur(x.amount, x.currency)} ≈ ${core.money(rec.amount)}`, confirm: `назови обе суммы и спроси, верно ли вышло ${core.CONFIG.currencyIn}: курс в обменнике мог быть другим. Назовёт свою сумму — исправь через update_money amount` } : {}),
+        ...(ac ? { account: ac.title } : pa.length > 1 ? { account_question: `счёт не указан — спроси одним коротким вопросом, откуда оплачено: ${pa.map(a => a.title).join(", ")}; ответ запиши через update_money account` } : {}), ...(bs ? { budget: { limit: bs.limit, spent_this_month: bs.spent, left: bs.left, warn: bs.p >= 0.8 ? "скажи пользователю, сколько осталось по лимиту" : undefined } } : {}) }
     }
     case "add_jar": {
       if (!x.title || !(x.target > 0)) return { error: "нужны название и цель" }
@@ -1575,6 +1650,82 @@ function waterGap(h, now = new Date()) {
   const gap = (now - last) / 3600e3
   return gap >= 3 ? Math.floor(gap) : 0
 }
+// ── Скрытый блок = без подсказок по нему ──
+// Блок убрали с экрана (удержать → «−», D.blocksOff[раздел]) или выключили функцию в «Функциях» — по нему не приходят
+// ни пуши таблицы, ни подсказки Изи, ни карточки на «Сегодня». Данные блока не трогаем: вернули блок — всё как было.
+// [вид, как назвать Изи, блоки «раздел:ключ» (ключ — как в order.js), функция из «Функций»]
+const TIP_KINDS = [
+  ["rems", "напоминания (пуши в срок и «Выполнил?»)", ["today:Напоминания"], null],
+  ["trip", "«Пора выезжать» к событиям", ["today:.daycard"], null],
+  ["kids", "расписание детей (утром и за 30 минут)", ["today:#kids"], "family"],
+  ["bdays", "дни рождения", ["today:#bdays"], null],
+  ["chores", "дела «Снова пора»", ["today:#chores-today", "plans:#chores"], null],
+  ["habits", "привычки", ["today:Привычки", "plans:#habits-week"], null],
+  ["pomo", "помидоро", ["plans:#pomo"], null],
+  ["bills", "регулярные платежи", ["money:Регулярные платежи"], "money"],
+  ["budget", "лимиты трат", ["money:Куда ушли деньги"], "money"],
+  ["debts", "долги и займы", ["money:#mn-debts"], "money"],
+  ["water", "вода", ["health:Вода"], "health"],
+  ["meds", "лекарства и витамины", ["health:#meds"], "health"],
+  ["sleep", "сон («Скоро спать»)", ["health:Сон"], "health"],
+  ["food", "еда", ["health:Еда"], "health"],
+  ["move", "шаги и движение", ["health:Активность"], "health"],
+  ["medrec", "медкарта (визиты к врачу)", ["health:Медкарта семьи"], "health"],
+  ["fast", "голодание", ["health:#fast"], "fast"],
+]
+// подсказки, которые ставит приложение: вид — по началу id (md… лекарства, sl… сон, mr… медкарта, fs… голодание, pq… помидор)
+const TIP_NUDGE_ID = { md: "meds", sl: "sleep", mr: "medrec", fs: "fast", pq: "pomo" }
+const WATER_NUDGE = /💧|(^|[^а-яё])(вод[аыуе]|водой|стакан\S*|попе[йт]\S*|попить)([^а-яё]|$)|\bwater\b|\bhydrat/i
+// подсказки Изи (plan_day) — по словам: только там, где ошибиться трудно
+const TIP_NUDGE_TXT = { water: WATER_NUDGE, meds: /лекарств|таблетк|витамин|\bmeds?\b|\bpills?\b/i, sleep: /(^|[^а-яё])(спать|сна|сон|лечь|ложись)([^а-яё]|$)|\bsleep\b|\bbedtime\b/i, fast: /голодани|\bfasting\b/i }
+function blockHidden(ref) {
+  const i = ref.indexOf(":"), sc = (document.body.classList.contains("kidm") ? "kid:" : "") + ref.slice(0, i), k = ref.slice(i + 1)
+  const o = (D.blocksOff && D.blocksOff[sc]) || {}, en = (window.EN_DICT || {})[k]
+  return !!(o[k] || (en && o[en]))
+}
+function tipsOff() {
+  const off = new Set()
+  for (const [kind, , blocks, feat] of TIP_KINDS) if (blocks.some(blockHidden) || (feat && window.FEAT && !FEAT.on(feat))) off.add(kind)
+  if (D.waterOff) off.add("water")
+  return off
+}
+const tipOn = kind => !tipsOff().has(kind)
+const tipNames = () => TIP_KINDS.filter(x => tipsOff().has(x[0])).map(x => x[1])
+// Подсказка про воду (карточка, пуши, Изи): ещё и своя кнопка «Больше не показывать» (D.waterOff). Записывать воду по просьбе можно всегда
+const waterTips = () => tipOn("water")
+// подсказка в D.nudges относится к выключенному виду?
+function nudgeOff(n, off = tipsOff()) {
+  const id = String(n.id || ""), byId = TIP_NUDGE_ID[id.slice(0, 2)]
+  if (byId) return off.has(byId)
+  if (!/^n/.test(id)) return false
+  const txt = (n.title || "") + " " + (n.text || "")
+  return Object.keys(TIP_NUDGE_TXT).some(k => off.has(k) && TIP_NUDGE_TXT[k].test(txt))
+}
+// После любого изменения (скрыли/вернули блок, выключили функцию, «Больше не показывать»): убрать будущие подсказки
+// выключенных видов, пересобрать свои (лекарства, сон, голодание) и сказать таблице, о чём молчать
+let tipsLast = null
+function tipsSync() {
+  const off = tipsOff(), now = Date.now()
+  live(D.nudges).filter(n => n.date > now && nudgeOff(n, off)).forEach(n => remove("nudges", n.id))
+  try { if (window.HEALTH) HEALTH.medNudges() } catch (e) {}
+  try { if (window.FAST) FAST.fastNudges() } catch (e) {}
+  save(false)
+  const key = [...off].sort().join(",")
+  if (key !== tipsLast) { tipsLast = key; pushCfgSend() }
+}
+window.tipsSync = tipsSync
+const waterSync = tipsSync
+function waterTipsSet(on) {
+  if (on) { delete D.waterOff; blockShow("health:Вода") } else D.waterOff = 1   // включили в Настройках — блок «Вода» тоже возвращается
+  tipsSync()
+}
+// вернуть скрытый блок (без анимации — для переключателей в Настройках)
+function blockShow(ref) {
+  const i = ref.indexOf(":"), sc = (document.body.classList.contains("kidm") ? "kid:" : "") + ref.slice(0, i), k = ref.slice(i + 1), o = D.blocksOff && D.blocksOff[sc]
+  if (!o) return
+  delete o[k]; delete o[(window.EN_DICT || {})[k]]
+  if (!Object.keys(o).length) delete D.blocksOff[sc]
+}
 // Активность с часов за прошлый день — из истории, которую присылает виджет (там тренировки уже учтены)
 const histHealth = d => ((D.snap && D.snap.health) || []).find(h => h && h.day === dayKey(d)) || null
 const onDay = (list, d) => live(list).filter(x => sameDay(x.date, d)).sort((a, b) => a.date - b.date)
@@ -1610,9 +1761,10 @@ function agentSystem() {
 - Поездка к сроку («отвезти детей в школу к 7:50», «быть в аэропорту к 9»): событие с названием-глаголом поездки («Отвезти детей в школу»), location — адрес назначения. Конец события = время прибытия, которое назвал пользователь; начало = прибытие минус дорога (route_to до места, с пробками), округли до минуты. Никаких своих запасов сверху: если пользователь сказал «за 10 минут до урока в 8:00» — прибытие 7:50, и всё. Пример: уроки в 8:00, приезжать за 10 минут, ехать 18 мин → событие 7:32–7:50. «Пора выезжать» приложение пришлёт само примерно за 3 минуты до выезда — не ставь для этого напоминаний и подсказок plan_day и не называй другое время пуша. «Каждый будний день» — обязательно repeat {freq: weekly, days: [MO,TU,WE,TH,FR]}, а не одно событие.
 - Время без «утра/вечера»: встречи, спорт, свидания, ужины после 6 обычно вечером; созвоны и работа — днём. Если перепутать дорого и неясно — спроси.
 - Уточняй через ask_user, только если без ответа нельзя сделать правильно: не названо новое время переноса, несколько подходящих событий, не указан способ оплаты (наличные или перевод). Давай короткие варианты ответа.
-- Календарь — Google Календарь пользователя: события создаёшь, переносишь и удаляешь сразу (create_event/update_event/delete_event). «Убери/удали событие» — это всегда выполнимо: если календарь не даёт удалить (праздники, чужой или подписанный календарь), delete_event сам скрывает событие в IZIDAY — никогда не отвечай «не могу удалить», скажи одной фразой, что скрыл и что в исходном календаре оно осталось. Вернуть — unhide_event. Если инструмент ответил, что изменение ушло в очередь виджета, — скажи коротко «внесу при обновлении виджета».
+- Состояние календаря сейчас: ${calStateLine()} Подключить Google Календарь сам ты не можешь — это делает только пользователь. Никогда не говори «календарь подключён» или «подключил», если строкой выше не сказано, что он подключён. Просят подключить календарь, или инструмент календаря вернул ошибку доступа — честно скажи это одной-двумя фразами, назови путь ${calPathLine()} и вызови open_screen со screen=google_calendar: под ответом появится кнопка. Ошибку инструмента не скрывай и не говори после неё, что всё получилось.
+- Календарь — ${window.FRIEND && FRIEND.on() && FRIEND.me() && !FRIEND.me().gcal ? "календарь IZIDAY (Google не подключён, события живут в приложении)" : "Google Календарь пользователя"}: события создаёшь, переносишь и удаляешь сразу (create_event/update_event/delete_event). «Убери/удали событие» — это всегда выполнимо: если календарь не даёт удалить (праздники, чужой или подписанный календарь), delete_event сам скрывает событие в IZIDAY — никогда не отвечай «не могу удалить», скажи одной фразой, что скрыл и что в исходном календаре оно осталось. Вернуть — unhide_event. Если инструмент ответил, что изменение ушло в очередь виджета, — скажи коротко «внесу при обновлении виджета».
 ${calWritable().length > 1 ? `- Календари Google, куда можно записывать: ${calWritable().map(c => `«${c.name}»`).join(", ")}. Новые события по умолчанию идут в «${calDef() || (calWritable().find(c => c.primary) || calWritable()[0]).name}». Если пользователь назвал календарь («в календарь С», «в мой рабочий») — передай его название в calendar у create_event. Сменить календарь по умолчанию — Календарь → «Цвета и календари».
-` : ""}- Про воду НЕ создавай напоминаний (они захламляют список) — о воде напоминай сам: подсказки plan_day в нужное время и вопросы в чате.
+` : ""}${tipNames().length ? `- Пользователь убрал из приложения блоки, и подсказки по ним выключены: ${tipNames().join(", ")}. Сам об этом не напоминай, не ставь таких подсказок plan_day и напоминаний, не спрашивай об этом первым. Если пользователь сам просит записать или спрашивает — делай как обычно.\n` : ""}${waterTips() ? "- Про воду НЕ создавай напоминаний (они захламляют список) — о воде напоминай сам: подсказки plan_day в нужное время и вопросы в чате." : "- Подсказки про воду пользователь выключил: не напоминай пить воду, не ставь о ней подсказок plan_day и напоминаний, не спрашивай о воде сам. Записать воду по просьбе (add_water) и ответить на вопрос о ней — можно."}
 - Напоминания живут в IZIDAY, а не в Напоминаниях iPhone: create_reminder сохраняет их в приложении, уведомление в срок и контроль «Выполнил?» — от IZIDAY. Повторяющиеся (каждый день, по будням) — через repeat. В Напоминания iPhone ничего не вноси.
 ${cals.length ? `- Календари по словам пользователя: ${cals.map(x => `«${x.calendar}» (список напоминаний «${x.list}»)`).join(", ")}.${cals.filter(x => x.hint).map(x => ` ${x.hint} — «${x.calendar}».`).join("")} Если календарь не назван, не указывай его.
 ` : ""}- Деньги — ${c.currencyIn}. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.
@@ -1643,14 +1795,15 @@ ${cals.length ? `- Календари по словам пользователя
 function planDay(items) {
   const now = Date.now(), end = +addDays(sod(new Date()), 1)
   live(D.nudges).filter(n => n.date > now && n.date < end && !String(n.id).startsWith("pq")).forEach(n => remove("nudges", n.id))   // pq… — конец помидора, не трогаем
-  const ok = []
+  const ok = []; let skip = 0
   for (const it of items.slice(0, 14)) {
     const t = parseIso(it.time)
     if (!t || +t <= now || +t >= end || !String(it.text || "").trim()) continue
+    if (nudgeOff({ id: "n", text: String(it.text) })) { skip++; continue }   // подсказки этого вида выключены (блок скрыт)
     ok.push(upsert("nudges", { id: uid("n"), date: +t, text: String(it.text).trim().slice(0, 240), pd: dayKey(new Date()) }))
   }
   D.planDay = dayKey(new Date()); save()
-  return { ok: true, planned: ok.map(n => ({ time: hm(new Date(n.date)), text: n.text })), note: "уведомления поставит виджет при следующем обновлении (обычно до 15 минут)" }
+  return { ok: true, planned: ok.map(n => ({ time: hm(new Date(n.date)), text: n.text })), note: "уведомления поставит виджет при следующем обновлении (обычно до 15 минут)", ...(skip ? { skipped: skip, why: `пользователь выключил подсказки: ${tipNames().join(", ")} — не ставь их` } : {}) }
 }
 // Раз в день (при первом открытии после 6:00) помощник сам составляет план подсказок на день.
 // Ровно одна попытка в день: отметка ставится ДО запроса к Изи. Раньше отметка ставилась только после plan_day —
@@ -1793,6 +1946,8 @@ function chatContext() {
     // старое вложение: самого файла в запросе уже нет — иначе Изи думает, что его прислали снова, и просит повторить
     if (m !== cur && m.prompt && m.prompt.startsWith(SCAN_PROMPT)) content = `(Раньше прислал вложение «${m.text}» — оно уже разобрано в ответе ниже; файла здесь больше нет, повторно не проси.)`
     if (m.role === "user") { const d = new Date(m.at || Date.now()); content = `[${d.getDate()} ${MON_GEN[d.getMonth()].slice(0, 3)} ${hm(d)}] ${content}` }
+    // по этой просьбе уже сделано (в том числе в оборвавшемся ходе) — повторная или уточнённая просьба не должна делать это второй раз
+    if (m.role === "user" && m !== cur && m.acts && m.acts.length) content += `\n(${actsLine(m.acts)} Не повторяй; если просят поправить — меняй сделанное.)`
     const last = out[out.length - 1]
     if (last && last.role === m.role) last.content += "\n\n" + content
     else out.push({ role: m.role, content })
@@ -1837,6 +1992,24 @@ function talkWarm() {
   claude(Object.assign({ max_tokens: 0, system: chatSystem(), tools: cacheTools(chatTools()), messages: msgs, output_config: { effort: "low" }, cache_control: { type: "ephemeral" } }, talkFastOK() ? { speed: "fast" } : {}), 30000, { smart: true, model: CHAT_MODEL })
     .then(r => { const u = r && r.usage; if (u) tdbg("кэш " + Math.round(((u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0)) / 1000) + "k") }, () => {})
 }
+// Что Изи уже сделал по просьбе (событие, напоминание, трата…). Пишется в саму просьбу сразу, по ходу: если ход оборвался
+// (перебили голосом, свернули приложение, пропала связь), Изи в следующий раз знает, что это уже сделано, и не делает второй раз
+let turnItem = null, turnLast = null
+const ACT_SKIP = /^(get_|search_|read_|list_|where_was_i$|route_to$|ask_user$|recall$|mail_search$|mail_read$|open_secret$|draft_message$)/
+function actText(name, x, out) {
+  const when = s => { const d = parseIso(s); return d ? `${d.getDate()} ${MON_GEN[d.getMonth()].slice(0, 3)}${/T/.test(s) ? " " + hm(d) : ""}` : "" }
+  const ev = (out && out.event) || x
+  if (name === "create_event") return out.duplicate ? `событие «${ev.title || x.title}» уже было — второе не создано` : `создал событие «${ev.title || x.title}», ${when(ev.start || x.start)}`
+  if (name === "update_event") return `изменил событие${x.title ? " «" + x.title + "»" : ""}${x.start ? ", теперь " + when(x.start) : ""}`
+  if (name === "create_reminder") return `поставил напоминание «${x.title || ""}»${x.due ? ", " + when(x.due) : ""}`
+  const t = typeof PAST !== "undefined" && PAST[name] ? PAST[name](x) : "сделал: " + (TOOL_STATUS[name] || name)
+  return t.charAt(0).toLowerCase() + t.slice(1)
+}
+function turnAct(name, x, out) {
+  if (!turnItem || ACT_SKIP.test(name) || !out || typeof out !== "object" || out.error || out.cancelled || out.warning || out.declined) return
+  try { (turnItem.acts = turnItem.acts || []).push(actText(name, x, out).slice(0, 160)); save(false) } catch (e) {}
+}
+const actsLine = acts => acts && acts.length ? `Уже сделано: ${acts.join("; ")}.` : ""
 async function agentTurn(messages, system, tools, live) {
   const stopSig = chatStopCtl && chatStopCtl.signal
   const ctools = cacheTools(tools)
@@ -1855,6 +2028,7 @@ async function agentTurn(messages, system, tools, live) {
     } catch (e) { if (stopSig && stopSig.aborted) return null; return `Нет связи с Claude: ${e.message || e}` }
     if (!res || res.error) return `Claude ответил ошибкой: ${res && res.error ? res.error.message || res.error.type : "пустой ответ"}`
     messages.push({ role: "assistant", content: res.content })
+    turnLast = res
     const uses = (res.content || []).filter(c => c.type === "tool_use")
     if (res.stop_reason === "refusal") return "Не могу с этим помочь — попробуйте сформулировать иначе."
     if (!uses.length || res.stop_reason !== "tool_use") return (res.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim() || "Готово."
@@ -1876,6 +2050,7 @@ async function agentTurn(messages, system, tools, live) {
       try { out = await runTool(u.name, u.input || {}) } catch (e) { out = { error: String(e.message || e) } }
       if (confirmSaid && out && typeof out === "object") out = Object.assign({}, out, { user_said: confirmSaid, note: "на вопрос пользователь ответил своими словами (user_said) — сделай, как он сказал" })
       confirmSaid = ""
+      turnAct(u.name, u.input || {}, out)
       results.push({ type: "tool_result", tool_use_id: u.id, content: JSON.stringify(out) })
     }
     messages.push({ role: "user", content: results })
@@ -1910,6 +2085,7 @@ async function chatSend(text, opts = {}) {
   chatLinks = []
   chatCC = []
   chatDraft = null
+  chatGo = []
   save(false)
   if (chatOn()) renderChat(); else if (!talkPinned()) setTab("chat")
   let reply
@@ -1924,7 +2100,12 @@ async function chatSend(text, opts = {}) {
   setBusyUI(true)
   const live = TALK && opts.voice && aiKey() && aiKey() !== "fam" && aiKey() !== "srv" ? talkLiveNew() : null
   TLIVE = live
+  turnItem = item; turnLast = null
   try { reply = await agentTurn(ctx, chatSystem(), chatTools(), live) } catch (e) { reply = `Ошибка: ${e.message || e}` }
+  turnItem = null
+  // ход не дошёл до ответа (сбой, нет связи), а что-то уже сделано — человек видит это в ответе и не просит второй раз
+  const broke = !turnLast || turnLast.stop_reason === "tool_use"
+  if (broke && item.acts && item.acts.length && typeof reply === "string") reply = `${reply}\n\n${actsLine(item.acts)}`
   const stopped = chatStopCtl.signal.aborted
   chatStopCtl = null
   chatBusy = false
@@ -1934,6 +2115,12 @@ async function chatSend(text, opts = {}) {
   // перебили, когда Изи уже говорила начало ответа: вопрос и сказанное остаются в переписке (Изи знает, что успела сказать)
   if (stopped && TALK && live && live.said.trim()) {
     D.chat.push({ role: "assistant", text: live.said.trim() + " …", at: Date.now() }); save(false); if (chatOn()) renderChat(); return
+  }
+  // перебили или остановили, но Изи уже успел что-то сделать: просьба остаётся в переписке с пометкой, что сделано
+  if (stopped && item.acts && item.acts.length) {
+    D.chat.push({ role: "assistant", text: actsLine(item.acts).replace(/^Уже сделано/, "Успел" + iziG("", "а")), at: Date.now() }); save(false); if (chatOn()) renderChat()
+    if (TALK) return talkAborted()
+    toast("⏹ Остановлено"); return
   }
   if (stopped && TALK) { const i = D.chat.lastIndexOf(item); if (i >= 0) D.chat.splice(i); save(false); return talkAborted() }
   if (stopped) {   // «Стоп»: вопрос возвращается в строку ввода — поправить и отправить заново
@@ -1945,11 +2132,11 @@ async function chatSend(text, opts = {}) {
     toast("⏹ Остановлено — поправьте и отправьте")
     return
   }
-  D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice(), cc: chatCC.length ? chatCC.slice() : undefined, draft: chatDraft || undefined, mem: window.memUsed ? memUsed() : undefined })
+  D.chat.push({ role: "assistant", text: reply, at: Date.now(), links: chatLinks.slice(), cc: chatCC.length ? chatCC.slice() : undefined, draft: chatDraft || undefined, go: chatGo.length ? chatGo.slice() : undefined, mem: window.memUsed ? memUsed() : undefined })
   chatDraft = null
   if (TALK && TALK.sentAt && (TALK.state === "think" || live)) talkLat("total", Date.now() - TALK.sentAt)
   if (live) talkLiveEnd(live, reply); else talkHear(reply)
-  if (!TALK && opts.voice) speak(reply)   // спросили голосом в чате — ответ и вслух (если «Читать ответы вслух» включено)
+  if (!TALK && opts.voice && item.at > talkHushAt) speak(reply)   // спросили голосом в чате — ответ и вслух (если «Читать ответы вслух» включено)
   if (D.chat.length > 200) { D.chatArchive = D.chatArchive.concat(D.chat.slice(0, D.chat.length - 200).map(m => ({ role: m.role, text: m.text, prompt: m.prompt, at: m.at, local: m.local }))).slice(-1500); D.chat = D.chat.slice(-200) }
   D.chat.filter(m => m.thumb || m.thumbs).slice(0, -12).forEach(m => { delete m.thumb; delete m.thumbs })   // миниатюры только у последних фото — память телефона
   save(false)
@@ -1992,7 +2179,7 @@ function chatAsk(question, options) {
     save(false)
     talkHear(question, options)
     // в обычном чате спросили голосом — вопрос Изи тоже вслух (ответить можно микрофоном: «да» / «нет»)
-    if (!TALK) { const u = D.chat.filter(m => m.role === "user").slice(-1)[0]; if (u && u.voice && Date.now() - u.at < 10 * 60e3) speak(question) }
+    if (!TALK) { const u = D.chat.filter(m => m.role === "user").slice(-1)[0]; if (u && u.voice && u.at > talkHushAt && Date.now() - u.at < 10 * 60e3) speak(question) }
     askWait = a => res(a)
     if (chatOn()) renderChat(); else if (!talkPinned()) setTab("chat")
     setBusyUI()
@@ -2234,12 +2421,21 @@ function moneyForm(type, entry) {
     const e = entry || { type, amount: "", method: "cash", category: "", comment: "", date: Date.now() }
     type = e.type
     const cats = core.CONFIG.categories[type].map(c => c[0]), B = baseCur()
-    let cat = e.category, method = e.method, manualCat = !!entry, done = false, cur = e.cur || B, shared = !!e.shared
+    const pay = payAccts(), baseIn = curRow(B)[3].replace(/^./, c => c.toUpperCase())
+    let acct = entry ? (pay.some(a => a.id === e.acct) ? e.acct : "") : acctDef()
+    const acctCur = id => { const a = pay.find(x => x.id === id); return a && a.cur && CUR[a.cur] ? a.cur : B }
+    let cat = e.category, method = e.method, manualCat = !!entry, done = false, cur = e.cur || (!entry && acct ? acctCur(acct) : B), shared = !!e.shared
+    let manualBase = !!(e.cur && e.orig)   // сумму в основной валюте человек поправил сам (или она уже записана) — курсом не перебиваем
+    if (!entry && acct) method = (pay.find(a => a.id === acct) || {}).type === "cash" ? "cash" : "transfer"
     const s = sheet(`<h3>${entry ? "Изменить" : type === "expense" ? "Расход" : "Доход"}</h3>
-      <div class="field"><div class="mn-amt"><input id="m-amt" class="huge" type="number" inputmode="decimal" placeholder="0" value="${e.cur && e.orig ? e.orig : e.amount}"><div class="mn-cur" id="m-cur">${[...new Set([...curOpts(), cur])].map(c => `<button data-c="${c}">${CUR[c]}</button>`).join("")}</div></div><div class="small muted" id="m-fx"></div></div>
+      <div class="field"><div class="mn-amt"><input id="m-amt" class="huge" type="number" inputmode="decimal" placeholder="0" value="${e.cur && e.orig ? e.orig : e.amount}"><div class="mn-cur" id="m-cur" ${multiOn() || cur !== B ? "" : "hidden"}>${[...new Set([...curOpts(), cur])].map(c => `<button data-c="${c}">${CUR[c]}</button>`).join("")}</div><div class="mn-cur mn-cur1" id="m-cur1" ${multiOn() || cur !== B ? "hidden" : ""}><button class="on" disabled>${CUR[B]}</button></div></div>
+        <button class="mn-link" id="m-multi" type="button" ${multiOn() || cur !== B ? "hidden" : ""}>Платил в другой валюте</button>
+        <div class="mn-base" id="m-base" hidden><label>${esc(baseIn)} выходит</label><div class="mn-amt"><input id="m-bamt" type="number" inputmode="decimal" placeholder="0"><div class="mn-cur mn-cur1"><button class="on" disabled>${CUR[B]}</button></div></div><div class="small muted" id="m-fx"></div></div></div>
       <div class="field"><input id="m-com" placeholder="Комментарий: такси, кафе, зарплата…" value="${esc(e.comment)}"></div>
       <div class="field"><div class="seg two" id="m-meth"><button data-m="cash">Наличные</button><button data-m="transfer">Перевод / карта</button></div></div>
       <div class="field"><label>Категория</label><div class="chips" id="m-cats">${cats.map(c => `<button class="chip" data-c="${esc(c)}">${esc(c)}</button>`).join("")}</div><div class="small muted" id="m-rule"></div></div>
+      ${pay.length ? `<div class="field"><label>${type === "expense" ? "Откуда оплачено" : "Куда пришло"}</label><div class="chips" id="m-acc">${pay.map(a => `<button class="chip" data-a="${esc(a.id)}">${tdIco(ACCT_T[a.type][1], 14)} ${esc(a.title)}${a.cur && a.cur !== B ? " · " + CUR[a.cur] : ""}</button>`).join("")}</div></div>`
+        : `<div class="field"><button class="mn-link" id="m-acc-add" type="button">${type === "expense" ? "Откуда оплачено" : "Куда пришло"}: добавить счёт или карту</button></div>`}
       ${famShare("money") ? `<div class="field"><button class="chip ${shared ? "on" : ""}" id="m-sh">${tdIco("people", 14)} Общая с ${esc(partnerIns(mnyPartner()))}</button></div>` : ""}
       <div class="field"><label>Дата</label><input id="m-date" type="date" value="${dayKey(new Date(e.date))}"></div>
       <div class="btns">${entry ? '<button class="btn red" data-a="del">Удалить</button>' : `<button class="btn small" data-a="swap">${type === "expense" ? "Это доход" : "Это расход"}</button>`}<button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`,
@@ -2249,12 +2445,29 @@ function moneyForm(type, entry) {
       $$("#m-meth button", s.el).forEach(b => b.classList.toggle("on", b.dataset.m === method))
       $$("#m-cats .chip", s.el).forEach(b => b.classList.toggle("on", b.dataset.c === cat))
       $$("#m-cur button", s.el).forEach(b => b.classList.toggle("on", b.dataset.c === cur))
-      const a = amtOf(); $("#m-fx", s.el).textContent = cur !== B ? (a > 0 ? `≈ ${core.money(Math.round(fx(a, cur, B)))} по курсу сегодня` : `курс: ${fxLine()}`) : ""
+      $$("#m-acc .chip", s.el).forEach(b => b.classList.toggle("on", b.dataset.a === acct))
+      const a = amtOf(), fc = cur !== B
+      $("#m-base", s.el).hidden = !fc
+      if (fc) {
+        if (!manualBase) $("#m-bamt", s.el).value = a > 0 ? Math.round(fx(a, cur, B)) : ""
+        const r = String(Math.round(fx(1, cur, B) * 100) / 100).replace(".", window.L && L.en ? "." : ",")
+        $("#m-fx", s.el).textContent = `По курсу сегодня: ${PRE[cur] ? CUR[cur] + "1" : "1 " + CUR[cur]} = ${r} ${CUR[B]}. Обменяли по другому курсу — поправьте сумму.`
+      }
     }
+    if (manualBase) $("#m-bamt", s.el).value = e.amount
+    const showCur = () => { $("#m-cur", s.el).hidden = false; $("#m-cur1", s.el).hidden = true; $("#m-multi", s.el).hidden = true }
+    $("#m-multi", s.el).onclick = () => { multiSet(1); showCur() }
+    $("#m-bamt", s.el).oninput = () => { manualBase = true }
+    $$("#m-acc .chip", s.el).forEach(b => b.onclick = () => {
+      acct = acct === b.dataset.a ? "" : b.dataset.a
+      if (acct) { const a = pay.find(x => x.id === acct); method = a.type === "cash" ? "cash" : "transfer"
+        const c = acctCur(acct); if (c !== cur && !entry) { cur = c; manualBase = false; if (c !== B) showCur() } }
+      paint() })
+    if ($("#m-acc-add", s.el)) $("#m-acc-add", s.el).onclick = () => { s.close(); acctForm() }
     paint(); fxLoad()
     $$("#m-meth button", s.el).forEach(b => b.onclick = () => { method = b.dataset.m; paint() })
-    $$("#m-cur button", s.el).forEach(b => b.onclick = () => { cur = b.dataset.c; paint() })
-    $("#m-amt", s.el).oninput = paint
+    $$("#m-cur button", s.el).forEach(b => b.onclick = () => { cur = b.dataset.c; manualBase = false; paint() })
+    $("#m-amt", s.el).oninput = () => { manualBase = false; paint() }
     if ($("#m-sh", s.el)) $("#m-sh", s.el).onclick = ev => { shared = !shared; ev.currentTarget.classList.toggle("on", shared) }
     $$("#m-cats .chip", s.el).forEach(b => b.onclick = () => { cat = b.dataset.c; manualCat = true; paint()
       const c = $("#m-com", s.el).value.trim(); $("#m-rule", s.el).textContent = c && cat !== "Другое" && ruleFor(c, type) !== cat ? `Запомню: «${c.split(/[,.;]/)[0].trim()}» → ${cat}` : "" })
@@ -2273,14 +2486,17 @@ function moneyForm(type, entry) {
     $('[data-a="ok"]', s.el).onclick = () => {
       const a = amtOf()
       if (!(a > 0)) { toast("Введите сумму"); return }
-      const amount = cur === B ? a : Math.round(fx(a, cur, B))
+      const ba = parseFloat(String($("#m-bamt", s.el).value).replace(",", "."))
+      const amount = cur === B ? a : ba > 0 ? Math.round(ba) : Math.round(fx(a, cur, B))
       const dv = $("#m-date", s.el).value
       let date = e.date
       if (dv && dv !== dayKey(new Date(e.date))) { const [y, m, d] = dv.split("-").map(Number); const x = new Date(); date = +new Date(y, m - 1, d, x.getHours(), x.getMinutes()) }
       const comment = $("#m-com", s.el).value.trim()
       const rec = Object.assign({}, entry || { id: `f${Date.now()}-${Math.random().toString(36).slice(2, 6)}` }, { type, amount, method,
         category: cat || cats[cats.length - 1], comment, date, shared })
-      if (cur !== B) Object.assign(rec, { cur, orig: a }); else { delete rec.cur; delete rec.orig }
+      if (cur !== B) { Object.assign(rec, { cur, orig: a }); multiSet(1) } else { delete rec.cur; delete rec.orig }
+      if (acct) { rec.acct = acct; MNY().acctLast = acct } else delete rec.acct
+      if (entry) MNY().edHint = 1
       upsert("money", rec)
       const learned = manualCat && comment && (!entry || entry.category !== rec.category) ? ruleLearn(comment, rec.category, type) : null
       done = true; s.close(); render()
@@ -2681,14 +2897,15 @@ function renderToday() {
   if (D.conn && standalone() && pushAble() && Notification.permission === "default") html += `<div class="banner"><b>${ei("bell")}Включите уведомления</b>Подсказки про воду, «пора выезжать» и напоминания будут приходить пушем.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="push-on">Включить</button></div></div>`
   const wOff = Math.floor(Math.round((sod(selDay) - t0) / 864e5) / 7), w0 = addDays(t0, wOff * 7)
   const wc = stripCenter || w0, s0 = addDays(wc, -70), s1 = addDays(wc, 77)
-  for (const e of v.events) for (let d = sod(e.s); d < e.e && d < s1; d = addDays(d, 1)) if (d >= s0) counts[dayKey(d)] = (counts[dayKey(d)] || 0) + 1
+  const shown = v.events.filter(e => evLayer(e) !== "off"), dots = {}   // «Скрыть» в «Цвета и календари» — календаря нет и на «Сегодня»
+  for (const e of shown) for (let d = sod(e.s); d < e.e && d < s1; d = addDays(d, 1)) if (d >= s0) { const k = dayKey(d); counts[k] = (counts[k] || 0) + 1; const c = evColor(e); (dots[k] = dots[k] || []).includes(c) || dots[k].push(c) }
   html += `<div class="month wnav"><b id="wk-lbl">${esc(weekLabel(w0))}</b><button class="today-btn" data-do="go-today" ${wOff === 0 && isToday ? "hidden" : ""}>Сегодня</button><button class="cal-open" data-do="cal-open">${tdIco("grid", 16)} Календарь</button></div>`
   html += `<div class="week strip" id="strip" data-start="${+s0}" data-sel="${+wc}">${[...Array(147)].map((_, i) => {
     const d = addDays(s0, i), n = counts[dayKey(d)] || 0
     return `<button class="day ${sameDay(d, selDay) ? "on" : ""} ${sameDay(d, t0) ? "td" : ""} ${d.getDay() % 6 === 0 ? "we" : ""}" data-day="${+d}">
-      <div class="wd">${WD[d.getDay()]}</div><div class="dn">${d.getDate()}</div><div class="n">${n ? n + " соб." : "—"}</div></button>`
+      <div class="wd">${WD[d.getDay()]}</div><div class="dn">${d.getDate()}</div><div class="n">${n ? n + " соб." : "—"}</div><div class="cdots">${n ? dots[dayKey(d)].slice(0, 4).map(c => `<i style="background:${esc(c)}"></i>`).join("") : ""}</div></button>`
   }).join("")}</div>`
-  const onDay = d => v.events.filter(e => e.s < addDays(d, 1) && e.e > d).sort((a, b) => (b.all_day ? 1 : 0) - (a.all_day ? 1 : 0) || a.s - b.s)
+  const onDay = d => shown.filter(e => e.s < addDays(d, 1) && e.e > d).sort((a, b) => (b.all_day ? 1 : 0) - (a.all_day ? 1 : 0) || a.s - b.s)
   const dayEvs = onDay(selDay)
   const nSel = dayEvs.length
   // Порядок «Сегодня»: календарь → события дня → напоминания → привычки → всё остальное (сводка дня, кольца, игра…)
@@ -2718,7 +2935,7 @@ function renderToday() {
   html += rems.length ? rems.slice(0, 25).map(r => `<div class="row ${r.pending ? "pending" : ""}" data-rem="${esc(r.id)}"><button class="check ${remLate(r) ? "late" : ""}" data-check="${esc(r.id)}"></button>
     <div class="grow"><div class="t">${esc(r.title)}</div>${r.due || r.list ? `<div class="s ${remLate(r) ? "exp" : ""}">${esc(remLabel(r))}${r.due && r.list ? " · " : ""}${esc(r.list || "")}</div>` : ""}</div></div>`).join("")
     : `<div class="empty">${isToday ? "Всё сделано" : "На этот день напоминаний нет"}</div>`
-  const bills = isToday ? recurSoon() : []
+  const bills = isToday && tipOn("bills") ? recurSoon() : []   // блок «Регулярные платежи» скрыт — и здесь не напоминаем
   if (bills.length) html += bills.map(r => `<div class="row" data-recur="${esc(r.id)}"><span class="pin">${ei("repeat")}</span><div class="grow"><div class="t">${esc(r.title)} · ${esc(core.money(r.amount))}</div>
     <div class="s ${recurDue(r) < sod(now) ? "exp" : ""}">оплатить ${esc(recurLabel(r))}</div></div><button class="btn small" data-recur-pay="${esc(r.id)}">Оплачено</button></div>`).join("")
   const near = live(D.places).filter(p => !p.done && !p.shop)
@@ -2799,7 +3016,7 @@ function chatItems() {
     const isLast = i === arr.length - 1 && askWait
     const gi = D.chat.length - arr.length + i
     const edit = m.role === "user" && !m.local && !m.thumb && !m.thumbs && !m.prompt && i >= arr.length - 6 ? `<button class="ed" data-edit="${gi}" aria-label="Изменить">${ICO.pen}</button>` : ""
-    return `<div class="m ${m.role}" data-i="${gi}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.thumbs ? `<div class="att-grid n${Math.min(m.thumbs.length, 4)}">${m.thumbs.slice(0, 4).map((u, k) => `<span><img src="${esc(u)}" alt="">${k === 3 && m.thumbs.length > 4 ? `<b>+${m.thumbs.length - 4}</b>` : ""}</span>`).join("")}</div>` : ""}${m.voice ? ei("micl") : ""}${deEmo1(linkify(m.text))}${draftHTML(m)}${m.pro && m.opts && m.opts.length && i === arr.length - 1 ? `<div class="opts">${m.opts.map(o => `<button data-pro="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}${(m.links || []).length && !m.ccDone ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${ei("link")}Сессия Claude Code</a>`).join("")}</div>` : ""}${ccCards(m)}` + (window.memLine ? memLine(m) : "") +
+    return `<div class="m ${m.role}" data-i="${gi}">${edit}${m.thumb ? `<img class="att" src="${esc(m.thumb)}" alt="">` : ""}${m.thumbs ? `<div class="att-grid n${Math.min(m.thumbs.length, 4)}">${m.thumbs.slice(0, 4).map((u, k) => `<span><img src="${esc(u)}" alt="">${k === 3 && m.thumbs.length > 4 ? `<b>+${m.thumbs.length - 4}</b>` : ""}</span>`).join("")}</div>` : ""}${m.voice ? ei("micl") : ""}${deEmo1(linkify(m.text))}${draftHTML(m)}${goHTML(m)}${m.pro && m.opts && m.opts.length && i === arr.length - 1 ? `<div class="opts">${m.opts.map(o => `<button data-pro="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}${(m.links || []).length && !m.ccDone ? `<div class="links">${m.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${ei("link")}Сессия Claude Code</a>`).join("")}</div>` : ""}${ccCards(m)}` + (window.memLine ? memLine(m) : "") +
       `${m.opts && m.opts.length && isLast ? `<div class="opts">${m.opts.map(o => `<button data-opt="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}<span class="tm">${hm(new Date(m.at || Date.now()))}</span></div>`
   }).join("") + (chatBusy && !askWait ? `<div class="typing"><i></i><i></i><i></i>${chatStatus ? `<span class="st">${esc(chatStatus)}</span>` : ""}</div>` : "") + (last < 0 ? "" : "")
 }
@@ -2915,7 +3132,8 @@ function renderMore() {
   const g = H()
   html += `<div class="card"><h2>Уведомления</h2><div class="set"><span>Подсказки и напоминания</span><span id="push-state">…</span></div>
     <div class="muted small">Подсказки помощника, напоминания, вода и «пора выезжать» приходят прямо от IZIDAY: их по расписанию (каждые 5 минут) отправляет таблица. Для «пора выезжать» разрешите приложению место.</div>
-    <div class="btns" id="push-btns" style="margin-top:10px"></div></div>`
+    <div class="btns" id="push-btns" style="margin-top:10px"></div>
+    ${!window.FEAT || FEAT.on("health") ? `<button class="set tg-row water-tg" data-water-tg><span><b>Подсказки про воду</b><small>на «Сегодня» и уведомлениями, если давно не пили</small></span><i class="tgl ${waterTips() ? "on" : ""}" role="switch" aria-checked="${waterTips()}"></i></button>` : ""}</div>`
   html += `<div class="card"><h2>Цели</h2>
     <div class="set"><span>Вода в день, мл</span><input type="number" data-set="waterGoal" value="${g.waterGoal}"></div>
     <div class="set"><span>Белок в день, г</span><input type="number" data-set="proteinGoal" value="${proteinGoal()}"></div>
@@ -3041,6 +3259,7 @@ function bind() {
     setTimeout(render, 380)
   })
   $$("[data-money]", v).forEach(el => el.onclick = () => moneyForm(null, D.money.find(e => e.id === el.dataset.money)))
+  moneySwipe(v)
   $$("[data-food]", v).forEach(el => el.onclick = () => foodForm(D.food.find(e => e.id === el.dataset.food)))
   $$("[data-wk]", v).forEach(el => el.onclick = () => workoutForm(D.workouts.find(e => e.id === el.dataset.wk)))
   $$("[data-mon]", v).forEach(b => b.onclick = () => {
@@ -3062,6 +3281,8 @@ function bind() {
     D.izi = Object.assign({}, D.izi, { g: b.dataset.iziG }); save(false)
     const sg = b.parentNode; sg.querySelector("i").style.setProperty("--i", b.dataset.iziG === "f" ? 1 : 0); $$("button", sg).forEach(x => x.classList.toggle("on", x === b))
     setTimeout(render, 400); toast(iziG("Мужской род", "Женский род")) })
+  $$("[data-water-tg]", v).forEach(b => b.onclick = () => { const on = !waterTips(); waterTipsSet(on); const i = $(".tgl", b); i.classList.toggle("on", on); i.setAttribute("aria-checked", on)
+    toast(on ? "Подсказки про воду включены" : "Подсказки про воду выключены") })
   $$("[data-set]", v).forEach(inp => inp.onchange = () => {
     const n = Math.round(+inp.value)
     if (!(n > 0)) { inp.value = H()[inp.dataset.set]; return }
@@ -3147,7 +3368,7 @@ function bindChatBar(v) {
 }
 
 const DO = {
-  install: () => installApp(), talk: () => talkOpen(), "izi-voice": () => voicePicker(), "cur-pick": () => curPick(), "lang-pick": () => langPick(), stt: () => window.STT && STT.sheetOpen(),
+  install: () => installApp(), talk: () => talkOpen(), "izi-voice": () => voicePicker(), "cur-pick": () => curPick(), "multi-tg": () => { const v = !multiOn(); multiSet(v); render(); toast(v ? "Несколько валют: включено" : "Несколько валют: выключено, записи сохранены") }, "lang-pick": () => langPick(), stt: () => window.STT && STT.sheetOpen(),
   event: () => eventForm(), reminder: () => reminderForm(), food: () => foodMenu(), workout: () => workoutForm(), photo: () => photoPrompt(),
   expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
   "push-on": () => pushEnable(),
@@ -4135,7 +4356,7 @@ async function pushEnable() {
   } catch (e) { ui.info("Не получилось включить", String(e.message || e)) }
 }
 // Что таблица учитывает в пушах: цель по воде, валюта сводок
-const pushCfg = () => ({ waterGoal: H().waterGoal, currency: core.CONFIG.currency })
+const pushCfg = () => ({ waterGoal: H().waterGoal, currency: core.CONFIG.currency, water: waterTips() ? 1 : 0, off: [...tipsOff()].sort() })
 async function pushCfgSend() { try { if (D.conn && pushAble() && Notification.permission === "granted") { const sub = await pushSub(); if (sub) { await pushConn(); await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: pushCfg() } }) } } } catch (e) {} }
 async function pushTest() {
   try { const r = (await hubPost({ push: { action: "test" } })).push || {}; toast(r.sent ? "🔔 Отправил — сейчас придёт" : `Не дошло: ${(r.errors || [r.error || "нет подписки"]).join("; ")}`) }
@@ -4585,7 +4806,7 @@ if (IS_DROID) {
     const sc = document.querySelector(".scam")
     if (sc) { sc.dispatchEvent(new CustomEvent("izi-back")); return true }
     if (stack.length) { stack[stack.length - 1].close(); return true }
-    if (TALK) { talkClose(); return true }
+    if (TALK) { talkEnd(); return true }
     if (side) { sideClose(); return true }
     if (tab !== "today") { setTab("today"); return true }
     return false
@@ -4713,6 +4934,17 @@ const curGuess = () => { let tz = ""; try { tz = Intl.DateTimeFormat().resolvedO
   const m = TZ_CUR.find(x => x[0].test(tz)); return m ? m[1] : "THB" }
 const fromWidget = () => { const c = D.conn && D.conn.cfg && D.conn.cfg.currency; return c && (CURS.find(x => x[1] === c) || [])[0] }
 const baseCur = () => (D.cur && CUR[D.cur] && D.cur) || fromWidget() || curGuess()
+// Валюту человек выбирает сам (знакомство, «Деньги», Настройки); по часовому поясу — только пока не выбрал
+const curChosen = () => !!((D.cur && CUR[D.cur]) || fromWidget())
+function curSet(c, quiet) { if (!CUR[c]) return; D.cur = c; curApply(); save(false); fxLoad(true); pushCfgSend(); if (!quiet) { render(); toast(`Валюта: ${curRow(c)[2].toLowerCase()} ${CUR[c]}`) } }
+// Несколько валют — по выбору (D.mny.multi). Выключено у новичка; само включается, когда появляется счёт или трата в другой валюте
+const multiOn = () => { const m = MNY().multi; return m != null ? !!m : live(D.money).some(e => e.cur && e.orig) || gk("acct").some(a => a.cur && a.cur !== baseCur()) }
+function multiSet(v) { if (multiOn() === !!v && MNY().multi != null) return; MNY().multi = v ? 1 : 0; save(false) }
+// Счета, с которых платят: наличные и карты из «Капитала». Счёт по умолчанию — отмеченный в окне счёта, иначе последний, иначе единственный
+const payAccts = () => accts().filter(a => a.type === "cash" || a.type === "bank")
+const acctDef = () => { const p = payAccts(), m = MNY(), f = id => id && p.some(a => a.id === id) ? id : ""; return f(m.acct) || f(m.acctLast) || (p.length === 1 ? p[0].id : "") }
+const acctName = id => { const a = id && gk("acct").find(x => x.id === id); return a ? a.title : "" }
+const acctFind = t => { const q = String(t || "").trim().toLowerCase(), p = payAccts(); return q ? p.find(a => a.title.toLowerCase() === q) || p.find(a => a.title.toLowerCase().includes(q) || q.includes(a.title.toLowerCase())) : null }
 // Выбранная валюта → core.CONFIG (на ней держатся все суммы: core.money, тексты Изи, детские копилки)
 // Английский интерфейс: суммы по-английски — значок впереди, тысячи через запятую: «฿2,688», «$12.50»
 if (window.L && L.en) core.money = n => { const v = Math.abs(n), [i, d] = (Math.round(v * 100) / 100).toFixed(2).split(".")
@@ -4741,8 +4973,9 @@ const fxLine = () => { const b = baseCur(), o = curOpts().filter(c => c !== b).s
 async function curPick() {
   const b = baseCur(), i = await ui.choose("Валюта", "Все суммы, разделы «Деньги» и «Копилки», сводки и ответы Изи будут в ней. Уже записанные суммы не пересчитываются.",
     CURS.map(c => `${c[1]}  ${c[2]}${c[0] === b ? "  ✓" : ""}`))
-  if (i < 0 || CURS[i][0] === b) return
-  D.cur = CURS[i][0]; curApply(); save(false); fxLoad(true); pushCfgSend(); render(); toast(`Валюта: ${CURS[i][2].toLowerCase()} ${CURS[i][1]}`)
+  if (i < 0) return
+  if (CURS[i][0] === b) { if (!curChosen()) curSet(b); return }
+  curSet(CURS[i][0])
 }
 // Язык интерфейса — отдельно от валюты: «English + баты», «English + доллары» и т. д.
 const LANGS = [["ru", "Русский"], ["en", "English"]]
@@ -4758,7 +4991,8 @@ function langCard() {
 }
 function curCard() {
   const r = curRow(baseCur())
-  return `<div class="card"><h2>Валюта</h2><button class="set voice-row" data-do="cur-pick"><span><b>${esc(r[1])}  ${esc(r[2])}</b><small>все суммы, «Деньги», «Копилки», сводки и Изи — ${esc(r[3])}</small></span><i class="chev">${ICO.chev || "›"}</i></button></div>`
+  return `<div class="card"><h2>Валюта</h2><button class="set voice-row" data-do="cur-pick"><span><b>${esc(r[1])}  ${esc(r[2])}</b><small>все суммы, «Деньги», «Копилки», сводки и Изи — ${esc(r[3])}</small></span><i class="chev">${ICO.chev || "›"}</i></button>
+    <button class="set voice-row" data-do="multi-tg"><span><b>Несколько валют</b><small>траты и счета в другой валюте: видно обе суммы, итог ${esc(r[3])} можно поправить</small></span><i class="tgl ${multiOn() ? "on" : ""}" role="switch" aria-checked="${multiOn()}"></i></button></div>`
 }
 
 // — 8. Семейный бюджет: «Все / Мои / Общие с Олей»
@@ -5134,10 +5368,13 @@ function renderMoney() {
   const t = core.monthTotals(list, monthKey), bal = t.income - t.expense
   let html = "", k = 0
   const anim = () => `style="animation-delay:${(k++) * 45}ms"`
+  // 0. Валюту выбирает человек: пока не выбрал — спрашиваем здесь (и при знакомстве)
+  if (!curChosen()) html += `<div class="card mn-in mn-curask" ${anim()}><h2>В какой валюте считать?</h2><div class="muted small" style="margin:-2px 0 8px">Сейчас суммы ${esc(curRow(baseCur())[3])}. Выберите свою: поменять можно в Настройках.</div>
+    <div class="chips">${CURS.map(c => `<button class="chip" data-curset="${c[0]}">${c[1]} ${esc(c[2])}</button>`).join("")}</div></div>`
   // 1. Сегодня можно потратить
   if (isCur) {
     const cs = canSpend(now), b = baseCur()
-    const pills = cs ? curOpts().filter(c => c !== b).slice(0, 3).map(c => `<span class="pill">≈ ${esc(fmtCur(Math.round(fx(cs.today, b, c)), c))}</span>`).join("") : ""
+    const pills = cs && multiOn() ? curOpts().filter(c => c !== b).slice(0, 3).map(c => `<span class="pill">≈ ${esc(fmtCur(Math.round(fx(cs.today, b, c)), c))}</span>`).join("") : ""
     html += cs ? `<div class="mn-hero mn-in" ${anim()} data-do="mn-why"><div class="k">Сегодня можно потратить</div><div class="v" data-count="${cs.today}">${esc(core.money(cs.today))}</div>
       <div class="s2">${cs.left > 0 ? `После платежей и копилок до ${cs.last} ${MONTHS_GEN[now.getMonth()]} остаётся ${esc(core.money(cs.left))}` : `Бюджет месяца уже потрачен на ${esc(core.money(-cs.left))} больше`}${cs.spentToday ? ` · сегодня уже −${num(cs.spentToday)}` : ""}</div>
       <div class="pills">${pills}</div></div>`
@@ -5159,7 +5396,9 @@ function renderMoney() {
       <div><div class="muted small">Доходы</div><div class="big inc">+${esc(core.money(t.income))}</div></div>
       <div class="muted small">Наличными −${num(t.cash.expense)} · картой −${num(t.transfer.expense)}</div>
       <div class="muted small">Баланс ${bal < 0 ? "−" : "+"}${esc(core.money(Math.abs(bal)))}</div></div>
-    <div class="btns" style="margin-top:12px"><button class="btn primary" data-do="expense">Расход</button><button class="btn teal" data-do="income">Доход</button></div></div>`
+    <div class="btns" style="margin-top:12px"><button class="btn primary" data-do="expense">Расход</button><button class="btn teal" data-do="income">Доход</button></div>
+    <button class="btn wide mn-rcpt" data-do="mn-receipt"><i class="tdi" style="width:17px;height:17px">${ICO.cam}</i> Прислать чек ${esc(iziName())}</button>
+    <div class="muted small" style="text-align:center;margin-top:6px">Фото чека или снимок экрана из банка: ${esc(iziName())} сам запишет траты и спросит, если не поймёт категорию</div></div>`
   // 7. Запомнил правило
   const rule = isCur && catRules().filter(r => Date.now() - r.date < 3 * 864e5 && !(D.mnyOff || {})["rule:" + r.id]).sort((a, b) => b.date - a.date)[0]
   if (rule) {
@@ -5205,7 +5444,7 @@ function renderMoney() {
       return `<button class="tile" data-acct="${esc(a.id)}"><div class="k">${tdIco(ACCT_T[a.type] ? ACCT_T[a.type][1] : "card", 13)} ${esc(a.title)}</div><div class="v">${esc(fmtCur(a.amount, c))}</div>${c !== baseCur() ? `<div class="k">≈ ${esc(core.money(Math.round(fx(a.amount, c))))}</div>` : ""}</button>` }).join("")}
       ${cap.jarSum ? `<div class="tile"><div class="k">${tdIco("jar", 13)} В копилках</div><div class="v">${esc(core.money(cap.jarSum))}</div><div class="k">уже внутри счетов</div></div>` : ""}
       ${dl.length ? `<button class="tile" data-do="mn-debts"><div class="k">${tdIco("hand", 13)} Долги</div><div class="v ${cap.lent - cap.owe < 0 ? "exp" : "inc"}">${cap.lent - cap.owe < 0 ? "−" : "+"}${esc(core.money(Math.abs(cap.lent - cap.owe)))}</div></button>` : ""}
-      <button class="tile add" data-do="acct-add">${tdIco("plus", 16)} Счёт</button></div><div class="muted small" style="margin-top:8px">${esc(fxLine())}</div>`
+      <button class="tile add" data-do="acct-add">${tdIco("plus", 16)} Счёт</button></div>${multiOn() ? `<div class="muted small" style="margin-top:8px">${esc(fxLine())}</div>` : ""}`
     : `<div class="empty">Счета, наличные, вклады, квартира и долги — в один итог с графиком по месяцам. Валюты пересчитаются по курсу.</div>`) + `</div>`
   // 9. Долги и займы
   html += `<div class="card mn-in" id="mn-debts" ${anim()}><h2>Долги и займы<button class="act" data-do="debt-add">+ Добавить</button></h2>` + (dl.length ? dl.map(d => {
@@ -5218,7 +5457,9 @@ function renderMoney() {
       <div class="mn-week" id="mn-week">${esc(weekText(mn.tone, weekMoney(now)))}</div></div>` }
   // Операции (4. валюты)
   const items = t.items.slice().reverse()
-  html += `<div class="card mn-in mn-ops" ${anim()}><h2>Операции<span class="muted small" style="text-transform:none;letter-spacing:0">${items.length}</span></h2>`
+  html += `<div class="card mn-in mn-ops${mnEdit && items.length ? " swd-all" : ""}" ${anim()}><h2>Операции<span class="muted small" style="text-transform:none;letter-spacing:0">${items.length}</span>${items.length ? `<button class="act" data-do="mn-edit">${mnEdit ? "Готово" : "Изменить"}</button>` : ""}</h2>`
+  if (items.length && mnEdit) html += `<div class="muted small swd-hint">Нажмите на операцию, чтобы поправить сумму, дату, категорию или счёт.</div>`
+  else if (items.length && !(MNY().swHint && MNY().edHint)) html += `<div class="muted small swd-hint">Нажмите на операцию, чтобы поправить сумму, дату или категорию. Чтобы удалить, смахните её влево или нажмите «Изменить».</div>`
   if (!items.length) html += `<div class="empty">Скажите помощнику «потратил 300 на такси» или «подарок маме 5000 рублей» — валюта пересчитается сама</div>`
   let last = ""
   for (const e of items) {
@@ -5226,7 +5467,7 @@ function renderMoney() {
     if (dk2 !== last) { html += `<div class="day-h">${esc(core.cap(dayName(d)))}</div>`; last = dk2 }
     const fc = e.cur && e.cur !== baseCur() && e.orig
     html += `<div class="row" data-money="${esc(e.id)}"><div class="time">${hm(d)}</div><div class="grow"><div class="t">${esc(e.comment ? core.cap(e.comment) : e.category)}${e.shared && famShare("money") ? ` <em class="sh">${tdIco("people", 12)}</em>` : ""}</div>
-      <div class="s">${esc(e.comment ? e.category : e.method === "cash" ? "наличные" : "карта / перевод")}${fc ? ` · ${esc(fmtCur(e.orig, e.cur))} ≈ ${esc(core.money(e.amount))}` : ""}</div></div>
+      <div class="s">${esc(e.comment ? e.category : e.method === "cash" ? "наличные" : "карта / перевод")}${acctName(e.acct) ? " · " + esc(acctName(e.acct)) : ""}${fc ? ` · ${esc(fmtCur(e.orig, e.cur))} ≈ ${esc(core.money(e.amount))}` : ""}</div></div>
       <div class="amt ${e.type === "expense" ? "exp" : "inc"}">${e.type === "expense" ? "−" : "+"}${esc(fc ? fmtCur(e.orig, e.cur) : core.money(e.amount))}</div></div>`
   }
   html += `</div><div class="btns"><button class="btn" data-report="month">Отчёт</button><button class="btn" data-do="mn-family">Семья</button>${D.conn && D.conn.sheetUrl ? '<button class="btn" data-do="sheet">Таблица</button>' : ""}</div>`
@@ -5240,6 +5481,7 @@ function bindMoney(v) {
   if (cnt && !matchMedia("(prefers-reduced-motion: reduce)").matches) { const to = +cnt.dataset.count, t0 = performance.now(), dur = 700
     const step = t => { const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3); cnt.textContent = core.money(Math.round(to * e)); if (p < 1) requestAnimationFrame(step) }
     if (to > 0) requestAnimationFrame(step) }
+  $$("[data-curset]", v).forEach(b => b.onclick = () => curSet(b.dataset.curset))
   $$("[data-mv]", v).forEach(b => b.onclick = () => { MNY().view = b.dataset.mv; save(false); const s = b.parentNode; s.style.setProperty("--i", ["all", "mine", "shared"].indexOf(b.dataset.mv)); setTimeout(render, 220) })
   $$("[data-tone]", v).forEach(b => b.onclick = () => { MNY().tone = b.dataset.tone; save(false); const s = b.parentNode; s.style.setProperty("--i", ["praise", "roast", "dry"].indexOf(b.dataset.tone))
     $$("button", s).forEach(x => x.classList.toggle("on", x === b)); const w = $("#mn-week", v); w.classList.remove("swap"); void w.offsetWidth; w.classList.add("swap"); w.textContent = weekText(b.dataset.tone, weekMoney()) })
@@ -5255,6 +5497,58 @@ function bindMoney(v) {
     c.addEventListener("touchmove", e => { if (x0 == null) return; dx = e.touches[0].clientX - x0; c.style.transform = `translateX(${dx}px)`; c.style.opacity = 1 - Math.min(1, Math.abs(dx) / 240) }, { passive: true })
     c.addEventListener("touchend", () => { x0 = null; if (Math.abs(dx) > 90) { c.classList.add("gone"); mnDismiss(c.dataset.swipe); setTimeout(render, 250) } else { c.style.transform = ""; c.style.opacity = "" } }) })
 }
+// Удалить операцию прямо из списка (везде, где есть строки трат): смахнуть влево — красная кнопка «Удалить»,
+// длинное смахивание удаляет сразу; «Изменить» в «Операциях» показывает кнопки у всех строк. Вернуть — плашка «Отменить» (undo.js).
+let mnEdit = false, swdOpen = null
+const SWD_W = 96
+function moneyDel(id) {
+  const e = D.money.find(x => x.id === id); if (!e || e.deleted) return
+  remove("money", id); MNY().swHint = 1; save(false)
+  if (navigator.vibrate) navigator.vibrate(12)
+  toast("Операция удалена")
+  if (!live(D.money).length) mnEdit = false
+  render()
+}
+function moneySwipe(v) {
+  swdOpen = null
+  $$(".row[data-money]", v).forEach(row => {
+    if (row.parentNode.classList.contains("swd")) return
+    const w = document.createElement("div"); w.className = "swd"
+    row.parentNode.insertBefore(w, row); w.appendChild(row)
+    const del = document.createElement("button"); del.className = "swd-del"; del.type = "button"
+    del.innerHTML = `<i class="tdi" style="width:18px;height:18px">${ICO.trash}</i><span>Удалить</span>`; w.appendChild(del)
+    const set = dx => { row.style.transform = dx ? `translateX(${dx}px)` : ""; del.style.opacity = dx ? Math.min(1, -dx / 50) : ""; del.style.width = dx ? Math.max(0, -dx - 8) + "px" : "" }   // кнопка растёт из-под края, строку не перекрывает
+    const close = () => { w.classList.remove("open"); set(0); if (swdOpen === close) swdOpen = null }
+    const gone = () => { w.style.maxHeight = w.offsetHeight + "px"; void w.offsetWidth; w.classList.add("gone"); setTimeout(() => moneyDel(row.dataset.money), 220) }
+    del.onclick = ev => { ev.stopPropagation(); gone() }
+    let x0 = null, y0 = 0, dx = 0, base = 0, horiz = null, moved = false
+    w.addEventListener("pointerdown", ev => {
+      if (ev.target.closest(".swd-del") || w.closest(".swd-all") || (ev.pointerType === "mouse" && ev.button)) return
+      x0 = ev.clientX; y0 = ev.clientY; dx = 0; horiz = null; moved = false; base = w.classList.contains("open") ? -SWD_W : 0
+    })
+    w.addEventListener("pointermove", ev => {
+      if (x0 == null) return
+      const mx = ev.clientX - x0, my = ev.clientY - y0
+      if (horiz == null) { if (Math.abs(mx) < 8 && Math.abs(my) < 8) return; horiz = Math.abs(mx) > Math.abs(my); if (!horiz) { x0 = null; return }
+        if (swdOpen && swdOpen !== close) swdOpen(); row.classList.add("drag"); try { w.setPointerCapture(ev.pointerId) } catch (e) {} }
+      moved = true; dx = Math.min(0, base + mx); set(dx < -SWD_W ? -SWD_W + (dx + SWD_W) * 0.9 : dx)
+    })
+    const up = () => {
+      if (x0 == null) return; x0 = null; row.classList.remove("drag"); if (!moved) return
+      const full = w.offsetWidth * 0.6
+      if (dx < -full) { set(-w.offsetWidth); gone() }
+      else if (dx < -SWD_W / 2) { w.classList.add("open"); set(-SWD_W); swdOpen = close }
+      else close()
+    }
+    w.addEventListener("pointerup", up); w.addEventListener("pointercancel", up)
+    // после смахивания или при открытой кнопке нажатие на строку только закрывает её, а не открывает окно правки
+    w.addEventListener("click", ev => {
+      if (ev.target.closest(".swd-del")) return
+      if (moved) { ev.stopPropagation(); ev.preventDefault(); moved = false; return }   // щелчок в конце смахивания
+      if (w.classList.contains("open")) { ev.stopPropagation(); ev.preventDefault(); close() }
+    }, true)
+  })
+}
 function mnDismiss(k) {
   if (k === "alloc") { const a = allocPending(); if (a) allocApply(a, true); return }
   D.mnyOff = D.mnyOff || {}; D.mnyOff[k] = 1; save(false)
@@ -5265,6 +5559,8 @@ Object.assign(DO, {
   "jar-add": () => jarForm(), "plan-edit": () => planForm(), "acct-add": () => acctForm(), "debt-add": () => debtForm(),
   "mn-debts": () => { const el = $("#mn-debts"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }) },
   "mn-rules": () => rulesSheet(), "mn-family": () => familyForm(),
+  "mn-edit": () => { mnEdit = !mnEdit; render() },
+  "mn-receipt": () => { setTab("chat"); setTimeout(() => { const b = $(".chat-bar .cam"); if (b) plusMenu(b) }, 380) },   // тот же «+» в чате, второго механизма нет
   "mn-why": () => { const cs = canSpend(); if (!cs) return
     const t = core.monthTotals(live(D.money), core.monthKey(new Date()))
     ui.info("Как посчитано", `Доходы месяца ${core.money(t.income)}\n− уже потрачено ${core.money(t.expense - cs.spentToday)}\n− неоплаченные платежи ${core.money(cs.bills)}\n− копилки в этом месяце ${core.money(cs.jars)}\n= ${core.money(cs.left + cs.spentToday)} на ${cs.daysLeft} ${plural(cs.daysLeft, "день", "дня", "дней")}, то есть ${core.money(cs.perDay)} в день${cs.spentToday ? `.\nСегодня уже потрачено ${core.money(cs.spentToday)}` : ""}.`) },
@@ -5314,22 +5610,30 @@ function jarSheet(j) {
 
 function acctForm(a) {
   const e = a || { title: "", type: "bank", amount: "", cur: baseCur() }
-  let type = e.type, cur = e.cur || baseCur()
+  let type = e.type, cur = e.cur || baseCur(), def = !!a && MNY().acct === a.id
   const s = sheet(`<h3>${a ? "Счёт" : "Новый счёт"}</h3>
     <div class="field"><div class="chips" id="a-ty">${Object.entries(ACCT_T).map(([k, [n, ic]]) => `<button class="chip" data-t="${k}">${tdIco(ic, 14)} ${esc(n)}</button>`).join("")}</div></div>
     <div class="field"><input id="a-t" placeholder="Название: Kasikorn, наличные дома, квартира" value="${esc(e.title)}"></div>
     <div class="field"><label>Сколько сейчас</label><div class="mn-amt"><input id="a-a" type="number" inputmode="decimal" value="${e.amount}"><div class="mn-cur" id="a-c">${[...new Set([...curOpts(), cur])].map(c => `<button data-c="${c}">${CUR[c]}</button>`).join("")}</div></div></div>
-    <div class="msg small">Обновляйте остатки раз в месяц — график капитала строится по ним.</div>
+    <div class="field" id="a-df" hidden><button class="chip" id="a-def" type="button">${tdIco("check", 14)} Основной счёт для трат</button></div>
+    <div class="msg small">Траты и доходы с этого счёта сами меняют остаток. Остальное — вклады, недвижимость — обновляйте раз в месяц: по ним строится график капитала.</div>
     <div class="btns">${a ? '<button class="btn red" data-a="del">Удалить</button>' : ""}<button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
-  const paint = () => { $$("#a-ty .chip", s.el).forEach(b => b.classList.toggle("on", b.dataset.t === type)); $$("#a-c button", s.el).forEach(b => b.classList.toggle("on", b.dataset.c === cur)) }
+  const paint = () => { $$("#a-ty .chip", s.el).forEach(b => b.classList.toggle("on", b.dataset.t === type)); $$("#a-c button", s.el).forEach(b => b.classList.toggle("on", b.dataset.c === cur))
+    $("#a-df", s.el).hidden = !(type === "cash" || type === "bank"); $("#a-def", s.el).classList.toggle("on", def) }
   paint()
+  $("#a-def", s.el).onclick = () => { def = !def; paint() }
   $$("#a-ty .chip", s.el).forEach(b => b.onclick = () => { type = b.dataset.t; if (!$("#a-t", s.el).value) $("#a-t", s.el).placeholder = ACCT_T[type][0]; paint() })
   $$("#a-c button", s.el).forEach(b => b.onclick = () => { cur = b.dataset.c; paint() })
   $('[data-a="no"]', s.el).onclick = () => s.close()
   if (a) $('[data-a="del"]', s.el).onclick = () => { remove("goals", a.id); s.close(); render() }
   $('[data-a="ok"]', s.el).onclick = () => {
-    const title = $("#a-t", s.el).value.trim() || ACCT_T[type][0], amount = Math.round(+$("#a-a", s.el).value || 0)
-    upsert("goals", Object.assign({}, a || { id: uid("a"), date: Date.now(), kind: "acct" }, { title, type, amount, cur })); s.close(); render(); toast("Капитал обновлён")
+    const title = $("#a-t", s.el).value.trim() || ACCT_T[type][0], amount = Math.round((+$("#a-a", s.el).value || 0) * 100) / 100
+    const multi = cur !== baseCur() && !multiOn()
+    const r = upsert("goals", Object.assign({}, a || { id: uid("a"), date: Date.now(), kind: "acct" }, { title, type, amount, cur }))
+    const id = (r && r.id) || (a && a.id), pays = type === "cash" || type === "bank"
+    if (def && pays && id) MNY().acct = id; else if (MNY().acct === id) delete MNY().acct
+    if (multi) multiSet(1)
+    save(false); s.close(); render(); toast(multi ? "Счёт в другой валюте: включил «Несколько валют»" : "Капитал обновлён")
   }
 }
 
@@ -5569,16 +5873,12 @@ function timelineHTML(v, day, evs, now = new Date()) {
   if (!nowDone) html += `<div class="tl-now"><span>${hm(now)}</span></div>`
   return `<div class="tl">${html || '<div class="empty">Ничего не запланировано</div>'}</div>`
 }
-// Нажали на свободное окно: выбрать дело и поставить его на это время
+// Нажали на свободное окно: сразу полная форма события — день, время и длительность уже взяты из окна.
+// Дела без времени, которые можно поставить сюда, — строкой под формой
 function gapPick(s, e) {
-  const v = iphone(), day = new Date(s)
-  const cand = openRems(v).filter(r => !remDue(r) || !remHasTime(r) || remDue(r) < new Date())
-  ui.choose(`Свободно ${hm(new Date(s))}–${hm(new Date(e))}`, "Что поставить на это время?", cand.slice(0, 12).map(r => r.title).concat(["+ Новое дело"])).then(async i => {
-    if (i < 0) return
-    let r = cand[i]
-    if (!r) { const t = await ui.ask("Новое дело", "", ""); if (!t) return; r = remAdd({ title: t }) }
-    remSet(r.id, { due: iso(day) }); toast(`«${r.title}» — в ${hm(day)}`); render()
-  })
+  const v = iphone(), st = new Date(s), en = new Date(e)
+  const cand = openRems(v).filter(r => !remDue(r) || !remHasTime(r) || remDue(r) < new Date()).slice(0, 8)
+  calQuick({ form: true, start: st, minutes: Math.max(15, Math.min(60, Math.round((en - st) / 60e3))), sub: `свободно ${hm(st)}–${hm(en)}`, cands: cand })
 }
 
 // — 7. Одна подсказка дня (можно смахнуть или скрыть до завтра)
@@ -5586,13 +5886,13 @@ function tipCard(v, now = new Date()) {
   const day = dayKey(now), off = (D.tdOff || {})
   const tips = []
   const cats = (core.CONFIG.categories.expense || []).map(c => c[0])
-  for (const c of cats) { const b = budgetState(c); if (b && b.p >= 0.8 && b.p <= 1.5) tips.push({ k: "b:" + c, ico: "wallet", col: "#30B0C7", t: b.left >= 0 ? `До лимита «${c}» осталось ${core.money(b.left)}` : `«${c}»: лимит превышен на ${core.money(-b.left)}`, s: `Потрачено ${num(b.spent)} из ${core.money(b.limit)} в этом месяце` }) }
-  const bill = recurSoon()[0]; if (bill) tips.push({ k: "r:" + bill.id, ico: "bill", col: "#FF9F0A", t: `${bill.title}: ${core.money(bill.amount)} ${recurLabel(bill)}`, s: "Регулярный платёж — нажмите «Оплачено» в напоминаниях, когда оплатите" })
-  for (const d of debts()) { const due = parseIso(d.due); if (d.dir !== "loan" && due && sod(due) - sod(now) <= 2 * 864e5) { const x = debtLine(d, now); tips.push({ k: "d:" + d.id, ico: "hand", col: "#5E5CE6", t: `${x.t}: ${core.money(d.amount)}`, s: x.s }); break } }
-  const h = dayHealth(), gap = waterGap(h); if (gap) tips.push({ k: "w", ico: "drop", col: "#0A84FF", t: `${gap} ч без воды`, s: `Выпито ${liters(h.water)} из ${liters(H().waterGoal)} л — стакан сейчас` })
+  if (tipOn("budget")) for (const c of cats) { const b = budgetState(c); if (b && b.p >= 0.8 && b.p <= 1.5) tips.push({ k: "b:" + c, ico: "wallet", col: "#30B0C7", t: b.left >= 0 ? `До лимита «${c}» осталось ${core.money(b.left)}` : `«${c}»: лимит превышен на ${core.money(-b.left)}`, s: `Потрачено ${num(b.spent)} из ${core.money(b.limit)} в этом месяце` }) }
+  const bill = tipOn("bills") && recurSoon()[0]; if (bill) tips.push({ k: "r:" + bill.id, ico: "bill", col: "#FF9F0A", t: `${bill.title}: ${core.money(bill.amount)} ${recurLabel(bill)}`, s: "Регулярный платёж — нажмите «Оплачено» в напоминаниях, когда оплатите" })
+  if (tipOn("debts")) for (const d of debts()) { const due = parseIso(d.due); if (d.dir !== "loan" && due && sod(due) - sod(now) <= 2 * 864e5) { const x = debtLine(d, now); tips.push({ k: "d:" + d.id, ico: "hand", col: "#5E5CE6", t: `${x.t}: ${core.money(d.amount)}`, s: x.s }); break } }
+  const h = dayHealth(), gap = waterTips() && waterGap(h); if (gap) tips.push({ k: "w", never: 1, ico: "drop", col: "#0A84FF", t: `${gap} ч без воды`, s: `Выпито ${liters(h.water)} из ${liters(H().waterGoal)} л — стакан сейчас` })
   const tip = tips.find(t => !off["tip:" + day + ":" + t.k])
   if (!tip) return ""
-  return `<div class="tip-card" data-tip="${esc(tip.k)}"><div class="ic" style="background:${tip.col}">${tdIco(tip.ico, 20)}</div><div class="grow"><b>${esc(tip.t)}</b><div class="small muted">${esc(tip.s)}</div></div><button class="x" data-tip-off="${esc(tip.k)}" aria-label="Скрыть">${ICO.x}</button></div>`
+  return `<div class="tip-card" data-tip="${esc(tip.k)}"><div class="ic" style="background:${tip.col}">${tdIco(tip.ico, 20)}</div><div class="grow"><b>${esc(tip.t)}</b><div class="small muted">${esc(tip.s)}</div>${tip.never ? `<button class="tip-never" data-tip-never="${esc(tip.k)}">Больше не показывать</button>` : ""}</div><button class="x" data-tip-off="${esc(tip.k)}" aria-label="Скрыть">${ICO.x}</button></div>`
 }
 
 // — 8. Шаблоны дня: набор дел со временем одним нажатием
@@ -5720,6 +6020,8 @@ function bindToday(v) {
   $$("[data-tip-off]", v).forEach(b => b.onclick = ev => { ev.stopPropagation(); D.tdOff = D.tdOff || {}; D.tdOff["tip:" + dayKey(new Date()) + ":" + b.dataset.tipOff] = 1
     for (const k of Object.keys(D.tdOff)) if (!k.includes(dayKey(new Date()))) delete D.tdOff[k]
     save(false); const c = b.closest(".tip-card"); c.classList.add("gone"); setTimeout(render, 250) })
+  $$("[data-tip-never]", v).forEach(b => b.onclick = ev => { ev.stopPropagation(); waterTipsSet(false)
+    const c = b.closest(".tip-card"); c.classList.add("gone"); setTimeout(render, 250); toast("Подсказки про воду выключены. Вернуть: Настройки → Уведомления") })
   $$(".tip-card", v).forEach(c => { let x0 = null
     c.addEventListener("touchstart", e => { x0 = e.touches[0].clientX }, { passive: true })
     c.addEventListener("touchmove", e => { if (x0 == null) return; const dx = e.touches[0].clientX - x0; c.style.transform = `translateX(${dx}px)`; c.style.opacity = 1 - Math.min(1, Math.abs(dx) / 220) }, { passive: true })
@@ -5749,7 +6051,7 @@ const PERS_C = ["#5E5CE6", "#A2845E", "#8E8E93", "#FF6B4A"], KID_C = ["#FF9F0A",
 const TZS = [["Europe/Moscow", "Москва", "Мск"], ["Asia/Yekaterinburg", "Уфа", "Уфа"], ["Asia/Dubai", "Дубай", "Дуб"], ["Europe/London", "Лондон", "Лон"], ["America/New_York", "Нью-Йорк", "НЙ"]]
 function calS() {
   const c = D.cal = D.cal || {}
-  for (const [k, v] of Object.entries({ view: innerWidth >= 700 ? "7" : "3", tz: "Europe/Moscow", tzOn: 0, map: {}, names: {}, layers: {}, colors: {} })) if (c[k] == null) c[k] = v
+  for (const [k, v] of Object.entries({ view: innerWidth >= 700 ? "7" : "3", tz: "Europe/Moscow", tzOn: 0, map: {}, names: {}, layers: {}, colors: {}, custom: [] })) if (c[k] == null) c[k] = v
   for (const k of ["me", "fam", "olya", "kids"]) if (c.layers[k] == null) c.layers[k] = 1
   return c
 }
@@ -5760,14 +6062,30 @@ const famCal = () => famShare("cal") ? FAM : null   // семья в кален�
 const famOthers = () => { const f = famCal(); return f ? f.members().filter(m => m.id !== f.meId() && m.role !== "kid") : [] }
 const famKids = () => { const f = famCal(); return f ? f.members().filter(m => m.role === "kid") : [] }
 const persKey = m => { const i = famOthers().findIndex(x => x.id === m.id); return i <= 0 ? "olya" : "p:" + m.id }   // первый близкий — слой «olya» (так он хранился раньше)
+// свои категории календаря («Работа», «Муж», «Спорт»…): человек сам называет их «+» в «Цвета и календари» — есть и без семьи
+const calCust = () => (calS().custom || []).filter(l => l && l.k && l.name)
 function calLayers() {
-  const S = calS(), oth = famOthers()
-  if (!famCal()) return [{ k: "me", name: "Я", c: S.colors.me || LAYER_C.me }]   // без общего календаря — только свои события
+  const S = calS(), oth = famOthers(), own = calCust().map(l => ({ k: l.k, name: l.name, c: l.c, own: 1 }))
+  if (!famCal()) { const out = [{ k: "me", name: "Я", c: S.colors.me || LAYER_C.me }].concat(own)   // без общего календаря — свои события и свои категории
+    for (const l of out) l.c = S.colors[l.k] || l.c; return out }
   const out = [{ k: "me", name: "Я" }, { k: "fam", name: "Семья" }, { k: "olya", name: layerName("olya") }]
   oth.slice(1).forEach((m, i) => out.push({ k: "p:" + m.id, name: name1(m.name) || "Близкий", c: PERS_C[i % PERS_C.length] }))
   out.push({ k: "kids", name: "Дети" })
+  for (const l of own) out.push(l)
   for (const l of out) l.c = S.colors[l.k] || l.c || LAYER_C[l.k]
   return out
+}
+// новая своя категория: имя и первый свободный цвет палитры
+function calCustAdd(name) {
+  const S = calS(), used = new Set(calLayers().map(l => l.c)), k = "u:" + uid("").slice(0, 10)
+  const c = LAYER_PAL.find(x => !used.has(x)) || LAYER_PAL[S.custom.length % LAYER_PAL.length]
+  S.custom.push({ k, name: String(name).trim().slice(0, 24), c }); save(false)
+  return k
+}
+function calCustDel(k) {
+  const S = calS(); S.custom = S.custom.filter(l => l.k !== k)
+  for (const n of Object.keys(S.map)) if (S.map[n] === k) delete S.map[n]
+  delete S.colors[k]; delete S.layers[k]; save(false)
 }
 const layerC = k => (calLayers().find(l => l.k === k) || {}).c || LAYER_C.me
 // цвет ребёнка: по id или имени из семьи; без семьи — общий цвет слоя «Дети»
@@ -5780,6 +6098,7 @@ function layerName(k) {
   if (k === "me") return "Я"
   if (k === "kids") return "Дети"
   if (k === "fam") return "Семья"
+  if (k.slice(0, 2) === "u:") { const l = calCust().find(l => l.k === k); return l ? l.name : "Категория" }
   if (k.slice(0, 2) === "p:") { const m = famOthers().find(m => "p:" + m.id === k); return m ? name1(m.name) : "Близкий" }
   const S = calS(); if (S.names.olya) return S.names.olya
   const m = famOthers()[0]; if (m && m.name) return name1(m.name)
@@ -5790,8 +6109,9 @@ const tzInfo = () => TZS.find(t => t[0] === calS().tz) || TZS[0]
 function tzHm(d, tz = calS().tz) { try { return new Intl.DateTimeFormat(((window.L && L.loc) || "ru-RU"), { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d) } catch (e) { return "" } }
 function evLayer(e) {
   if (e.fam) return e.L
-  const m = calS().map[e.calendar || ""]
-  if (!famCal()) return m === "off" ? "off" : "me"
+  let m = calS().map[e.calendar || ""]
+  if (m && m.slice(0, 2) === "u:" && !calCust().some(l => l.k === m)) m = ""   // категорию удалили
+  if (!famCal()) return m === "off" || m && m.slice(0, 2) === "u:" ? m : "me"
   if (m && (m.slice(0, 2) !== "p:" || famOthers().some(x => "p:" + x.id === m))) return m
   const c = normT(e.calendar)
   if (/семь|семей|family/.test(c)) return "fam"
@@ -6139,11 +6459,14 @@ const qTrav = {}
 function calQuick(pref = {}) {
   let x = null, edit = false, force = false, timer = 0, own = pref.own || "me", cn = gcalOn() ? calDef() || ((calWritable().find(c => c.primary) || {}).name || "") : ""
   const owners = () => famCal() ? [["me", "Моё", layerC("me")], ["fam", "Семья", layerC("fam")]].concat(FAM.members().filter(m => m.id !== FAM.meId()).map(m => [m.id, name1(m.name), m.role === "kid" ? kidC(m.id) : layerC(persKey(m))])) : []
-  const s = sheet(`<h3>Новое событие</h3><div class="cq-box"><textarea id="cq" rows="2" placeholder="Например: завтра в 15 стоматолог на Сукхумвите, напомни за час">${esc(pref.text || "")}</textarea>${pref.start ? `<div class="muted small">${esc(core.cap(fullDate(pref.start)))}, ${hm(pref.start)} — если время не скажете</div>` : ""}</div>
-    <div id="cq-pv"></div><div id="cq-tp"></div>`)
+  const form = !!pref.form   // из свободного окна: сразу поля события, без строки «одной фразой»
+  const s = sheet(`<h3>Новое событие</h3>${form ? `<div class="muted small cq-sub">${esc(core.cap(fullDate(pref.start)))} · ${esc(pref.sub || hm(pref.start))}</div>` : ""}<div class="cq-box" ${form ? "hidden" : ""}><textarea id="cq" rows="2" placeholder="Например: завтра в 15 стоматолог на Сукхумвите, напомни за час">${esc(pref.text || "")}</textarea>${pref.start ? `<div class="muted small">${esc(core.cap(fullDate(pref.start)))}, ${hm(pref.start)} — если время не скажете</div>` : ""}</div>
+    <div id="cq-pv"></div><div id="cq-tp"></div>${form && (pref.cands || []).length ? `<div class="cq-tpl cq-rems"><div class="k">${tdIco("check", 14)} Или поставить сюда дело</div>${pref.cands.map(r => `<button class="chip" data-gr="${esc(r.id)}">${esc(r.title)}</button>`).join("")}</div>` : ""}`)
   const inp = $("#cq", s.el), pv = $("#cq-pv", s.el)
   const tpList = () => { const l = etpls(); $("#cq-tp", s.el).innerHTML = l.length ? `<div class="cq-tpl"><div class="k">${tdIco("tpl", 14)} Шаблоны</div>${l.map(t => `<button class="chip" data-tp="${esc(t.id)}">${esc(t.title)}</button>`).join("")}</div>` : ""
-    $$("[data-tp]", s.el).forEach(b => b.onclick = () => { const t = D.goals.find(z => z.id === b.dataset.tp); inp.value = t.title + " "; inp.focus(); upd() }) }
+    $$("[data-tp]", s.el).forEach(b => b.onclick = () => { const t = D.goals.find(z => z.id === b.dataset.tp)
+      if (form) { readForm(); Object.assign(x, { title: t.title, minutes: +t.min || x.minutes, location: t.location || x.location, remind: +t.remind || x.remind, bring: t.bring || x.bring, tpl: t }); x.end = new Date(+x.start + x.minutes * 60e3); draw(); return }
+      inp.value = t.title + " "; inp.focus(); upd() }) }
   const draw = () => {
     if (!x) { pv.innerHTML = `<div class="cq-hint">${tdIco("wand", 16)} Пишите как удобно — событие появится здесь до сохранения</div>`; return }
     const hit = x.start && !force ? protHit(x.start, x.end) : null
@@ -6165,15 +6488,16 @@ function calQuick(pref = {}) {
         <div class="chips"><button class="chip on" data-a="other">Другое время</button><button class="chip" data-a="force">Всё равно</button></div></div></div>` : "")
       + (owners().length ? `<div class="cq-own"><div class="k">Чьё событие</div><div class="chips">${owners().map(([k, n, c]) => `<button class="chip ly ${own === k ? "on" : ""}" data-own="${esc(k)}" style="--c:${c}"><em></em>${esc(n)}</button>`).join("")}</div></div>` : "")
       + (gcalOn() && calWritable().length > 1 && own === "me" ? `<div class="cq-own"><div class="k">Календарь</div><div class="chips">${calWritable().map(c => `<button class="chip ${cn === c.name ? "on" : ""}" data-cn="${esc(c.name)}">${esc(c.name)}</button>`).join("")}</div></div>` : "")
-      + `<div class="btns"><button class="btn primary" data-a="ok" ${x.start ? "" : "disabled"}>Сохранить</button><button class="btn" data-a="edit">${edit ? "Готово" : "Изменить"}</button></div>
+      + `<div class="btns"><button class="btn primary" data-a="ok" ${x.start ? "" : "disabled"}>Сохранить</button>${form ? "" : `<button class="btn" data-a="edit">${edit ? "Готово" : "Изменить"}</button>`}</div>
         ${x.tpl ? "" : `<button class="chip cq-mk" data-a="mk">${tdIco("tpl", 15)} Сделать шаблоном</button>`}`
     const A = k => $(`[data-a="${k}"]`, pv)
     $$("[data-own]", pv).forEach(b => b.onclick = () => { if (edit) readForm(); own = b.dataset.own; draw() })
     $$("[data-cn]", pv).forEach(b => b.onclick = () => { if (edit) readForm(); cn = b.dataset.cn; draw() })
     if (A("other")) A("other").onclick = () => { const sl = calFindSlot(x.start, x.minutes); if (!sl) return toast("Свободного окна на неделю нет"); x.start = sl; x.end = new Date(+sl + x.minutes * 60e3); toast(`Предлагаю ${dayWord(sl)} ${hm(sl)}`); draw() }
     if (A("force")) A("force").onclick = () => { force = true; draw() }
-    A("edit").onclick = () => { if (edit) readForm(); edit = !edit; draw() }
-    A("ok").onclick = async () => { if (edit) readForm(); if (!x.start) return; if (!force && protHit(x.start, x.end)) { draw(); return toast("Время защищено — выберите") }
+    if (A("edit")) A("edit").onclick = () => { if (edit) readForm(); edit = !edit; draw() }
+    A("ok").onclick = async () => { if (edit) readForm(); if (!x.start) return
+      if (!x.title) { toast("Напишите, что за событие"); const t = $("#cf-t", pv); if (t) t.focus(); return } if (!force && protHit(x.start, x.end)) { draw(); return toast("Время защищено — выберите") }
       A("ok").disabled = true; A("ok").textContent = "Сохраняю…"; x.cal = cn; const ok = await calSave(x, own); if (ok) s.close(); else { A("ok").disabled = false; A("ok").textContent = "Сохранить" } }
     if (A("mk")) A("mk").onclick = () => { if (edit) readForm(); etplForm(null, x) }
   }
@@ -6183,7 +6507,15 @@ function calQuick(pref = {}) {
   const upd = () => { x = calParse(inp.value, pref.start); force = false; edit = false; draw()
     if (x && x.location && !qTrav[x.location] && D.conn) { const loc = x.location; qTrav[loc] = { min: 0 }; runTool("route_to", { to: loc }).then(r => { qTrav[loc] = r && !r.error ? { min: Math.round(r.minutes_in_traffic || r.minutes || 0) } : { min: 0 }; if (x && x.location === loc) draw() }).catch(() => {}) } }
   inp.oninput = () => { clearTimeout(timer); timer = setTimeout(upd, 220) }
-  tpList(); upd()
+  tpList()
+  if (form) {
+    x = { title: "", start: pref.start, end: new Date(+pref.start + (pref.minutes || 60) * 60e3), minutes: pref.minutes || 60, location: "", remind: null, bring: "", tpl: null, recur: null }
+    edit = true; draw(); setTimeout(() => { const t = $("#cf-t", pv); if (t) t.focus() }, 250)
+    $$("[data-gr]", s.el).forEach(b => b.onclick = () => { const r = (pref.cands || []).find(r => r.id === b.dataset.gr); if (!r) return
+      remSet(r.id, { due: iso(x.start) }); toast(`«${r.title}» — в ${hm(x.start)}`); s.close(); render() })
+    return s
+  }
+  upd()
   setTimeout(() => inp.focus(), 250)
   return s
 }
@@ -6318,29 +6650,43 @@ function calSettings() {
   const S = calS(), names = [...new Set(((D.gcal && D.gcal.calendars) || []).map(c => c.name || c).concat(iphone().events.filter(e => !e.fam).map(e => e.calendar).filter(Boolean)))]
   const SUB = { me: "мои события и дела", fam: "общие дела — их видят все в семье", olya: "календарь близкого целиком", kids: "расписание и дела детей" }
   const rows = () => { const out = []
-    for (const l of calLayers()) { out.push([l.k, l.name, l.c, SUB[l.k] || "календарь близкого целиком"])
+    for (const l of calLayers()) { const nc = l.own ? Object.keys(S.map).filter(n => S.map[n] === l.k).length : 0
+      out.push([l.k, l.name, l.c, SUB[l.k] || (l.own ? (nc ? `своя категория · ${nc} ${plural(nc, "календарь", "календаря", "календарей")}` : "своя категория") : "календарь близкого целиком")])
       if (l.k === "kids") for (const m of famKids()) out.push(["k:" + m.id, name1(m.name), kidC(m.id), "ребёнок", 1]) }
     return out }
   const draw = open => rows().map(([k, n, c, sub, kid]) => `<div class="cs-row ${kid ? "kid" : ""}"><button class="cs-h" data-cs-k="${esc(k)}"><i style="background:${c}"></i><span class="grow"><b>${esc(n)}</b><small>${esc(sub)}</small></span><em>${open === k ? "Готово" : "Цвет"}</em></button>
-    ${open === k ? `<div class="cs-pal">${LAYER_PAL.map(x => `<button class="${x === c ? "on" : ""}" data-cs-c="${x}" style="background:${x}" aria-label="Цвет"></button>`).join("")}</div>` : ""}</div>`).join("")
+    ${open === k ? `<div class="cs-pal">${LAYER_PAL.map(x => `<button class="${x === c ? "on" : ""}" data-cs-c="${x}" style="background:${x}" aria-label="Цвет"></button>`).join("")}</div>${k.slice(0, 2) === "u:" ? `<div class="cs-own"><button class="chip" data-cs-ren="${esc(k)}">Переименовать</button><button class="chip red" data-cs-del="${esc(k)}">Удалить категорию</button></div>` : ""}` : ""}</div>`).join("")
+    + `<button class="chip cs-add" data-cs-add="1">${tdIco("plus", 15)} Своя категория</button>`
   const opts = () => calLayers().map(l => [l.k, l.name, l.c]).concat([["off", "Скрыть", "#8E8E93"]])
+  const calChips = n => opts().map(([k, l, c]) => `<button class="chip ly ${evLayer({ calendar: n }) === k ? "on" : ""}" data-k="${esc(k)}" style="--c:${c}"><em></em>${esc(l)}</button>`).join("") + `<button class="chip ly cs-plus" data-k="+" aria-label="Своя категория">${tdIco("plus", 14)}</button>`
   const s = sheet(`<h3>Цвета и календари</h3><div class="msg">У каждого свой цвет — ваши события, общие дела семьи, календарь близкого и дети не сливаются.</div>
     <div id="cs-rows">${draw()}</div>
     ${calWritable().length > 1 ? `<h4 class="cs-t">Новые события записывать в</h4><div class="msg">Сюда попадут события, которые добавляете вы и которые создаёт Изи. Изи можно сказать и иначе: «запиши в календарь …».</div>
     <div class="chips" id="cs-def">${calWritable().map(c => `<button class="chip ${(calDef() || (calWritable().find(z => z.primary) || calWritable()[0]).name) === c.name ? "on" : ""}" data-def="${esc(c.name)}">${esc(c.name)}</button>`).join("")}</div>` : ""}
-    <h4 class="cs-t">Календари Google</h4><div class="msg">Чтобы видеть календарь близкого целиком, пусть он откроет вам доступ в Google Календаре (Настройки → Открыть доступ конкретным людям). Календарь появится здесь, и его события пойдут цветом близкого.</div>
-    ${names.map((n, i) => `<div class="field"><label>${esc(n)}</label><div class="chips" data-cal="${i}">${opts().map(([k, l, c]) => `<button class="chip ly ${evLayer({ calendar: n }) === k ? "on" : ""}" data-k="${esc(k)}" style="--c:${c}"><em></em>${esc(l)}</button>`).join("")}</div></div>`).join("") || '<div class="empty">Календари ещё не загружены</div>'}
+    <h4 class="cs-t">Календари Google</h4><div class="msg">Выберите, каким цветом идёт каждый календарь. «+» — своя категория с названием и цветом (например, «Муж» или «Работа»), «Скрыть» — календарь не показывается в IZIDAY.${famCal() ? " Чтобы видеть календарь близкого целиком, пусть он откроет вам доступ в Google Календаре (Настройки → Открыть доступ конкретным людям)." : " Календарь мужа или жены появится здесь, когда он откроет вам доступ в Google Календаре (Настройки → Открыть доступ конкретным людям)."}</div>
+    ${names.map((n, i) => `<div class="field"><label>${esc(n)}</label><div class="chips" data-cal="${i}">${calChips(n)}</div></div>`).join("") || '<div class="empty">Календари ещё не загружены</div>'}
     ${famOthers().length || !famCal() ? "" : `<div class="field"><label>Имя близкого (второй слой)</label><input id="cs-o" value="${esc(layerName("olya"))}"></div>`}
     <div class="field"><label>Второй часовой пояс</label><div class="chips" id="cs-tz">${TZS.map(t => `<button class="chip ${S.tz === t[0] ? "on" : ""}" data-tz="${t[0]}">${t[1]}</button>`).join("")}</div></div>
     <div class="btns"><button class="btn primary" data-a="ok">Готово</button></div>`, { onClose: () => render() })
   let open = ""
+  const redrawCals = () => $$("[data-cal]", s.el).forEach(g => { g.innerHTML = calChips(names[+g.dataset.cal]); bindCal(g) })
+  const askName = async (t, v = "") => { const n = await ui.ask(t, "Например: Муж, Работа, Спорт, Дача", v, { ok: "Готово" }); return n && n.trim() }
   const bindRows = () => {
     $$("[data-cs-k]", s.el).forEach(b => b.onclick = () => { open = open === b.dataset.csK ? "" : b.dataset.csK; $("#cs-rows", s.el).innerHTML = draw(open); bindRows() })
+    $$("[data-cs-add]", s.el).forEach(b => b.onclick = async () => { const n = await askName("Своя категория"); if (!n) return; open = calCustAdd(n); $("#cs-rows", s.el).innerHTML = draw(open); bindRows(); redrawCals() })
+    $$("[data-cs-ren]", s.el).forEach(b => b.onclick = async () => { const l = S.custom.find(l => l.k === b.dataset.csRen); if (!l) return; const n = await askName("Название категории", l.name); if (!n) return; l.name = n.slice(0, 24); save(false); $("#cs-rows", s.el).innerHTML = draw(open); bindRows(); redrawCals() })
+    $$("[data-cs-del]", s.el).forEach(b => b.onclick = async () => { const l = S.custom.find(l => l.k === b.dataset.csDel); if (!l) return
+      if (await ui.confirm(`Удалить «${l.name}»?`, `<div class="msg">Календари этой категории снова пойдут цветом «Я». Сами события не удаляются.</div>`, ["Отмена", "Удалить"]) !== "Удалить") return
+      calCustDel(l.k); open = ""; $("#cs-rows", s.el).innerHTML = draw(); bindRows(); redrawCals() })
     $$("[data-cs-c]", s.el).forEach(b => b.onclick = () => { S.colors[open] = b.dataset.csC; save(false); if (navigator.vibrate) navigator.vibrate(8); $("#cs-rows", s.el).innerHTML = draw(open); bindRows()
       $$("[data-cal] .chip", s.el).forEach(c => { const l = calLayers().find(l => l.k === c.dataset.k); if (l) c.style.setProperty("--c", l.c) }) })
   }
+  const bindCal = g => $$(".chip", g).forEach(c => c.onclick = async () => {
+    let k = c.dataset.k
+    if (k === "+") { const n = await askName(`Категория для «${names[+g.dataset.cal]}»`); if (!n) return; k = calCustAdd(n); S.map[names[+g.dataset.cal]] = k; save(false); $("#cs-rows", s.el).innerHTML = draw(open); bindRows(); redrawCals(); return }
+    S.map[names[+g.dataset.cal]] = k; $$(".chip", g).forEach(x => x.classList.toggle("on", x === c)); save(false); $("#cs-rows", s.el).innerHTML = draw(open); bindRows() })
   bindRows()
-  $$("[data-cal]", s.el).forEach(g => $$(".chip", g).forEach(c => c.onclick = () => { S.map[names[+g.dataset.cal]] = c.dataset.k; $$(".chip", g).forEach(x => x.classList.toggle("on", x === c)); save(false) }))
+  $$("[data-cal]", s.el).forEach(bindCal)
   $$("#cs-def .chip", s.el).forEach(c => c.onclick = () => { S.def = c.dataset.def; $$("#cs-def .chip", s.el).forEach(x => x.classList.toggle("on", x === c)); save(false); toast(`Новые события — в «${S.def}»`) })
   $$("#cs-tz .chip", s.el).forEach(c => c.onclick = () => { S.tz = c.dataset.tz; S.tzOn = 1; $$("#cs-tz .chip", s.el).forEach(x => x.classList.toggle("on", x === c)); save(false) })
   const nm = $("#cs-o", s.el); if (nm) nm.onchange = e => { S.names.olya = e.target.value.trim(); save(false) }
@@ -6519,13 +6865,15 @@ function talkOpen(o = {}) {
     <div class="tk-cap"><p class="tk-izi"></p><p class="tk-you"></p></div>
     <div class="tk-bar"><button class="tk-btn tk-mic" aria-label="Пауза">${ICO.mic}</button><button class="tk-btn tk-chat" aria-label="Перейти в чат">${ICO.chat}</button></div>
     <div class="tk-in"><button class="tk-plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea><button class="tk-dict" aria-label="Пауза">${CB_MIC}</button><button class="tk-send" aria-label="Отправить">${ICO.send}</button></div>
-    <div class="tk-hint">Вниз — закончить</div><div class="tk-dbg"></div></div>`
+    <button class="tk-end" aria-label="Закончить разговор — переписка останется в чате">${TK_END}<span>Закончить</span></button>
+    <div class="tk-hint">или смахните вниз — переписка останется в чате</div><div class="tk-dbg"></div></div>`
   document.body.append(el)
   TALK = { el, state: "", rec: null, timer: null, heard: "", n: 0, pin: false, t0: performance.now() }
   talkLog()
   silkCanvas($("canvas", el), "talk")
   requestAnimationFrame(() => el.classList.add("on"))
   $(".tk-orb", el).onclick = () => talkTap()
+  $(".tk-end", el).onclick = () => talkEnd()
   $(".tk-mic", el).onclick = () => TALK.state === "pause" ? talkListen() : talkPause()
   $(".tk-chat", el).onclick = () => { talkClose(); setTab("chat") }   // в чат — разговор заканчивается: панели «Изи · Пауза» над строкой ввода больше нет
   $(".tk-cap", el).onclick = () => { if (TALK && TALK.pin) talkPin(false) }
@@ -6549,7 +6897,7 @@ function talkOpen(o = {}) {
     if (y0 == null || !TALK) return
     y0 = null; sh.style.transition = ""
     const lim = TALK.pin ? 40 : 110, fast = performance.now() - tl < 120 ? vy : 0
-    if (dy > lim || (dy > 24 && fast > .45)) return talkClose()
+    if (dy > lim || (dy > 24 && fast > .45)) return talkEnd()
     back()
   }
   el.addEventListener("touchend", up, { passive: true })
@@ -6573,6 +6921,19 @@ function talkPin(on, quiet) {
   sh.classList.remove("tk-dock", "tk-grow"); void sh.offsetWidth; sh.classList.add(t.pin ? "tk-dock" : "tk-grow")
   $(".tk-chat", t.el).setAttribute("aria-label", t.pin ? "Чат" : "Перейти в чат")
   if (!quiet && navigator.vibrate) navigator.vibrate(10)
+}
+// Смахнули вниз или «Закончить» (просьба пользователя 2026-11-15): Изи сразу замолкает, микрофон гаснет,
+// а вся переписка разговора остаётся текстом в обычном чате — человек попадает в чат, а не на главный экран.
+// Недосказанная фраза или недописанный текст — в строку ввода чата. Ответ, который ещё пишется, придёт в чат без голоса
+var talkHushAt = 0
+function talkEnd() {
+  const t = TALK; if (!t) return
+  talkHushAt = Date.now()
+  const ta = $(".tk-in textarea", t.el), draft = (ta && ta.value.trim()) || (t.state === "listen" ? String(t.heard || "").trim() : "")
+  ttsStop()
+  talkClose()
+  if (!chatOn()) setTab("chat")
+  if (draft) setTimeout(() => { const inp = $("#chat-in"); if (inp && !inp.value.trim()) { inp.value = draft; grow(inp); setBusyUI() } }, 60)
 }
 // Сначала окно уезжает вниз — сразу, с того места, где его отпустил палец; голос и микрофон гасим следующим кадром,
 // а чат перерисовываем, когда окно уже скрылось: раньше всё это шло до анимации, и окно замирало на полпути
@@ -6599,6 +6960,7 @@ function talkState(s, izi, you) {
   talkLog()
 }
 const talkMute = () => !!(D.izi && D.izi.mute)
+const TK_END = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5l6 6 6-6"/></svg>'
 const TK_SND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3l4.5-4v13L7 14.5H4z"/><path class="w" d="M15 9.2a4 4 0 0 1 0 5.6M17.6 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="x" d="M15.5 9.5l5 5M20.5 9.5l-5 5"/></svg>'
 // Строка ввода в разговоре — та же, что в чате: «+», поле, микрофон, зелёная стрелка, когда есть текст.
 // Начали писать — Изи перестаёт слушать; отправили — ответит голосом и снова слушает. Микрофон: пауза / слушать
@@ -7350,8 +7712,38 @@ function bindIziChat() {
     chatSend(`Перепиши черновик для ${m.draft.to || "этого человека"} ${b.dataset.dr === "soft" ? "мягче и теплее" : "короче"}: «${m.draft.text}»`, { label: b.dataset.dr === "soft" ? "Мягче" : "Короче" })
   })
   $$("[data-pro]").forEach(b => b.onclick = () => { const m = D.chat[+b.closest(".m").dataset.i]; if (m) proPick(m, b.dataset.pro) })
+  $$("[data-go]").forEach(b => b.onclick = () => goOpen(b.dataset.go))
 }
+// Состояние календаря для Изи: подключён ли Google, отвечает ли он — чтобы не говорить «подключён», когда это не так
+function calStateLine() {
+  const f = window.FRIEND && FRIEND.on() && FRIEND.me(), err = D.gcal && D.gcal.error
+  if (f && !f.gcal) return `Google Календарь НЕ подключён — события живут внутри IZIDAY и в Google не попадают${err ? `; календарь IZIDAY сейчас отвечает ошибкой: «${String(err).slice(0, 160)}»` : ""}.`
+  if (err) return `Google Календарь ${f ? `(${f.gcal}) ` : ""}сейчас отвечает ошибкой: «${String(err).slice(0, 160)}»${/подключите|отозван|доступ/i.test(err) ? " — нужно подключить его заново" : ""}.`
+  if (!gcalOn()) return "Google Календарь ещё загружается."
+  return `Google Календарь подключён${f ? ` (${f.gcal})` : ""} и работает.`
+}
+const calPathLine = () => window.FRIEND && FRIEND.on() && FRIEND.me() ? "«Настройки → Аккаунт → Подключить Google Календарь»" : "«Настройки → Связь с виджетом»"
+// Кнопки под ответом Изи: open_screen кладёт сюда, ответ уносит их с собой (m.go)
+var chatGo = []
+const GO_SCREENS = {
+  google_calendar: () => window.FRIEND && FRIEND.on() && FRIEND.me() && !FRIEND.me().gcal ? "Подключить Google Календарь" : "Открыть настройки календаря",
+  calendar_colors: () => "Цвета и календари",
+  settings: () => "Открыть настройки",
+}
+function goOpen(k) {
+  const fr = window.FRIEND && FRIEND.on() && FRIEND.me()
+  if (k === "google_calendar" && fr && !fr.gcal) return FRIEND.gcalConnect()
+  if (k === "calendar_colors") return calSettings()
+  setTab("more")
+}
+const goHTML = m => (m.go || []).length ? `<div class="opts go-opts">${m.go.filter(k => GO_SCREENS[k]).map(k => `<button class="on" data-go="${esc(k)}">${esc(GO_SCREENS[k]())}</button>`).join("")}</div>` : ""
 var IZI_TOOLS = {
+  open_screen(x) {
+    const k = String(x.screen || "")
+    if (!GO_SCREENS[k]) return { error: "screen: google_calendar | calendar_colors | settings" }
+    if (!chatGo.includes(k)) chatGo.push(k)
+    return { ok: true, note: `Под ответом будет кнопка «${GO_SCREENS[k]()}». В ответе коротко скажи, что нажать; ссылку или адрес не пиши.` }
+  },
   draft_message(x) {
     const text = String(x.text || "").trim(); if (!text) return { error: "нужен text" }
     chatDraft = { to: String(x.to || "").slice(0, 60), text: text.slice(0, 2000), phone: x.phone || "" }
@@ -7368,6 +7760,8 @@ var IZI_TOOLS = {
   cancel_when(x) { const l = iziWhen(); iziSet("when", l.filter(w => w.id !== x.id)); return { ok: l.some(w => w.id === x.id) } },
 }
 var IZI_TOOL_DEFS = [
+  { name: "open_screen", description: "Показать под ответом кнопку, которая открывает нужное место в приложении: google_calendar — подключить Google Календарь (или его настройки), calendar_colors — «Цвета и календари» (цвета, свои категории, скрыть календарь), settings — настройки. Используй, когда пользователю нужно сделать что-то самому.",
+    input_schema: { type: "object", properties: { screen: { type: "string", enum: ["google_calendar", "calendar_colors", "settings"] } }, required: ["screen"] } },
   { name: "draft_message", description: "Показать пользователю черновик сообщения человеку (жене, родителям, другу, клиенту) карточкой с кнопками WhatsApp, Telegram, «Скопировать», «Мягче», «Короче». Используй, когда просят помочь написать кому-то. Пиши от первого лица пользователя, в нужном тоне, с учётом того, что знаешь о человеке.",
     input_schema: { type: "object", properties: { to: { type: "string", description: "кому, как называет пользователь («Саша», «мама», «Михаил»)" }, text: { type: "string" }, phone: { type: "string", description: "номер в международном формате, если известен" } }, required: ["text"] } },
   { name: "remind_when", description: "Напомнить не по времени, а по событию: on=income — когда придёт доход (match — категория или слово из комментария, например «Зарплата»); on=person — когда пользователь будет с человеком (по событию календаря с его именем, match — имя); on=event — когда начнётся событие со словом match в названии («офис», «Big C»). Место «когда буду рядом» — это remind_near.",
@@ -7384,6 +7778,7 @@ setTimeout(pushKeep, 5000)
 hashAction()
 setTimeout(memorize, 8000)   // прошлый разговор закончился — сложить в память
 setTimeout(autoPlan, 15000)   // первый раз за день — план подсказок
+setTimeout(() => { try { tipsSync() } catch (e) {} }, 4000)   // скрытые блоки → таблица знает, о чём молчать (и после обновления с другого устройства)
 window.addEventListener("hashchange", () => hashAction())
 try { navigator.serviceWorker && navigator.serviceWorker.addEventListener("message", e => { const m = e.data; if (m && m.type === "izi-open") hashAction(String(m.hash || "")) }) } catch (e) {}
 sync()

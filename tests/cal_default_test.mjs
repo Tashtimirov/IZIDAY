@@ -14,6 +14,7 @@ await page.evaluate(() => {
   D.gcal.calendars = [{ name: "lilya@gmail.com", primary: true }, { name: "С" }, { name: "Работа" }, { name: "Праздники Таиланда", ro: true }]
   window.__cal = []
   window.hubPost = async h => { if (h.cal) { window.__cal.push(h.cal); return { cal: h.cal.action === "create" ? { ok: true, event: { id: "N" + __cal.length, title: h.cal.title, start: h.cal.start, calendar: h.cal.calendar || "lilya@gmail.com" } } : { events: D.gcal.events, calendars: D.gcal.calendars } } } return {} }
+  window.hubPostOnce = window.hubPost
   save(false); render()
 })
 await page.waitForTimeout(600)

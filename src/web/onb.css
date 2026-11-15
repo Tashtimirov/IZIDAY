@@ -124,3 +124,8 @@
 .ob-tip-f { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 13px; color: var(--sub); }
 .ob-tip-f button { border: 0; background: none; font-weight: 700; color: #0B8F5C; font-size: 15px; padding: 4px 0; }
 .ob-tip.kid .ob-tip-i { background: linear-gradient(135deg, #ff8a3d, #ff5fa2); } .ob-tip.kid p { font-size: 16px; }
+
+/* Знакомство: выбор валюты */
+.ob-row .ob-cs { font-size: 17px; font-weight: 700; }
+.ob-list.shake { animation: ob-shake .35s; }
+@keyframes ob-shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
