@@ -26,6 +26,7 @@ const P = {
   bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
   plus: '<path d="M12 6v12M6 12h12"/>',
   trash: '<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/>',
+  week: '<rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4M8 14h3M8 17h6"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
 }
 const I = (n, s = 20) => `<svg class="ft-ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${P[n]}</svg>`
@@ -39,6 +40,9 @@ const LIST = [
   ["health", "heart", "Здоровье", "вода, еда, шаги, сон, лекарства",
     [["drop", "Вода одним касанием", "и напоминание, если забыли попить"], ["cam", "Калории по фото тарелки", "белки, жиры, углеводы"], ["pill", "Лекарства и витамины", "когда что принять, напомню вовремя"], ["moon", "Сон и самочувствие", "дневник и неделя на графике"]],
     /^(add_food|add_water|get_health|log_weight|log_sleep|log_mood|add_med|add_medrec)$/],
+  ["plan", "week", "План недели", "задачи по дням, колесо баланса, цели из мечт",
+    [["cal", "Неделя по дням", "регулярные дела, разовые, обучение: с результатом и временем"], ["chart", "План и факт", "сколько часов задумано и сколько ушло"], ["star", "Колесо баланса", "слабые сферы и мечты, которые их выровняют"]],
+    /^(week_plan)$/],
   ["game", "star", "Игра", "баллы, задания дня, альбом", null, null],
   ["fast", "clock", "Голодание", "таймер окна еды, от 16 часов до 7 суток", null, /^(start_fast|stop_fast)$/],
   ["family", "family", "Семья", "общий календарь, дети", null, null],
@@ -53,6 +57,7 @@ function on(k) {
   if (!D) return true
   if (k === "game") return !D.gamiOff
   if (k === "family" && famIn()) return true
+  if (k === "plan") return !!(D.feat && D.feat.plan === 1)   // новая функция: у всех выключена, пока человек сам не включит
   return !D.feat || D.feat[k] !== 0
 }
 // Включить / выключить. Игра — через gami.js (он сам убирает баллы, задания и инструменты Изи)
@@ -60,6 +65,7 @@ function set(k, v, quiet) {
   v = !!v
   if (on(k) === v) return
   if (k === "game") { if (window.GAMI && GAMI.set) GAMI.set(v); else { if (v) delete D.gamiOff; else D.gamiOff = 1 } }
+  else if (k === "plan") F()[k] = v ? 1 : 0
   else { if (v) delete F()[k]; else F()[k] = 0 }
   if (D.featAsk) delete D.featAsk[k]
   syncPlans(); save(false)
@@ -75,7 +81,7 @@ function defaults() {
   return {
     money: !fo.length || fo.includes("money"),
     health: !fo.length || fo.some(x => /^(health|sleep|sport|food)$/.test(x)),
-    game: false, fast: false, family: false,
+    plan: false, game: false, fast: false, family: false,
   }
 }
 function apply(st) { for (const [k] of LIST) if (k in st) set(k, st[k], true) }
@@ -171,6 +177,7 @@ const DAY = 864e5
 const WHY = {
   money: () => { const n = live(D.money || []).length; return n ? `${nm()} уже записал ${n} ${plural(n, "операцию", "операции", "операций")}. В разделе видно траты за месяц и сколько можно потратить сегодня.` : "Трату можно просто сказать или сфотографировать чек. В разделе видно, сколько можно потратить сегодня." },
   health: () => "Вода, еда по фото, шаги, сон и лекарства в одном месте. Напомню попить и принять таблетку.",
+  plan: () => "План на неделю по дням: регулярные дела, разовые и обучение, с результатом и временем. В «Здоровье» появится колесо баланса.",
   game: () => "За дела и привычки будут баллы и ранги, а каждое утро три задания дня.",
   fast: () => "Таймер окна еды от 16 часов до 7 суток и напоминания про воду.",
   family: () => "Общий календарь с близкими и детская версия с заданиями и звёздами.",
