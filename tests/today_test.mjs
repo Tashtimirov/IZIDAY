@@ -44,7 +44,8 @@ await page.click('[data-do="td-move"]'); await page.waitForTimeout(400)
 check(await page.evaluate(() => D.rems.filter(r => r.due === "2026-11-06").length) >= 1 && !(await page.$(".warn-card")), "перегруз: перенесено на завтра")
 // окно → дело на время
 await page.click(".tl .free"); await page.waitForTimeout(300)
-await page.click(".sheet .opt"); await page.waitForTimeout(500)
+await page.click(".sheet [data-gr]");   // свободное окно открывает «Новое событие» с делами-кандидатами (cal-lily)
+await page.waitForTimeout(0); await page.waitForTimeout(500)
 check(await page.evaluate(() => live(D.rems).some(r => /T12:/.test(r.due || ""))), "нажали на окно — дело встало на 12:00")
 // шаблон
 await page.evaluate(() => upsert("goals", { id: "dt1", date: 1, kind: "dtpl", title: "Рабочий", ico: "brief", items: [{ t: "Планёрка", time: "09:30" }, { t: "Почта", time: "" }] })); await page.evaluate(() => render())
