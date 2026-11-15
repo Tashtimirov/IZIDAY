@@ -1561,18 +1561,81 @@ function waterGap(h, now = new Date()) {
   const gap = (now - last) / 3600e3
   return gap >= 3 ? Math.floor(gap) : 0
 }
-// Подсказки про воду (карточка на «Сегодня», пуши таблицы, подсказки Изи): молчат, если нажали «Больше не показывать»
-// (D.waterOff) или выключено «Здоровье». Записывать воду по просьбе можно всегда
-const waterTips = () => !D.waterOff && (!window.FEAT || FEAT.on("health"))
+// ── Скрытый блок = без подсказок по нему ──
+// Блок убрали с экрана (удержать → «−», D.blocksOff[раздел]) или выключили функцию в «Функциях» — по нему не приходят
+// ни пуши таблицы, ни подсказки Изи, ни карточки на «Сегодня». Данные блока не трогаем: вернули блок — всё как было.
+// [вид, как назвать Изи, блоки «раздел:ключ» (ключ — как в order.js), функция из «Функций»]
+const TIP_KINDS = [
+  ["rems", "напоминания (пуши в срок и «Выполнил?»)", ["today:Напоминания"], null],
+  ["trip", "«Пора выезжать» к событиям", ["today:.daycard"], null],
+  ["kids", "расписание детей (утром и за 30 минут)", ["today:#kids"], "family"],
+  ["bdays", "дни рождения", ["today:#bdays"], null],
+  ["chores", "дела «Снова пора»", ["today:#chores-today", "plans:#chores"], null],
+  ["habits", "привычки", ["today:Привычки", "plans:#habits-week"], null],
+  ["pomo", "помидоро", ["plans:#pomo"], null],
+  ["bills", "регулярные платежи", ["money:Регулярные платежи"], "money"],
+  ["budget", "лимиты трат", ["money:Куда ушли деньги"], "money"],
+  ["debts", "долги и займы", ["money:#mn-debts"], "money"],
+  ["water", "вода", ["health:Вода"], "health"],
+  ["meds", "лекарства и витамины", ["health:#meds"], "health"],
+  ["sleep", "сон («Скоро спать»)", ["health:Сон"], "health"],
+  ["food", "еда", ["health:Еда"], "health"],
+  ["move", "шаги и движение", ["health:Активность"], "health"],
+  ["medrec", "медкарта (визиты к врачу)", ["health:Медкарта семьи"], "health"],
+  ["fast", "голодание", ["health:#fast"], "fast"],
+]
+// подсказки, которые ставит приложение: вид — по началу id (md… лекарства, sl… сон, mr… медкарта, fs… голодание, pq… помидор)
+const TIP_NUDGE_ID = { md: "meds", sl: "sleep", mr: "medrec", fs: "fast", pq: "pomo" }
 const WATER_NUDGE = /💧|(^|[^а-яё])(вод[аыуе]|водой|стакан\S*|попе[йт]\S*|попить)([^а-яё]|$)|\bwater\b|\bhydrat/i
-function waterSync() {
-  if (!waterTips()) { const now = Date.now()
-    live(D.nudges).filter(n => n.date > now && !String(n.id).startsWith("pq") && WATER_NUDGE.test((n.title || "") + " " + (n.text || ""))).forEach(n => remove("nudges", n.id)) }
-  save(false); pushCfgSend()
+// подсказки Изи (plan_day) — по словам: только там, где ошибиться трудно
+const TIP_NUDGE_TXT = { water: WATER_NUDGE, meds: /лекарств|таблетк|витамин|\bmeds?\b|\bpills?\b/i, sleep: /(^|[^а-яё])(спать|сна|сон|лечь|ложись)([^а-яё]|$)|\bsleep\b|\bbedtime\b/i, fast: /голодани|\bfasting\b/i }
+function blockHidden(ref) {
+  const i = ref.indexOf(":"), sc = (document.body.classList.contains("kidm") ? "kid:" : "") + ref.slice(0, i), k = ref.slice(i + 1)
+  const o = (D.blocksOff && D.blocksOff[sc]) || {}, en = (window.EN_DICT || {})[k]
+  return !!(o[k] || (en && o[en]))
 }
+function tipsOff() {
+  const off = new Set()
+  for (const [kind, , blocks, feat] of TIP_KINDS) if (blocks.some(blockHidden) || (feat && window.FEAT && !FEAT.on(feat))) off.add(kind)
+  if (D.waterOff) off.add("water")
+  return off
+}
+const tipOn = kind => !tipsOff().has(kind)
+const tipNames = () => TIP_KINDS.filter(x => tipsOff().has(x[0])).map(x => x[1])
+// Подсказка про воду (карточка, пуши, Изи): ещё и своя кнопка «Больше не показывать» (D.waterOff). Записывать воду по просьбе можно всегда
+const waterTips = () => tipOn("water")
+// подсказка в D.nudges относится к выключенному виду?
+function nudgeOff(n, off = tipsOff()) {
+  const id = String(n.id || ""), byId = TIP_NUDGE_ID[id.slice(0, 2)]
+  if (byId) return off.has(byId)
+  if (!/^n/.test(id)) return false
+  const txt = (n.title || "") + " " + (n.text || "")
+  return Object.keys(TIP_NUDGE_TXT).some(k => off.has(k) && TIP_NUDGE_TXT[k].test(txt))
+}
+// После любого изменения (скрыли/вернули блок, выключили функцию, «Больше не показывать»): убрать будущие подсказки
+// выключенных видов, пересобрать свои (лекарства, сон, голодание) и сказать таблице, о чём молчать
+let tipsLast = null
+function tipsSync() {
+  const off = tipsOff(), now = Date.now()
+  live(D.nudges).filter(n => n.date > now && nudgeOff(n, off)).forEach(n => remove("nudges", n.id))
+  try { if (window.HEALTH) HEALTH.medNudges() } catch (e) {}
+  try { if (window.FAST) FAST.fastNudges() } catch (e) {}
+  save(false)
+  const key = [...off].sort().join(",")
+  if (key !== tipsLast) { tipsLast = key; pushCfgSend() }
+}
+window.tipsSync = tipsSync
+const waterSync = tipsSync
 function waterTipsSet(on) {
-  if (on) delete D.waterOff; else D.waterOff = 1
-  waterSync()
+  if (on) { delete D.waterOff; blockShow("health:Вода") } else D.waterOff = 1   // включили в Настройках — блок «Вода» тоже возвращается
+  tipsSync()
+}
+// вернуть скрытый блок (без анимации — для переключателей в Настройках)
+function blockShow(ref) {
+  const i = ref.indexOf(":"), sc = (document.body.classList.contains("kidm") ? "kid:" : "") + ref.slice(0, i), k = ref.slice(i + 1), o = D.blocksOff && D.blocksOff[sc]
+  if (!o) return
+  delete o[k]; delete o[(window.EN_DICT || {})[k]]
+  if (!Object.keys(o).length) delete D.blocksOff[sc]
 }
 // Активность с часов за прошлый день — из истории, которую присылает виджет (там тренировки уже учтены)
 const histHealth = d => ((D.snap && D.snap.health) || []).find(h => h && h.day === dayKey(d)) || null
@@ -1610,7 +1673,7 @@ function agentSystem() {
 - Время без «утра/вечера»: встречи, спорт, свидания, ужины после 6 обычно вечером; созвоны и работа — днём. Если перепутать дорого и неясно — спроси.
 - Уточняй через ask_user, только если без ответа нельзя сделать правильно: не названо новое время переноса, несколько подходящих событий, не указан способ оплаты (наличные или перевод). Давай короткие варианты ответа.
 - Календарь — Google Календарь пользователя: события создаёшь, переносишь и удаляешь сразу (create_event/update_event/delete_event). «Убери/удали событие» — это всегда выполнимо: если календарь не даёт удалить (праздники, чужой или подписанный календарь), delete_event сам скрывает событие в IZIDAY — никогда не отвечай «не могу удалить», скажи одной фразой, что скрыл и что в исходном календаре оно осталось. Вернуть — unhide_event. Если инструмент ответил, что изменение ушло в очередь виджета, — скажи коротко «внесу при обновлении виджета».
-${waterTips() ? "- Про воду НЕ создавай напоминаний (они захламляют список) — о воде напоминай сам: подсказки plan_day в нужное время и вопросы в чате." : "- Подсказки про воду пользователь выключил: не напоминай пить воду, не ставь о ней подсказок plan_day и напоминаний, не спрашивай о воде сам. Записать воду по просьбе (add_water) и ответить на вопрос о ней — можно."}
+${tipNames().length ? `- Пользователь убрал из приложения блоки, и подсказки по ним выключены: ${tipNames().join(", ")}. Сам об этом не напоминай, не ставь таких подсказок plan_day и напоминаний, не спрашивай об этом первым. Если пользователь сам просит записать или спрашивает — делай как обычно.\n` : ""}${waterTips() ? "- Про воду НЕ создавай напоминаний (они захламляют список) — о воде напоминай сам: подсказки plan_day в нужное время и вопросы в чате." : "- Подсказки про воду пользователь выключил: не напоминай пить воду, не ставь о ней подсказок plan_day и напоминаний, не спрашивай о воде сам. Записать воду по просьбе (add_water) и ответить на вопрос о ней — можно."}
 - Напоминания живут в IZIDAY, а не в Напоминаниях iPhone: create_reminder сохраняет их в приложении, уведомление в срок и контроль «Выполнил?» — от IZIDAY. Повторяющиеся (каждый день, по будням) — через repeat. В Напоминания iPhone ничего не вноси.
 ${cals.length ? `- Календари по словам пользователя: ${cals.map(x => `«${x.calendar}» (список напоминаний «${x.list}»)`).join(", ")}.${cals.filter(x => x.hint).map(x => ` ${x.hint} — «${x.calendar}».`).join("")} Если календарь не назван, не указывай его.
 ` : ""}- Деньги — ${c.currencyIn}. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.
@@ -1645,11 +1708,11 @@ function planDay(items) {
   for (const it of items.slice(0, 14)) {
     const t = parseIso(it.time)
     if (!t || +t <= now || +t >= end || !String(it.text || "").trim()) continue
-    if (!waterTips() && WATER_NUDGE.test(String(it.text))) { skip++; continue }   // подсказки про воду выключены
+    if (nudgeOff({ id: "n", text: String(it.text) })) { skip++; continue }   // подсказки этого вида выключены (блок скрыт)
     ok.push(upsert("nudges", { id: uid("n"), date: +t, text: String(it.text).trim().slice(0, 240) }))
   }
   D.planDay = dayKey(new Date()); save()
-  return { ok: true, planned: ok.map(n => ({ time: hm(new Date(n.date)), text: n.text })), note: "уведомления поставит виджет при следующем обновлении (обычно до 15 минут)", ...(skip ? { skipped_water: skip, why: "подсказки про воду пользователь выключил — не ставь их" } : {}) }
+  return { ok: true, planned: ok.map(n => ({ time: hm(new Date(n.date)), text: n.text })), note: "уведомления поставит виджет при следующем обновлении (обычно до 15 минут)", ...(skip ? { skipped: skip, why: `пользователь выключил подсказки: ${tipNames().join(", ")} — не ставь их` } : {}) }
 }
 // Раз в день (при первом открытии после 6:00) помощник сам составляет план подсказок на день
 let planBusy = false
@@ -1661,7 +1724,7 @@ async function autoPlan() {
     const sys = chatSystem() + `
 
 Сейчас ты сам, без запроса, планируешь день пользователя. Посмотри календарь и напоминания на сегодня, еду и воду, активность и вчерашний день (get_history), память.
-Составь через plan_day 4–8 подсказок на оставшуюся часть дня: ${waterTips() ? "вода (с учётом выпитого и дел, не во время встреч), " : ""}еда (если обычно пропускает — напомни), подготовка к важным встречам и дорога (за 30–60 мин), движение и шаги, одна идея или мысль дня по его целям из памяти, вечером — короткий итог. Не дублируй уведомления о встречах — они уже есть. Пиши тепло и коротко, на «ты»/«вы» — как пользователь привык. Ответь одной строкой, что запланировал.`
+Составь через plan_day 4–8 подсказок на оставшуюся часть дня: ${tipOn("water") ? "вода (с учётом выпитого и дел, не во время встреч), " : ""}${tipOn("food") ? "еда (если обычно пропускает — напомни), " : ""}подготовка к важным встречам${tipOn("trip") ? " и дорога" : ""} (за 30–60 мин), ${tipOn("move") ? "движение и шаги, " : ""} одна идея или мысль дня по его целям из памяти, вечером — короткий итог. Не дублируй уведомления о встречах — они уже есть. Пиши тепло и коротко, на «ты»/«вы» — как пользователь привык. Ответь одной строкой, что запланировал.`
     const msgs = [{ role: "user", content: `[${hm(now)}] Спланируй мне сегодняшний день подсказками.` }]
     const tools = chatTools().filter(t => /^(get_|plan_day|list_places|read_sheet|mail_search|search_chats)/.test(t.name))
     const r = await agentTurn(msgs, sys, tools)
@@ -2678,7 +2741,7 @@ function renderToday() {
   html += rems.length ? rems.slice(0, 25).map(r => `<div class="row ${r.pending ? "pending" : ""}" data-rem="${esc(r.id)}"><button class="check ${remLate(r) ? "late" : ""}" data-check="${esc(r.id)}"></button>
     <div class="grow"><div class="t">${esc(r.title)}</div>${r.due || r.list ? `<div class="s ${remLate(r) ? "exp" : ""}">${esc(remLabel(r))}${r.due && r.list ? " · " : ""}${esc(r.list || "")}</div>` : ""}</div></div>`).join("")
     : `<div class="empty">${isToday ? "Всё сделано" : "На этот день напоминаний нет"}</div>`
-  const bills = isToday ? recurSoon() : []
+  const bills = isToday && tipOn("bills") ? recurSoon() : []   // блок «Регулярные платежи» скрыт — и здесь не напоминаем
   if (bills.length) html += bills.map(r => `<div class="row" data-recur="${esc(r.id)}"><span class="pin">${ei("repeat")}</span><div class="grow"><div class="t">${esc(r.title)} · ${esc(core.money(r.amount))}</div>
     <div class="s ${recurDue(r) < sod(now) ? "exp" : ""}">оплатить ${esc(recurLabel(r))}</div></div><button class="btn small" data-recur-pay="${esc(r.id)}">Оплачено</button></div>`).join("")
   const near = live(D.places).filter(p => !p.done && !p.shop)
@@ -4098,7 +4161,7 @@ async function pushEnable() {
   } catch (e) { ui.info("Не получилось включить", String(e.message || e)) }
 }
 // Что таблица учитывает в пушах: цель по воде, валюта сводок
-const pushCfg = () => ({ waterGoal: H().waterGoal, currency: core.CONFIG.currency, water: waterTips() ? 1 : 0 })
+const pushCfg = () => ({ waterGoal: H().waterGoal, currency: core.CONFIG.currency, water: waterTips() ? 1 : 0, off: [...tipsOff()].sort() })
 async function pushCfgSend() { try { if (D.conn && pushAble() && Notification.permission === "granted") { const sub = await pushSub(); if (sub) { await pushConn(); await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: pushCfg() } }) } } } catch (e) {} }
 async function pushTest() {
   try { const r = (await hubPost({ push: { action: "test" } })).push || {}; toast(r.sent ? "🔔 Отправил — сейчас придёт" : `Не дошло: ${(r.errors || [r.error || "нет подписки"]).join("; ")}`) }
@@ -5549,9 +5612,9 @@ function tipCard(v, now = new Date()) {
   const day = dayKey(now), off = (D.tdOff || {})
   const tips = []
   const cats = (core.CONFIG.categories.expense || []).map(c => c[0])
-  for (const c of cats) { const b = budgetState(c); if (b && b.p >= 0.8 && b.p <= 1.5) tips.push({ k: "b:" + c, ico: "wallet", col: "#30B0C7", t: b.left >= 0 ? `До лимита «${c}» осталось ${core.money(b.left)}` : `«${c}»: лимит превышен на ${core.money(-b.left)}`, s: `Потрачено ${num(b.spent)} из ${core.money(b.limit)} в этом месяце` }) }
-  const bill = recurSoon()[0]; if (bill) tips.push({ k: "r:" + bill.id, ico: "bill", col: "#FF9F0A", t: `${bill.title}: ${core.money(bill.amount)} ${recurLabel(bill)}`, s: "Регулярный платёж — нажмите «Оплачено» в напоминаниях, когда оплатите" })
-  for (const d of debts()) { const due = parseIso(d.due); if (d.dir !== "loan" && due && sod(due) - sod(now) <= 2 * 864e5) { const x = debtLine(d, now); tips.push({ k: "d:" + d.id, ico: "hand", col: "#5E5CE6", t: `${x.t}: ${core.money(d.amount)}`, s: x.s }); break } }
+  if (tipOn("budget")) for (const c of cats) { const b = budgetState(c); if (b && b.p >= 0.8 && b.p <= 1.5) tips.push({ k: "b:" + c, ico: "wallet", col: "#30B0C7", t: b.left >= 0 ? `До лимита «${c}» осталось ${core.money(b.left)}` : `«${c}»: лимит превышен на ${core.money(-b.left)}`, s: `Потрачено ${num(b.spent)} из ${core.money(b.limit)} в этом месяце` }) }
+  const bill = tipOn("bills") && recurSoon()[0]; if (bill) tips.push({ k: "r:" + bill.id, ico: "bill", col: "#FF9F0A", t: `${bill.title}: ${core.money(bill.amount)} ${recurLabel(bill)}`, s: "Регулярный платёж — нажмите «Оплачено» в напоминаниях, когда оплатите" })
+  if (tipOn("debts")) for (const d of debts()) { const due = parseIso(d.due); if (d.dir !== "loan" && due && sod(due) - sod(now) <= 2 * 864e5) { const x = debtLine(d, now); tips.push({ k: "d:" + d.id, ico: "hand", col: "#5E5CE6", t: `${x.t}: ${core.money(d.amount)}`, s: x.s }); break } }
   const h = dayHealth(), gap = waterTips() && waterGap(h); if (gap) tips.push({ k: "w", never: 1, ico: "drop", col: "#0A84FF", t: `${gap} ч без воды`, s: `Выпито ${liters(h.water)} из ${liters(H().waterGoal)} л — стакан сейчас` })
   const tip = tips.find(t => !off["tip:" + day + ":" + t.k])
   if (!tip) return ""
@@ -7336,6 +7399,7 @@ setTimeout(pushKeep, 5000)
 hashAction()
 setTimeout(memorize, 8000)   // прошлый разговор закончился — сложить в память
 setTimeout(autoPlan, 15000)   // первый раз за день — план подсказок
+setTimeout(() => { try { tipsSync() } catch (e) {} }, 4000)   // скрытые блоки → таблица знает, о чём молчать (и после обновления с другого устройства)
 window.addEventListener("hashchange", () => hashAction())
 try { navigator.serviceWorker && navigator.serviceWorker.addEventListener("message", e => { const m = e.data; if (m && m.type === "izi-open") hashAction(String(m.hash || "")) }) } catch (e) {}
 sync()

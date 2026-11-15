@@ -63,7 +63,7 @@ function set(k, v, quiet) {
   else { if (v) delete F()[k]; else F()[k] = 0 }
   if (D.featAsk) delete D.featAsk[k]
   syncPlans(); save(false)
-  if (k === "health" && typeof waterSync === "function") try { waterSync() } catch (e) {}   // без «Здоровья» — без подсказок про воду (и на сервере)
+  if (typeof tipsSync === "function") try { tipsSync() } catch (e) {}   // выключенная функция — без подсказок по ней (и на сервере)
   if (!quiet) { toast(v ? `${NAME(k)}: подключено` : `${NAME(k)}: выключено, данные сохранены`); render() }
 }
 const offList = () => kid() ? [] : LIST.map(x => x[0]).filter(k => !on(k))

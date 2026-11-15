@@ -302,18 +302,18 @@ let nudgeBusy = false
 function medNudges() {
   if (nudgeBusy) return; nudgeBusy = true
   try {
-    const now = Date.now(), want = new Map()
+    const now = Date.now(), want = new Map(), on = k => typeof tipOn !== "function" || tipOn(k)   // блок скрыт — подсказок по нему нет
     for (let i = 0; i < 2; i++) {
       const d = addDays(sod(new Date()), i), k = dayKey(d)
-      for (const m of meds()) for (const t of m.times || []) {
+      if (on("meds")) for (const m of meds()) for (const t of m.times || []) {
         if (slotTaken(m, k, t)) continue
         const at = +d + (hmToMin(t) || 0) * 60e3; if (at <= now) continue
         want.set(`md${m.id}${k}${t.replace(":", "")}`, { date: at, title: "Лекарства", text: `Пора принять: ${m.title}${m.dose ? " — " + m.dose : ""}. Ответь «принял» — отмечу.` })
       }
       const c = CFG()
-      if (c.sleepPush !== false) { let m = hmToMin(bedtime()) - 30; if (m < 12 * 60) m += 1440; const at = +d + m * 60e3
+      if (c.sleepPush !== false && on("sleep")) { let m = hmToMin(bedtime()) - 30; if (m < 12 * 60) m += 1440; const at = +d + m * 60e3
         if (at > now) want.set(`sl${k}`, { date: at, title: "Скоро спать", text: `Чтобы встать в ${c.wake} выспавшимся, лечь лучше до ${bedtime()}. Через 30 минут — экран в сторону.` }) }
-      for (const r of medrecs()) if (r.due === k) { const at = +d + 10 * 3600e3; if (at > now) want.set(`mr${r.id}${k}`, { date: at, title: "Медкарта", text: `Пора: ${r.title}${r.who && r.who !== "Я" ? " — " + r.who : ""}. Записаться сегодня?` }) }
+      if (on("medrec")) for (const r of medrecs()) if (r.due === k) { const at = +d + 10 * 3600e3; if (at > now) want.set(`mr${r.id}${k}`, { date: at, title: "Медкарта", text: `Пора: ${r.title}${r.who && r.who !== "Я" ? " — " + r.who : ""}. Записаться сегодня?` }) }
     }
     for (const n of live(D.nudges)) if (/^(md|sl|mr)/.test(String(n.id)) && n.date > now && !want.has(n.id)) remove("nudges", n.id)
     for (const [id, x] of want) { const o = live(D.nudges).find(n => n.id === id); if (!o || o.date !== x.date || o.text !== x.text) upsert("nudges", Object.assign({ id }, x)) }

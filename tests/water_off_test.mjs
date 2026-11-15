@@ -53,7 +53,7 @@ check(!(await card()), "и назавтра не появляется")
 const sys = await page.evaluate(() => agentSystem())
 check(/Подсказки про воду пользователь выключил/.test(sys) && !/о воде напоминай сам/.test(sys), "Изи знает: про воду не напоминать")
 const pd = await page.evaluate(() => planDay([{ time: dayKey(new Date()) + "T18:00", text: "Выпей стакан воды" }, { time: dayKey(new Date()) + "T18:30", text: "Прогулка 20 минут" }]))
-check(pd.planned.length === 1 && /Прогулка/.test(pd.planned[0].text) && pd.skipped_water === 1, "plan_day не ставит подсказку про воду", pd)
+check(pd.planned.length === 1 && /Прогулка/.test(pd.planned[0].text) && pd.skipped === 1, "plan_day не ставит подсказку про воду", pd)
 
 console.log("Настройки → Уведомления: переключатель")
 await page.evaluate(() => setTab("more")); await page.waitForTimeout(600)
