@@ -84,6 +84,31 @@ for (const dark of [false, true]) {
   check(/Долларовая карта · \$100 ≈ 3 600 ฿/.test(sp(await page.textContent(".mn-ops"))), "в списке видно счёт и обе суммы", sp(await page.textContent(".mn-ops")).slice(0, 300))
   await shot("8-ops")
 
+  // 6б. Остаток счёта следует за тратой: запись, правка, удаление, отмена
+  const bal = id => page.evaluate(id => D.goals.find(g => g.id === id).amount, id), usd = rec.acct
+  check(await bal(usd) === 1100, "трата 100 $ уменьшила долларовую карту: 1200 → 1100", await bal(usd))
+  await page.evaluate(() => { runTool("add_money", { type: "expense", amount: 500, method: "transfer", category: "Продукты", comment: "рынок", account: "Kasikorn" }) }); await wait(300)
+  check(await bal("a1") === 49500, "трата 500 ฿ с Kasikorn: 50 000 → 49 500", await bal("a1"))
+  await page.evaluate(() => { const e = live(D.money).find(x => x.comment === "рынок"); upsert("money", Object.assign({}, e, { amount: 700 })) }); await wait(200)
+  check(await bal("a1") === 49300, "правка суммы до 700 — остаток 49 300", await bal("a1"))
+  await page.evaluate(() => { runTool("add_money", { type: "income", amount: 1000, method: "transfer", category: "Другое", comment: "вернули", account: "Kasikorn" }) }); await wait(300)
+  check(await bal("a1") === 50300, "доход 1000 на счёт — остаток 50 300", await bal("a1"))
+  await page.evaluate(() => { remove("money", live(D.money).find(x => x.comment === "рынок").id) }); await wait(200)
+  check(await bal("a1") === 51000, "удалил трату — деньги вернулись на счёт: 51 000", await bal("a1"))
+  await page.evaluate(() => { render(); document.querySelector(".mn-ops").scrollIntoView({ block: "start" }) }); await wait(400)
+  const row = await page.$('.mn-ops [data-money="e2"]'); await row.scrollIntoViewIfNeeded()
+  await page.evaluate(() => { const e = D.money.find(x => x.id === "e2"); upsert("money", Object.assign({}, e, { acct: "a1" })) }); await wait(200)
+  check(await bal("a1") === 49200, "старой трате указали счёт — остаток 49 200", await bal("a1"))
+  await page.evaluate(() => { render(); document.querySelector(".mn-ops").scrollIntoView({ block: "start" }) }); await wait(400)
+  await page.click('.mn-ops [data-do="mn-edit"]'); await wait(500)
+  await page.click('.mn-ops [data-money="e2"] + .swd-del'); await wait(700)
+  check(await bal("a1") === 51000, "удаление из списка вернуло 1800 на счёт", await bal("a1"))
+  await page.evaluate(() => { const u = [...document.querySelectorAll("#undo button")].find(x => /Отменить/.test(x.textContent)); u && u.click() }); await wait(600)
+  check(await bal("a1") === 49200 && await page.evaluate(() => live(D.money).some(x => x.id === "e2")), "«Отменить» вернула трату и снова списала её со счёта (один раз)", await bal("a1"))
+  await page.evaluate(() => { mnEdit = false; render(); const c = [...document.querySelectorAll(".card h2")].find(h => /Капитал/.test(h.textContent)); c && c.scrollIntoView({ block: "start" }) }); await wait(6000)
+  await shot("8b-capital")
+  await page.evaluate(() => document.querySelector(".mn-ops").scrollIntoView({ block: "start" })); await wait(300)
+
   // 7. Правка даты: перенести трату в прошлый месяц
   check(/поправить сумму, дату/.test(sp(await page.textContent(".mn-ops"))), "подсказка: нажмите на операцию, чтобы поправить дату")
   await page.evaluate(() => { moneyForm("expense", D.money.find(x => x.id === "e3")) }); await wait(600)

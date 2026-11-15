@@ -209,11 +209,25 @@ const proteinGoal = () => H().proteinGoal || Math.round((H().weight || 80) * 1.6
 const live = list => list.filter(x => x && !x.deleted)
 function upsert(key, rec) {
   if (window.UNDO) UNDO.note(key, rec)   // отмена действия (undo.js): запомнить прежнюю версию
+  if (key === "money") try { acctApply(D.money.find(x => x.id === rec.id), rec) } catch (e) { console.error("acct", e) }   // остаток счёта следует за операцией
   rec.u = Date.now()
   const i = D[key].findIndex(x => x.id === rec.id)
   if (i >= 0) D[key][i] = rec; else D[key].push(rec)
   save()
   return rec
+}
+// Остаток счёта всегда актуален: трата со счёта уменьшает его, доход увеличивает; правка, удаление и отмена возвращают разницу.
+// Считаем в валюте счёта. Меняем запись счёта напрямую (не через upsert), чтобы «Отменить» не вернуло остаток дважды
+function acctEffect(e) {
+  if (!e || e.deleted || !e.acct || !(e.amount > 0)) return null
+  const a = (D.goals || []).find(g => g.id === e.acct && g.kind === "acct" && !g.deleted); if (!a) return null
+  const B = baseCur(), c = a.cur && CUR[a.cur] ? a.cur : B
+  const v = e.cur === c && e.orig > 0 ? +e.orig : c === B ? +e.amount : fx(+e.amount, B, c)
+  return { a, v: e.type === "income" ? v : -v }
+}
+function acctApply(old, rec) {
+  const o = acctEffect(old), n = acctEffect(rec && !rec.deleted ? rec : null)
+  for (const [x, k] of [[o, -1], [n, 1]]) if (x) { x.a.amount = Math.round(((+x.a.amount || 0) + k * x.v) * 100) / 100; x.a.u = Date.now() }
 }
 function remove(key, id) { upsert(key, { id, deleted: true }) }
 // Слияние как в виджете (mergeSynced): по id побеждает более позднее изменение
@@ -5383,7 +5397,7 @@ function acctForm(a) {
     <div class="field"><input id="a-t" placeholder="Название: Kasikorn, наличные дома, квартира" value="${esc(e.title)}"></div>
     <div class="field"><label>Сколько сейчас</label><div class="mn-amt"><input id="a-a" type="number" inputmode="decimal" value="${e.amount}"><div class="mn-cur" id="a-c">${[...new Set([...curOpts(), cur])].map(c => `<button data-c="${c}">${CUR[c]}</button>`).join("")}</div></div></div>
     <div class="field" id="a-df" hidden><button class="chip" id="a-def" type="button">${tdIco("check", 14)} Основной счёт для трат</button></div>
-    <div class="msg small">Обновляйте остатки раз в месяц — график капитала строится по ним.</div>
+    <div class="msg small">Траты и доходы с этого счёта сами меняют остаток. Остальное — вклады, недвижимость — обновляйте раз в месяц: по ним строится график капитала.</div>
     <div class="btns">${a ? '<button class="btn red" data-a="del">Удалить</button>' : ""}<button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
   const paint = () => { $$("#a-ty .chip", s.el).forEach(b => b.classList.toggle("on", b.dataset.t === type)); $$("#a-c button", s.el).forEach(b => b.classList.toggle("on", b.dataset.c === cur))
     $("#a-df", s.el).hidden = !(type === "cash" || type === "bank"); $("#a-def", s.el).classList.toggle("on", def) }
@@ -5394,7 +5408,7 @@ function acctForm(a) {
   $('[data-a="no"]', s.el).onclick = () => s.close()
   if (a) $('[data-a="del"]', s.el).onclick = () => { remove("goals", a.id); s.close(); render() }
   $('[data-a="ok"]', s.el).onclick = () => {
-    const title = $("#a-t", s.el).value.trim() || ACCT_T[type][0], amount = Math.round(+$("#a-a", s.el).value || 0)
+    const title = $("#a-t", s.el).value.trim() || ACCT_T[type][0], amount = Math.round((+$("#a-a", s.el).value || 0) * 100) / 100
     const multi = cur !== baseCur() && !multiOn()
     const r = upsert("goals", Object.assign({}, a || { id: uid("a"), date: Date.now(), kind: "acct" }, { title, type, amount, cur }))
     const id = (r && r.id) || (a && a.id), pays = type === "cash" || type === "bank"
