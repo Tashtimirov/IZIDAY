@@ -3884,7 +3884,7 @@ function shopUsual(st, onDone) {
 const WD7 = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]   // 1 — пн … 7 — вс
 const kidsList = () => live(D.kids).filter(k => k.title)
 const wdOf = d => ((d.getDay() + 6) % 7) + 1
-const kidsOn = d => kidsList().filter(k => (k.days || []).map(Number).includes(wdOf(d))).sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")))
+const kidsOn = d => kidsList().filter(k => (Array.isArray(k.days) ? k.days : String(k.days || "").split(/[^0-9]+/).filter(Boolean)).map(Number).includes(wdOf(d))).sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")))
 function kidsCard(day) {
   const l = kidsOn(day)
   if (!l.length) return ""

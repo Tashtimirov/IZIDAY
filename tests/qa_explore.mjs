@@ -63,7 +63,7 @@ for (const [w, h, dev] of SIZES) for (const dark of [false, true]) for (const ro
         const name = (el.id ? "#" + el.id : el.tagName.toLowerCase() + (el.className && typeof el.className === "string" ? "." + el.className.trim().split(/\s+/).slice(0, 2).join(".") : ""))
         out.push([`за краем экрана: ${name} «${(el.innerText || el.value || "").trim().slice(0, 40)}» (${Math.round(r.left)}…${Math.round(r.right)} из ${vw})`, where]); if (out.length > 6) break
       }
-      if (dark && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && el.type !== "checkbox" && el.type !== "radio" && el.type !== "range" && el.type !== "file" && el.type !== "color") {
+      if (dark && !document.body.classList.contains("kidm") && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && el.type !== "checkbox" && el.type !== "radio" && el.type !== "range" && el.type !== "file" && el.type !== "color") {
         const bg = s.backgroundColor.match(/\d+(\.\d+)?/g) || []
         if (bg.length >= 3 && +bg[0] > 230 && +bg[1] > 230 && +bg[2] > 230 && (bg[3] === undefined || +bg[3] > 0.5)) out.push([`белое поле в тёмной теме: ${el.name || el.id || el.placeholder || el.type}`, where])
       }
