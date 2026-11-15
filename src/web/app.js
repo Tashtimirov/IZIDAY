@@ -940,6 +940,7 @@ const AGENT_TOOLS = [
       category: { type: "string", description: "Строго одна из категорий из системного сообщения" },
       comment: { type: "string" }, date: { type: "string", description: "Только если не сегодня, YYYY-MM-DD" },
       currency: { type: "string", enum: CURS.map(c => c[0]), description: "Валюта суммы, если не основная («5000 рублей», «$12»): пересчитаю по курсу" },
+      account: { type: "string", description: "Название счёта или карты, с которой оплачено, если пользователь назвал (счета — в get_money capital.accounts)" },
       shared: { type: "boolean", description: "Общая семейная трата — только если в семье включён общий бюджет" } },
       required: ["type", "amount", "method", "category"] } },
   { name: "add_jar", description: "Копилка на цель со сроком («коплю на Японию 150 000 к июню»). Сама считает, сколько откладывать в месяц.",
@@ -1010,8 +1011,9 @@ const AGENT_TOOLS = [
       done: { type: "boolean" }, create: { type: "boolean" }, bad: { type: "boolean", description: "При создании: true — привычка, которую бросают" } }, required: ["habit"] } },
   { name: "get_money", description: "Операции и итоги по деньгам за месяц.",
     input_schema: { type: "object", properties: { month: { type: "string", description: "YYYY-MM, по умолчанию текущий" } } } },
-  { name: "update_money", description: "Исправить операцию по id (из get_money или get_history details): категорию и/или комментарий. Для разбора непонятных трат.",
-    input_schema: { type: "object", properties: { id: { type: "string" }, category: { type: "string", description: "Одна из категорий из системного сообщения" }, comment: { type: "string" } }, required: ["id"] } },
+  { name: "update_money", description: "Исправить операцию по id (из get_money или get_history details): категорию, комментарий, дату (перенести в другой день или месяц), сумму в основной валюте, счёт. Для разбора непонятных трат и правок «это было в октябре», «вышло 3600, а не 3500».",
+    input_schema: { type: "object", properties: { id: { type: "string" }, category: { type: "string", description: "Одна из категорий из системного сообщения" }, comment: { type: "string" },
+      date: { type: "string", description: "YYYY-MM-DD" }, amount: { type: "number", description: "Сумма в основной валюте" }, account: { type: "string", description: "Название счёта, с которого оплачено" } }, required: ["id"] } },
   { name: "delete_money", description: "Удалить ошибочную операцию по id.",
     input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "get_history", description: "Сводка по дням за период (до 92 дней): еда (ккал, БЖУ), вода, тренировки, шаги и активность с часов, расходы и доходы. " +
@@ -1193,9 +1195,16 @@ async function runTool(name, x) {
       if (!e) return { error: "нет такой операции" }
       const names = (core.CONFIG.categories[e.type] || []).map(c => c[0])
       if (x.category != null && !names.includes(x.category)) return { error: `категория должна быть одной из: ${names.join(", ")}` }
-      const rec = upsert("money", Object.assign({}, e, x.category != null ? { category: x.category } : {}, x.comment != null ? { comment: String(x.comment).trim() } : {}))
+      const ud = x.date != null ? parseIso(x.date) : null
+      if (x.date != null && !ud) return { error: "date — YYYY-MM-DD" }
+      if (ud) { const o = new Date(e.date); ud.setHours(o.getHours(), o.getMinutes(), 0, 0) }
+      if (x.amount != null && !(x.amount > 0)) return { error: "сумма должна быть больше нуля" }
+      const ua = x.account != null ? acctFind(x.account) : null
+      if (x.account && !ua) return { error: "нет такого счёта", have: payAccts().map(a => a.title) }
+      const rec = upsert("money", Object.assign({}, e, x.category != null ? { category: x.category } : {}, x.comment != null ? { comment: String(x.comment).trim() } : {},
+        ud ? { date: ud.getTime() } : {}, x.amount > 0 ? { amount: Math.round(x.amount * 100) / 100 } : {}, ua ? { acct: ua.id } : {}))
       const learned = x.category != null && x.category !== e.category && rec.comment ? ruleLearn(rec.comment, rec.category, rec.type) : null
-      return { ok: true, id: rec.id, category: rec.category, comment: rec.comment || "", ...(learned ? { learned: `дальше «${learned.label}» сам ставлю в «${learned.cat}» — скажи об этом коротко` } : {}) }
+      return { ok: true, id: rec.id, category: rec.category, comment: rec.comment || "", date: iso(new Date(rec.date)).slice(0, 10), amount: rec.amount, ...(rec.acct ? { account: acctName(rec.acct) } : {}), ...(learned ? { learned: `дальше «${learned.label}» сам ставлю в «${learned.cat}» — скажи об этом коротко` } : {}) }
     }
     case "add_money": {
       const names = core.CONFIG.categories[x.type] ? core.CONFIG.categories[x.type].map(c => c[0]) : []
@@ -1205,10 +1214,13 @@ async function runTool(name, x) {
       if (d) d.setHours(12, 0, 0, 0)
       const B = baseCur(), fc = x.currency && x.currency !== B && CUR[x.currency]
       const ruled = x.category === "Другое" && x.comment ? ruleFor(x.comment, x.type) : null
+      const pa = payAccts(), ac = (x.account && acctFind(x.account)) || pa.find(a => a.id === acctDef()) || null
       const rec = upsert("money", Object.assign({ id: `f${now}-${Math.random().toString(36).slice(2, 6)}`, date: d ? d.getTime() : now, type: x.type, amount: fc ? Math.round(fx(x.amount, x.currency, B)) : x.amount,
-        method: x.method, category: ruled && names.includes(ruled) ? ruled : x.category, comment: x.comment || "" }, fc ? { cur: x.currency, orig: x.amount } : {}, x.shared ? { shared: true } : {}))
+        method: x.method, category: ruled && names.includes(ruled) ? ruled : x.category, comment: x.comment || "" }, fc ? { cur: x.currency, orig: x.amount } : {}, x.shared ? { shared: true } : {}, ac ? { acct: ac.id } : {}))
+      if (fc) multiSet(1)
       const bs = x.type === "expense" && budgetState(x.category, core.monthKey(new Date(rec.date)))
-      return { ok: true, id: rec.id, category: rec.category, ...(fc ? { converted: `${fmtCur(x.amount, x.currency)} ≈ ${core.money(rec.amount)}` } : {}), ...(bs ? { budget: { limit: bs.limit, spent_this_month: bs.spent, left: bs.left, warn: bs.p >= 0.8 ? "скажи пользователю, сколько осталось по лимиту" : undefined } } : {}) }
+      return { ok: true, id: rec.id, category: rec.category, ...(fc ? { converted: `${fmtCur(x.amount, x.currency)} ≈ ${core.money(rec.amount)}`, confirm: `назови обе суммы и спроси, верно ли вышло ${core.CONFIG.currencyIn}: курс в обменнике мог быть другим. Назовёт свою сумму — исправь через update_money amount` } : {}),
+        ...(ac ? { account: ac.title } : pa.length > 1 ? { account_question: `счёт не указан — спроси одним коротким вопросом, откуда оплачено: ${pa.map(a => a.title).join(", ")}; ответ запиши через update_money account` } : {}), ...(bs ? { budget: { limit: bs.limit, spent_this_month: bs.spent, left: bs.left, warn: bs.p >= 0.8 ? "скажи пользователю, сколько осталось по лимиту" : undefined } } : {}) }
     }
     case "add_jar": {
       if (!x.title || !(x.target > 0)) return { error: "нужны название и цель" }
@@ -2180,12 +2192,21 @@ function moneyForm(type, entry) {
     const e = entry || { type, amount: "", method: "cash", category: "", comment: "", date: Date.now() }
     type = e.type
     const cats = core.CONFIG.categories[type].map(c => c[0]), B = baseCur()
-    let cat = e.category, method = e.method, manualCat = !!entry, done = false, cur = e.cur || B, shared = !!e.shared
+    const pay = payAccts(), baseIn = curRow(B)[3].replace(/^./, c => c.toUpperCase())
+    let acct = entry ? (pay.some(a => a.id === e.acct) ? e.acct : "") : acctDef()
+    const acctCur = id => { const a = pay.find(x => x.id === id); return a && a.cur && CUR[a.cur] ? a.cur : B }
+    let cat = e.category, method = e.method, manualCat = !!entry, done = false, cur = e.cur || (!entry && acct ? acctCur(acct) : B), shared = !!e.shared
+    let manualBase = !!(e.cur && e.orig)   // сумму в основной валюте человек поправил сам (или она уже записана) — курсом не перебиваем
+    if (!entry && acct) method = (pay.find(a => a.id === acct) || {}).type === "cash" ? "cash" : "transfer"
     const s = sheet(`<h3>${entry ? "Изменить" : type === "expense" ? "Расход" : "Доход"}</h3>
-      <div class="field"><div class="mn-amt"><input id="m-amt" class="huge" type="number" inputmode="decimal" placeholder="0" value="${e.cur && e.orig ? e.orig : e.amount}"><div class="mn-cur" id="m-cur">${[...new Set([...curOpts(), cur])].map(c => `<button data-c="${c}">${CUR[c]}</button>`).join("")}</div></div><div class="small muted" id="m-fx"></div></div>
+      <div class="field"><div class="mn-amt"><input id="m-amt" class="huge" type="number" inputmode="decimal" placeholder="0" value="${e.cur && e.orig ? e.orig : e.amount}"><div class="mn-cur" id="m-cur" ${multiOn() || cur !== B ? "" : "hidden"}>${[...new Set([...curOpts(), cur])].map(c => `<button data-c="${c}">${CUR[c]}</button>`).join("")}</div><div class="mn-cur mn-cur1" id="m-cur1" ${multiOn() || cur !== B ? "hidden" : ""}><button class="on" disabled>${CUR[B]}</button></div></div>
+        <button class="mn-link" id="m-multi" type="button" ${multiOn() || cur !== B ? "hidden" : ""}>Платил в другой валюте</button>
+        <div class="mn-base" id="m-base" hidden><label>${esc(baseIn)} выходит</label><div class="mn-amt"><input id="m-bamt" type="number" inputmode="decimal" placeholder="0"><div class="mn-cur mn-cur1"><button class="on" disabled>${CUR[B]}</button></div></div><div class="small muted" id="m-fx"></div></div></div>
       <div class="field"><input id="m-com" placeholder="Комментарий: такси, кафе, зарплата…" value="${esc(e.comment)}"></div>
       <div class="field"><div class="seg two" id="m-meth"><button data-m="cash">Наличные</button><button data-m="transfer">Перевод / карта</button></div></div>
       <div class="field"><label>Категория</label><div class="chips" id="m-cats">${cats.map(c => `<button class="chip" data-c="${esc(c)}">${esc(c)}</button>`).join("")}</div><div class="small muted" id="m-rule"></div></div>
+      ${pay.length ? `<div class="field"><label>${type === "expense" ? "Откуда оплачено" : "Куда пришло"}</label><div class="chips" id="m-acc">${pay.map(a => `<button class="chip" data-a="${esc(a.id)}">${tdIco(ACCT_T[a.type][1], 14)} ${esc(a.title)}${a.cur && a.cur !== B ? " · " + CUR[a.cur] : ""}</button>`).join("")}</div></div>`
+        : `<div class="field"><button class="mn-link" id="m-acc-add" type="button">${type === "expense" ? "Откуда оплачено" : "Куда пришло"}: добавить счёт или карту</button></div>`}
       ${famShare("money") ? `<div class="field"><button class="chip ${shared ? "on" : ""}" id="m-sh">${tdIco("people", 14)} Общая с ${esc(partnerIns(mnyPartner()))}</button></div>` : ""}
       <div class="field"><label>Дата</label><input id="m-date" type="date" value="${dayKey(new Date(e.date))}"></div>
       <div class="btns">${entry ? '<button class="btn red" data-a="del">Удалить</button>' : `<button class="btn small" data-a="swap">${type === "expense" ? "Это доход" : "Это расход"}</button>`}<button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`,
@@ -2195,12 +2216,29 @@ function moneyForm(type, entry) {
       $$("#m-meth button", s.el).forEach(b => b.classList.toggle("on", b.dataset.m === method))
       $$("#m-cats .chip", s.el).forEach(b => b.classList.toggle("on", b.dataset.c === cat))
       $$("#m-cur button", s.el).forEach(b => b.classList.toggle("on", b.dataset.c === cur))
-      const a = amtOf(); $("#m-fx", s.el).textContent = cur !== B ? (a > 0 ? `≈ ${core.money(Math.round(fx(a, cur, B)))} по курсу сегодня` : `курс: ${fxLine()}`) : ""
+      $$("#m-acc .chip", s.el).forEach(b => b.classList.toggle("on", b.dataset.a === acct))
+      const a = amtOf(), fc = cur !== B
+      $("#m-base", s.el).hidden = !fc
+      if (fc) {
+        if (!manualBase) $("#m-bamt", s.el).value = a > 0 ? Math.round(fx(a, cur, B)) : ""
+        const r = String(Math.round(fx(1, cur, B) * 100) / 100).replace(".", window.L && L.en ? "." : ",")
+        $("#m-fx", s.el).textContent = `По курсу сегодня: ${PRE[cur] ? CUR[cur] + "1" : "1 " + CUR[cur]} = ${r} ${CUR[B]}. Обменяли по другому курсу — поправьте сумму.`
+      }
     }
+    if (manualBase) $("#m-bamt", s.el).value = e.amount
+    const showCur = () => { $("#m-cur", s.el).hidden = false; $("#m-cur1", s.el).hidden = true; $("#m-multi", s.el).hidden = true }
+    $("#m-multi", s.el).onclick = () => { multiSet(1); showCur() }
+    $("#m-bamt", s.el).oninput = () => { manualBase = true }
+    $$("#m-acc .chip", s.el).forEach(b => b.onclick = () => {
+      acct = acct === b.dataset.a ? "" : b.dataset.a
+      if (acct) { const a = pay.find(x => x.id === acct); method = a.type === "cash" ? "cash" : "transfer"
+        const c = acctCur(acct); if (c !== cur && !entry) { cur = c; manualBase = false; if (c !== B) showCur() } }
+      paint() })
+    if ($("#m-acc-add", s.el)) $("#m-acc-add", s.el).onclick = () => { s.close(); acctForm() }
     paint(); fxLoad()
     $$("#m-meth button", s.el).forEach(b => b.onclick = () => { method = b.dataset.m; paint() })
-    $$("#m-cur button", s.el).forEach(b => b.onclick = () => { cur = b.dataset.c; paint() })
-    $("#m-amt", s.el).oninput = paint
+    $$("#m-cur button", s.el).forEach(b => b.onclick = () => { cur = b.dataset.c; manualBase = false; paint() })
+    $("#m-amt", s.el).oninput = () => { manualBase = false; paint() }
     if ($("#m-sh", s.el)) $("#m-sh", s.el).onclick = ev => { shared = !shared; ev.currentTarget.classList.toggle("on", shared) }
     $$("#m-cats .chip", s.el).forEach(b => b.onclick = () => { cat = b.dataset.c; manualCat = true; paint()
       const c = $("#m-com", s.el).value.trim(); $("#m-rule", s.el).textContent = c && cat !== "Другое" && ruleFor(c, type) !== cat ? `Запомню: «${c.split(/[,.;]/)[0].trim()}» → ${cat}` : "" })
@@ -2219,14 +2257,17 @@ function moneyForm(type, entry) {
     $('[data-a="ok"]', s.el).onclick = () => {
       const a = amtOf()
       if (!(a > 0)) { toast("Введите сумму"); return }
-      const amount = cur === B ? a : Math.round(fx(a, cur, B))
+      const ba = parseFloat(String($("#m-bamt", s.el).value).replace(",", "."))
+      const amount = cur === B ? a : ba > 0 ? Math.round(ba) : Math.round(fx(a, cur, B))
       const dv = $("#m-date", s.el).value
       let date = e.date
       if (dv && dv !== dayKey(new Date(e.date))) { const [y, m, d] = dv.split("-").map(Number); const x = new Date(); date = +new Date(y, m - 1, d, x.getHours(), x.getMinutes()) }
       const comment = $("#m-com", s.el).value.trim()
       const rec = Object.assign({}, entry || { id: `f${Date.now()}-${Math.random().toString(36).slice(2, 6)}` }, { type, amount, method,
         category: cat || cats[cats.length - 1], comment, date, shared })
-      if (cur !== B) Object.assign(rec, { cur, orig: a }); else { delete rec.cur; delete rec.orig }
+      if (cur !== B) { Object.assign(rec, { cur, orig: a }); multiSet(1) } else { delete rec.cur; delete rec.orig }
+      if (acct) { rec.acct = acct; MNY().acctLast = acct } else delete rec.acct
+      if (entry) MNY().edHint = 1
       upsert("money", rec)
       const learned = manualCat && comment && (!entry || entry.category !== rec.category) ? ruleLearn(comment, rec.category, type) : null
       done = true; s.close(); render()
@@ -3094,7 +3135,7 @@ function bindChatBar(v) {
 }
 
 const DO = {
-  install: () => installApp(), talk: () => talkOpen(), "izi-voice": () => voicePicker(), "cur-pick": () => curPick(), "lang-pick": () => langPick(), stt: () => window.STT && STT.sheetOpen(),
+  install: () => installApp(), talk: () => talkOpen(), "izi-voice": () => voicePicker(), "cur-pick": () => curPick(), "multi-tg": () => { const v = !multiOn(); multiSet(v); render(); toast(v ? "Несколько валют: включено" : "Несколько валют: выключено, записи сохранены") }, "lang-pick": () => langPick(), stt: () => window.STT && STT.sheetOpen(),
   event: () => eventForm(), reminder: () => reminderForm(), food: () => foodMenu(), workout: () => workoutForm(), photo: () => photoPrompt(),
   expense: () => moneyForm("expense"), income: () => moneyForm("income"), water: () => addWater(H().glass || 250),
   "push-on": () => pushEnable(),
@@ -4660,6 +4701,17 @@ const curGuess = () => { let tz = ""; try { tz = Intl.DateTimeFormat().resolvedO
   const m = TZ_CUR.find(x => x[0].test(tz)); return m ? m[1] : "THB" }
 const fromWidget = () => { const c = D.conn && D.conn.cfg && D.conn.cfg.currency; return c && (CURS.find(x => x[1] === c) || [])[0] }
 const baseCur = () => (D.cur && CUR[D.cur] && D.cur) || fromWidget() || curGuess()
+// Валюту человек выбирает сам (знакомство, «Деньги», Настройки); по часовому поясу — только пока не выбрал
+const curChosen = () => !!((D.cur && CUR[D.cur]) || fromWidget())
+function curSet(c, quiet) { if (!CUR[c]) return; D.cur = c; curApply(); save(false); fxLoad(true); pushCfgSend(); if (!quiet) { render(); toast(`Валюта: ${curRow(c)[2].toLowerCase()} ${CUR[c]}`) } }
+// Несколько валют — по выбору (D.mny.multi). Выключено у новичка; само включается, когда появляется счёт или трата в другой валюте
+const multiOn = () => { const m = MNY().multi; return m != null ? !!m : live(D.money).some(e => e.cur && e.orig) || gk("acct").some(a => a.cur && a.cur !== baseCur()) }
+function multiSet(v) { if (multiOn() === !!v && MNY().multi != null) return; MNY().multi = v ? 1 : 0; save(false) }
+// Счета, с которых платят: наличные и карты из «Капитала». Счёт по умолчанию — отмеченный в окне счёта, иначе последний, иначе единственный
+const payAccts = () => accts().filter(a => a.type === "cash" || a.type === "bank")
+const acctDef = () => { const p = payAccts(), m = MNY(), f = id => id && p.some(a => a.id === id) ? id : ""; return f(m.acct) || f(m.acctLast) || (p.length === 1 ? p[0].id : "") }
+const acctName = id => { const a = id && gk("acct").find(x => x.id === id); return a ? a.title : "" }
+const acctFind = t => { const q = String(t || "").trim().toLowerCase(), p = payAccts(); return q ? p.find(a => a.title.toLowerCase() === q) || p.find(a => a.title.toLowerCase().includes(q) || q.includes(a.title.toLowerCase())) : null }
 // Выбранная валюта → core.CONFIG (на ней держатся все суммы: core.money, тексты Изи, детские копилки)
 // Английский интерфейс: суммы по-английски — значок впереди, тысячи через запятую: «฿2,688», «$12.50»
 if (window.L && L.en) core.money = n => { const v = Math.abs(n), [i, d] = (Math.round(v * 100) / 100).toFixed(2).split(".")
@@ -4688,8 +4740,9 @@ const fxLine = () => { const b = baseCur(), o = curOpts().filter(c => c !== b).s
 async function curPick() {
   const b = baseCur(), i = await ui.choose("Валюта", "Все суммы, разделы «Деньги» и «Копилки», сводки и ответы Изи будут в ней. Уже записанные суммы не пересчитываются.",
     CURS.map(c => `${c[1]}  ${c[2]}${c[0] === b ? "  ✓" : ""}`))
-  if (i < 0 || CURS[i][0] === b) return
-  D.cur = CURS[i][0]; curApply(); save(false); fxLoad(true); pushCfgSend(); render(); toast(`Валюта: ${CURS[i][2].toLowerCase()} ${CURS[i][1]}`)
+  if (i < 0) return
+  if (CURS[i][0] === b) { if (!curChosen()) curSet(b); return }
+  curSet(CURS[i][0])
 }
 // Язык интерфейса — отдельно от валюты: «English + баты», «English + доллары» и т. д.
 const LANGS = [["ru", "Русский"], ["en", "English"]]
@@ -4705,7 +4758,8 @@ function langCard() {
 }
 function curCard() {
   const r = curRow(baseCur())
-  return `<div class="card"><h2>Валюта</h2><button class="set voice-row" data-do="cur-pick"><span><b>${esc(r[1])}  ${esc(r[2])}</b><small>все суммы, «Деньги», «Копилки», сводки и Изи — ${esc(r[3])}</small></span><i class="chev">${ICO.chev || "›"}</i></button></div>`
+  return `<div class="card"><h2>Валюта</h2><button class="set voice-row" data-do="cur-pick"><span><b>${esc(r[1])}  ${esc(r[2])}</b><small>все суммы, «Деньги», «Копилки», сводки и Изи — ${esc(r[3])}</small></span><i class="chev">${ICO.chev || "›"}</i></button>
+    <button class="set voice-row" data-do="multi-tg"><span><b>Несколько валют</b><small>траты и счета в другой валюте: видно обе суммы, итог ${esc(r[3])} можно поправить</small></span><i class="tgl ${multiOn() ? "on" : ""}" role="switch" aria-checked="${multiOn()}"></i></button></div>`
 }
 
 // — 8. Семейный бюджет: «Все / Мои / Общие с Олей»
@@ -5081,10 +5135,13 @@ function renderMoney() {
   const t = core.monthTotals(list, monthKey), bal = t.income - t.expense
   let html = "", k = 0
   const anim = () => `style="animation-delay:${(k++) * 45}ms"`
+  // 0. Валюту выбирает человек: пока не выбрал — спрашиваем здесь (и при знакомстве)
+  if (!curChosen()) html += `<div class="card mn-in mn-curask" ${anim()}><h2>В какой валюте считать?</h2><div class="muted small" style="margin:-2px 0 8px">Сейчас суммы ${esc(curRow(baseCur())[3])}. Выберите свою: поменять можно в Настройках.</div>
+    <div class="chips">${CURS.map(c => `<button class="chip" data-curset="${c[0]}">${c[1]} ${esc(c[2])}</button>`).join("")}</div></div>`
   // 1. Сегодня можно потратить
   if (isCur) {
     const cs = canSpend(now), b = baseCur()
-    const pills = cs ? curOpts().filter(c => c !== b).slice(0, 3).map(c => `<span class="pill">≈ ${esc(fmtCur(Math.round(fx(cs.today, b, c)), c))}</span>`).join("") : ""
+    const pills = cs && multiOn() ? curOpts().filter(c => c !== b).slice(0, 3).map(c => `<span class="pill">≈ ${esc(fmtCur(Math.round(fx(cs.today, b, c)), c))}</span>`).join("") : ""
     html += cs ? `<div class="mn-hero mn-in" ${anim()} data-do="mn-why"><div class="k">Сегодня можно потратить</div><div class="v" data-count="${cs.today}">${esc(core.money(cs.today))}</div>
       <div class="s2">${cs.left > 0 ? `После платежей и копилок до ${cs.last} ${MONTHS_GEN[now.getMonth()]} остаётся ${esc(core.money(cs.left))}` : `Бюджет месяца уже потрачен на ${esc(core.money(-cs.left))} больше`}${cs.spentToday ? ` · сегодня уже −${num(cs.spentToday)}` : ""}</div>
       <div class="pills">${pills}</div></div>`
@@ -5106,7 +5163,9 @@ function renderMoney() {
       <div><div class="muted small">Доходы</div><div class="big inc">+${esc(core.money(t.income))}</div></div>
       <div class="muted small">Наличными −${num(t.cash.expense)} · картой −${num(t.transfer.expense)}</div>
       <div class="muted small">Баланс ${bal < 0 ? "−" : "+"}${esc(core.money(Math.abs(bal)))}</div></div>
-    <div class="btns" style="margin-top:12px"><button class="btn primary" data-do="expense">Расход</button><button class="btn teal" data-do="income">Доход</button></div></div>`
+    <div class="btns" style="margin-top:12px"><button class="btn primary" data-do="expense">Расход</button><button class="btn teal" data-do="income">Доход</button></div>
+    <button class="btn wide mn-rcpt" data-do="mn-receipt"><i class="tdi" style="width:17px;height:17px">${ICO.cam}</i> Прислать чек ${esc(iziName())}</button>
+    <div class="muted small" style="text-align:center;margin-top:6px">Фото чека или снимок экрана из банка: ${esc(iziName())} сам запишет траты и спросит, если не поймёт категорию</div></div>`
   // 7. Запомнил правило
   const rule = isCur && catRules().filter(r => Date.now() - r.date < 3 * 864e5 && !(D.mnyOff || {})["rule:" + r.id]).sort((a, b) => b.date - a.date)[0]
   if (rule) {
@@ -5152,7 +5211,7 @@ function renderMoney() {
       return `<button class="tile" data-acct="${esc(a.id)}"><div class="k">${tdIco(ACCT_T[a.type] ? ACCT_T[a.type][1] : "card", 13)} ${esc(a.title)}</div><div class="v">${esc(fmtCur(a.amount, c))}</div>${c !== baseCur() ? `<div class="k">≈ ${esc(core.money(Math.round(fx(a.amount, c))))}</div>` : ""}</button>` }).join("")}
       ${cap.jarSum ? `<div class="tile"><div class="k">${tdIco("jar", 13)} В копилках</div><div class="v">${esc(core.money(cap.jarSum))}</div><div class="k">уже внутри счетов</div></div>` : ""}
       ${dl.length ? `<button class="tile" data-do="mn-debts"><div class="k">${tdIco("hand", 13)} Долги</div><div class="v ${cap.lent - cap.owe < 0 ? "exp" : "inc"}">${cap.lent - cap.owe < 0 ? "−" : "+"}${esc(core.money(Math.abs(cap.lent - cap.owe)))}</div></button>` : ""}
-      <button class="tile add" data-do="acct-add">${tdIco("plus", 16)} Счёт</button></div><div class="muted small" style="margin-top:8px">${esc(fxLine())}</div>`
+      <button class="tile add" data-do="acct-add">${tdIco("plus", 16)} Счёт</button></div>${multiOn() ? `<div class="muted small" style="margin-top:8px">${esc(fxLine())}</div>` : ""}`
     : `<div class="empty">Счета, наличные, вклады, квартира и долги — в один итог с графиком по месяцам. Валюты пересчитаются по курсу.</div>`) + `</div>`
   // 9. Долги и займы
   html += `<div class="card mn-in" id="mn-debts" ${anim()}><h2>Долги и займы<button class="act" data-do="debt-add">+ Добавить</button></h2>` + (dl.length ? dl.map(d => {
@@ -5166,7 +5225,8 @@ function renderMoney() {
   // Операции (4. валюты)
   const items = t.items.slice().reverse()
   html += `<div class="card mn-in mn-ops${mnEdit && items.length ? " swd-all" : ""}" ${anim()}><h2>Операции<span class="muted small" style="text-transform:none;letter-spacing:0">${items.length}</span>${items.length ? `<button class="act" data-do="mn-edit">${mnEdit ? "Готово" : "Изменить"}</button>` : ""}</h2>`
-  if (items.length && !mnEdit && !MNY().swHint) html += `<div class="muted small swd-hint">Чтобы удалить операцию, смахните её влево или нажмите «Изменить».</div>`
+  if (items.length && mnEdit) html += `<div class="muted small swd-hint">Нажмите на операцию, чтобы поправить сумму, дату, категорию или счёт.</div>`
+  else if (items.length && !(MNY().swHint && MNY().edHint)) html += `<div class="muted small swd-hint">Нажмите на операцию, чтобы поправить сумму, дату или категорию. Чтобы удалить, смахните её влево или нажмите «Изменить».</div>`
   if (!items.length) html += `<div class="empty">Скажите помощнику «потратил 300 на такси» или «подарок маме 5000 рублей» — валюта пересчитается сама</div>`
   let last = ""
   for (const e of items) {
@@ -5174,7 +5234,7 @@ function renderMoney() {
     if (dk2 !== last) { html += `<div class="day-h">${esc(core.cap(dayName(d)))}</div>`; last = dk2 }
     const fc = e.cur && e.cur !== baseCur() && e.orig
     html += `<div class="row" data-money="${esc(e.id)}"><div class="time">${hm(d)}</div><div class="grow"><div class="t">${esc(e.comment ? core.cap(e.comment) : e.category)}${e.shared && famShare("money") ? ` <em class="sh">${tdIco("people", 12)}</em>` : ""}</div>
-      <div class="s">${esc(e.comment ? e.category : e.method === "cash" ? "наличные" : "карта / перевод")}${fc ? ` · ${esc(fmtCur(e.orig, e.cur))} ≈ ${esc(core.money(e.amount))}` : ""}</div></div>
+      <div class="s">${esc(e.comment ? e.category : e.method === "cash" ? "наличные" : "карта / перевод")}${acctName(e.acct) ? " · " + esc(acctName(e.acct)) : ""}${fc ? ` · ${esc(fmtCur(e.orig, e.cur))} ≈ ${esc(core.money(e.amount))}` : ""}</div></div>
       <div class="amt ${e.type === "expense" ? "exp" : "inc"}">${e.type === "expense" ? "−" : "+"}${esc(fc ? fmtCur(e.orig, e.cur) : core.money(e.amount))}</div></div>`
   }
   html += `</div><div class="btns"><button class="btn" data-report="month">Отчёт</button><button class="btn" data-do="mn-family">Семья</button>${D.conn && D.conn.sheetUrl ? '<button class="btn" data-do="sheet">Таблица</button>' : ""}</div>`
@@ -5188,6 +5248,7 @@ function bindMoney(v) {
   if (cnt && !matchMedia("(prefers-reduced-motion: reduce)").matches) { const to = +cnt.dataset.count, t0 = performance.now(), dur = 700
     const step = t => { const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3); cnt.textContent = core.money(Math.round(to * e)); if (p < 1) requestAnimationFrame(step) }
     if (to > 0) requestAnimationFrame(step) }
+  $$("[data-curset]", v).forEach(b => b.onclick = () => curSet(b.dataset.curset))
   $$("[data-mv]", v).forEach(b => b.onclick = () => { MNY().view = b.dataset.mv; save(false); const s = b.parentNode; s.style.setProperty("--i", ["all", "mine", "shared"].indexOf(b.dataset.mv)); setTimeout(render, 220) })
   $$("[data-tone]", v).forEach(b => b.onclick = () => { MNY().tone = b.dataset.tone; save(false); const s = b.parentNode; s.style.setProperty("--i", ["praise", "roast", "dry"].indexOf(b.dataset.tone))
     $$("button", s).forEach(x => x.classList.toggle("on", x === b)); const w = $("#mn-week", v); w.classList.remove("swap"); void w.offsetWidth; w.classList.add("swap"); w.textContent = weekText(b.dataset.tone, weekMoney()) })
@@ -5266,6 +5327,7 @@ Object.assign(DO, {
   "mn-debts": () => { const el = $("#mn-debts"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }) },
   "mn-rules": () => rulesSheet(), "mn-family": () => familyForm(),
   "mn-edit": () => { mnEdit = !mnEdit; render() },
+  "mn-receipt": () => { setTab("chat"); setTimeout(() => { const b = $(".chat-bar .cam"); if (b) plusMenu(b) }, 380) },   // тот же «+» в чате, второго механизма нет
   "mn-why": () => { const cs = canSpend(); if (!cs) return
     const t = core.monthTotals(live(D.money), core.monthKey(new Date()))
     ui.info("Как посчитано", `Доходы месяца ${core.money(t.income)}\n− уже потрачено ${core.money(t.expense - cs.spentToday)}\n− неоплаченные платежи ${core.money(cs.bills)}\n− копилки в этом месяце ${core.money(cs.jars)}\n= ${core.money(cs.left + cs.spentToday)} на ${cs.daysLeft} ${plural(cs.daysLeft, "день", "дня", "дней")}, то есть ${core.money(cs.perDay)} в день${cs.spentToday ? `.\nСегодня уже потрачено ${core.money(cs.spentToday)}` : ""}.`) },
@@ -5315,22 +5377,30 @@ function jarSheet(j) {
 
 function acctForm(a) {
   const e = a || { title: "", type: "bank", amount: "", cur: baseCur() }
-  let type = e.type, cur = e.cur || baseCur()
+  let type = e.type, cur = e.cur || baseCur(), def = !!a && MNY().acct === a.id
   const s = sheet(`<h3>${a ? "Счёт" : "Новый счёт"}</h3>
     <div class="field"><div class="chips" id="a-ty">${Object.entries(ACCT_T).map(([k, [n, ic]]) => `<button class="chip" data-t="${k}">${tdIco(ic, 14)} ${esc(n)}</button>`).join("")}</div></div>
     <div class="field"><input id="a-t" placeholder="Название: Kasikorn, наличные дома, квартира" value="${esc(e.title)}"></div>
     <div class="field"><label>Сколько сейчас</label><div class="mn-amt"><input id="a-a" type="number" inputmode="decimal" value="${e.amount}"><div class="mn-cur" id="a-c">${[...new Set([...curOpts(), cur])].map(c => `<button data-c="${c}">${CUR[c]}</button>`).join("")}</div></div></div>
+    <div class="field" id="a-df" hidden><button class="chip" id="a-def" type="button">${tdIco("check", 14)} Основной счёт для трат</button></div>
     <div class="msg small">Обновляйте остатки раз в месяц — график капитала строится по ним.</div>
     <div class="btns">${a ? '<button class="btn red" data-a="del">Удалить</button>' : ""}<button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
-  const paint = () => { $$("#a-ty .chip", s.el).forEach(b => b.classList.toggle("on", b.dataset.t === type)); $$("#a-c button", s.el).forEach(b => b.classList.toggle("on", b.dataset.c === cur)) }
+  const paint = () => { $$("#a-ty .chip", s.el).forEach(b => b.classList.toggle("on", b.dataset.t === type)); $$("#a-c button", s.el).forEach(b => b.classList.toggle("on", b.dataset.c === cur))
+    $("#a-df", s.el).hidden = !(type === "cash" || type === "bank"); $("#a-def", s.el).classList.toggle("on", def) }
   paint()
+  $("#a-def", s.el).onclick = () => { def = !def; paint() }
   $$("#a-ty .chip", s.el).forEach(b => b.onclick = () => { type = b.dataset.t; if (!$("#a-t", s.el).value) $("#a-t", s.el).placeholder = ACCT_T[type][0]; paint() })
   $$("#a-c button", s.el).forEach(b => b.onclick = () => { cur = b.dataset.c; paint() })
   $('[data-a="no"]', s.el).onclick = () => s.close()
   if (a) $('[data-a="del"]', s.el).onclick = () => { remove("goals", a.id); s.close(); render() }
   $('[data-a="ok"]', s.el).onclick = () => {
     const title = $("#a-t", s.el).value.trim() || ACCT_T[type][0], amount = Math.round(+$("#a-a", s.el).value || 0)
-    upsert("goals", Object.assign({}, a || { id: uid("a"), date: Date.now(), kind: "acct" }, { title, type, amount, cur })); s.close(); render(); toast("Капитал обновлён")
+    const multi = cur !== baseCur() && !multiOn()
+    const r = upsert("goals", Object.assign({}, a || { id: uid("a"), date: Date.now(), kind: "acct" }, { title, type, amount, cur }))
+    const id = (r && r.id) || (a && a.id), pays = type === "cash" || type === "bank"
+    if (def && pays && id) MNY().acct = id; else if (MNY().acct === id) delete MNY().acct
+    if (multi) multiSet(1)
+    save(false); s.close(); render(); toast(multi ? "Счёт в другой валюте: включил «Несколько валют»" : "Капитал обновлён")
   }
 }
 

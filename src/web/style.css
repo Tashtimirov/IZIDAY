@@ -1399,3 +1399,17 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 .swd.gone { transition: max-height .22s ease, opacity .22s; max-height: 0 !important; opacity: 0; }
 .swd-hint { margin: -2px 0 6px; }
 @media (prefers-reduced-motion: reduce) { .swd > .row, .swd.gone { transition: none; } }
+
+/* Деньги: выбор валюты, чек Изи, «откуда оплачено», сумма в основной валюте */
+.mn-curask .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.mn-rcpt { margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.mn-rcpt .tdi { color: var(--accent, #0A9F6E); }
+.mn-link { border: 0; background: none; padding: 6px 0 0; font: inherit; font-size: 14px; font-weight: 600; color: var(--accent, #0A9F6E); text-align: left; cursor: pointer; }
+.mn-cur1 button { cursor: default; }
+.mn-base { margin-top: 10px; padding: 12px; border-radius: 16px; background: color-mix(in srgb, var(--accent, #0A9F6E) 12%, transparent); }
+.mn-base label { display: block; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.mn-base input { font-size: 20px; font-weight: 700; }
+.mn-base .small { margin-top: 6px; }
+#m-acc .chip .tdi, #a-def .tdi { vertical-align: -2px; }
+.card button.set.voice-row .tgl { pointer-events: none; }
+.mn-cur[hidden], .mn-base[hidden], .mn-link[hidden] { display: none; }

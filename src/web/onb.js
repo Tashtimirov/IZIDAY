@@ -144,6 +144,7 @@ if (typeof iziStyle === "function") { const _st = iziStyle; iziStyle = function 
 // ───────────── Знакомство: большой шар живого разговора и анкета ─────────────
 // Шар — тот же, что в разговоре с Изи: когда «говорит» Изи (новая карточка), дрожит его волна,
 // когда отвечает человек (касание варианта) — вторая. Шар один на всё знакомство и плавно меняет размер
+let curAsked = 0   // карточка валюты остаётся в знакомстве и после выбора (можно вернуться и поменять)
 let first = false   // первое знакомство (а не повтор из настроек): для выбора функций — набор новичка
 function cards() {
   const who = `<div class="ob-pick"><button data-who="adult" class="${kid() ? "" : "on"}">${I("user", 28)}<b>Взрослый</b><small>полная версия</small></button><button data-who="kid" class="${kid() ? "on" : ""}">${I("kid", 28)}<b>Ребёнок</b><small>детская версия</small></button></div>`
@@ -164,6 +165,10 @@ function cards() {
   L.push({ h: `<div class="ob-h">Просто скажите</div><div class="ob-p">Удерживайте шар внизу и говорите как человеку. ${nm()} сам поймёт, что это: дело, трата или вода.</div>
     <div class="ob-say">«Завтра в 10 стоматолог, и запиши такси 350»</div>
     ${feat("cal", "rgba(255,255,255,.14)", "Стоматолог", "завтра, 10:00 — в календарь")}${feat("money", "rgba(255,255,255,.14)", "Такси · 350", "трата, Транспорт")}` })
+  // Валюта: спрашиваем прямо, по часовому поясу не угадываем (у владельца со своим виджетом она уже задана)
+  if (typeof curChosen === "function" && (!curChosen() || curAsked)) { curAsked = 1
+    L.push({ cur: 1, h: `<div class="ob-h ob-hq">В какой валюте считать деньги?</div><div class="ob-p ob-sm">Траты, копилки и сводки будут в ней. Поменять можно в настройках.</div>
+      <div class="ob-ans"><div class="ob-list">${CURS.map((c, j) => `<button class="ob-row ${D.cur === c[0] ? "on" : ""}" data-cur="${c[0]}" style="--d:${j * 35}ms"><span class="i ob-cs">${c[1]}</span><span class="l">${c[2]}</span><span class="c">${I("check", 16)}</span></button>`).join("")}</div></div>` }) }
   // Что включить сейчас: Деньги, Здоровье, Игра, Голодание, Семья (feat.js); Сегодня, Планы и Изи — всегда
   if (window.FEAT) L.push({ pick: 1, h: FEAT.pickHTML(first) })
   L.push({ big: 1, h: `<div class="ob-h">Учимся на деле</div><div class="ob-p">На «Сегодня» вас ждут «Первые шаги» — шесть простых дел, чтобы освоиться. А в каждом разделе ${nm()} один раз подскажет главное.</div>
@@ -203,13 +208,15 @@ function intro(at) {
     const c = list[i], last = i === list.length - 1, qs = list.filter(x => x.q), inQuiz = !!c.q
     // друг без виджета: последняя карточка сразу ведёт ко входу через Google (friends.js)
     const gl = last && !kid() && !D.conn && window.FRIEND && FRIEND.on()
-    ov.className = "ob-ov" + (kid() ? " kid" : "") + (c.big ? " big" : "") + (inQuiz || c.pick ? " quiz" : "") + (c.pick ? " pick" : "")
+    ov.className = "ob-ov" + (kid() ? " kid" : "") + (c.big ? " big" : "") + (inQuiz || c.pick || c.cur ? " quiz" : "") + (c.pick ? " pick" : "")
     ov.querySelector(".ob-prog").innerHTML = list.map((_, k) => `<i class="${k < i ? "done" : k === i ? "on" : ""}"></i>`).join("")
     body.innerHTML = `<div class="ob-card ${dir > 0 ? "in-r" : dir < 0 ? "in-l" : "in"}">${c.h}${gl ? `<div class="ob-p">Осталось войти через Google — и всё настроится само.</div>` : ""}</div>`
     foot.innerHTML = `<button class="ob-btn" data-ob="next">${gl ? FRIEND.gico + "Войти через Google" : last ? (kid() ? "Поехали!" : "Начать") : c.start ? "Начнём" : "Дальше"}</button>
       ${gl ? `<button class="ob-skip" data-ob="widget">У меня свой виджет Scriptable</button>` : ""}
       <button class="ob-skip" data-ob="${c.pick ? "ft-all" : inQuiz || c.start ? "quiz-skip" : "skip"}" ${last && !gl ? "hidden" : ""}>${gl ? "Позже" : c.pick ? "Включить всё" : inQuiz || c.start ? "Пропустить анкету" : "Пропустить"}</button>`
     if (c.pick) FEAT.pickBind(body)
+    body.querySelectorAll("[data-cur]").forEach(b => b.onclick = () => { youSay(); curSet(b.dataset.cur, true); if (navigator.vibrate) navigator.vibrate(8)
+      body.querySelectorAll("[data-cur]").forEach(x => x.classList.toggle("on", x === b)) })
     body.querySelectorAll("[data-who]").forEach(b => b.onclick = () => { youSay(); setWho(b.dataset.who); draw() })
     body.querySelectorAll("[data-q]").forEach(b => b.onclick = () => {
       youSay(); qSet(b.dataset.q, b.dataset.v, !!b.dataset.many)
@@ -230,6 +237,7 @@ function intro(at) {
   const go = d => { const n = i + d; if (n < 0 || n >= list.length) return; i = n; draw(d) }
   const act = a => {
     const last = i === list.length - 1, gl = last && !kid() && !D.conn && window.FRIEND && FRIEND.on()
+    if (a === "next" && list[i].cur && !curChosen()) { const l = body.querySelector(".ob-list"); if (l) { l.classList.remove("shake"); void l.offsetWidth; l.classList.add("shake") } return toast("Выберите валюту") }
     if (a === "next") { if (list[i].q && list[i].q[0] === "habits") habitsFromQuiz(); return last ? (done(), gl && setTimeout(() => FRIEND.login(), 340)) : go(1) }
     if (a === "back") return go(-1)
     if (a === "ft-all") { FEAT.pickAll(); return go(1) }
@@ -245,6 +253,7 @@ function intro(at) {
     if (x0 == null) return
     const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null
     if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return
+    if (dx < 0 && list[i].cur && !curChosen()) return toast("Выберите валюту")
     if (dx < 0) { if (list[i].q && list[i].q[0] === "habits") habitsFromQuiz(); go(1) } else go(-1)
   })
   const done = () => {
