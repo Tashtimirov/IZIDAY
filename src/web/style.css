@@ -1388,3 +1388,12 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 #ev-b .chip .tdi { vertical-align: -2px; }
 .rm-q { margin: 2px 0 8px; }
 [data-rem] { cursor: pointer; }
+/* Календарь по замечаниям тестеров: точки календарей в ленте дней, свои категории, форма из свободного окна */
+.day .cdots { display: flex; justify-content: center; gap: 3px; height: 5px; margin-top: 3px; }
+.day .cdots i { width: 5px; height: 5px; border-radius: 50%; }
+.cs-own { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 0 12px 34px; }
+.cs-own .chip.red { color: var(--red, #FF3B30); }
+.cs-add { margin: 6px 0 4px; gap: 6px; }
+.sheet .chip.ly.cs-plus { padding-left: 10px; padding-right: 10px; color: var(--sub); border-style: dashed; }
+.cq-sub { margin: -4px 0 10px; }
+.day.on .cdots i { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .9); }
