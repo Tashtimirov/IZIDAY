@@ -64,22 +64,23 @@ await page.evaluate(() => { window.calDo = __realCalDo })
 
 console.log("— ход оборвался после записи в календарь")
 // 1-й запрос к Claude: create_event; 2-й (после записи) — связь пропала. Человек видит, что уже сделано; Изи — тоже
-let calls = 0, lastBody = null
+let calls = 0, lastBody = null, phase = 1
 await page.route("https://api.anthropic.com/**", route => {
   if (route.request().method() === "OPTIONS") return route.fulfill({ status: 200, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*" } })
   calls++; lastBody = JSON.parse(route.request().postData())
   const msgs = lastBody.messages, last = msgs[msgs.length - 1]
   const toolResult = Array.isArray(last.content) && last.content.some(c => c.type === "tool_result")
-  if (toolResult && calls <= 2) return route.abort("failed")   // обрыв после записи (и тихий повтор izi-stable — тоже)
+  if (toolResult && phase === 1) return route.abort("failed")   // обрыв после записи (и тихий повтор izi-stable — тоже)
   const hdr = { "access-control-allow-origin": "*" }
   if (!toolResult) return route.fulfill({ status: 200, contentType: "application/json", headers: hdr, body: JSON.stringify({ stop_reason: "tool_use",
-    content: [{ type: "tool_use", id: "tu" + calls, name: "create_event", input: { title: calls < 3 ? "Читка онлайн у Леры" : "Читка онлайн Лера", start: "2026-11-19T15:30", end: "2026-11-19T16:30" } }] }) })
+    content: [{ type: "tool_use", id: "tu" + calls, name: "create_event", input: { title: phase === 1 ? "Читка онлайн у Леры" : "Читка онлайн Лера", start: "2026-11-19T15:30", end: "2026-11-19T16:30" } }] }) })
   route.fulfill({ status: 200, contentType: "application/json", headers: hdr, body: JSON.stringify({ stop_reason: "end_turn", content: [{ type: "text", text: "Уже стоит." }] }) })
 })
 await page.evaluate(() => chatSend("поставь читку онлайн у Леры в среду в 15:30")); await page.waitForTimeout(500)
 let st = await page.evaluate(() => ({ n: __created.filter(e => /Лер/.test(e.title)).length, last: D.chat[D.chat.length - 1], user: D.chat[D.chat.length - 2] }))
 check(st.n === 1 && st.user.acts && /создал событие «Читка онлайн у Леры», 19 ноя 15:30/.test(st.user.acts[0]), "событие создано, и это записано в саму просьбу", st)
 check(/Уже сделано: создал событие «Читка онлайн у Леры»/.test(st.last.text), "связь пропала — в ответе видно, что событие уже создано", st.last.text)
+phase = 2
 await page.evaluate(() => chatSend("ну так поставь читку")); await page.waitForTimeout(500)
 const sent = JSON.stringify(lastBody.messages)
 check(/Уже сделано: создал событие «Читка онлайн у Леры»/.test(sent) && /Не повторяй/.test(sent), "в следующем запросе Изи видит, что уже сделано", sent.slice(0, 300))
@@ -103,6 +104,12 @@ await page.evaluate(() => chatStop()); await page.waitForTimeout(500)
 st = await page.evaluate(() => ({ n: __created.filter(e => /Уборщ/.test(e.title)).length, tail: D.chat.slice(-2).map(m => m.role + ": " + m.text), inp: document.querySelector("#chat-in") && document.querySelector("#chat-in").value }))
 check(st.n === 1 && /уборщица от офиса/.test(st.tail[0]) && /^assistant: Успел: создал событие «Уборщица от офиса»/.test(st.tail[1]) && !st.inp, "остановили после записи — просьба осталась, видно «Успел: создал событие», в строку ввода не вернулась", st)
 
+if (process.env.SHOTS) {   // снимок чата: что видит человек после обрыва (светлая и тёмная)
+  await page.waitForTimeout(3500); await page.evaluate(() => { setTab("chat"); renderChat() }); await page.waitForTimeout(800)
+  await page.screenshot({ path: process.env.SHOTS + "/dd-1-chat.png" })
+  await page.emulateMedia({ colorScheme: "dark" }); await page.waitForTimeout(600)
+  await page.screenshot({ path: process.env.SHOTS + "/dd-1-chat-dark.png" })
+}
 const errs = errors.filter(e => !/Failed to load resource/.test(e))   // обрыв связи в тесте — нарочно
 check(!errs.length, "без ошибок на странице", errs)
 await browser.close(); server.close()
