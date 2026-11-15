@@ -781,7 +781,7 @@ function init() {
   const top0 = renderTop
   renderTop = function () {
     const out = top0.apply(this, arguments)
-    if (tab === "health" && D.conn && !D.sync.error) { const rd = sameDay(healthDay(), new Date()) && readiness(); $("#top-sub").textContent = rd ? `Сегодня · готовность ${rd.score}` : "Сон, вода, лекарства, тренировки" }
+    if (tab === "health" && D.conn && !D.sync.error && !(typeof netDown === "function" && netDown())) { const rd = sameDay(healthDay(), new Date()) && readiness(); $("#top-sub").textContent = rd ? `Сегодня · готовность ${rd.score}` : "Сон, вода, лекарства, тренировки" }
     return out
   }
   const render0 = render

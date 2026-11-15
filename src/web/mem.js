@@ -108,7 +108,7 @@ async function decryptLocal() {
 // Записи, сделанные без ключа (новый телефон до открытия сейфа), — отправить заново, уже шифром
 function touchPlain() {
   let n = 0
-  for (const k of ["memory", "log"]) for (const x of D[k]) if (x && !x.deleted && x.kind !== "vault" && !x.sealed) { x.u = Date.now() + (n++); }
+  for (const k of ["memory", "log"]) for (const x of D[k]) if (x && !x.deleted && x.kind !== "vault" && !x.sealed) { x.u = (typeof nowSrv === "function" ? nowSrv() : Date.now()) + (n++); }
   if (n) save()
 }
 async function applyBundle(b) {

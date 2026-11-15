@@ -163,7 +163,10 @@ const deEmo1 = s => String(s).replace(EMO_RE1, (m, e) => ei(EMO[e]))   // тол
 const LISTS = { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90, goals: 0, pomo: 30, bdays: 0 }   // bdays — дни рождения, внесённые вручную (контакты iPhone приходят снимком виджета: D.snap.bdays)   // pomo — помидоры (фокус 25 мин), живут в приложении; goals — цели, желания, мечты; shop — покупки, kids — дела детей, fast — голодание   // rems — напоминания живут в приложении, не в iPhone   // places — «напомни, когда буду рядом» (проверяет виджет)
 let D = {}
 function load() {
-  try { D = JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { D = {} }
+  let raw = null
+  try { raw = localStorage.getItem(STORE) } catch (e) {}
+  try { D = JSON.parse(raw || "{}") || {} } catch (e) { D = {} }
+  if (!raw && ARCH.ready) archIo("readwrite", []).catch(() => {})   // выход, отключение, удаление аккаунта — архив переписки тоже стираем
   for (const k of [...Object.keys(LISTS), "chat", "ops", "chatArchive"]) if (!Array.isArray(D[k])) D[k] = []
   D.conn = D.conn || null
   if (!D.cc || typeof D.cc !== "object" || Array.isArray(D.cc)) D.cc = {}
@@ -172,8 +175,52 @@ function load() {
 }
 let saveT = null
 function save(push = true) {
-  try { localStorage.setItem(STORE, JSON.stringify(D)) } catch (e) { toast("Не удалось сохранить на телефоне: " + e.message) }
+  try { localStorage.setItem(STORE, storeJson()) } catch (e) { toast("Не удалось сохранить на телефоне: " + e.message) }
+  archKeep()
   if (push) { clearTimeout(saveT); saveT = setTimeout(() => syncSoon(), 900) }
+}
+// ── Архив переписки с Изи (до 1500 сообщений) — в IndexedDB, рядом с фото альбома, а не в общей записи localStorage.
+// У localStorage предел около 5 МБ на всё приложение, и каждое сохранение переписывает запись целиком — архив там
+// был самым тяжёлым и самым редко нужным. В памяти он по-прежнему D.chatArchive: поиск по чатам и сводки работают как раньше.
+// Нет IndexedDB (частный режим и т. п.) — архив остаётся в localStorage, как было.
+const ARCH = { ready: false, sig: "", t: null }
+const archSig = () => { const a = D.chatArchive || []; return a.length + ":" + ((a[a.length - 1] || {}).at || 0) + ":" + ((a[0] || {}).at || 0) }
+function archDb() {
+  return new Promise((res, rej) => { const r = indexedDB.open("iziday-chat", 1); r.onupgradeneeded = () => r.result.createObjectStore("a"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
+}
+async function archIo(mode, val) {
+  const db = await archDb()
+  try {
+    return await new Promise((res, rej) => {
+      const tx = db.transaction("a", mode), st = tx.objectStore("a")
+      const r = mode === "readonly" ? st.get("archive") : st.put(val, "archive")
+      tx.oncomplete = () => res(r.result); tx.onerror = tx.onabort = () => rej(tx.error || r.error)
+    })
+  } finally { try { db.close() } catch (e) {} }
+}
+function storeJson() {
+  if (!ARCH.ready) return JSON.stringify(D)
+  const a = D.chatArchive
+  D.chatArchive = undefined   // JSON.stringify пропускает undefined: архива в записи нет
+  try { return JSON.stringify(D) } finally { D.chatArchive = a }
+}
+function archKeep() {
+  if (!ARCH.ready || ARCH.sig === archSig()) return
+  clearTimeout(ARCH.t)
+  ARCH.t = setTimeout(() => { const sig = archSig(); archIo("readwrite", (D.chatArchive || []).slice(-1500)).then(() => { ARCH.sig = sig }).catch(e => { ARCH.ready = false; save(false) }) }, 400)
+}
+// При запуске: архив из IndexedDB + то, что лежало в localStorage (старая версия) или успело добавиться, без повторов
+async function archLoad() {
+  if (!window.indexedDB) return
+  try {
+    const stored = (await archIo("readonly")) || []
+    const key = m => (m.at || 0) + "|" + m.role + "|" + String(m.text || "").slice(0, 40)
+    const seen = new Set(stored.map(key))
+    const merged = stored.concat((D.chatArchive || []).filter(m => !seen.has(key(m)))).sort((a, b) => (a.at || 0) - (b.at || 0)).slice(-1500)
+    if (merged.length !== stored.length) await archIo("readwrite", merged)
+    D.chatArchive = merged; ARCH.sig = archSig(); ARCH.ready = true
+    save(false)   // запись в localStorage — уже без архива
+  } catch (e) {}
 }
 // Личные настройки виджета (категории, календари, цели) приходят с кодом подключения
 function applyCfg() {
@@ -207,11 +254,15 @@ function iziPaint() {
 }
 const proteinGoal = () => H().proteinGoal || Math.round((H().weight || 80) * 1.6)   // по умолчанию 1,6 г на кг веса
 const live = list => list.filter(x => x && !x.deleted)
+// Время изменения записи — по часам сервера: при споре двух правок побеждает более поздняя, и сбитые часы
+// одного телефона не дают старой правке победить свежую. Поправку (skew) обмен считает по времени ответа таблицы
+const nowSrv = () => Date.now() + ((D.sync && D.sync.skew) || 0)
 function upsert(key, rec) {
   if (window.UNDO) UNDO.note(key, rec)   // отмена действия (undo.js): запомнить прежнюю версию
   if (key === "money") try { acctApply(D.money.find(x => x.id === rec.id), rec) } catch (e) { console.error("acct", e) }   // остаток счёта следует за операцией
-  rec.u = Date.now()
   const i = D[key].findIndex(x => x.id === rec.id)
+  // правка всегда новее той версии, которую правили, даже если часы ушли назад
+  rec.u = Math.max(nowSrv(), i >= 0 ? (D[key][i].u || 0) + 1 : 0)
   if (i >= 0) D[key][i] = rec; else D[key].push(rec)
   save()
   return rec
@@ -286,12 +337,14 @@ function sync() {
       if (document.readyState === "loading" && ["memory", "log"].some(k => (D[k] || []).some(x => (x.u || 0) > D.sync.pushedAt - 60000))) await new Promise(r => document.addEventListener("DOMContentLoaded", r, { once: true }))   // mem.js (шифрование памяти) подключается после app.js
       do {
         state.again = false
-        const started = Date.now(), lists = {}
+        const started = Date.now(), skew0 = D.sync.skew || 0, lists = {}
         for (const k of Object.keys(LISTS)) lists[k] = D[k].filter(x => (x.u || 0) > D.sync.pushedAt - 60000)
+        const t0 = Date.now()
         const ops = D.ops.filter(o => o.state === "local").map(o => ({ id: o.id, tool: o.tool, input: o.input }))
         // Google Календарь устарел — тем же запросом (таблица обслуживает запросы по одному: два подряд ждали бы друг друга)
         const wantCal = !calBusy && (calForce || !D.gcal || Date.now() - (D.gcal.at || 0) > 120e3)
         const res = await hubPost(Object.assign({ since: D.sync.since, snapAt: D.sync.snapAt, lists, ops }, wantCal ? { cal: calListReq() } : {}), 60000)
+        D.sync.skew = skewOf(res.now, t0, Date.now(), skew0)
         if (wantCal && res.cal) { calForce = false; calTake(res.cal) }
         for (const k of Object.keys(LISTS)) mergeIn(k, res.lists && res.lists[k])
         if (res.snap) { D.snap = res.snap; D.sync.snapAt = res.snap.at }
@@ -306,7 +359,8 @@ function sync() {
         D.ops = D.ops.filter(o => o.state !== "done" || o.doneAt > Date.now() - 864e5)
         if (res.cc) ccIn(res.cc)
         if (res.url) D.conn.sheetUrl = D.conn.sheetUrl || res.url
-        Object.assign(D.sync, { since: res.now, pushedAt: started, at: Date.now(), error: "" })
+        // pushedAt — по тем же часам, что и u записей; меньшая из поправок, чтобы правка, сделанная во время обмена, не осталась неотправленной
+        Object.assign(D.sync, { since: res.now, pushedAt: started + Math.min(skew0, D.sync.skew), at: Date.now(), error: "" })
         save(false)
       } while (state.again)
       if (!stack.length && tab !== "chat") render()
@@ -325,6 +379,34 @@ function sync() {
   syncing = state
   return state.p
 }
+// ── Нет сети: человек видит, что запись не потерялась. Записи всегда сначала ложатся на телефон (save), обмен догоняет сам:
+// раз в минуту, при возврате в приложение и сразу, как только телефон сообщает, что сеть появилась (online)
+const NET_ERR = /нет связи|не ответил|Load failed|Failed to fetch|NetworkError|network connection|offline|timed out/i
+function netDown() { try { if (navigator.onLine === false) return true } catch (e) {} return !!(D.conn && D.sync && D.sync.error && NET_ERR.test(D.sync.error)) }
+// Сколько изменений ещё не ушло: записи, изменённые после последнего удачного обмена, задачи для iPhone и общие дела семьи
+function unsentCount() {
+  if (!D.sync) return 0
+  let n = 0
+  for (const k of Object.keys(LISTS)) for (const x of D[k] || []) if (x && (x.u || 0) > D.sync.pushedAt) n++
+  n += (D.ops || []).filter(o => o.state === "local").length
+  const out = D.fam && D.fam.out
+  if (out) for (const k in out) n += (out[k] || []).length
+  return n
+}
+function netLine() {
+  const n = unsentCount()
+  return n ? `Нет сети. ${n} ${plural(n, "запись", "записи", "записей")} на телефоне, отправлю позже` : "Нет сети. Всё сохранено на телефоне"
+}
+addEventListener("online", () => { renderTop(); setTimeout(() => syncSoon(), 800) })
+addEventListener("offline", () => renderTop())
+
+// Поправка часов: время сервера минус середина запроса. Расхождение до 30 с — это задержка сети, а не сбитые часы: не трогаем
+function skewOf(srv, t0, t1, prev) {
+  if (!(srv > 1.5e12)) return prev || 0
+  const d = Math.round(srv - (t0 + t1) / 2)
+  return Math.abs(d) > 30e3 ? d : 0
+}
+
 let calForce = false, calBusy = false
 const calListReq = () => ({ action: "list", from: dayKey(addDays(sod(new Date()), -21)) })
 function calTake(r) {
@@ -706,7 +788,7 @@ function addFood(m) {
 // Защита от случайных серий: из виджета (#water) второй стакан за минуту не пишется, в приложении — спрашиваем
 let lastWaterAt = 0
 async function addWater(ml, from) {
-  const now = Date.now(), last = Math.max(lastWaterAt, ...today(D.water).map(w => w.u || w.date || 0))
+  const now = Date.now(), last = Math.max(lastWaterAt, ...today(D.water).map(w => w.u ? w.u - ((D.sync && D.sync.skew) || 0) : w.date || 0))   // u — по часам сервера
   if (from === "widget" && now - last < 60e3) return toast(`💧 Стакан уже записан ${Math.max(1, Math.round((now - last) / 1000))} с назад`)
   if (from !== "widget" && now - last < 10e3 && (await ui.confirm("Ещё стакан?", `<div class="msg">Только что уже добавлено ${ml} мл. Записать ещё один?</div>`, ["Отмена", "Записать"])) !== "Записать") return
   lastWaterAt = now
@@ -2816,7 +2898,10 @@ function renderTop() {
   iziPaint()
   const fl = $("#fab span"); if (fl && fl.textContent !== iziName()) { fl.textContent = iziName(); $("#fab").setAttribute("aria-label", `${iziName()}: чат`) }
   let sub = ""
+  const off = !!D.conn && netDown()
+  $("#top-sub").classList.toggle("net-off", off)
   if (!D.conn) sub = window.FRIEND && FRIEND.on() ? "Войдите через Google" : "Не подключено к виджету"
+  else if (off) sub = netLine()
   else if (D.sync.error) sub = D.sync.error
   else if (tab === "cal") { const S = calS(), st = calStart || new Date(); sub = `${core.cap(core.MONTH_NOM[st.getMonth()])} · ${({ 1: "день", 3: "3 дня", 7: "неделя", m: "месяц" })[S.view]}` }
   else if (tab === "money") { const t = core.monthTotals(live(D.money), monthKey || core.monthKey(new Date())); sub = `${core.monthTitle(monthKey || core.monthKey(new Date()))} · −${core.money(t.expense)}` }
@@ -7705,6 +7790,7 @@ var IZI_TOOL_DEFS = [
 var chatDraft = null
 
 load()
+archLoad()
 pushConn()
 setTab("today")
 setTimeout(pushKeep, 5000)

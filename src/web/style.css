@@ -1435,3 +1435,8 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 #m-acc .chip .tdi, #a-def .tdi { vertical-align: -2px; }
 .card button.set.voice-row .tgl { pointer-events: none; }
 .mn-cur[hidden], .mn-base[hidden], .mn-link[hidden] { display: none; }
+
+/* Нет сети: подпись в шапке с янтарной точкой — запись сохранена на телефоне, уйдёт сама */
+#top-sub.net-off { color: #B26A00; font-weight: 600; }
+#top-sub.net-off::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #F5A524; margin-right: 6px; vertical-align: 1px; }
+@media (prefers-color-scheme: dark) { #top-sub.net-off { color: #FFC266; } }
