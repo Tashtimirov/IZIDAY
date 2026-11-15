@@ -1372,8 +1372,6 @@ body.top-mini #top-sub, body.top-mini #bugq { max-height: 0; opacity: 0; margin-
 /* Деньги: незаполненные блоки строками в «Ещё» */
 .mn-more .mn-mi { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); width: 34px; height: 34px; border-radius: 10px; }
 .mn-more .row .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Увеличение двумя пальцами разрешено (для слабого зрения); двойное касание не увеличивает — кнопки нажимаются сразу */
-html { touch-action: manipulation; }
 /* Настройки по группам */
 .set-grp { margin: 22px 6px 8px; font: 600 13px/1.2 var(--font); color: var(--sub); text-transform: uppercase; letter-spacing: .04em; }
 .set-grp:first-child { margin-top: 6px; }
