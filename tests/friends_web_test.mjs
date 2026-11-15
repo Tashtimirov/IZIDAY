@@ -151,7 +151,8 @@ await p2.route("https://script.google.com/**", r => r.fulfill({ status: 200, con
 await p2.goto(BASE)
 await p2.waitForSelector("#onb .ob-btn")
 // карточек знакомства со временем стало больше: листаем до последней, а не фиксированное число раз
-for (let k = 0; k < 12 && /Дальше|Начнём/.test(await p2.textContent('#onb [data-ob="next"]')); k++) { await p2.click('#onb [data-ob="next"]'); await p2.waitForTimeout(350) }
+for (let k = 0; k < 12 && /Дальше|Начнём/.test(await p2.textContent('#onb [data-ob="next"]')); k++) { const cur = await p2.$('#onb [data-cur]'); if (cur) await cur.click()   // карточка «В какой валюте считать деньги?» не пускает дальше без выбора
+  await p2.click('#onb [data-ob="next"]'); await p2.waitForTimeout(350) }
 const btn = await p2.textContent('#onb [data-ob="next"]')
 check(/Войти через Google/.test(btn) && /войти через Google/.test(await p2.textContent("#onb")), "последняя карточка знакомства — «Войти через Google»", btn)
 await p2.screenshot({ path: path.join(SHOTS, "fr-0-intro.png") })
