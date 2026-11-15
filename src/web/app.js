@@ -6293,7 +6293,7 @@ function calCustAdd(name) {
 }
 function calCustDel(k) {
   const S = calS(); S.custom = S.custom.filter(l => l.k !== k)
-  for (const n of Object.keys(S.map)) if (S.map[n] === k) delete S.map[n]
+  for (const n of Object.keys(S.map)) if (S.map[n] === k) S.map[n] = "me"   // как обещает окно: снова цветом «Я»
   delete S.colors[k]; delete S.layers[k]; save(false)
 }
 const layerC = k => (calLayers().find(l => l.k === k) || {}).c || LAYER_C.me
@@ -6302,7 +6302,22 @@ function kidC(k) {
   const ks = famKids(), n = normT(name1(k)), i = k ? ks.findIndex(m => m.id === k || normT(name1(m.name)) === n) : -1
   return i < 0 ? layerC("kids") : calS().colors["k:" + ks[i].id] || (i ? KID_C[i % KID_C.length] : layerC("kids"))
 }
-const evColor = e => e.c || layerC(evLayer(e))
+// Календари Google без выбранной категории (рабочий, личный, общий…) не сливаются: основной — цветом «Я»,
+// остальные — свой цвет палитры, не занятый слоями и категориями. Выбор «Я» в «Цвета и календари» возвращает зелёный
+let calAutoK = "", calAutoM = {}
+function calAuto() {
+  const cl = ((D.gcal && D.gcal.calendars) || []).map(c => typeof c === "string" ? { name: c } : c).filter(c => c && c.name), S = calS()
+  const evs = ((gcalOn() ? D.gcal.events : (D.snap || {}).events) || []).filter(e => e && e.calendar), key = JSON.stringify([cl, evs.length, S.map, S.colors, S.custom, famCal() ? FAM.members().length : 0])
+  if (key === calAutoK) return calAutoM
+  const cnt = {}; for (const e of evs) cnt[e.calendar] = (cnt[e.calendar] || 0) + 1
+  const names = [...new Set(cl.map(c => c.name).concat(Object.keys(cnt)))]
+  const main = (cl.find(c => c.primary) || {}).name || (cl[0] || {}).name || names.slice().sort((a, b) => (cnt[b] || 0) - (cnt[a] || 0))[0]
+  const used = new Set(calLayers().map(l => l.c).concat(famKids().map(m => kidC(m.id)))), pal = ["#0A84FF", "#FF9F0A", "#30B0C7", "#5E5CE6", "#A2845E", "#FF6B4A"].filter(c => !used.has(c)), out = {}
+  let i = 0
+  for (const n of names.filter(n => n !== main && !S.map[n] && evLayer({ calendar: n }) === "me").sort()) out[n] = pal.length ? pal[i++ % pal.length] : LAYER_PAL[(4 + i++) % LAYER_PAL.length]
+  calAutoK = key; calAutoM = out; return out
+}
+const evColor = e => e.c || (!e.fam && calAuto()[e.calendar || ""]) || layerC(evLayer(e))
 function layerName(k) {
   if (k === "me") return "Я"
   if (k === "kids") return "Дети"
@@ -6867,7 +6882,7 @@ function calSettings() {
     ${open === k ? `<div class="cs-pal">${LAYER_PAL.map(x => `<button class="${x === c ? "on" : ""}" data-cs-c="${x}" style="background:${x}" aria-label="Цвет"></button>`).join("")}</div>${k.slice(0, 2) === "u:" ? `<div class="cs-own"><button class="chip" data-cs-ren="${esc(k)}">Переименовать</button><button class="chip red" data-cs-del="${esc(k)}">Удалить категорию</button></div>` : ""}` : ""}</div>`).join("")
     + `<button class="chip cs-add" data-cs-add="1">${tdIco("plus", 15)} Своя категория</button>`
   const opts = () => calLayers().map(l => [l.k, l.name, l.c]).concat([["off", "Скрыть", "#8E8E93"]])
-  const calChips = n => opts().map(([k, l, c]) => `<button class="chip ly ${evLayer({ calendar: n }) === k ? "on" : ""}" data-k="${esc(k)}" style="--c:${c}"><em></em>${esc(l)}</button>`).join("") + `<button class="chip ly cs-plus" data-k="+" aria-label="Своя категория">${tdIco("plus", 14)}</button>`
+  const calChips = n => { const a = calAuto()[n]; return (a ? `<button class="chip ly on" data-k="auto" style="--c:${a}"><em></em>Свой цвет</button>` : "") + opts().map(([k, l, c]) => `<button class="chip ly ${!a && evLayer({ calendar: n }) === k ? "on" : ""}" data-k="${esc(k)}" style="--c:${c}"><em></em>${esc(l)}</button>`).join("") + `<button class="chip ly cs-plus" data-k="+" aria-label="Своя категория">${tdIco("plus", 14)}</button>` }
   const s = sheet(`<h3>Цвета и календари</h3><div class="msg">У каждого свой цвет — ваши события, общие дела семьи, календарь близкого и дети не сливаются.</div>
     <div id="cs-rows">${draw()}</div>
     ${calWritable().length > 1 ? `<h4 class="cs-t">Новые события записывать в</h4><div class="msg">Сюда попадут события, которые добавляете вы и которые создаёт Изи. Изи можно сказать и иначе: «запиши в календарь …».</div>
@@ -6893,7 +6908,8 @@ function calSettings() {
   const bindCal = g => $$(".chip", g).forEach(c => c.onclick = async () => {
     let k = c.dataset.k
     if (k === "+") { const n = await askName(`Категория для «${names[+g.dataset.cal]}»`); if (!n) return; k = calCustAdd(n); S.map[names[+g.dataset.cal]] = k; save(false); $("#cs-rows", s.el).innerHTML = draw(open); bindRows(); redrawCals(); return }
-    S.map[names[+g.dataset.cal]] = k; $$(".chip", g).forEach(x => x.classList.toggle("on", x === c)); save(false); $("#cs-rows", s.el).innerHTML = draw(open); bindRows() })
+    if (k === "auto") return
+    S.map[names[+g.dataset.cal]] = k; save(false); redrawCals(); $("#cs-rows", s.el).innerHTML = draw(open); bindRows() })
   bindRows()
   $$("[data-cal]", s.el).forEach(bindCal)
   $$("#cs-def .chip", s.el).forEach(c => c.onclick = () => { S.def = c.dataset.def; $$("#cs-def .chip", s.el).forEach(x => x.classList.toggle("on", x === c)); save(false); toast(`Новые события — в «${S.def}»`) })
