@@ -136,7 +136,7 @@ check(!!(await page.$('[data-mv="shared"]')) && /Общие с Алией/.test(
 // 4. валюта в форме
 await page.click('[data-do="expense"]'); await page.waitForTimeout(400)
 await page.fill("#m-amt", "1000"); await page.click('#m-cur [data-c="RUB"]'); await page.fill("#m-com", "книга"); await page.waitForTimeout(150)
-check(/≈ 429 ฿ по курсу сегодня/.test(sp(await page.textContent("#m-fx"))), "форма: ₽ → ≈ ฿ сразу", sp(await page.textContent("#m-fx")))
+check(await page.inputValue("#m-bamt") === "429" && /По курсу сегодня: 1 ₽ = 0,43 ฿/.test(sp(await page.textContent("#m-fx"))), "форма: ₽ → сумма в батах сразу, её можно поправить", [await page.inputValue("#m-bamt"), sp(await page.textContent("#m-fx"))])
 await page.click("#m-sh"); await page.waitForTimeout(200)
 await page.screenshot({ path: SHOTS + "money-form.png" })
 await page.click('.sheet:last-child [data-a="ok"]'); await page.waitForTimeout(400)
