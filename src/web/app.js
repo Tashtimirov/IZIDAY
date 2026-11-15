@@ -5135,8 +5135,11 @@ const fx = (n, from, to = baseCur()) => from === to ? n : n / fxRate(from) * fxR
 const fmtCur = (n, c) => PRE[c] || (window.L && L.en) ? `${CUR[c]}${num(n)}` : `${num(n)} ${CUR[c] || core.CONFIG.currency}`
 // Валюты для быстрого выбора в формах: своя + самые ходовые (до 4)
 const curOpts = () => [...new Set([baseCur(), "USD", "RUB", "THB", "EUR"])].slice(0, 4)
+let fxTry = 0   // не чаще раза в 10 минут: ответ без нужного курса не должен зацикливать перерисовку «Денег»
 async function fxLoad(force) {
   if (!force && D.fx && D.fx.r && D.fx.r.EUR && Date.now() - D.fx.at < 12 * 3600e3) return
+  if (!force && Date.now() - fxTry < 10 * 60e3) return
+  fxTry = Date.now()
   try {
     const j = await (await fetch("https://open.er-api.com/v6/latest/THB", { cache: "no-store" })).json()
     if (j && j.rates && j.rates.USD && j.rates.RUB) { const r = { THB: 1 }; for (const c of CURS) if (j.rates[c[0]]) r[c[0]] = j.rates[c[0]]

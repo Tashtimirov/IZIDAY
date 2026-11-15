@@ -14,7 +14,7 @@ for (const kind of ["тёплый", "тёплый", "тёплый"]) {
   await page.reload({ waitUntil: "load" })
   const ready = await page.waitForFunction(() => document.querySelector("#view") && document.querySelector("#view").innerText.length > 50, null, { timeout: 30000 }).then(() => Date.now() - t0).catch(() => -1)
   const m = Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map(x => [x.name, x.value]))
-  const nav = await page.evaluate(() => { const n = performance.getEntriesByType("navigation")[0]; return { dcl: Math.round(n.domContentLoadedEventEnd), load: Math.round(n.loadEventEnd) } })
+  const nav = await page.evaluate(() => { const n = performance.getEntriesByType("navigation")[0] || {}; return { dcl: Math.round(n.domContentLoadedEventEnd), load: Math.round(n.loadEventEnd) } })
   const fp = await page.evaluate(() => Math.round((performance.getEntriesByName("first-contentful-paint")[0] || {}).startTime || -1))
   runs.push({ kind, ready, ...nav, fcp: fp, script: Math.round(m.ScriptDuration * 1000), layout: Math.round(m.LayoutDuration * 1000), style: Math.round(m.RecalcStyleDuration * 1000), heap: Math.round(m.JSHeapUsedSize / 1048576) })
   await cdp.send("Performance.disable")
