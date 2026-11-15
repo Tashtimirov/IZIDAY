@@ -29,7 +29,7 @@ await page.evaluate(() => {
   window.TURNS = []
   window.agentTurn = async msgs => { const q = msgs[msgs.length - 1].content; TURNS.push(typeof q === "string" ? q : JSON.stringify(q)); await new Promise(r => setTimeout(r, 600)); return "Записала." }
 })
-const userMsgs = () => page.evaluate(() => D.chat.filter(m => m.role === "user").map(m => m.text))
+const userMsgs = () => page.evaluate(() => D.chat.filter(m => m.role === "user" && !m.auto).map(m => m.text))   // без «Утреннего плана», который Изи кладёт в чат сам
 
 // 0. без ключа — как раньше, Safari
 ok(await page.evaluate(() => !STT.on()), "без ключа точное выключено")

@@ -45,7 +45,7 @@ const T = L.events.map(e => `${e.title} ${e.start}`)
 check("список из Google: разовое, повторы пн/ср, весь день из «Семьи»", T.includes("Падел 2026-11-20T19:00") && T.includes("Английский 2026-11-16T09:00") && T.includes("Английский 2026-11-18T09:00") &&
   L.events.find(e => e.title === "Ужин у мамы").end === "2026-11-21" && L.events.find(e => e.title === "Ужин у мамы").calendar === "Семья", T)
 check("отклонённое приглашение не показывается", !T.some(t => /Отказался/.test(t)), T)
-check("календари: основной и «Семья», скрытого нет", JSON.stringify(L.calendars) === JSON.stringify([{ name: "ann.real@gmail.com", primary: true }, { name: "Семья", primary: false }]), L.calendars)
+check("календари: основной и «Семья», скрытого нет", JSON.stringify(L.calendars) === JSON.stringify([{ name: "ann.real@gmail.com", primary: true, ro: false }, { name: "Семья", primary: false, ro: false }]), L.calendars)
 check("время событий — в поясе Ани", L.events.find(e => e.title === "Падел").end === "2026-11-20T20:30")
 
 // изменение одного повторения, перенос, удаление

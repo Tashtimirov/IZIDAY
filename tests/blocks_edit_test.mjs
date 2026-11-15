@@ -19,7 +19,8 @@ const H = '#view > [data-bk="Привычки"]'
 await page.evaluate(() => setTab("today")); await page.waitForTimeout(500)
 ok(await page.evaluate(() => !!document.querySelector("#view > .bk-foot")), "внизу раздела есть «Изменить блоки»")
 // долгое нажатие и отпускание без движения → правка
-const a = await page.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 20 } }, H)
+const a = await page.evaluate(s => { document.querySelector(s).scrollIntoView({ block: "center" })   // иначе блок может оказаться под кнопкой Изи внизу экрана
+  const r = document.querySelector(s).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 20 } }, H)
 await T("touchStart", a.x, a.y); await page.waitForTimeout(560); await T("touchEnd"); await page.waitForTimeout(800)
 ok(await page.evaluate(() => BLOCKS.editing() && document.querySelectorAll("#view .bk-rm").length > 2), "удержание и отпускание включает правку, у блоков «−»")
 ok(await page.evaluate(() => document.querySelector("#bk-pill.show") && !!document.querySelector("#view > .bk-tray")), "есть «Готово» и «Скрытые блоки»")
