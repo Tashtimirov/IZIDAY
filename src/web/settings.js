@@ -9,7 +9,7 @@
   function groupOf(el) {
     if (el.id === "bug-card" || el.classList.contains("banner")) return "top"
     if (el.dataset.grp) return el.dataset.grp
-    if (el.classList.contains("grow-card") || el.classList.contains("exit-card")) return "acct"   // подписка, приглашения и выход — рядом с аккаунтом
+    if (el.classList.contains("grow-card")) return "acct"   // подписка и приглашения — рядом с аккаунтом
     if (el.classList.contains("izi-card") || el.id === "fkey" || el.classList.contains("fcard")) return "izi"
     if (q(el, '[data-do="connect"], [data-do="run-widget"]')) return "owner"
     if (q(el, '[data-do="glogin"], [data-do="glogout"], [data-fw]')) return "acct"
@@ -25,7 +25,7 @@
     const kids = [...v.children].filter(el => !el.classList.contains("set-grp"))
     if (!kids.length) return
     const by = { top: [], izi: [], app: [], acct: [], owner: [] }, tail = []
-    kids.forEach(el => { if (el.classList.contains("app-ver")) tail.push(el); else (by[groupOf(el)] || by.app).push(el) })
+    kids.forEach(el => { if (el.classList.contains("app-ver") || el.classList.contains("exit-card")) tail.push(el); else (by[groupOf(el)] || by.app).push(el) })
     by.izi.sort((a, b) => b.classList.contains("izi-card") - a.classList.contains("izi-card"))
     by.app = by.app.map((el, i) => [rank(el), i, el]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2])
     const want = [...by.top]
@@ -34,7 +34,7 @@
       if (!h) { h = document.createElement("div"); h.className = "set-grp"; h.dataset.g = k; h.textContent = name }
       want.push(h, ...by[k])
     }
-    want.push(...tail)
+    want.push(...tail.sort((a, b) => a.classList.contains("app-ver") - b.classList.contains("app-ver")))   // «Выход» — последней карточкой, версия под ней
     const now = [...v.children]
     if (now.length === want.length && now.every((el, i) => el === want[i])) return
     busy = true

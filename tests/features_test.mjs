@@ -260,7 +260,7 @@ await page.screenshot({ path: SHOTS + "f-steps.png" })
 // помидоро: с шага мечты, таймер на «Сегодня», конец — подсказка-пуш
 await page.click("[data-spomo]"); await page.waitForTimeout(400)
 check(await page.evaluate(() => tab === "today" && !!$("#pomo-left") && /Выбрать район|Накопить|Съездить/.test($("#pomo").textContent)), "🍅 у шага — помидор с этим шагом, таймер на «Сегодня»")
-check(await page.evaluate(() => { const p = pomoNow(), n = D.nudges.find(x => x.id === "pq" + p.id); return n && n.date === p.start + 25 * 60e3 && /Помидор готов/.test(n.title) }), "конец помидора — подсказка-пуш через 25 минут")
+check(await page.evaluate(() => { const p = pomoNow(), n = D.nudges.find(x => x.id === "pq" + p.id); return n && n.date === p.start + 25 * 60e3 && /Фокус готов/.test(n.title) }), "конец помидора — подсказка-пуш через 25 минут")
 const ps = await page.evaluate(() => runTool("stop_pomodoro", {}))
 check(ps.ok && !ps.completed && await page.evaluate(() => !D.nudges.some(x => String(x.id).startsWith("pq") && !x.deleted)), "остановил раньше — пуша не будет", ps)
 const pr = await page.evaluate(() => runTool("start_pomodoro", { title: "отчёт", minutes: 50 }))
