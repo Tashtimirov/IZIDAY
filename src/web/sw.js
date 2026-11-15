@@ -1,12 +1,42 @@
 // Приложение открывается мгновенно и без сети: оболочка (страница, код, стили, значки) лежит в кэше этой версии
-// и отдаётся сразу, без ожидания сети. Новая версия скачивается целиком в фоне (установка нового sw.js —
+// и отдаётся сразу, без ожидания сети. Новая версия ставится целиком в фоне (установка нового sw.js —
 // браузер сверяет его при каждом открытии), и только потом подменяет старую одним махом: файлы двух разных
 // версий никогда не смешиваются. Страница перезагружается сама (app.js, controllerchange).
+// Скачиваются только изменившиеся файлы: у каждого файла метка содержимого (HASH); файл с той же меткой
+// берётся из кэша прежней версии — обновление весит десятки КБ, а не мегабайт.
 // Запросы к таблице и к Claude идут мимо кэша (другой адрес).
 const CACHE = "myday-__VERSION__"
 const SHELL = ["__SHELL__"]   // build_web.py подставляет список файлов из index.html
+const HASH = {"__HASH__": ""}  // build_web.py: файл → метка содержимого
+// Английский словарь нужен только при английском языке: кладём в кэш, если он уже был (и не менялся) или им пользуются
+const OPT = ["i18n-en.js"], EN_FLAG = "lang-en"
+const META = "./__shell-hash__"
+async function oldCaches() { return (await caches.keys()).filter(k => k !== CACHE && /^myday-/.test(k) && k !== "myday-conn") }
+async function install() {
+  const c = await caches.open(CACHE), olds = []
+  for (const k of await oldCaches()) { try { const o = await caches.open(k), m = await o.match(META); if (m) olds.push({ o, h: await m.json() }) } catch (err) {} }
+  const reuse = async f => { if (!HASH[f]) return null; for (const { o, h } of olds) if (h[f] === HASH[f]) { const r = await o.match(f, { ignoreSearch: true }); if (r) return r } return null }
+  const en = await connRead(EN_FLAG).catch(() => null)
+  const want = SHELL.concat(OPT.filter(f => en))
+  await Promise.all(want.map(async u => {
+    const f = u === "./" ? "index.html" : u
+    const r = await reuse(f).catch(() => null)
+    if (r) return c.put(u, r)
+    const n = await fetch(new Request(u, { cache: "reload" }))
+    if (!n.ok) throw new Error(u + " " + n.status)
+    return c.put(u, n)
+  }))
+  // словарь, которым не пользуются, переносим только если он не менялся (бесплатно, без скачивания)
+  for (const f of OPT) if (!want.includes(f)) { const r = await reuse(f).catch(() => null); if (r) await c.put(f, r) }
+  await c.put(META, new Response(JSON.stringify(HASH), { headers: { "content-type": "application/json" } }))
+}
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()))
+  e.waitUntil(install().catch(async err => {
+    // что-то пошло не так с переносом — ставим версию по-старому, целиком из сети
+    await caches.delete(CACHE); const c = await caches.open(CACHE)
+    await c.addAll(SHELL.map(u => new Request(u, { cache: "reload" })))
+    await c.put(META, new Response(JSON.stringify(HASH)))
+  }).then(() => self.skipWaiting()))
 })
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== "myday-conn").map(k => caches.delete(k)))).then(() => self.clients.claim()))
@@ -18,8 +48,12 @@ self.addEventListener("fetch", e => {
     const c = await caches.open(CACHE)
     // файл оболочки — сразу из кэша (запуск со значка — сама страница «./» с любым ?… после адреса)
     const hit = await c.match(e.request.mode === "navigate" && /\/(index\.html)?$/.test(url.pathname) ? "./" : e.request, { ignoreSearch: true })
+    const opt = OPT.find(f => url.pathname.endsWith("/" + f))
+    if (opt) connWrite(EN_FLAG, 1).catch(() => {})   // словарь попросили — дальше держим его в кэше
     if (hit) return hit
-    // остальное (w.json, bug.html, privacy.html, PDF) — из сети; в кэш версии не кладём
+    // словарь не в кэше — скачать и положить в кэш этой версии (для работы без сети)
+    if (opt) { const r = await fetch(e.request, { cache: "no-store" }); if (r.ok) c.put(opt, r.clone()).catch(() => {}); return r }
+    // остальное (w.json, bug.html, privacy.html, PDF, большой значок) — из сети; в кэш версии не кладём
     return fetch(e.request, { cache: "no-store" })
   })())
 })

@@ -127,16 +127,19 @@ for p in sorted(OUT.rglob("*")):
 # Оболочка для кэша = всё, что подключает index.html, + страница, манифест и значки. Каждый файл
 # должен быть в сборке: если хоть одного нет, новая версия не установится на телефоне вовсе
 html = (OUT / "index.html").read_text()
-shell = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"]
+# icon-512.png нужен только при установке на экран (браузер берёт его из сети) — в кэш не кладём, это 150 КБ на каждое обновление
+shell = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png"]
 for f in re.findall(r'<(?:script|link)[^>]+(?:src|href)="([^"?#:]+)', html):
     if f not in shell:
         shell.append(f)
-# английский словарь подключает i18n.js только при английском языке — в кэш кладём всегда, чтобы он работал и без сети
-if (OUT / "i18n-en.js").is_file() and "i18n-en.js" not in shell:
-    shell.append("i18n-en.js")
-missing = [f for f in shell if f != "./" and not (OUT / f).is_file()]
+# английский словарь подключает i18n.js только при английском языке — sw.js кладёт его в кэш только тем, кто им пользуется (OPT)
+opt = ["i18n-en.js"]
+missing = [f for f in shell + opt if f != "./" and not (OUT / f).is_file()]
 if missing:
     sys.exit(f"sw.js: в сборке нет файлов оболочки: {missing}")
 sw = OUT / "sw.js"
-sw.write_text(sw.read_text().replace("__VERSION__", h.hexdigest()[:10]).replace('"__SHELL__"', ", ".join(f'"{f}"' for f in shell)))
+# метка содержимого каждого файла: телефон скачивает при обновлении только изменившиеся
+fh = {f: hashlib.sha256((OUT / f).read_bytes()).hexdigest()[:12] for f in shell + opt if f != "./"}
+sw.write_text(sw.read_text().replace("__VERSION__", h.hexdigest()[:10]).replace('"__SHELL__"', ", ".join(f'"{f}"' for f in shell))
+              .replace('{"__HASH__": ""}', json.dumps(fh)))
 print("Готово: dist/web/ —", ", ".join(sorted(p.name for p in OUT.iterdir())))

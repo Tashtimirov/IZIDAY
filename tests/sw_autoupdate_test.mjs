@@ -13,7 +13,8 @@ const server = http.createServer((req, res) => {
   const p = path.join(ROOT, decodeURIComponent(req.url.split(/[?#]/)[0]).replace(/\/$/, "/index.html"))
   if (!fs.existsSync(p)) { res.writeHead(404); return res.end() }
   let body = fs.readFileSync(p)
-  if (ver > 1 && p.endsWith("sw.js")) body = Buffer.from(String(body).replace(/const CACHE = "([^"]+)"/, `const CACHE = "$1-v${ver}"`))
+  // в настоящей сборке у изменённого app.js и метка содержимого (HASH) новая
+  if (ver > 1 && p.endsWith("sw.js")) body = Buffer.from(String(body).replace(/const CACHE = "([^"]+)"/, `const CACHE = "$1-v${ver}"`).replace(/"app\.js": "([0-9a-f]+)"/, `"app.js": "$1v${ver}"`))
   if (p.endsWith("app.js")) body = Buffer.concat([body, Buffer.from(`\nwindow.APPVER = ${ver}\n`)])
   const type = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".webmanifest": "application/manifest+json" }[path.extname(p)]
   res.writeHead(200, { "content-type": (type || "text/plain") + "; charset=utf-8", "cache-control": "no-cache" }); res.end(body)

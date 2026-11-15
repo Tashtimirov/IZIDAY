@@ -7,16 +7,18 @@ import fs from "fs"
 import path from "path"
 
 const ROOT = new URL("../dist/web/", import.meta.url).pathname
-let offline = false, ver = 1, hits = 0
+let offline = false, ver = 1, hits = 0, got = []
 const server = http.createServer((req, res) => {
   if (offline) { req.socket.destroy(); return }
-  hits++
+  hits++; got.push(req.url.split(/[?#]/)[0])
   const p = path.join(ROOT, decodeURIComponent(req.url.split(/[?#]/)[0]).replace(/\/$/, "/index.html"))
   if (!fs.existsSync(p)) { res.writeHead(404); return res.end() }
   let body = fs.readFileSync(p)
   const ext = path.extname(p)
   // «новая версия» на сервере: другая версия кэша в sw.js и метка в app.js
-  if (ver > 1 && p.endsWith("sw.js")) body = Buffer.from(String(body).replace(/const CACHE = "([^"]+)"/, `const CACHE = "$1-v${ver}"`))
+  // в настоящей сборке метки содержимого (HASH) у изменённых файлов тоже новые
+  if (ver > 1 && p.endsWith("sw.js")) body = Buffer.from(String(body).replace(/const CACHE = "([^"]+)"/, `const CACHE = "$1-v${ver}"`)
+    .replace(/"(app|gami)\.js": "([0-9a-f]+)"/g, (m, f, h) => `"${f}.js": "${h}v${ver}"`))
   if (p.endsWith("app.js")) body = Buffer.concat([body, Buffer.from(`\nwindow.APPVER = ${ver}\n`)])
   if (p.endsWith("gami.js")) body = Buffer.concat([body, Buffer.from(`\nwindow.GAMIVER = ${ver}\n`)])
   const type = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".webmanifest": "application/manifest+json" }[ext]
@@ -54,12 +56,16 @@ check(await page.evaluate(() => !!$("#view").innerHTML), "без сети и с 
 offline = false
 
 // новая версия: пока не установилась целиком — старая; после — новая, и app.js и gami.js из одной версии
-ver = 2
+ver = 2; got = []
 await page.evaluate(() => navigator.serviceWorker.getRegistration().then(r => r.update()))
 await page.waitForTimeout(1500)
 await page.reload(); await page.waitForTimeout(800)
 const v = await page.evaluate(() => [window.APPVER, window.GAMIVER])
 check(v[0] === 2 && v[1] === 2, "новая версия пришла целиком (app.js и gami.js — обе новые)", v)
+const dl = got.filter(u => !/sw\.js$/.test(u))
+check(dl.includes("/app.js") && dl.includes("/gami.js") && !dl.includes("/style.css") && !dl.includes("/core.js") && !dl.includes("/i18n-en.js"), "при обновлении скачаны только изменённые файлы", dl)
+const c2 = await page.evaluate(async () => (await (await caches.open((await caches.keys()).find(k => k !== "myday-conn"))).keys()).map(r => new URL(r.url).pathname))
+check(["/", "/index.html", "/app.js", "/core.js", "/style.css", "/icon-180.png", "/plan.js"].every(f => c2.includes(f)), "после обновления в кэше снова вся оболочка", c2)
 const keys = await page.evaluate(() => caches.keys())
 check(keys.filter(k => k !== "myday-conn").length === 1, "старый кэш удалён", keys)
 check(!errs.length, "без ошибок на странице", errs)
