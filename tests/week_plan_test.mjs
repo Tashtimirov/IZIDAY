@@ -114,12 +114,20 @@ for (const dark of out ? [false, true] : [false]) {
     await page.click('.sheet [data-ed] [data-ed-d="1"]'); await page.waitForTimeout(200)
     await page.click('.sheet [data-ed-new="irr"]'); await page.waitForTimeout(300)
     await page.fill(".sheet [data-ed] .wp-what", "Договор с юристом"); await page.waitForTimeout(100)
+    await page.evaluate(() => { const u = document.querySelector("#undo"); if (u) u.classList.remove("show") })   // плашка от нажатий на дни — не про текст
+    await page.click(".sheet [data-ed] .wp-what"); await page.keyboard.type(" срочно", { delay: 30 }); await page.waitForTimeout(500)
+    check(await page.evaluate(() => { const u = document.querySelector("#undo"); return !u || !u.classList.contains("show") }), "набор текста не зовёт плашку «Отменить»")
+    await page.fill(".sheet [data-ed] .wp-what", "Договор с юристом"); await page.waitForTimeout(100)
     const late = await page.evaluate(() => WPLAN.tasks("2026-11-16").find(t => t.title === "Договор с юристом"))
     check(late && late.late === 1, "задача после понедельника помечена «вне плана», а не запрещена", late)
     await page.click('.sheet [data-ed] [data-ed-a="del"]'); await page.waitForTimeout(150)
     check(await page.evaluate(() => document.querySelector(".sheet .wp-del").textContent) === "Удалить?", "удаление в два нажатия")
     await page.click('.sheet [data-ed] [data-ed-a="del"]'); await page.waitForTimeout(200)
     check(await page.evaluate(() => !WPLAN.tasks("2026-11-16").some(t => t.title === "Договор с юристом")), "задача удалена")
+    await page.waitForTimeout(500)
+    const ub = await page.evaluate(() => { document.body.classList.add("kb"); document.body.style.setProperty("--kb", "300px"); const u = document.querySelector("#undo"), r = u.getBoundingClientRect(); const o = { show: u.classList.contains("show"), top: u.classList.contains("top"), h: Math.round(r.height), y: Math.round(r.top) }; document.body.classList.remove("kb"); return o })
+    check(ub.show && ub.top && ub.h < 70 && ub.y < 80, "плашка отмены при клавиатуре и открытом окне компактная и сверху", ub)
+    if (out) { await page.evaluate(() => document.body.classList.add("kb")); await page.screenshot({ path: `${out}/7-otmena-kompaktno.png` }); await page.evaluate(() => document.body.classList.remove("kb")) }
     // норма часов
     const h = await page.evaluate(() => { upsert("goals", { id: "wcfg", kind: "wcfg", date: Date.now(), h: 8 }); return WPLAN.hints("2026-11-16").map(x => x[1]).join(" | ") })
     check(/при норме 8 ч/.test(h), "норму часов человек задаёт сам", h)

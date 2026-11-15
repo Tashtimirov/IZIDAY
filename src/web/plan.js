@@ -54,6 +54,8 @@ const cfg = () => Object.assign({ h: 36 }, G().find(g => g.id === "wcfg") || {})
 const wheels = () => G().filter(g => g.kind === "wheel" && g.v).sort((a, b) => b.date - a.date)
 const wheel = () => wheels()[0] || null
 const save1 = (g, patch) => upsert("goals", Object.assign({}, D.goals.find(x => x.id === g.id) || g, patch))
+// текст в полях: без плашки «Отменить» на каждую букву
+const quiet = fn => window.UNDO && UNDO.quiet ? UNDO.quiet(fn) : fn()
 const dnOf = t => t.dn && typeof t.dn === "object" ? t.dn : {}
 const daysOf = t => Array.isArray(t.days) ? t.days.filter(d => d >= 0 && d <= 6) : []
 const factMin = t => Object.values(dnOf(t)).reduce((s, m) => s + (+m || 0), 0)
@@ -350,7 +352,7 @@ function editSheet(wk = viewWk(), openId = null) {
   }
   box.addEventListener("change", e => {
     const el = e.target
-    if (el.dataset.wkg) { const m = meta(wk); upsert("goals", Object.assign({ id: "wk:" + wk, kind: "wk", date: wkDate(wk).getTime(), wk }, m || {}, { title: el.value.trim() })); return }
+    if (el.dataset.wkg) { const m = meta(wk); quiet(() => upsert("goals", Object.assign({ id: "wk:" + wk, kind: "wk", date: wkDate(wk).getTime(), wk }, m || {}, { title: el.value.trim() }))); return }
     const ed = el.closest("[data-ed]"); if (!ed || !el.dataset.f) return
     const t = task(ed.dataset.ed); if (!t) return
     const f = el.dataset.f
@@ -359,14 +361,14 @@ function editSheet(wk = viewWk(), openId = null) {
       if (v) { const d = daysOf(t); if (d.length) { const per = Math.round(v / d.length); d.forEach(i => dn[i] = per) } else dn[dayIdx(new Date())] = v }
       save1(t, { dn }); return draw()
     }
-    save1(t, { [f]: f === "pm" ? +el.value : el.value.trim() })
+    quiet(() => save1(t, { [f]: f === "pm" ? +el.value : el.value.trim() }))
     if (f === "pm" || f === "tm") draw()
   })
   box.addEventListener("click", async e => {
     const b = e.target.closest("button"); if (!b) return
     const ed = b.closest("[data-ed]"), t = ed && task(ed.dataset.ed)
     if (b.dataset.edO) { edOpen = b.dataset.edO; delAsk = null; return draw() }
-    if (b.dataset.edNew) { const n = newTask(wk, b.dataset.edNew); edOpen = n.id; return draw() }
+    if (b.dataset.edNew) { const n = quiet(() => newTask(wk, b.dataset.edNew)); edOpen = n.id; return draw() }
     if (b.dataset.edCopy) { const n = copyPrev(wk); toast(n ? `Перенесено: ${n}` : "Всё уже перенесено"); return draw() }
     if (b.dataset.edAi) return aiCheck(wk, draw)
     if (b.dataset.edSave) {
@@ -387,7 +389,7 @@ function editSheet(wk = viewWk(), openId = null) {
     if (a === "close") { if (t.cat === "unp" && !factMin(t) && (t.title || "").trim()) return toast("Укажите, сколько ушло времени"); edOpen = null; return draw() }
     if (a === "del") { if (delAsk !== t.id) { delAsk = t.id; return draw() } calDrop(t); remove("goals", t.id); edOpen = null; delAsk = null; return draw() }
   })
-  box.addEventListener("input", e => { const el = e.target; if (el.dataset.f === "title") { const ed = el.closest("[data-ed]"), t = ed && task(ed.dataset.ed); if (t) save1(t, { title: el.value }) } })
+  box.addEventListener("input", e => { const el = e.target; if (el.dataset.f === "title") { const ed = el.closest("[data-ed]"), t = ed && task(ed.dataset.ed); if (t) quiet(() => save1(t, { title: el.value })) } })
   draw()
   return s
 }

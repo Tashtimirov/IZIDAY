@@ -28,7 +28,11 @@ window.UNDO = (function () {
   function base() { try { return JSON.parse(localStorage.getItem(STORE) || "{}") || {} } catch (e) { return {} } }
   const same = (a, b) => { const c = x => JSON.stringify(Object.assign({}, x, { u: 0 })); return c(a) === c(b) }
 
+  let mute = 0
+  // правка текста в поле ввода (каждая буква — запись): плашка «Отменить» не нужна, в поле есть своя отмена
+  function quiet(fn) { mute++; try { return fn() } finally { mute-- } }
   function note(key, rec) {
+    if (mute) return
     if (replay || !rec || rec.id == null || !KEYS.has(key) || now() - tap > WIN) return
     if (cur && cur.g !== gest && cur.items.size && !cur.shown) flush(cur)
     if (!cur || cur.g !== gest || cur.done) cur = { g: gest, at: now(), base: base(), items: new Map(), label: "", shown: false, done: false }
@@ -183,5 +187,5 @@ window.UNDO = (function () {
       hide(1300)
     }
   }
-  return { note, toast, undo, get last() { return last } }
+  return { note, quiet, toast, undo, get last() { return last } }
 })()

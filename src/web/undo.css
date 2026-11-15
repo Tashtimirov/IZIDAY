@@ -26,7 +26,7 @@
 @keyframes u-left { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 body.chat #undo { bottom: calc(var(--tabs) + 78px); }
 body.talk-pin #undo { bottom: calc(var(--tabs) + 126px); }
-body.kb #undo { bottom: calc(12px + var(--kb, 0px)); }
+body.kb #undo:not(.top) { bottom: calc(12px + var(--kb, 0px)); }
 #undo.top { bottom: auto; top: calc(env(safe-area-inset-top) + 10px); transform: translate(calc(-50% + var(--dx, 0px)), calc(-130% + var(--dy, 0px))) scale(.96); }
 #undo.top.show { transform: translate(calc(-50% + var(--dx, 0px)), var(--dy, 0px)); }
 @media (prefers-reduced-motion: reduce) { #undo, #undo.away { transition: opacity .2s; } }
