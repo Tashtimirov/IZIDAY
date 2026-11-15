@@ -329,10 +329,11 @@ async function calRefresh() {
 }
 // Google Календарь — через таблицу (Apps Script). Пока доступ не выдан — по-старому, через календарь iPhone
 const gcalOn = () => !!(D.gcal && D.gcal.ok)
-async function calDo(action, input) {
+// once — без повторной отправки при обрыве связи: повтор «создать» мог поставить событие второй раз (проверяет calCreate)
+async function calDo(action, input, once) {
   let res
-  try { res = await hubPost({ cal: Object.assign({ action }, input) }, 25000) }
-  catch (e) { return { error: e.name === "AbortError" ? "Google Календарь не ответил за 25 секунд — проверьте календарь, возможно, изменение всё же прошло" : String(e.message || e) } }
+  try { res = await (once ? hubPostOnce : hubPost)({ cal: Object.assign({ action }, input) }, 25000) }
+  catch (e) { return { error: e.name === "AbortError" ? "Google Календарь не ответил за 25 секунд — проверьте календарь, возможно, изменение всё же прошло" : String(e.message || e), net: e.name === "TypeError" } }
   const r = res.cal || { error: "таблица не знает календарь — нужно обновить скрипт" }
   if (!r.error) { calForce = true; syncSoon() }
   return r
@@ -892,7 +893,7 @@ const AGENT_TOOLS = [
       start: { type: "string", description: "Начало диапазона, YYYY-MM-DDTHH:MM (местное время)" },
       end: { type: "string", description: "Конец диапазона, YYYY-MM-DDTHH:MM" },
       query: { type: "string" } }, required: ["start", "end"] } },
-  { name: "create_event", description: "Создать событие в Google Календаре пользователя.",
+  { name: "create_event", description: "Создать событие в Google Календаре пользователя. Если похожее событие на это время уже есть, второе не создаётся (ответ duplicate) — скажи, что оно уже стоит. Если такое же есть в этот день в другое время — придёт warning: при поправке времени или названия меняй его через update_event.",
     input_schema: { type: "object", properties: {
       title: { type: "string" }, start: { type: "string" }, end: { type: "string" },
       all_day: { type: "boolean" }, location: { type: "string" }, notes: { type: "string" },
@@ -1093,9 +1094,46 @@ const evOut = e => ({ id: e.id, title: e.title, start: e.start, end: e.end, all_
   repeats: !!e.repeats, ...(e.pending ? { pending: "ещё не внесено в iPhone" } : {}) })
 const QUEUED = "Записано в очередь: виджет внесёт это в iPhone при ближайшем обновлении (обычно в течение 15 минут)."
 
-// Ключ события для защиты от дублей: название без эмодзи и регистра + минута начала
+// Защита от дублей событий. По журналам друзей (13.11): ход Изи обрывался уже ПОСЛЕ записи в календарь — перебили голосом,
+// свернули приложение, пропала связь, — ответа человек не видел и просил ещё раз, а Изи ставил второе, часто с другим
+// названием («Читка «Дождь»» → «Встреча: читка дождь»). Поэтому сравниваем не точное название, а смысл: значимые слова по основе
+const EV_STOP = new Set("в во на с со по и для к ко у о об от до из за под при про а но или же ли не мой моя моё мои встреча встречи событие".split(" "))
+const evWords = t => String(t || "").toLowerCase().replace(/ё/g, "е").split(/[^\p{L}\p{N}]+/u).filter(w => w && !EV_STOP.has(w)).map(w => w.length > 5 ? w.slice(0, 5) : w.length === 4 ? w.slice(0, 3) : w)   // основа: «Леры»/«Лера», «партнёрами»/«партнёры»
+function evSimilar(a, b) {
+  const A = new Set(evWords(a)), B = new Set(evWords(b))
+  if (!A.size || !B.size) return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase()
+  let n = 0; A.forEach(w => { if (B.has(w)) n++ })
+  return n / Math.min(A.size, B.size) >= 0.75
+}
 const evKey = (title, start) => { const d = parseIso(start); return String(title || "").toLowerCase().replace(/[^a-zа-яё0-9]+/gi, " ").trim() + "|" + (d ? Math.round(d / 6e4) : start) }
 const evMade = new Map()   // созданные в этом сеансе (Google отдаёт их в список не сразу)
+const evBusy = []          // создаются прямо сейчас: второй такой же вызов ждёт первый, а не создаёт ещё одно
+// Такое же событие: похожее название и начало ±5 минут (то же самое) или тот же день (вероятно, человек поправил время)
+function evTwin(x, list) {
+  const s = parseIso(x.start); if (!s) return null
+  const day = dayKey(s), near = [], sameDay = []
+  for (const e of list) {
+    const es = e.s || parseIso(e.start); if (!es || !e.title || !evSimilar(x.title, e.title)) continue
+    if (Math.abs(es - s) <= 5 * 60e3) near.push(e); else if (dayKey(es) === day && !x.all_day && !e.all_day) sameDay.push(e)
+  }
+  return near[0] ? { same: near[0] } : sameDay[0] ? { day: sameDay[0] } : null
+}
+const evList = v => v.events.concat([...evMade.values()].map(e => Object.assign({}, e, { s: parseIso(e.start) })))
+const evDup = e => ({ ok: true, duplicate: true, id: e.id, event: { id: e.id, title: e.title, start: e.start },
+  note: `такое событие уже есть в календаре («${e.title}», ${e.start}) — второе не создано. Скажи пользователю, что оно уже стоит.` })
+// Календарь ответил ошибкой или не ответил — событие могло всё же создаться: смотрим день заново, прежде чем пробовать снова
+async function calCreate(x) {
+  let r = await calDo("create", x, true)
+  if (!r.error) return r
+  const s = parseIso(x.start)
+  try {
+    const l = (await hubPostOnce({ since: 9e15, snapAt: 9e15, cal: { action: "list", from: dayKey(s), to: dayKey(s) } }, 25000)).cal
+    const hit = l && l.events && evTwin(x, l.events.map(e => Object.assign({}, e, { s: parseIso(e.start) })))
+    if (hit && hit.same) return { event: hit.same, recovered: true }
+    if (l && l.events && r.net) r = await calDo("create", x, true)   // связь вернулась, события нет — одна повторная попытка
+  } catch (e) {}
+  return r
+}
 async function runTool(name, x) {
   if (IZI_TOOLS[name]) return IZI_TOOLS[name](x)
   const v = iphone()
@@ -1111,13 +1149,23 @@ async function runTool(name, x) {
       if (!parseIso(x.start)) return { error: "неверное начало" }
       { const hit = !x.force && !x.all_day && protHit(parseIso(x.start), parseIso(x.end) || new Date(+parseIso(x.start) + 3600e3))
         if (hit) return { warning: `Это время защищено: «${hit.p.title}» ${hm(hit.s)}–${hm(hit.e)}. Спроси пользователя: поставить всё равно (повтори с force: true) или найти другое время.` } }
+      const force = !!x.force
       x = Object.assign({}, x); delete x.force
       { // такое же событие уже есть (ход повторился после обрыва, или Изи забыл, что уже поставил) — второй раз не создаём
-        const key = evKey(x.title, x.start), same = v.events.find(e => evKey(e.title, e.start) === key) || evMade.get(key)
-        if (same && same.id) return { ok: true, id: same.id, note: "такое событие уже есть в календаре — второй раз не создано", event: { id: same.id, title: same.title, start: same.start } } }
-      if (gcalOn()) { const r = await calDo("create", x); if (!r.error && r.event) evMade.set(evKey(x.title, x.start), r.event); return r.error ? { error: r.error } : { ok: true, id: r.event.id, event: r.event } }
-      const op = queueOp("create_event", x)
-      return { ok: true, id: "op:" + op.id, note: QUEUED }
+        const busy = evBusy.find(b => evTwin(x, [b.ev]) && evTwin(x, [b.ev]).same)
+        if (busy) { const r = await busy.p; if (r && r.ok && r.id) return evDup(Object.assign({ id: r.id }, r.event || busy.ev)) }
+        const t = evTwin(x, evList(v))
+        if (t && t.same && t.same.id) return evDup(t.same)
+        if (t && t.day && !force) return { warning: `В этот день уже есть «${t.day.title}» в ${hm(t.day.s || parseIso(t.day.start))} (id ${t.day.id}). Если пользователь поправил время или название — измени это событие через update_event, второе не создавай. Если нужно именно ещё одно — повтори create_event с force: true.` } }
+      const ev = { title: x.title, start: x.start }, job = { ev }
+      job.p = (async () => {
+        if (gcalOn()) { const r = await calCreate(x); if (!r.error && r.event) evMade.set(evKey(x.title, x.start), r.event)
+          return r.error ? { error: r.error } : Object.assign({ ok: true, id: r.event.id, event: r.event }, r.recovered ? { note: "календарь ответил с задержкой, но событие создано (один раз)" } : {}) }
+        const op = queueOp("create_event", x)
+        return { ok: true, id: "op:" + op.id, note: QUEUED }
+      })()
+      evBusy.push(job)
+      try { return await job.p } finally { evBusy.splice(evBusy.indexOf(job), 1) }
     }
     case "update_event": {
       if (String(x.id).startsWith("fam:")) return { error: "это событие семьи — оно меняется в приложении: Календарь → нажать на событие" }
@@ -1766,6 +1814,8 @@ function chatContext() {
     // старое вложение: самого файла в запросе уже нет — иначе Изи думает, что его прислали снова, и просит повторить
     if (m !== cur && m.prompt && m.prompt.startsWith(SCAN_PROMPT)) content = `(Раньше прислал вложение «${m.text}» — оно уже разобрано в ответе ниже; файла здесь больше нет, повторно не проси.)`
     if (m.role === "user") { const d = new Date(m.at || Date.now()); content = `[${d.getDate()} ${MON_GEN[d.getMonth()].slice(0, 3)} ${hm(d)}] ${content}` }
+    // по этой просьбе уже сделано (в том числе в оборвавшемся ходе) — повторная или уточнённая просьба не должна делать это второй раз
+    if (m.role === "user" && m !== cur && m.acts && m.acts.length) content += `\n(${actsLine(m.acts)} Не повторяй; если просят поправить — меняй сделанное.)`
     const last = out[out.length - 1]
     if (last && last.role === m.role) last.content += "\n\n" + content
     else out.push({ role: m.role, content })
@@ -1810,6 +1860,24 @@ function talkWarm() {
   claude(Object.assign({ max_tokens: 0, system: chatSystem(), tools: cacheTools(chatTools()), messages: msgs, output_config: { effort: "low" }, cache_control: { type: "ephemeral" } }, talkFastOK() ? { speed: "fast" } : {}), 30000, { smart: true, model: CHAT_MODEL })
     .then(r => { const u = r && r.usage; if (u) tdbg("кэш " + Math.round(((u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0)) / 1000) + "k") }, () => {})
 }
+// Что Изи уже сделал по просьбе (событие, напоминание, трата…). Пишется в саму просьбу сразу, по ходу: если ход оборвался
+// (перебили голосом, свернули приложение, пропала связь), Изи в следующий раз знает, что это уже сделано, и не делает второй раз
+let turnItem = null, turnLast = null
+const ACT_SKIP = /^(get_|search_|read_|list_|where_was_i$|route_to$|ask_user$|recall$|mail_search$|mail_read$|open_secret$|draft_message$)/
+function actText(name, x, out) {
+  const when = s => { const d = parseIso(s); return d ? `${d.getDate()} ${MON_GEN[d.getMonth()].slice(0, 3)}${/T/.test(s) ? " " + hm(d) : ""}` : "" }
+  const ev = (out && out.event) || x
+  if (name === "create_event") return out.duplicate ? `событие «${ev.title || x.title}» уже было — второе не создано` : `создал событие «${ev.title || x.title}», ${when(ev.start || x.start)}`
+  if (name === "update_event") return `изменил событие${x.title ? " «" + x.title + "»" : ""}${x.start ? ", теперь " + when(x.start) : ""}`
+  if (name === "create_reminder") return `поставил напоминание «${x.title || ""}»${x.due ? ", " + when(x.due) : ""}`
+  const t = typeof PAST !== "undefined" && PAST[name] ? PAST[name](x) : "сделал: " + (TOOL_STATUS[name] || name)
+  return t.charAt(0).toLowerCase() + t.slice(1)
+}
+function turnAct(name, x, out) {
+  if (!turnItem || ACT_SKIP.test(name) || !out || typeof out !== "object" || out.error || out.cancelled || out.warning || out.declined) return
+  try { (turnItem.acts = turnItem.acts || []).push(actText(name, x, out).slice(0, 160)); save(false) } catch (e) {}
+}
+const actsLine = acts => acts && acts.length ? `Уже сделано: ${acts.join("; ")}.` : ""
 async function agentTurn(messages, system, tools, live) {
   const stopSig = chatStopCtl && chatStopCtl.signal
   const ctools = cacheTools(tools)
@@ -1828,6 +1896,7 @@ async function agentTurn(messages, system, tools, live) {
     } catch (e) { if (stopSig && stopSig.aborted) return null; return `Нет связи с Claude: ${e.message || e}` }
     if (!res || res.error) return `Claude ответил ошибкой: ${res && res.error ? res.error.message || res.error.type : "пустой ответ"}`
     messages.push({ role: "assistant", content: res.content })
+    turnLast = res
     const uses = (res.content || []).filter(c => c.type === "tool_use")
     if (res.stop_reason === "refusal") return "Не могу с этим помочь — попробуйте сформулировать иначе."
     if (!uses.length || res.stop_reason !== "tool_use") return (res.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim() || "Готово."
@@ -1849,6 +1918,7 @@ async function agentTurn(messages, system, tools, live) {
       try { out = await runTool(u.name, u.input || {}) } catch (e) { out = { error: String(e.message || e) } }
       if (confirmSaid && out && typeof out === "object") out = Object.assign({}, out, { user_said: confirmSaid, note: "на вопрос пользователь ответил своими словами (user_said) — сделай, как он сказал" })
       confirmSaid = ""
+      turnAct(u.name, u.input || {}, out)
       results.push({ type: "tool_result", tool_use_id: u.id, content: JSON.stringify(out) })
     }
     messages.push({ role: "user", content: results })
@@ -1897,7 +1967,12 @@ async function chatSend(text, opts = {}) {
   setBusyUI(true)
   const live = TALK && opts.voice && aiKey() && aiKey() !== "fam" && aiKey() !== "srv" ? talkLiveNew() : null
   TLIVE = live
+  turnItem = item; turnLast = null
   try { reply = await agentTurn(ctx, chatSystem(), chatTools(), live) } catch (e) { reply = `Ошибка: ${e.message || e}` }
+  turnItem = null
+  // ход не дошёл до ответа (сбой, нет связи), а что-то уже сделано — человек видит это в ответе и не просит второй раз
+  const broke = !turnLast || turnLast.stop_reason === "tool_use"
+  if (broke && item.acts && item.acts.length && typeof reply === "string") reply = `${reply}\n\n${actsLine(item.acts)}`
   const stopped = chatStopCtl.signal.aborted
   chatStopCtl = null
   chatBusy = false
@@ -1907,6 +1982,12 @@ async function chatSend(text, opts = {}) {
   // перебили, когда Изи уже говорила начало ответа: вопрос и сказанное остаются в переписке (Изи знает, что успела сказать)
   if (stopped && TALK && live && live.said.trim()) {
     D.chat.push({ role: "assistant", text: live.said.trim() + " …", at: Date.now() }); save(false); if (chatOn()) renderChat(); return
+  }
+  // перебили или остановили, но Изи уже успел что-то сделать: просьба остаётся в переписке с пометкой, что сделано
+  if (stopped && item.acts && item.acts.length) {
+    D.chat.push({ role: "assistant", text: actsLine(item.acts).replace(/^Уже сделано/, "Успел" + iziG("", "а")), at: Date.now() }); save(false); if (chatOn()) renderChat()
+    if (TALK) return talkAborted()
+    toast("⏹ Остановлено"); return
   }
   if (stopped && TALK) { const i = D.chat.lastIndexOf(item); if (i >= 0) D.chat.splice(i); save(false); return talkAborted() }
   if (stopped) {   // «Стоп»: вопрос возвращается в строку ввода — поправить и отправить заново
