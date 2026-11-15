@@ -425,8 +425,21 @@ async function calRefresh() {
 }
 // Google Календарь — через таблицу (Apps Script). Пока доступ не выдан — по-старому, через календарь iPhone
 const gcalOn = () => !!(D.gcal && D.gcal.ok)
+// Календарь для новых событий: названный пользователем («в календарь С») или выбранный по умолчанию (Цвета и календари)
+const calWritable = () => ((D.gcal && D.gcal.calendars) || []).map(c => typeof c === "string" ? { name: c } : c).filter(c => c.name && !c.ro && !CAL_RO_NAME.test(c.name))
+function calPick(n) {   // «с», «календарь С», «рабочий» → точное название календаря; null — такого нет
+  const L = calWritable(), q = String(n || "").toLowerCase().replace(/ё/g, "е").replace(/^\s*(в\s+)?(мой\s+)?(календар[ьяе]\s+)?|[«»"']/g, "").trim()
+  if (!q) return null
+  const k = c => c.name.toLowerCase().replace(/ё/g, "е").replace(/[«»"']/g, "").trim()
+  const hit = L.find(c => k(c) === q) || L.find(c => k(c).startsWith(q)) || (q.length > 2 && L.find(c => k(c).includes(q)))
+  return hit ? hit.name : null
+}
+const calDef = () => { const d = (D.cal || {}).def; return d && calWritable().some(c => c.name === d) ? d : "" }
 // once — без повторной отправки при обрыве связи: повтор «создать» мог поставить событие второй раз (проверяет calCreate)
 async function calDo(action, input, once) {
+  if (action === "create") { input = Object.assign({}, input)
+    if (input.calendar) { const c = calPick(input.calendar); if (c) input.calendar = c; else if (calWritable().length) delete input.calendar }
+    if (!input.calendar && calDef()) input.calendar = calDef() }
   let res
   try { res = await (once ? hubPostOnce : hubPost)({ cal: Object.assign({ action }, input) }, 25000) }
   catch (e) { return { error: e.name === "AbortError" ? "Google Календарь не ответил за 25 секунд — проверьте календарь, возможно, изменение всё же прошло" : String(e.message || e), net: e.name === "TypeError" } }
@@ -994,7 +1007,7 @@ const AGENT_TOOLS = [
       title: { type: "string" }, start: { type: "string" }, end: { type: "string" },
       all_day: { type: "boolean" }, location: { type: "string" }, notes: { type: "string" },
       force: { type: "boolean", description: "true — поставить, даже если время защищено (только после «да» пользователя)" },
-      calendar: { type: "string", description: "Название календаря; не указывайте, если пользователь не назвал" },
+      calendar: { type: "string", description: "Название календаря, если пользователь назвал («в календарь С», «в рабочий»). Не назвал — не указывай: событие уйдёт в календарь по умолчанию" },
       repeat: { type: "object", description: "Повтор: {freq: daily|weekly|monthly|yearly, days: [MO,TU,...]} — days только для weekly",
         properties: { freq: { type: "string" }, days: { type: "array", items: { type: "string" } } } } },
       required: ["title", "start", "end"] } },
@@ -1255,6 +1268,7 @@ async function runTool(name, x) {
         const t = evTwin(x, evList(v))
         if (t && t.same && t.same.id) return evDup(t.same)
         if (t && t.day && !force) return { warning: `В этот день уже есть «${t.day.title}» в ${hm(t.day.s || parseIso(t.day.start))} (id ${t.day.id}). Если пользователь поправил время или название — измени это событие через update_event, второе не создавай. Если нужно именно ещё одно — повтори create_event с force: true.` } }
+      if (gcalOn() && x.calendar && !calPick(x.calendar) && calWritable().length) return { error: `календаря «${x.calendar}» нет. Есть: ${calWritable().map(c => "«" + c.name + "»").join(", ")}. Спроси пользователя, в какой записать` }
       const ev = { title: x.title, start: x.start }, job = { ev }
       job.p = (async () => {
         if (gcalOn()) { const r = await calCreate(x); if (!r.error && r.event) evMade.set(evKey(x.title, x.start), r.event)
@@ -1831,7 +1845,8 @@ function agentSystem() {
 - Уточняй через ask_user, только если без ответа нельзя сделать правильно: не названо новое время переноса, несколько подходящих событий, не указан способ оплаты (наличные или перевод). Давай короткие варианты ответа.
 - Состояние календаря сейчас: ${calStateLine()} Подключить Google Календарь сам ты не можешь — это делает только пользователь. Никогда не говори «календарь подключён» или «подключил», если строкой выше не сказано, что он подключён. Просят подключить календарь, или инструмент календаря вернул ошибку доступа — честно скажи это одной-двумя фразами, назови путь ${calPathLine()} и вызови open_screen со screen=google_calendar: под ответом появится кнопка. Ошибку инструмента не скрывай и не говори после неё, что всё получилось.
 - Календарь — ${window.FRIEND && FRIEND.on() && FRIEND.me() && !FRIEND.me().gcal ? "календарь IZIDAY (Google не подключён, события живут в приложении)" : "Google Календарь пользователя"}: события создаёшь, переносишь и удаляешь сразу (create_event/update_event/delete_event). «Убери/удали событие» — это всегда выполнимо: если календарь не даёт удалить (праздники, чужой или подписанный календарь), delete_event сам скрывает событие в IZIDAY — никогда не отвечай «не могу удалить», скажи одной фразой, что скрыл и что в исходном календаре оно осталось. Вернуть — unhide_event. Если инструмент ответил, что изменение ушло в очередь виджета, — скажи коротко «внесу при обновлении виджета».
-${tipNames().length ? `- Пользователь убрал из приложения блоки, и подсказки по ним выключены: ${tipNames().join(", ")}. Сам об этом не напоминай, не ставь таких подсказок plan_day и напоминаний, не спрашивай об этом первым. Если пользователь сам просит записать или спрашивает — делай как обычно.\n` : ""}${waterTips() ? "- Про воду НЕ создавай напоминаний (они захламляют список) — о воде напоминай сам: подсказки plan_day в нужное время и вопросы в чате." : "- Подсказки про воду пользователь выключил: не напоминай пить воду, не ставь о ней подсказок plan_day и напоминаний, не спрашивай о воде сам. Записать воду по просьбе (add_water) и ответить на вопрос о ней — можно."}
+${calWritable().length > 1 ? `- Календари Google, куда можно записывать: ${calWritable().map(c => `«${c.name}»`).join(", ")}. Новые события по умолчанию идут в «${calDef() || (calWritable().find(c => c.primary) || calWritable()[0]).name}». Если пользователь назвал календарь («в календарь С», «в мой рабочий») — передай его название в calendar у create_event. Сменить календарь по умолчанию — Календарь → «Цвета и календари».
+` : ""}${tipNames().length ? `- Пользователь убрал из приложения блоки, и подсказки по ним выключены: ${tipNames().join(", ")}. Сам об этом не напоминай, не ставь таких подсказок plan_day и напоминаний, не спрашивай об этом первым. Если пользователь сам просит записать или спрашивает — делай как обычно.\n` : ""}${waterTips() ? "- Про воду НЕ создавай напоминаний (они захламляют список) — о воде напоминай сам: подсказки plan_day в нужное время и вопросы в чате." : "- Подсказки про воду пользователь выключил: не напоминай пить воду, не ставь о ней подсказок plan_day и напоминаний, не спрашивай о воде сам. Записать воду по просьбе (add_water) и ответить на вопрос о ней — можно."}
 - Напоминания живут в IZIDAY, а не в Напоминаниях iPhone: create_reminder сохраняет их в приложении, уведомление в срок и контроль «Выполнил?» — от IZIDAY. Повторяющиеся (каждый день, по будням) — через repeat. В Напоминания iPhone ничего не вноси.
 ${cals.length ? `- Календари по словам пользователя: ${cals.map(x => `«${x.calendar}» (список напоминаний «${x.list}»)`).join(", ")}.${cals.filter(x => x.hint).map(x => ` ${x.hint} — «${x.calendar}».`).join("")} Если календарь не назван, не указывай его.
 ` : ""}- Деньги — ${c.currencyIn}. Категории расходов: ${cats("expense")}. Категории доходов: ${cats("income")}.
@@ -1867,26 +1882,38 @@ function planDay(items) {
     const t = parseIso(it.time)
     if (!t || +t <= now || +t >= end || !String(it.text || "").trim()) continue
     if (nudgeOff({ id: "n", text: String(it.text) })) { skip++; continue }   // подсказки этого вида выключены (блок скрыт)
-    ok.push(upsert("nudges", { id: uid("n"), date: +t, text: String(it.text).trim().slice(0, 240) }))
+    ok.push(upsert("nudges", { id: uid("n"), date: +t, text: String(it.text).trim().slice(0, 240), pd: dayKey(new Date()) }))
   }
   D.planDay = dayKey(new Date()); save()
   return { ok: true, planned: ok.map(n => ({ time: hm(new Date(n.date)), text: n.text })), note: "уведомления поставит виджет при следующем обновлении (обычно до 15 минут)", ...(skip ? { skipped: skip, why: `пользователь выключил подсказки: ${tipNames().join(", ")} — не ставь их` } : {}) }
 }
-// Раз в день (при первом открытии после 6:00) помощник сам составляет план подсказок на день
+// Раз в день (при первом открытии после 6:00) помощник сам составляет план подсказок на день.
+// Ровно одна попытка в день: отметка ставится ДО запроса к Изи. Раньше отметка ставилась только после plan_day —
+// если Изи не вызвал plan_day, телефон усыпил приложение посреди ответа или была ошибка, план составлялся заново
+// при каждом открытии (2–4 раза в день, лишний расход ключа). Повтор — только если первая попытка оборвалась
+// и прошло больше 30 минут. План, составленный на другом устройстве (подсказки с отметкой pd пришли из таблицы), тоже считается.
 let planBusy = false
+function planDone(k) {
+  if (D.planDay === k || (D.briefs || {}).morning === k) return true
+  if (live(D.nudges || []).some(n => n.pd === k)) { D.planDay = k; save(false); return true }
+  const t = D.planTry || {}
+  return t.day === k && (t.end || t.n >= 2 || Date.now() - (t.at || 0) < 30 * 60e3)
+}
 async function autoPlan() {
-  const now = new Date()
-  if (planBusy || !aiKey() || now.getHours() < 6 || now.getHours() >= 21 || D.planDay === dayKey(now)) return
+  const now = new Date(), k = dayKey(now)
+  if (planBusy || !aiKey() || now.getHours() < 6 || now.getHours() >= 21 || planDone(k)) return
   planBusy = true
+  const t = D.planTry && D.planTry.day === k ? D.planTry : { day: k, n: 0 }
+  D.planTry = { day: k, n: t.n + 1, at: Date.now() }; save(false)
   try {
     const sys = chatSystem() + `
 
-Сейчас ты сам, без запроса, планируешь день пользователя. Посмотри календарь и напоминания на сегодня, еду и воду, активность и вчерашний день (get_history), память.
-Составь через plan_day 4–8 подсказок на оставшуюся часть дня: ${tipOn("water") ? "вода (с учётом выпитого и дел, не во время встреч), " : ""}${tipOn("food") ? "еда (если обычно пропускает — напомни), " : ""}подготовка к важным встречам${tipOn("trip") ? " и дорога" : ""} (за 30–60 мин), ${tipOn("move") ? "движение и шаги, " : ""} одна идея или мысль дня по его целям из памяти, вечером — короткий итог. Не дублируй уведомления о встречах — они уже есть. Пиши тепло и коротко, на «ты»/«вы» — как пользователь привык. Ответь одной строкой, что запланировал.`
-    const msgs = [{ role: "user", content: `[${hm(now)}] Спланируй мне сегодняшний день подсказками.` }]
+Сейчас утро, ты сам, без запроса, готовишь пользователю утренний план: он прочитает его в чате, когда откроет приложение. Пиши тепло и коротко.`
+    const msgs = [{ role: "user", content: `[${hm(now)}] ${morningPrompt()}` }]
     const tools = chatTools().filter(t => /^(get_|plan_day|list_places|read_sheet|mail_search|search_chats)/.test(t.name))
     const r = await agentTurn(msgs, sys, tools)
-    if (D.planDay === dayKey(now) && r) { D.chat.push({ role: "assistant", text: `🗓 ${r}`, at: Date.now() }); save(false); if (chatOn()) renderChat() }
+    D.planTry.end = 1; save(false)   // ответ получен — больше сегодня не пробуем, даже если Изи не вызвал plan_day
+    if (r) { D.briefs = Object.assign(D.briefs || {}, { morning: k }); D.chat.push({ role: "user", text: BRIEFS.morning.label, at: Date.now() - 1, auto: true }); D.chat.push({ role: "assistant", text: r, at: Date.now() }); save(false); if (chatOn()) renderChat() }
   } catch (e) {} finally { planBusy = false }
 }
 
@@ -1974,17 +2001,18 @@ ${r.length ? `- Интернета у тебя нет, а у Claude Code ест�
   : "- Передавать задачи в Claude Code пока нельзя: маршруты не подключены (в виджете: меню → 🤖 Задачи в Claude Code, потом подключить приложение заново). Сложную задачу честно назови сложной и предложи подключить."}` + iziStyle()
 }
 const BRIEFS = {
-  morning: { label: "☀️ Утренняя сводка", prompt: "Сделай утреннюю сводку на сегодня. Посмотри события и напоминания на сегодня (и просроченные), " +
+  morning: { label: "☀️ Утренний план", prompt: "Сделай утреннюю сводку на сегодня. Посмотри события и напоминания на сегодня (и просроченные), " +
     "траты за месяц (и лимиты, если близко к превышению), регулярные платежи к оплате в ближайшие дни, важные непрочитанные письма за сутки (mail_search «is:unread newer_than:1d -category:promotions -category:social», если почта доступна). Проверь письма от диспетчера рабочего проекта (mail_search «subject:IZIDAY newer_than:1d», если почта доступна; это письма с темой вида «… → IZIDAY»): перескажи главное и отдельно — что ждёт решения пользователя в рабочем чате. Расскажи: что сегодня по порядку со временем, что важно не забыть, что просрочено; сколько потрачено в этом месяце. " +
-    "В конце одна короткая дружеская мысль или совет на день. Ничего не меняй." },
-  evening: { label: "🌙 Вечерняя сводка", prompt: "Сделай вечернюю сводку за сегодня. Посмотри события и напоминания (вместе с выполненными), " +
+    "В конце одна короткая дружеская мысль или совет на день. Затем поставь через plan_day 4–8 подсказок на оставшуюся часть дня: вода (с учётом выпитого и дел, не во время встреч), еда, подготовка к важным встречам и дорога (за 30–60 мин), движение, одна мысль дня по целям из памяти. Не дублируй уведомления о встречах. Кроме подсказок, ничего не меняй." },
+  evening: { label: "🌙 Закрытие дня", prompt: "Сделай вечернюю сводку за сегодня. Посмотри события и напоминания (вместе с выполненными), " +
     "деньги и еду с водой и активностью за сегодня, события на завтра. " +
     "Проверь письма от диспетчера рабочего проекта (mail_search «subject:IZIDAY newer_than:1d», если почта доступна; это письма с темой вида «… → IZIDAY»): перескажи главное и отдельно — что ждёт решения пользователя в рабочем чате. Расскажи: что сделано, что не сделано; сколько потрачено сегодня " +
     "(итог и главные траты); сколько съедено ккал и БЖУ, вода, активность; что завтра. Если есть невыполненные напоминания на сегодня " +
     "или просроченные — спроси через ask_user, перенести ли их на завтра (варианты: «Перенести всё на завтра», «Выберу сам», «Оставить как есть») " +
     "и сделай, как ответят; время у перенесённых сохраняй, без времени — на завтра. " +
     "Обязательно разбери расходы за сегодня (и вчера, если не разбирали): каждую трату с категорией «Другое» или с непонятным комментарием (платёж по карте без описания, перевод без пояснения) " +
-    "по одной спроси через ask_user, на что она была, — с 3–4 самыми вероятными категориями как вариантами; ответ запиши через update_money (категория и короткий комментарий)." },
+    "по одной спроси через ask_user, на что она была, — с 3–4 самыми вероятными категориями как вариантами; ответ запиши через update_money (категория и короткий комментарий). " +
+    "Скажи, какие привычки сегодня отмечены, а какие нет. В конце одной фразой скажи, что сейчас откроется «Итоги дня»: фото дня, фраза и настроение." },
 }
 function chatContext() {
   const out = []
@@ -2257,9 +2285,35 @@ async function chatConfirm(question) {
   confirmSaid = a && (yn === null || talkNorm(a).split(" ").length > 3) ? a : ""
   return yn === true
 }
-function brief(kind) {
-  const b = BRIEFS[kind]
-  if (b) chatSend(b.prompt, { label: b.label })
+// Утром и вечером Изи работает по одному разу в день. Нажали уведомление, а утренний план уже составлен
+// (сам при первом открытии после 6:00) — просто открываем чат с ним, без нового запроса. Кнопка в чате — по желанию, всегда.
+// Вчерашний день не закрыт («Позже» вечером или не дошли руки), хотя в нём что-то было: утром напоминаем разобрать
+function yUnclosed(now = new Date()) {
+  const y = dayKey(addDays(sod(now), -1))
+  if (goalOf("daynote", y) || (D.briefs || {}).yskip === dayKey(now)) return ""
+  const had = (D.briefs || {}).evening === y || live(D.money).some(e => dayKey(new Date(e.date)) === y) || live(D.rems).some(r => { const d = remDue(r); return d && dayKey(d) === y })
+  return had ? y : ""
+}
+const morningPrompt = () => BRIEFS.morning.prompt + (yUnclosed() ? " Вчерашний день пользователь не разобрал: в самом начале одной фразой напомни об этом — на экране «Сегодня» есть кнопка «Разобрать вчера» (пара минут: дела, траты, фото дня)." : "")
+const yPrompt = y => `Вчера (${fullDate(new Date(y + "T12:00"))}) пользователь отложил разбор дня — разбери вчерашний день сейчас. Посмотри вчерашние события и напоминания (вместе с выполненными), деньги, еду, воду и активность за вчера. ` +
+  "Расскажи коротко: что сделано, что нет; сколько потрачено вчера. Невыполненные вчерашние напоминания предложи через ask_user перенести на сегодня (варианты: «Перенести всё на сегодня», «Выберу сам», «Оставить как есть») и сделай, как ответят; время сохраняй. " +
+  "Каждую вчерашнюю трату с категорией «Другое» или непонятным комментарием по одной спроси через ask_user (3–4 вероятные категории) и запиши через update_money. Скажи, какие привычки вчера отмечены, а какие нет. " +
+  "В конце одной фразой скажи, что сейчас откроется снимок вчерашнего дня: фото, фраза и настроение."
+async function brief(kind, fromPush) {
+  const k = dayKey(new Date()), done = D.briefs = D.briefs || {}
+  if (kind === "yesterday") {
+    const y = yUnclosed(); if (!y) return toast("Вчерашний день уже закрыт")
+    await chatSend(yPrompt(y), { label: "🌙 Разбор вчерашнего дня" })
+    setTimeout(() => { if (goalOf("daynote", y)) return; if (window.ALBUM && ALBUM.snapEdit) ALBUM.snapEdit(y); else closeDay() }, 600)
+    return
+  }
+  const b = BRIEFS[kind]; if (!b) return
+  if (fromPush && done[kind] === k) { setTab("chat"); if (kind === "evening" && !goalOf("daynote", k)) closeDay(); return }
+  if (kind === "morning" && planBusy) { setTab("chat"); return toast("Изи как раз составляет план дня") }
+  done[kind] = k; save(false)
+  await chatSend(kind === "morning" ? morningPrompt() : b.prompt, { label: b.label })
+  if (kind === "morning") { D.planDay = k; save(false) }
+  if (kind === "evening" && !goalOf("daynote", k)) setTimeout(() => closeDay(), 600)
 }
 
 // ── Голос: распознавание речи Safari, иначе — диктовка с клавиатуры ──
@@ -3029,7 +3083,7 @@ function stripInit(keep) {
 }
 
 function renderChatHTML() {
-  return `<div class="chat-tools"><button data-do="talk" class="tk-chip"><b class="mini-orb"></b>Поговорить</button><button data-brief="morning">${ei("sun")}Утренняя сводка</button><button data-brief="evening">${ei("moon")}Вечерняя</button><button data-do="memory">${ei("brain")}Память</button><button data-do="chat-clear">${ei("eraser")}Очистить</button></div>
+  return `<div class="chat-tools"><button data-do="talk" class="tk-chip"><b class="mini-orb"></b>Поговорить</button><button data-brief="morning">${ei("sun")}План дня</button><button data-brief="evening">${ei("moon")}Закрыть день</button><button data-do="memory">${ei("brain")}Память</button><button data-do="chat-clear">${ei("eraser")}Очистить</button></div>
     <div class="chat-list" id="chat-list">${chatItems()}</div>
     <div class="chat-bar"><div class="att-tray" id="att-tray"></div><div class="cb-pill"><button class="cam plus" aria-label="Добавить фото, видео или файл">${ICO.add}</button><textarea id="chat-in" rows="1" placeholder="Напишите или скажите…" enterkeyhint="send"></textarea>
     <button class="dict" aria-label="Диктовать текст">${CB_MIC}</button><button class="send" aria-label="Отправить">${ICO.send}</button>
@@ -4508,7 +4562,7 @@ async function hashAction(given) {
     if (/\?/.test(t)) setTimeout(() => { if (!voice && !TALK && chatOn()) micStart(true, { reply: true }) }, 250)
     return
   }
-  if (a === "brief") { setTab("chat"); return brief(arg) }
+  if (a === "brief") { setTab("chat"); return brief(arg, true) }
   if (a === "money") return moneyForm("expense")
   if (a === "water") return addWater(H().glass || 250, "widget")
   if (a === "camera") return photoPrompt()
@@ -5965,8 +6019,13 @@ function tplForm(t) {
 // — 5. Вечернее закрытие дня (с 19:00): что сделано, что перенести, строка о дне и настроение
 const MOODS = [["#FF453A", "M8 16c2-2 6-2 8 0"], ["#FF9F0A", "M8 16h8"], ["#E5B800", "M8 15.5c2 1 6 1 8 0"], ["#34C759", "M8 14.5c2 2.5 6 2.5 8 0"], ["#0A9F6E", "M7.5 13.5c2 4 7 4 9 0"]]
 const moodFace = (i, s = 28) => { const [c, m] = MOODS[i]; return `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.5"/><circle cx="9" cy="10" r=".7" fill="${c}"/><circle cx="15" cy="10" r=".7" fill="${c}"/><path d="${m}"/></svg>` }
+function yDayCard(now = new Date()) {
+  const y = now.getHours() < 19 && yUnclosed(now); if (!y) return ""
+  return `<div class="hero-eve" data-do="td-yday"><div class="k">Вчерашний день не разобран</div><div class="s2">Пара минут с ${esc(iziName())}: что сделано, что перенести, траты без категории и фото дня.</div>
+    <span class="pill">Разобрать вчера →</span><button class="link" data-do="td-yskip" style="margin-left:12px">Не сейчас</button></div>`
+}
 function closeDayCard(v, now = new Date()) {
-  if (now.getHours() < 19) return ""
+  if (now.getHours() < 19) return yDayCard(now)
   const day = dayKey(now), note = goalOf("daynote", day)
   const st = dayStats(v, now)
   return `<div class="hero-eve" data-do="td-close"><div class="k">${note ? "День закрыт" : "Закрыть день"}</div><div class="v">${st.done} из ${st.total}</div>
@@ -6032,6 +6091,8 @@ Object.assign(DO, {
   "td-load-off": () => { D.tdOff = D.tdOff || {}; D.tdOff["load:" + dayKey(new Date())] = 1; save(false); render() },
   "td-tpl-new": () => tplForm(),
   "td-close": () => closeDay(),
+  "td-yday": () => { setTab("chat"); brief("yesterday") },
+  "td-yskip": () => { D.briefs = Object.assign(D.briefs || {}, { yskip: dayKey(new Date()) }); save(false); render() },
   "td-week-plan": () => { setTab("chat"); setTimeout(() => chatSend("Составь со мной план на следующую неделю: посмотри мой календарь, дела, цели месяца и итоги этой недели. Предложи три главных цели недели и разложи их по дням."), 50) },
 })
 function bindToday(v) {
@@ -6481,7 +6542,7 @@ function calParse(text, base) {
 const remindLbl = m => m >= 1440 ? "за день" : m >= 60 ? `за ${m % 60 ? durLbl(m) : m / 60 === 1 ? "час" : m / 60 + " ч"}` : `за ${m} мин`
 const qTrav = {}
 function calQuick(pref = {}) {
-  let x = null, edit = false, force = false, timer = 0, own = pref.own || "me"
+  let x = null, edit = false, force = false, timer = 0, own = pref.own || "me", cn = gcalOn() ? calDef() || ((calWritable().find(c => c.primary) || {}).name || "") : ""
   const owners = () => famCal() ? [["me", "Моё", layerC("me")], ["fam", "Семья", layerC("fam")]].concat(FAM.members().filter(m => m.id !== FAM.meId()).map(m => [m.id, name1(m.name), m.role === "kid" ? kidC(m.id) : layerC(persKey(m))])) : []
   const form = !!pref.form   // из свободного окна: сразу поля события, без строки «одной фразой»
   const s = sheet(`<h3>Новое событие</h3>${form ? `<div class="muted small cq-sub">${esc(core.cap(fullDate(pref.start)))} · ${esc(pref.sub || hm(pref.start))}</div>` : ""}<div class="cq-box" ${form ? "hidden" : ""}><textarea id="cq" rows="2" placeholder="Например: завтра в 15 стоматолог на Сукхумвите, напомни за час">${esc(pref.text || "")}</textarea>${pref.start ? `<div class="muted small">${esc(core.cap(fullDate(pref.start)))}, ${hm(pref.start)} — если время не скажете</div>` : ""}</div>
@@ -6511,16 +6572,18 @@ function calQuick(pref = {}) {
     pv.innerHTML += (hit ? `<div class="warn-card prot-w">${tdIco("hand", 22)}<div><b>Это время защищено</b>«${esc(hit.p.title)}» ${WD[hit.s.getDay()]} ${hm(hit.s)}–${hm(hit.e)}. Поставить всё равно или найти другое время?
         <div class="chips"><button class="chip on" data-a="other">Другое время</button><button class="chip" data-a="force">Всё равно</button></div></div></div>` : "")
       + (owners().length ? `<div class="cq-own"><div class="k">Чьё событие</div><div class="chips">${owners().map(([k, n, c]) => `<button class="chip ly ${own === k ? "on" : ""}" data-own="${esc(k)}" style="--c:${c}"><em></em>${esc(n)}</button>`).join("")}</div></div>` : "")
+      + (gcalOn() && calWritable().length > 1 && own === "me" ? `<div class="cq-own"><div class="k">Календарь</div><div class="chips">${calWritable().map(c => `<button class="chip ${cn === c.name ? "on" : ""}" data-cn="${esc(c.name)}">${esc(c.name)}</button>`).join("")}</div></div>` : "")
       + `<div class="btns"><button class="btn primary" data-a="ok" ${x.start ? "" : "disabled"}>Сохранить</button>${form ? "" : `<button class="btn" data-a="edit">${edit ? "Готово" : "Изменить"}</button>`}</div>
         ${x.tpl ? "" : `<button class="chip cq-mk" data-a="mk">${tdIco("tpl", 15)} Сделать шаблоном</button>`}`
     const A = k => $(`[data-a="${k}"]`, pv)
     $$("[data-own]", pv).forEach(b => b.onclick = () => { if (edit) readForm(); own = b.dataset.own; draw() })
+    $$("[data-cn]", pv).forEach(b => b.onclick = () => { if (edit) readForm(); cn = b.dataset.cn; draw() })
     if (A("other")) A("other").onclick = () => { const sl = calFindSlot(x.start, x.minutes); if (!sl) return toast("Свободного окна на неделю нет"); x.start = sl; x.end = new Date(+sl + x.minutes * 60e3); toast(`Предлагаю ${dayWord(sl)} ${hm(sl)}`); draw() }
     if (A("force")) A("force").onclick = () => { force = true; draw() }
     if (A("edit")) A("edit").onclick = () => { if (edit) readForm(); edit = !edit; draw() }
     A("ok").onclick = async () => { if (edit) readForm(); if (!x.start) return
       if (!x.title) { toast("Напишите, что за событие"); const t = $("#cf-t", pv); if (t) t.focus(); return } if (!force && protHit(x.start, x.end)) { draw(); return toast("Время защищено — выберите") }
-      A("ok").disabled = true; A("ok").textContent = "Сохраняю…"; const ok = await calSave(x, own); if (ok) s.close(); else { A("ok").disabled = false; A("ok").textContent = "Сохранить" } }
+      A("ok").disabled = true; A("ok").textContent = "Сохраняю…"; x.cal = cn; const ok = await calSave(x, own); if (ok) s.close(); else { A("ok").disabled = false; A("ok").textContent = "Сохранить" } }
     if (A("mk")) A("mk").onclick = () => { if (edit) readForm(); etplForm(null, x) }
   }
   const readForm = () => { const g = id => $(id, pv) && $(id, pv).value
@@ -6557,6 +6620,7 @@ async function calSave(x, own) {
     return true
   }
   const ev = { title: x.title, start: iso(x.start), end: iso(x.end) }
+  if (x.cal) ev.calendar = x.cal
   if (x.location) ev.location = x.location
   if (x.bring) ev.notes = "Взять с собой: " + x.bring
   if (gcalOn()) { const r = await calDo("create", ev); if (r.error) { ui.info("Не получилось", r.error); return false } }
@@ -6682,6 +6746,8 @@ function calSettings() {
   const calChips = n => opts().map(([k, l, c]) => `<button class="chip ly ${evLayer({ calendar: n }) === k ? "on" : ""}" data-k="${esc(k)}" style="--c:${c}"><em></em>${esc(l)}</button>`).join("") + `<button class="chip ly cs-plus" data-k="+" aria-label="Своя категория">${tdIco("plus", 14)}</button>`
   const s = sheet(`<h3>Цвета и календари</h3><div class="msg">У каждого свой цвет — ваши события, общие дела семьи, календарь близкого и дети не сливаются.</div>
     <div id="cs-rows">${draw()}</div>
+    ${calWritable().length > 1 ? `<h4 class="cs-t">Новые события записывать в</h4><div class="msg">Сюда попадут события, которые добавляете вы и которые создаёт Изи. Изи можно сказать и иначе: «запиши в календарь …».</div>
+    <div class="chips" id="cs-def">${calWritable().map(c => `<button class="chip ${(calDef() || (calWritable().find(z => z.primary) || calWritable()[0]).name) === c.name ? "on" : ""}" data-def="${esc(c.name)}">${esc(c.name)}</button>`).join("")}</div>` : ""}
     <h4 class="cs-t">Календари Google</h4><div class="msg">Выберите, каким цветом идёт каждый календарь. «+» — своя категория с названием и цветом (например, «Муж» или «Работа»), «Скрыть» — календарь не показывается в IZIDAY.${famCal() ? " Чтобы видеть календарь близкого целиком, пусть он откроет вам доступ в Google Календаре (Настройки → Открыть доступ конкретным людям)." : " Календарь мужа или жены появится здесь, когда он откроет вам доступ в Google Календаре (Настройки → Открыть доступ конкретным людям)."}</div>
     ${names.map((n, i) => `<div class="field"><label>${esc(n)}</label><div class="chips" data-cal="${i}">${calChips(n)}</div></div>`).join("") || '<div class="empty">Календари ещё не загружены</div>'}
     ${famOthers().length || !famCal() ? "" : `<div class="field"><label>Имя близкого (второй слой)</label><input id="cs-o" value="${esc(layerName("olya"))}"></div>`}
@@ -6706,6 +6772,7 @@ function calSettings() {
     S.map[names[+g.dataset.cal]] = k; $$(".chip", g).forEach(x => x.classList.toggle("on", x === c)); save(false); $("#cs-rows", s.el).innerHTML = draw(open); bindRows() })
   bindRows()
   $$("[data-cal]", s.el).forEach(bindCal)
+  $$("#cs-def .chip", s.el).forEach(c => c.onclick = () => { S.def = c.dataset.def; $$("#cs-def .chip", s.el).forEach(x => x.classList.toggle("on", x === c)); save(false); toast(`Новые события — в «${S.def}»`) })
   $$("#cs-tz .chip", s.el).forEach(c => c.onclick = () => { S.tz = c.dataset.tz; S.tzOn = 1; $$("#cs-tz .chip", s.el).forEach(x => x.classList.toggle("on", x === c)); save(false) })
   const nm = $("#cs-o", s.el); if (nm) nm.onchange = e => { S.names.olya = e.target.value.trim(); save(false) }
   $('[data-a="ok"]', s.el).onclick = () => { if (nm) S.names.olya = nm.value.trim(); save(false); s.close() }

@@ -24,3 +24,6 @@ Object.assign(window.EN_DICT,{"Траты и доходы с этого счёт
 
 // Нет сети (app.js netLine)
 Object.assign(window.EN_DICT,{"Нет сети. Всё сохранено на телефоне": "Offline. Everything is saved on this phone", "Нет сети. {0} на телефоне, отправлю позже": "Offline. {0} on this phone, will send later"})
+
+Object.assign(window.EN_DICT,{"Новые события записывать в": "Save new events to", "Сюда попадут события, которые добавляете вы и которые создаёт Изи. Изи можно сказать и иначе: «запиши в календарь …».": "New events you add and the ones Izi creates go here. You can also tell Izi: “put it in the … calendar”.", "Новые события — в «{0}»": "New events go to “{0}”"})
+Object.assign(window.EN_DICT,{"☀️ Утренний план": "☀️ Morning plan", "🌙 Закрытие дня": "🌙 Closing the day", "{0}План дня": "{0}Day plan", "{0}Закрыть день": "{0}Close the day", "План дня": "Day plan", "Изи как раз составляет план дня": "Izi is putting together your day plan right now"})
