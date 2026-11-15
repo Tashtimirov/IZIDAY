@@ -108,7 +108,7 @@ async function decryptLocal() {
 // Записи, сделанные без ключа (новый телефон до открытия сейфа), — отправить заново, уже шифром
 function touchPlain() {
   let n = 0
-  for (const k of ["memory", "log"]) for (const x of D[k]) if (x && !x.deleted && x.kind !== "vault" && !x.sealed) { x.u = Date.now() + (n++); }
+  for (const k of ["memory", "log"]) for (const x of D[k]) if (x && !x.deleted && x.kind !== "vault" && !x.sealed) { x.u = (typeof nowSrv === "function" ? nowSrv() : Date.now()) + (n++); }
   if (n) save()
 }
 async function applyBundle(b) {
@@ -241,18 +241,18 @@ function sensitive(t) {
 LISTS.log = 90
 if (!Array.isArray(D.log)) D.log = []
 const LOG_CAT = { money: ["add_money", "update_money", "delete_money", "add_jar", "jar_deposit", "add_debt", "set_budget", "add_recurring", "pay_recurring", "skip_card_payment"],
-  cal: ["create_event", "update_event", "delete_event", "create_reminder", "update_reminder", "delete_reminder", "plan_day"],
+  cal: ["create_event", "update_event", "delete_event", "hide_event", "unhide_event", "create_reminder", "update_reminder", "delete_reminder", "plan_day"],
   mem: ["remember", "forget", "open_secret"], health: ["add_food", "add_water", "add_workout", "log_weight", "mark_habit", "delete_record", "set_protein_goal"] }
 const catOf = name => Object.keys(LOG_CAT).find(k => LOG_CAT[k].includes(name)) || "other"
 const READ_ONLY = /^(get_|search_|read_|list_|where_was_i|route_to|ask_user|recall|mail_search|mail_read)/
 const PAST = { add_money: x => `Записал ${x.type === "income" ? "доход" : "расход"} ${x.amount || ""}${x.category ? " · " + x.category : ""}${x.comment ? " · " + x.comment : ""}`,
   update_money: x => `Поправил операцию${x.category ? ": " + x.category : ""}`, delete_money: () => "Удалил операцию",
-  create_event: x => `Создал событие «${x.title || ""}»`, update_event: x => `Изменил событие${x.title ? " «" + x.title + "»" : ""}`, delete_event: () => "Удалил событие",
+  create_event: x => `Создал событие «${x.title || ""}»`, update_event: x => `Изменил событие${x.title ? " «" + x.title + "»" : ""}`, delete_event: () => "Удалил событие", hide_event: () => "Скрыл событие в IZIDAY", unhide_event: () => "Вернул скрытое событие",
   create_reminder: x => `Поставил напоминание «${x.title || ""}»`, update_reminder: () => "Изменил напоминание", delete_reminder: () => "Удалил напоминание",
   add_food: x => `Записал еду: ${x.title || ""}`, add_water: x => `Записал воду ${x.ml || ""} мл`, add_workout: x => `Записал тренировку: ${x.title || ""}`,
   remember: x => `Запомнил: «${String(x.text || "").slice(0, 80)}»`, forget: () => "Забыл факт", claude_code: x => `Передал задачу в Claude Code: «${String(x.task || "").slice(0, 60)}»`,
   mail_send: x => `Отправил письмо${x.to ? " " + x.to : ""}`, mail_reply: () => "Ответил на письмо", mail_draft: () => "Сохранил черновик письма", mail_modify: x => `Разобрал почту (${x.op || ""})`,
-  add_shopping: x => `Добавил в покупки: ${(x.items || []).join(", ")}`, add_goal: x => `Добавил цель: ${(x.items || []).join(", ")}`, log_weight: x => `Записал вес ${x.kg || ""} кг`,
+  add_shopping: x => `Добавил в покупки: ${(x.items || []).join(", ")}`, save_receipt: x => `Запомнил цены из чека: ${x.store || ""}`, add_goal: x => `Добавил цель: ${(x.items || []).join(", ")}`, log_weight: x => `Записал вес ${x.kg || ""} кг`,
   mark_habit: x => `Отметил привычку ${x.habit || x.title || ""}`, plan_day: () => "Составил план подсказок на день", delete_record: () => "Удалил запись" }
 function journal(cat, text, extra) {
   const r = Object.assign({ id: uid("j"), date: Date.now(), kind: "log", cat, text: String(text).slice(0, 300) }, extra || {})
@@ -324,7 +324,7 @@ const remTool = AGENT_TOOLS.find(t => t.name === "remember")
 if (remTool) remTool.input_schema = { type: "object", required: ["text", "sphere"], properties: {
   text: { type: "string", description: "Факт коротко и самодостаточно" },
   sphere: { type: "string", enum: SPH_IDS, description: "me — о самом человеке (характер, предпочтения, привычки); goals; health; family; friends — друзья и знакомые, коллеги; work; money; values — ценности и правила жизни" },
-  person: { type: "string", description: "Если факт о конкретном человеке — его имя, как называет пользователь (Оля, Мама, Михаил)" },
+  person: { type: "string", description: "Если факт о конкретном человеке — его имя, как называет пользователь (Саша, Мама, Михаил)" },
   secret: { type: "boolean", description: "true — сокровенное: психология, ссоры, мнения о людях, интимное, диагнозы. Шифруется, читается только после Face ID" } } }
 AGENT_TOOLS.push(
   { name: "recall", description: "Достать из памяти факты по сфере, человеку или словам (когда в подборке памяти не хватает подробностей).",
@@ -371,7 +371,7 @@ runTool = async function (name, x) {
   let out
   try { out = await _runTool(name, x) } finally {
     const changes = TXN; TXN = prev
-    if (logIt && out && !out.error && !(name === "forget" && !changes.length)) {
+    if (logIt && out && !out.error && !out.duplicate && !out.warning && !(name === "forget" && !changes.length)) {   // «уже есть» — ничего не создано, в журнал не пишем
       const text = (PAST[name] ? PAST[name](x) : "Сделал: " + (TOOL_STATUS[name] || name))
       journal(catOf(name), text, changes.length ? { undo: changes, tool: name } : { tool: name })
     }
@@ -472,7 +472,7 @@ function openKnow() {
     if (a === "export") return exportAll()
     if (a === "last") { const l = D.memLast; return ui.info("Последний разговор", !l ? "Разговоров ещё не было." : `${dshort(l.at)} в ${hm(new Date(l.at))} ${iziName()} ${iziG("взял", "взяла")} с собой ${l.n} ${plural(l.n, "факт", "факта", "фактов")}${l.names.length ? ", по теме: " + l.names.join(", ") : ""}. Остальная память в разговор не уходила.`) }
     if (a === "add-person") {
-      const nm = await ui.ask("Новый человек", "Как вы его называете?", "", { placeholder: "Анна, мама, Михаил" }); if (!nm) return
+      const nm = await ui.ask("Новый человек", "Как вы его называете?", "", { placeholder: "Саша, Мама, Михаил" }); if (!nm) return
       const t = await ui.ask(nm, "Что о нём запомнить?", "", { multiline: true, placeholder: "кто он вам, что для него важно, даты" }); if (!t) return
       await runTool("remember", { text: t, sphere: "friends", person: nm }); memRefresh(); return
     }

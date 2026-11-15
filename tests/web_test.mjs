@@ -23,11 +23,13 @@ sheet.cal.off = true   // сначала Календарь Google не разр
 const SECRET = "s".repeat(32), HOOK = "https://script.google.com/macros/s/TEST/exec"
 const z = n => String(n).padStart(2, "0")
 const now = new Date(), day = (d, h, m = 0) => { const x = new Date(now); x.setDate(x.getDate() + d); x.setHours(h, m, 0, 0); return x }
+// записи «час назад» остаются сегодняшними и сразу после полуночи (раньше набор падал с 00:00 до 01:00 по времени машины)
+const today = ago => Math.max(Date.now() - ago, new Date().setHours(0, 0, 0, 0))
 const iso = d => `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`
 // виджет уже прислал снимок iPhone и свои записи
 sheet.post({ secret: SECRET, hub: { from: "widget", since: 0,
-  lists: { money: [{ id: "f1", date: Date.now() - 3600e3, u: Date.now() - 3600e3, type: "expense", amount: 450, method: "cash", category: "Транспорт", comment: "такси" }],
-           water: [{ id: "w1", date: Date.now() - 1800e3, u: Date.now() - 1800e3, ml: 250 }],
+  lists: { money: [{ id: "f1", date: today(3600e3), u: Date.now() - 3600e3, type: "expense", amount: 450, method: "cash", category: "Транспорт", comment: "такси" }],
+           water: [{ id: "w1", date: today(1800e3), u: Date.now() - 1800e3, ml: 250 }],
            food: [{ id: "m1", date: Math.max(Date.now() - 7200e3, new Date().setHours(0, 1, 0, 0)), u: Date.now() - 7200e3, title: "Омлет с тостом", kcal: 420, protein: 24, fat: 22, carbs: 30 }], workouts: [] },
   snap: { events: [
       { id: "E1", title: "Созвон с командой", start: iso(day(0, 23, 0)), end: iso(day(0, 23, 30)), calendar: "Работа", color: "#2E6B57", all_day: false, location: "", repeats: false },

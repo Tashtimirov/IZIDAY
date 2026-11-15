@@ -9,7 +9,7 @@
 //
 // Свойства скрипта (задаёт владелец): ANTHROPIC_KEY — ключ Claude для Изи, GOOGLE_CLIENT — номер входа Google, GOOGLE_SECRET — его секрет
 // (для подключения Google Календаря друга); необязательно: MODEL, ALLOW (почты через запятую:
-// войти смогут только они и приглашённые с одобрения), AI_DAY (запросов к Claude в день на человека),
+// войти смогут только они и приглашённые с одобрения), AI_DAY (запросов к Claude в день на человека), AI_ALL (в день на всех, по умолчанию 1500),
 // REF_PER / REF_AUTO / REF_ONLY / SITE / SELF_URL — приглашения друзей (см. раздел «Пригласить друга» внизу).
 
 const FR = { client: "__GOOGLE_CLIENT__", max: 30, aiDay: 80, aiAll: 1500, model: "claude-haiku-5-5", maxTokens: 4000,
@@ -100,18 +100,39 @@ function doPost(e) {
   if (!body.hub) return out_({ ok: false, error: "нужно обновить приложение" });
   const h = body.hub, mail = h.mail, fire = h.fire;
   delete h.mail; delete h.fire; delete h.snap;   // почты, Claude Code и iPhone-виджета у друзей нет
-  const lock = LockService.getScriptLock();
-  lock.waitLock(25000);
+  // Пуш пришёл — телефон забирает текст из «исходящих»: только чтение, без замка (iPhone даёт на пуш считаные секунды)
+  if (h.push && h.push.action === "outbox") return out_(hub_(h));
+  // Обмен и задания Изи одного человека идут по очереди, но только его собственной: у каждого своя таблица и свои свойства.
+  // Раньше все друзья стояли в одной общей очереди (замок скрипта до 25 с) — при 20 тестерах ответы ждали друг друга
+  const lock = userLock_(u.id, 25000);
+  if (!lock) return out_({ ok: false, error: "сервер занят — повторю через минуту" });
   let out;
   try {
     if (h.push && h.push.action === "subscribe" && !u.push) { u.push = true; userPut_(u); }
-    out = hub_(h);
-  } finally { lock.releaseLock(); }
+    out = hubToolOnly_(h) ? hubTool_(h) : hub_(h);
+  } finally { lock.release(); }
   if (mail) out.mail = { error: "почта Gmail в IZIDAY для друзей пока не подключена" };
   if (fire) out.fire = { error: "передача задач в Claude Code есть только у владельца" };
   delete out.url;   // таблица лежит на Диске владельца, друг её открыть не сможет
   if (Date.now() - (u.seen || 0) > 3600e3) { u.seen = Date.now(); userPut_(u); }
   return out_(out);
+}
+
+// Замок одного человека: общий замок скрипта держим только миг — чтобы атомарно поставить метку в кэше,
+// сама работа идёт без него. Метка живёт 6 минут (дольше Google не даёт работать скрипту): если выполнение оборвалось,
+// замок снимется сам. Нет замка за wait мс — null
+function userLock_(id, wait) {
+  const cache = CacheService.getScriptCache(), key = "ulk:" + id, me = Utilities.getUuid(), end = Date.now() + wait;
+  for (;;) {
+    const g = LockService.getScriptLock();
+    if (g.tryLock(Math.max(1, Math.min(5000, end - Date.now())))) {
+      let got = false;
+      try { if (!cache.get(key)) { cache.put(key, me, 360); got = true; } } finally { g.releaseLock(); }
+      if (got) return { release: () => { try { if (cache.get(key) === me) cache.remove(key); } catch (e) {} } };
+    }
+    if (Date.now() + 200 > end) return null;
+    Utilities.sleep(200);
+  }
 }
 
 // ── Вход через Google ──
@@ -223,7 +244,7 @@ function ai_(u, b) {
     const p = GP_(), day = FDAY_(), kd = "ai:" + day + ":" + u.id, kt = "ai:" + day + ":*";
     const nd = Number(p.getProperty(kd)) || 0, nt = Number(p.getProperty(kt)) || 0;
     if (nd >= aiLimit_()) return { type: "error", error: { type: "limit", message: "На сегодня Изи устал: дневной лимит исчерпан. Завтра снова на связи." } };
-    if (nt >= FR.aiAll) return { type: "error", error: { type: "limit", message: "Сегодня Изи очень занят — попробуйте завтра." } };
+    if (nt >= (Number(p.getProperty("AI_ALL")) || FR.aiAll)) return { type: "error", error: { type: "limit", message: "Сегодня Изи очень занят — попробуйте завтра." } };
     p.setProperty(kd, String(nd + 1)); p.setProperty(kt, String(nt + 1));
     if (!nt) for (const k of p.getKeys()) if (/^ai:/.test(k) && k.indexOf("ai:" + day + ":") !== 0) p.deleteProperty(k);   // вчерашние счётчики
   } finally { lock.releaseLock(); }
@@ -447,7 +468,7 @@ function gcals_() {
   if (g && g.lists) try {
     const j = gapi_("get", "/users/me/calendarList?minAccessRole=reader&maxResults=50");
     const list = (j.items || []).filter(k => !k.hidden && k.selected !== false && !k.deleted)
-      .map(k => ({ id: k.primary ? "primary" : k.id, name: k.summaryOverride || k.summary || "Календарь", primary: !!k.primary }));
+      .map(k => ({ id: k.primary ? "primary" : k.id, name: k.summaryOverride || k.summary || "Календарь", primary: !!k.primary, ro: /^(reader|freeBusyReader)$/.test(k.accessRole || "") }));
     if (list.length) return list;
   } catch (e) { if (!gcalGet_()) throw e; }   // доступ отозван — не прятать ошибку
   return [{ id: "primary", name: (g && g.email) || "Google", primary: true }];
@@ -499,7 +520,7 @@ function calG_(c) {
       }
     });
     out.sort((x, y) => x.start < y.start ? -1 : 1);
-    return { events: out.slice(0, 600), calendars: cals.map(k => ({ name: k.name, primary: k.primary })), source: "google" };
+    return { events: out.slice(0, 600), calendars: cals.map(k => ({ name: k.name, primary: k.primary, ro: !!k.ro })), source: "google" };
   }
   if (a === "create") {
     if (!c.title || !c.start) throw new Error("нужны название и время");
@@ -544,8 +565,10 @@ function pushTick() {
   const t0 = Date.now(), list = users_().filter(u => u.push).sort((a, b) => (a.pushAt || 0) - (b.pushAt || 0));
   for (const u of list) {
     if (Date.now() - t0 > FR.pushBudget) break;   // остальные — в следующий раз (давние идут первыми)
+    const lk = userLock_(u.id, 3000);   // идёт обмен этого человека — подсказки ему в следующий раз (через 10 минут)
+    if (!lk) continue;
     CUR = u; CUR_SS = null;
-    try { pushTickOne_(); } catch (e) {}
+    try { pushTickOne_(); } catch (e) {} finally { lk.release(); }
     u.pushAt = Date.now(); userPut_(u);
   }
   CUR = null; CUR_SS = null;

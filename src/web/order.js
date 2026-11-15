@@ -285,7 +285,8 @@ window.BLOCKS = (function () {
     const off = offOf(), ks = Object.keys(off)
     t.innerHTML = `<div class="bk-tray-h">Скрытые блоки</div>` + (ks.length
       ? `<div class="bk-list">${ks.map(k => `<button type="button" class="bk-add" data-bk-add="${esc(k)}"><i>${PLUS}</i><span>${esc(off[k])}</span></button>`).join("")}</div>`
-      : `<div class="bk-tray-e">Нажмите «−» у блока, который не нужен. Он появится здесь, и его можно будет вернуть.</div>`)
+        + `<div class="bk-tray-n">Напоминания и подсказки по скрытым блокам не приходят. Данные сохранены — вернёте блок, и всё будет на месте.</div>`
+      : `<div class="bk-tray-e">Нажмите «−» у блока, который не нужен. Он появится здесь, и его можно будет вернуть. Пока блок скрыт, напоминания и подсказки по нему не приходят.</div>`)
     if (fresh && !reduce()) { const r = t.querySelector(`[data-bk-add="${CSS.escape(fresh)}"]`); if (r) r.animate([{ opacity: 0, transform: "scale(.92) translateY(-6px)" }, { opacity: 1, transform: "none" }], { duration: 380, easing: EASE }) }
   }
   // кнопка внизу раздела — вход в правку без долгого нажатия
@@ -309,10 +310,12 @@ window.BLOCKS = (function () {
       b.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 460, easing: EASE })
     }
   }
+  // скрытый блок — без подсказок и пушей по нему (app.js tipsSync); данные блока не трогаем
+  const sync = () => { try { if (window.tipsSync) tipsSync() } catch (e) {} }
   function hide(el) {
     const k = el.dataset.bk, s = scope(), off = offs()
     off[s] = Object.assign({}, offOf(s), { [k]: title(el) })
-    save(false)
+    save(false); sync()
     try { if (window.DS && DS.buzz) DS.buzz() } catch (e) {}
     const done = () => flip(() => { el.classList.add("bk-hid"); tray(k) })
     if (reduce()) return done()
@@ -323,7 +326,7 @@ window.BLOCKS = (function () {
     const v = $v(), s = scope(), o = Object.assign({}, offOf(s)), name = o[k]
     delete o[k]
     if (Object.keys(o).length) offs()[s] = o; else delete offs()[s]
-    save(false)
+    save(false); sync()
     try { if (window.DS && DS.buzz) DS.buzz() } catch (e) {}
     const el = blocks(v, true).find(b => b.dataset.bk === k)
     if (!el) { tray(); toast(`«${name || "Блок"}» вернётся, когда в нём что-то появится`); return }
@@ -400,7 +403,7 @@ window.BLOCKS = (function () {
           apply()
           if (on()) hint(false)
           const b = v && v.querySelector('[data-do="bk-reset"]')
-          if (b) b.onclick = ev => { ev.stopPropagation(); D.blocks = {}; D.blocksOff = {}; save(false); toast("Блоки — как было"); lastHTML = ""; render() }
+          if (b) b.onclick = ev => { ev.stopPropagation(); D.blocks = {}; D.blocksOff = {}; save(false); sync(); toast("Блоки — как было"); lastHTML = ""; render() }
         } catch (e) { console.error("blocks", e) }
         return out
       }

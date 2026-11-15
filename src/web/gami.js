@@ -633,7 +633,7 @@ function lgPage(st) {
     <div class="gtwo"><i style="flex:${Math.max(1, st.weekPts)}"></i><i style="flex:${Math.max(1, st.lastSpanPts)}"></i></div>
     <div class="muted small" style="margin-top:8px">${st.lastSpanPts ? (lead >= 0 ? `Опережаете на ${num(lead)} баллов.` : `Отстаёте на ${num(-lead)} баллов — ещё можно догнать.`) : "Прошлая неделя ещё не записана — сравнение появится через неделю."}${weakSpot(st)}</div></div>`
   if (!lgOn()) {
-    html += `<div class="card"><h2>Лига друзей</h2><div class="muted small">Неделя баллов с семьёй и друзьями. Друзья видят только ваши баллы, ранг и серию — не дела и не траты. Нужно, чтобы у друга тоже был IZIDAY.</div>
+    html += `<div class="card"><h2>Лига друзей</h2><div class="muted small">Неделя баллов с близкими и друзьями. Друзья видят только ваши баллы, ранг и серию — не дела и не траты. Нужно, чтобы у друга тоже был IZIDAY.</div>
       <button class="btn primary wide" style="margin-top:12px" data-g="lg-new">${svgI("users", 16)} Создать лигу</button>
       <div class="muted small" style="margin-top:8px">Есть ссылка от друга? Просто откройте её — вступите сразу.</div></div>`
     return html
