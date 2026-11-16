@@ -1080,7 +1080,10 @@ const AGENT_TOOLS = [
   { name: "shop_done", description: "Отметить купленным (done=false — вернуть в список).", input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" } }, done: { type: "boolean" } }, required: ["items"] } },
   { name: "add_store", description: "Магазин, у которого напоминать о покупках («напоминай о покупках у Big C / Makro»). Находит филиалы рядом; виджет пришлёт список, когда пользователь будет рядом и есть что купить.",
     input_schema: { type: "object", properties: { query: { type: "string", description: "Сеть или адрес магазина" }, radius_m: { type: "number", description: "По умолчанию 400" } }, required: ["query"] } },
-  { name: "add_kids_item", description: "Дело детей по дням недели: кружок, секция, кто забирает, что взять («по вторникам и четвергам в 17:00 плавание у Алии, взять очки»). Утром в 7:00 и за 30 минут придёт пуш.",
+  { name: "set_school_lessons", description: "Школьные уроки ребёнка на один день недели (с фото расписания или со слов): ребёнок увидит их у себя в «Моей неделе», второй взрослый — в календаре семьи. Для каждого учебного дня — отдельный вызов. Названия уроков пиши РОВНО как в расписании, на том же языке (английские оставляй английскими), не переводи; перемены и обед не включай.",
+    input_schema: { type: "object", properties: { kid: { type: "string", description: "Имя ребёнка" }, day: { type: "number", description: "1 — пн … 6 — сб" },
+      start: { type: "string", description: "HH:MM начала первого урока, если есть" }, lessons: { type: "array", items: { type: "string" } }, take: { type: "string", description: "Что взять в этот день" } }, required: ["kid", "day", "lessons"] } },
+  { name: "add_kids_item", description: "Дело детей по дням недели: кружок, секция, кто забирает, что взять («по вторникам и четвергам в 17:00 плавание у Алии, взять очки»). Утром в 7:00 и за 30 минут придёт пуш. Школьные уроки — не сюда, а в set_school_lessons.",
     input_schema: { type: "object", properties: { title: { type: "string" }, days: { type: "array", items: { type: "number" }, description: "1 — пн … 7 — вс" },
       time: { type: "string", description: "HH:MM, если есть" }, kid: { type: "string", description: "Кто из детей" }, who: { type: "string", description: "Кто забирает / везёт" }, take: { type: "string", description: "Что взять" } }, required: ["title", "days"] } },
   { name: "get_kids", description: "Дела детей по дням недели.", input_schema: { type: "object", properties: {} } },
@@ -1605,10 +1608,18 @@ async function runTool(name, x) {
         return { ok: true, id: p.id, points: p.points.map(q => q.name), note: "виджет пришлёт список покупок, когда будете рядом (не чаще раза в 3 часа)" }
       } catch (e) { return { error: String(e.message || e) } }
     }
+    case "set_school_lessons": {
+      const km = famKidByName(x.kid), d = +x.day
+      if (!km) return { error: famCal() ? `в семье нет ребёнка «${x.kid}» — добавьте его в Планы → Семья` : "уроки видит ребёнок только в семье IZIDAY — сначала создайте семью (Планы → Семья)" }
+      if (!(d >= 1 && d <= 6)) return { error: "day: 1 — пн … 6 — сб" }
+      const n = schoolPut(km.id, d, x.lessons, x.start, x.take)
+      return { ok: true, kid: name1(km.name), day: WD7[d - 1], lessons: n }
+    }
     case "add_kids_item": {
       const days = (x.days || []).map(Number).filter(d => d >= 1 && d <= 7)
       if (!days.length) return { error: "нужны дни недели: 1 — пн … 7 — вс" }
       const k = upsert("kids", { id: uid("c"), date: Date.now(), title: String(x.title).trim(), days, time: /^\d{1,2}:\d\d$/.test(x.time || "") ? x.time.padStart(5, "0") : "", kid: x.kid || "", who: x.who || "", take: x.take || "" })
+      kidsToFam()
       return { ok: true, id: k.id, days: days.map(d => WD7[d - 1]).join(", ") }
     }
     case "add_birthday": {
@@ -6350,8 +6361,38 @@ function evLayer(e) {
 }
 // События семьи (family.js, список events) как обычные события: видны в «Сегодня», в календаре и Изи.
 // Запись: разовая {day} или по дням недели {days}; time пусто — весь день; who — "fam" (вся семья) или id члена семьи
+// Ребёнок из семьи по имени («Саида», «саиде» не ищем — только имя как записано)
+const famKidByName = n => { n = name1(n).toLowerCase(); return n ? famKids().find(m => name1(m.name).toLowerCase() === n) : null }
+// Уроки ребёнка на день недели — в события семьи (как окно «Уроки»): ребёнок видит их в «Моей неделе»
+function schoolPut(kid, d, lessons, start, take) {
+  const l = (lessons || []).map(t => String(t).trim().replace(/^\d+[.)]\s*/, "").slice(0, 40)).filter(Boolean).slice(0, 10), id = `sch:${kid}:${d}`, old = FAM.L("events").find(x => x.id === id)
+  if (!l.length) { if (old) FAM.put("events", Object.assign({}, old, { del: true })); return 0 }
+  const time = /^\d{1,2}:\d\d$/.test(start || "") ? start.padStart(5, "0") : (old && old.time) || "08:00"
+  FAM.put("events", { id, kind: "school", title: "Школа", who: kid, days: [d], time, min: l.length * 45 + (l.length - 1) * 10, lessons: l, take: String(take || (old && old.take) || "").slice(0, 80), by: old ? old.by : FAM.meId(), at: old ? old.at : Date.now() })
+  return l.length
+}
+// «Дела детей», записанные с именем ребёнка из семьи (в том числе Изи по фото), раньше оставались только на телефоне взрослого.
+// Переносим в семью: «Уроки: а, б, в» — в уроки ребёнка на этот день, остальное — в его расписание. Повторно не переносим.
+function kidsToFam() {
+  if (!famCal() || !FAM.isAdult() || !famKids().length) return 0
+  const ev = new Set(FAM.L("events").map(x => x.id)); let n = 0
+  for (const k of kidsList()) {
+    const km = famKidByName(k.kid); if (!km || ev.has(k.id)) continue
+    const m = /^\s*(?:уроки|lessons|school)\s*:\s*(.+)$/i.exec(k.title || "")
+    if (m && (k.days || []).length === 1 && +k.days[0] <= 6) {
+      const d = +k.days[0], lessons = m[1].split(/\s*[,;]\s*/)
+      schoolPut(km.id, d, lessons.map(t => t.replace(/\s*\(\d{1,2}:\d\d\)\s*/, "").trim()), k.time || "", k.take)
+      remove("kids", k.id); n++; continue
+    }
+    FAM.put("events", { id: k.id, title: String(k.title).slice(0, 60), who: km.id, days: (k.days || []).map(Number).sort(), time: k.time || "", min: 60, take: String(k.take || "").slice(0, 80), by: FAM.meId(), at: Date.now() }); n++
+  }
+  if (n) { FAM.push(true); setTimeout(() => render(), 50) }
+  return n
+}
+let kidsFamTried = false
 function famEvents() {
   const f = famCal(); if (!f) return []
+  if (!kidsFamTried && f.members().length) { kidsFamTried = true; setTimeout(() => { try { kidsToFam() } catch (e) {} }, 0) }
   const out = [], t0 = sod(new Date()), ms = f.members(), me = f.meId(), own = new Set(live(D.kids).map(k => k.id))
   for (const x of f.L("events")) {
     if (!x.title || own.has(x.id)) continue   // своё расписание детей (D.kids) рисуется само
