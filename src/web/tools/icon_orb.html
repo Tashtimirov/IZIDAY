@@ -74,5 +74,23 @@ V.flat=function(){ const o=window.ONE,cx=W/2,cy=W/2,R=W*.42; bg()
  const lt=x.createRadialGradient(cx-R*.35,cy-R*.45,0,cx-R*.2,cy-R*.25,R*1.25); lt.addColorStop(0,"rgba(255,255,255,.25)"); lt.addColorStop(1,"rgba(255,255,255,0)"); x.fillStyle=lt; x.fillRect(0,0,W,W)
  x.save(); x.globalCompositeOperation="lighter"; waveF(cx,cy+R*.04,R*1.8,R*.32,o.w1,.95,2.1,R*.035,R*.18); waveF(cx,cy-R*.03,R*1.8,R*.42,o.w2,1,0,R*.045,R*.22); x.restore() }
 
+// 2026-11-16: вариант А — светящийся полупрозрачный шар (как на слайдах презентации) на градиенте, внутри нынешние волны:
+// белая сердцевина + свечение, концы тают, без точек. Цвета: ONE.orb — оттенок шара, ONE.glow — свечение волн (для цветных значков).
+function orbAwave(cx,cy,len,amp,ph,lw,glow,gl){ const k=2.3,path=()=>{x.beginPath();for(let i=0;i<=240;i++){const u=i/240,env=Math.pow(Math.sin(Math.PI*u),1.5),px=cx-len/2+u*len,py=cy+amp*env*Math.sin(u*Math.PI*k+ph);i?x.lineTo(px,py):x.moveTo(px,py)}}
+ const fg=(rgb,a)=>{const g=x.createLinearGradient(cx-len/2,0,cx+len/2,0);g.addColorStop(0,`rgba(${rgb},0)`);g.addColorStop(.32,`rgba(${rgb},${a})`);g.addColorStop(.68,`rgba(${rgb},${a})`);g.addColorStop(1,`rgba(${rgb},0)`);return g}
+ x.lineCap="round";x.lineJoin="round"
+ path();x.strokeStyle=fg(gl[0],.45);x.lineWidth=lw*1.9;x.shadowColor=`rgba(${gl[0]},.95)`;x.shadowBlur=glow;x.stroke()
+ path();x.strokeStyle=fg("235,255,252",1);x.lineWidth=lw;x.shadowColor=`rgba(${gl[1]},1)`;x.shadowBlur=glow*.35;x.stroke();x.shadowBlur=0 }
+function orbAball(cx,cy,R,t){ const h=x.createRadialGradient(cx,cy,R*.85,cx,cy,R*1.3);h.addColorStop(0,`rgba(${t[0]},.4)`);h.addColorStop(1,`rgba(${t[0]},0)`);x.fillStyle=h;x.fillRect(0,0,W,W)
+ const q=document.createElement("canvas");q.width=q.height=W;const y=q.getContext("2d")
+ const b=y.createRadialGradient(cx-R*.25,cy-R*.3,R*.05,cx,cy,R);b.addColorStop(0,`rgba(${t[1]},.55)`);b.addColorStop(.62,`rgba(${t[2]},.32)`);b.addColorStop(.88,`rgba(${t[3]},.38)`);b.addColorStop(1,`rgba(${t[3]},.85)`)
+ y.fillStyle=b;y.beginPath();y.arc(cx,cy,R,0,7);y.fill();y.globalCompositeOperation="source-atop"
+ const l=y.createRadialGradient(cx-R*.32,cy-R*.4,0,cx-R*.32,cy-R*.4,R*.6);l.addColorStop(0,"rgba(255,255,255,.28)");l.addColorStop(1,"rgba(255,255,255,0)");y.fillStyle=l;y.fillRect(0,0,W,W)
+ const d=y.createRadialGradient(cx-R*.2,cy-R*.25,R*.55,cx,cy,R*1.05);d.addColorStop(0,"rgba(0,40,50,0)");d.addColorStop(1,"rgba(0,50,60,.2)");y.fillStyle=d;y.fillRect(0,0,W,W)
+ x.drawImage(q,0,0) }
+window.ONE.orb=["110,255,240","175,255,250","150,215,212","120,250,245"]; window.ONE.glow=["60,240,220","120,255,235"]
+V.orbA=function(){ const o=window.ONE,cx=W/2,cy=W/2,R=W*.35,S=R*1.7; bg(); orbAball(cx,cy,R,o.orb)
+ orbAwave(cx,cy+S*.02,S,S*.17,2.2,S*.024,S*.12,o.glow); orbAwave(cx,cy-S*.01,S,S*.22,0,S*.028,S*.14,o.glow) }
+
 window.draw=k=>{x.clearRect(0,0,W,W);V[k]()}
 </script>

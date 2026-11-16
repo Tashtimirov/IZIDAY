@@ -250,7 +250,7 @@ let iziPainted = ""
 function iziPaint() {
   const p = iziCol(); if (iziPainted === p[0]) return; iziPainted = p[0]
   const st = document.documentElement.style; p[2].forEach((c, i) => st.setProperty("--izi" + (i + 1), c))
-  const l = document.querySelector('link[rel="apple-touch-icon"]'); if (l) l.href = p[0] === "em" ? "icon-180.png?v=5" : `icon-${p[0]}-180.png?v=2`   // значок берётся при добавлении на экран «Домой»
+  const l = document.querySelector('link[rel="apple-touch-icon"]'); if (l) l.href = p[0] === "em" ? "icon-180.png?v=6" : `icon-${p[0]}-180.png?v=3`   // значок берётся при добавлении на экран «Домой»
 }
 const proteinGoal = () => H().proteinGoal || Math.round((H().weight || 80) * 1.6)   // по умолчанию 1,6 г на кг веса
 const live = list => list.filter(x => x && !x.deleted)

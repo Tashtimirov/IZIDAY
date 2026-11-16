@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Значки веб-приложения: одна сфера Изи — волны прямо на зелёном, без внутреннего стеклянного шара (2026-11-05): icon-180/192/512.png.
-Исходник 1024px — tools/icon-orb-1024.png, нарисован tools/icon_orb.html (draw("flat") в Chromium).
+"""Значки веб-приложения: светящийся шар Изи с волнами на зелёно-синем градиенте (вариант А, 2026-11-16): icon-180/192/512.png.
+Исходник 1024px — tools/icon-orb-1024.png, нарисован tools/icon_orb.html (draw("orbA") в Chromium).
 Квадрат без скруглений — iPhone скругляет сам."""
 import pathlib
 from PIL import Image

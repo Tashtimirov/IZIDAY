@@ -13,8 +13,8 @@
 <script>/* вход через Google: ответ приходит в адресе — забрать до app.js, чтобы он не принял его за команду */try{if(/(^|[#&])(id_token|error)=/.test(location.hash)&&/state=/.test(location.hash)){sessionStorage.setItem("izi-glogin",location.hash.slice(1));history.replaceState(null,"",location.pathname+location.search)}}catch(e){}</script>
 <script>/* подключение Google Календаря: Google возвращает ?code=…&state=… — забрать до app.js */try{if(/(^|[?&])(code|error)=/.test(location.search)&&/[?&]state=/.test(location.search)){sessionStorage.setItem("izi-gcal",location.search.slice(1));history.replaceState(null,"",location.pathname+location.hash)}}catch(e){}</script>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon-180.png?v=5">
-<link rel="icon" href="icon-192.png?v=5">
+<link rel="apple-touch-icon" href="icon-180.png?v=6">
+<link rel="icon" href="icon-192.png?v=6">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="gami.css">
 <link rel="stylesheet" href="quest.css">
