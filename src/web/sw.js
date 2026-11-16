@@ -12,6 +12,9 @@ const HASH = {"__HASH__": ""}  // build_web.py: файл → метка соде
 const OPT = ["i18n-en.js"], EN_FLAG = "lang-en"
 const META = "./__shell-hash__"
 async function oldCaches() { return (await caches.keys()).filter(k => k !== CACHE && /^myday-/.test(k) && k !== "myday-conn") }
+// Ответ с пометкой «был переход» (сайт отдаёт index.html через переход на «/») iPhone и iPad отказываются
+// показывать как страницу: «Response served by service worker has redirections». Кладём в кэш чистую копию.
+async function clean(r) { return r && r.redirected ? new Response(await r.blob(), { status: r.status, statusText: r.statusText, headers: r.headers }) : r }
 async function install() {
   const c = await caches.open(CACHE), olds = []
   for (const k of await oldCaches()) { try { const o = await caches.open(k), m = await o.match(META); if (m) olds.push({ o, h: await m.json() }) } catch (err) {} }
@@ -21,20 +24,20 @@ async function install() {
   await Promise.all(want.map(async u => {
     const f = u === "./" ? "index.html" : u
     const r = await reuse(f).catch(() => null)
-    if (r) return c.put(u, r)
+    if (r) return c.put(u, await clean(r))
     const n = await fetch(new Request(u, { cache: "reload" }))
     if (!n.ok) throw new Error(u + " " + n.status)
-    return c.put(u, n)
+    return c.put(u, await clean(n))
   }))
   // словарь, которым не пользуются, переносим только если он не менялся (бесплатно, без скачивания)
-  for (const f of OPT) if (!want.includes(f)) { const r = await reuse(f).catch(() => null); if (r) await c.put(f, r) }
+  for (const f of OPT) if (!want.includes(f)) { const r = await reuse(f).catch(() => null); if (r) await c.put(f, await clean(r)) }
   await c.put(META, new Response(JSON.stringify(HASH), { headers: { "content-type": "application/json" } }))
 }
 self.addEventListener("install", e => {
   e.waitUntil(install().catch(async err => {
     // что-то пошло не так с переносом — ставим версию по-старому, целиком из сети
     await caches.delete(CACHE); const c = await caches.open(CACHE)
-    await c.addAll(SHELL.map(u => new Request(u, { cache: "reload" })))
+    await Promise.all(SHELL.map(async u => { const n = await fetch(new Request(u, { cache: "reload" })); if (!n.ok) throw new Error(u + " " + n.status); await c.put(u, await clean(n)) }))
     await c.put(META, new Response(JSON.stringify(HASH)))
   }).then(() => self.skipWaiting()))
 })
@@ -50,7 +53,7 @@ self.addEventListener("fetch", e => {
     const hit = await c.match(e.request.mode === "navigate" && /\/(index\.html)?$/.test(url.pathname) ? "./" : e.request, { ignoreSearch: true })
     const opt = OPT.find(f => url.pathname.endsWith("/" + f))
     if (opt) connWrite(EN_FLAG, 1).catch(() => {})   // словарь попросили — дальше держим его в кэше
-    if (hit) return hit
+    if (hit) return clean(hit)
     // словарь не в кэше — скачать и положить в кэш этой версии (для работы без сети)
     if (opt) { const r = await fetch(e.request, { cache: "no-store" }); if (r.ok) c.put(opt, r.clone()).catch(() => {}); return r }
     // остальное (w.json, bug.html, privacy.html, PDF, большой значок) — из сети; в кэш версии не кладём
