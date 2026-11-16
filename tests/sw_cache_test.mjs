@@ -11,6 +11,8 @@ let offline = false, ver = 1, hits = 0, got = []
 const server = http.createServer((req, res) => {
   if (offline) { req.socket.destroy(); return }
   hits++; got.push(req.url.split(/[?#]/)[0])
+  // как на Cloudflare Pages: /index.html отдаётся переходом на «/» (iPhone/iPad не показывают страницу из кэша с пометкой перехода)
+  if (req.url.split(/[?#]/)[0] === "/index.html") { res.writeHead(308, { location: "/" }); return res.end() }
   const p = path.join(ROOT, decodeURIComponent(req.url.split(/[?#]/)[0]).replace(/\/$/, "/index.html"))
   if (!fs.existsSync(p)) { res.writeHead(404); return res.end() }
   let body = fs.readFileSync(p)
@@ -66,6 +68,8 @@ const dl = got.filter(u => !/sw\.js$/.test(u))
 check(dl.includes("/app.js") && dl.includes("/gami.js") && !dl.includes("/style.css") && !dl.includes("/core.js") && !dl.includes("/i18n-en.js"), "при обновлении скачаны только изменённые файлы", dl)
 const c2 = await page.evaluate(async () => (await (await caches.open((await caches.keys()).find(k => k !== "myday-conn"))).keys()).map(r => new URL(r.url).pathname))
 check(["/", "/index.html", "/app.js", "/core.js", "/style.css", "/icon-180.png", "/plan.js"].every(f => c2.includes(f)), "после обновления в кэше снова вся оболочка", c2)
+const red = await page.evaluate(async () => { const out = []; for (const k of await caches.keys()) { const c = await caches.open(k); for (const q of await c.keys()) if ((await c.match(q)).redirected) out.push(k + " " + new URL(q.url).pathname) } return out })
+check(!red.length, "в кэше нет ответов с пометкой перехода (иначе iPhone/iPad не откроют приложение)", red)
 const keys = await page.evaluate(() => caches.keys())
 check(keys.filter(k => k !== "myday-conn").length === 1, "старый кэш удалён", keys)
 check(!errs.length, "без ошибок на странице", errs)
