@@ -534,7 +534,8 @@ const rp = await page.evaluate(() => ["week", "month", "year"].map(k => { const 
 check(rp.every(r => r.exp >= 777 && r.w >= 1 && r.steps >= 1 && r.html > 1000), "отчёты за неделю, месяц и год считают расходы, тренировки и шаги", rp)
 await page.click('[data-report="week"]'); await page.waitForTimeout(300)
 const fr = await page.frameLocator("iframe.report").locator("body").textContent()
-check(fr.includes("Прогулка у моря") && fr.includes("По дням"), "отчёт открывается в приложении", fr.slice(0, 300))
+// в понедельник вчерашняя тренировка относится к прошлой неделе и в отчёт этой недели не попадает
+check((new Date().getDay() === 1 || fr.includes("Прогулка у моря")) && fr.includes("По дням"), "отчёт открывается в приложении", fr.slice(0, 300))
 await page.click('.sheet [data-k="year"]'); await page.waitForTimeout(200)
 check((await page.textContent(".sheet .rt")).includes("год"), "переключение на год")
 await page.screenshot({ path: SHOTS + "8-report.png" })
