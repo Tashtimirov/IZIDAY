@@ -366,7 +366,7 @@ function lessonsForm(kidId) {
   let kid = kids.find(k => k.id === kidId) ? kidId : kids[0].id
   if (!isAdult()) return
   const s = sheet(`<h3>Уроки</h3>${kids.length > 1 ? `<div class="chips" id="ls-k">${kids.map(m => `<button class="chip ly" data-kid="${esc(m.id)}" style="--c:${kidC(m.id)}"><em></em>${esc(short(m.name))}</button>`).join("")}</div>` : ""}
-    <div class="msg">Ребёнок увидит их у себя в «Моей неделе» на 7 дней вперёд. Каждый урок с новой строки.</div><div id="ls-days"></div>
+    <div class="msg">Ребёнок увидит их у себя в «Моей неделе» на 7 дней вперёд. Каждый урок с новой строки — пишите, как в школьном расписании (например, по-английски), так и покажем.</div><div id="ls-days"></div>
     <div class="btns"><button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
   s.el.classList.add("fam-sheet")
   const draw = () => {
@@ -374,7 +374,7 @@ function lessonsForm(kidId) {
     const prev = (SCH_DAYS.map(d => schOf(kid, d)).find(Boolean) || {}).time || "08:00"
     $("#ls-days", s.el).innerHTML = SCH_DAYS.map(d => { const x = schOf(kid, d) || {}
       return `<div class="lsday" data-d="${d}"><div class="lsh"><b>${["", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"][d]}</b><input type="time" class="ls-t" value="${esc(x.time || prev)}" aria-label="Начало уроков"></div>
-        <textarea class="ls-l" rows="${Math.max(3, (x.lessons || []).length)}" placeholder="${d === 6 ? "Если в субботу уроков нет — оставьте пустым" : "Математика\nРусский язык\nЧтение"}">${esc((x.lessons || []).join("\n"))}</textarea>
+        <textarea class="ls-l" rows="${Math.max(3, (x.lessons || []).length)}" placeholder="${d === 6 ? "Если в субботу уроков нет — оставьте пустым" : "Math\nEnglish\nScience"}">${esc((x.lessons || []).join("\n"))}</textarea>
         <input class="ls-x" value="${esc(x.take || "")}" placeholder="Не забыть взять (необязательно)"></div>` }).join("")
   }
   draw()
@@ -626,7 +626,7 @@ function kidCtx() {
   const j = jars(meId()), m = mainDream(meId()), les = nextLesson(meId())
   const t = todayTasks(meId()).map(x => { const st = (logOf(meId(), x.id) || {}).st; return `${x.title} — ${st === "ok" ? "сделано" : st === "wait" ? "ждёт проверки" : "не сделано"}` }).join("; ")
   const wk = weekText(meId())
-  return `Сегодня ${fullDate(new Date())}. Расписание на неделю: ${wk || "пусто"}. Дела: ${t || "нет"}. Звёзд всего: ${kidStars(meId())}. Копилки: Трачу ${j.spend}, Коплю ${j.save}, Делюсь ${j.share} ${core.CONFIG.currency || "฿"}. ${m ? `Главная мечта: ${m.title}${m.price ? `, стоит ${m.price}` : ""}.` : ""} Банка желаний: ${kidDreams(meId()).filter(d => !d.main && !d.done).map(d => d.title).join(", ") || "пусто"}. ${les ? `Следующий урок: ${les.t}.` : ""} Семейная цель: ${(famGoals().find(x => !x.done) || {}).title || "нет"}.`
+  return `Сегодня ${fullDate(new Date())}. Расписание на неделю: ${wk || "пусто"} (названия уроков называй так, как они записаны, не переводи). Дела: ${t || "нет"}. Звёзд всего: ${kidStars(meId())}. Копилки: Трачу ${j.spend}, Коплю ${j.save}, Делюсь ${j.share} ${core.CONFIG.currency || "฿"}. ${m ? `Главная мечта: ${m.title}${m.price ? `, стоит ${m.price}` : ""}.` : ""} Банка желаний: ${kidDreams(meId()).filter(d => !d.main && !d.done).map(d => d.title).join(", ") || "пусто"}. ${les ? `Следующий урок: ${les.t}.` : ""} Семейная цель: ${(famGoals().find(x => !x.done) || {}).title || "нет"}.`
 }
 const MIC_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>'
 // Детский чат с Изи. Как у взрослых: текст, голос одной фразой, живой разговор («Поговорить»), фото и файлы («+»).
