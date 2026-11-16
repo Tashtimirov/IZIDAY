@@ -8,7 +8,7 @@
   python3 build_web.py            → dist/web/ (сжатый код)
   python3 build_web.py --no-minify → dist/web/ как есть, для отладки
 """
-import hashlib, re, shutil, subprocess, sys, pathlib, tempfile
+import hashlib, json, re, shutil, subprocess, sys, pathlib, tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent
 WEB = ROOT / "src/web"

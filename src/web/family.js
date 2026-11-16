@@ -23,6 +23,7 @@ const ROLE_T = { adult: "взрослый", teen: "подросток", kid: "д
 
 // ───────────── Иконки ─────────────
 const P = {
+  camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>', check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
   map: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>', coins: '<ellipse cx="9" cy="7" rx="6" ry="3"/><path d="M3 7v4c0 1.7 2.7 3 6 3s6-1.3 6-3V7M3 11v4c0 1.7 2.7 3 6 3 1 0 2-.1 2.8-.4"/><ellipse cx="17" cy="15" rx="4.5" ry="2.3"/><path d="M12.5 15v3c0 1.3 2 2.3 4.5 2.3s4.5-1 4.5-2.3v-3"/>',
@@ -357,6 +358,42 @@ function weekText(id) {
     return `${i === 0 ? "сегодня" : i === 1 ? "завтра" : WDS2[d.getDay()].toLowerCase() + " " + d.getDate()}: ${[sc && `уроки с ${sc.time || "утра"} — ${sc.lessons.join(", ")}${sc.take ? ` (взять: ${sc.take})` : ""}`, ...o.map(x => `${x.time || "днём"} ${x.title}${x.take ? ` (взять: ${x.take})` : ""}`)].filter(Boolean).join("; ")}` }).filter(Boolean).join(". ")
 }
 
+// Расписание с фото: снимок или скриншот школьного расписания → Claude разбирает уроки по дням → поля окна «Уроки» заполняются,
+// взрослый проверяет и сохраняет. Названия — как написаны (не переводим).
+const LS_SCHEMA = { type: "object", additionalProperties: false, required: ["days", "note"], properties: {
+  days: { type: "array", items: { type: "object", additionalProperties: false, required: ["day", "start", "lessons"], properties: {
+    day: { type: "integer", description: "1 — понедельник … 6 — суббота" }, start: { type: "string", description: "Начало первого урока ЧЧ:ММ или пусто" },
+    lessons: { type: "array", items: { type: "string" } } } } },
+  note: { type: "string", description: "Коротко, если что-то не разобрать. Можно пусто." } } }
+function lessonsPhoto(el) {
+  const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0]; if (!f) return
+    const b = $('[data-a="photo"]', el), was = b.innerHTML; b.disabled = true; b.innerHTML = `${ic("clock", 18, "#fff")} ${esc(iziName())} читает расписание…`
+    try {
+      const url = await shrinkPhoto(f, 1800)
+      const res = await claude({ max_tokens: 3000, output_config: { format: { type: "json_schema", schema: LS_SCHEMA } },
+        system: "Ты разбираешь школьное расписание ребёнка с фото или скриншота. Для каждого учебного дня с понедельника по субботу выпиши уроки по порядку. Названия уроков пиши ровно как в расписании, на том же языке, не переводи и не сокращай; перемены, обед, классный час без предмета (Break, Lunch, Recess, Registration) не включай. Если по неделям A/B — бери первую неделю и скажи об этом в note. start — время начала первого урока, если видно.",
+        messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: url.split(",")[1] } }, { type: "text", text: "Разбери расписание по дням." }] }] })
+      if (!res || res.error) throw new Error(res && res.error ? res.error.message || res.error.type : "нет ответа")
+      const r = JSON.parse((res.content || []).filter(c => c.type === "text").map(c => c.text).join(""))
+      let n = 0
+      for (const x of r.days || []) {
+        const row = $(`.lsday[data-d="${+x.day}"]`, el), l = (x.lessons || []).map(t => String(t).trim().slice(0, 40)).filter(Boolean).slice(0, 10)
+        if (!row || !l.length) continue
+        const ta = $(".ls-l", row); ta.value = l.join("\n"); ta.style.height = "auto"; ta.style.height = ta.scrollHeight + 2 + "px"
+        if (/^\d{1,2}:\d\d$/.test(x.start || "")) $(".ls-t", row).value = x.start.padStart(5, "0")
+        row.classList.add("ls-new"); n += l.length
+      }
+      if (!n) return ui.info("Не получилось разобрать", "На фото не нашлось уроков. Попробуйте снять ближе и ровнее или сделать скриншот.")
+      toast(`Заполнено: ${n} ${plural(n, "урок", "урока", "уроков")}. Проверьте и сохраните`)
+      if (r.note) { const h = $(".ls-hint", el); if (h) h.textContent = `${iziName()}: ${r.note}` }
+    } catch (e) { ui.info("Не получилось", `Не удалось прочитать расписание: ${e.message}. Можно заполнить вручную.`) }
+    finally { b.disabled = false; b.innerHTML = was }
+  }
+  inp.click()
+}
+
 // ───────────── Уроки ребёнка (взрослый заполняет) ─────────────
 const SCH_DAYS = [1, 2, 3, 4, 5, 6]
 const schOf = (kid, d) => L("events").find(x => x.id === `sch:${kid}:${d}`)
@@ -366,7 +403,8 @@ function lessonsForm(kidId) {
   let kid = kids.find(k => k.id === kidId) ? kidId : kids[0].id
   if (!isAdult()) return
   const s = sheet(`<h3>Уроки</h3>${kids.length > 1 ? `<div class="chips" id="ls-k">${kids.map(m => `<button class="chip ly" data-kid="${esc(m.id)}" style="--c:${kidC(m.id)}"><em></em>${esc(short(m.name))}</button>`).join("")}</div>` : ""}
-    <div class="msg">Ребёнок увидит их у себя в «Моей неделе» на 7 дней вперёд. Каждый урок с новой строки — пишите, как в школьном расписании (например, по-английски), так и покажем.</div><div id="ls-days"></div>
+    <button class="btn primary ls-photo" data-a="photo">${ic("camera", 18, "#fff")} Заполнить с фото расписания</button>
+    <div class="msg ls-hint">Сфотографируйте расписание или сделайте скриншот из школьного приложения — ${esc(iziName())} сам разнесёт уроки по дням. Названия останутся как в расписании. Потом проверьте и нажмите «Сохранить».</div><div id="ls-days"></div>
     <div class="btns"><button class="btn" data-a="no">Отмена</button><button class="btn primary" data-a="ok">Сохранить</button></div>`)
   s.el.classList.add("fam-sheet")
   const draw = () => {
@@ -381,6 +419,7 @@ function lessonsForm(kidId) {
   s.el.addEventListener("input", e => { const t = e.target; if (t.classList && t.classList.contains("ls-l")) { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px" } })
   $$("#ls-k .chip", s.el).forEach(c => c.onclick = () => { kid = c.dataset.kid; draw() })
   $('[data-a="no"]', s.el).onclick = () => s.close()
+  $('[data-a="photo"]', s.el).onclick = () => lessonsPhoto(s.el)
   $('[data-a="ok"]', s.el).onclick = () => {
     let n = 0
     for (const el of $$(".lsday", s.el)) {

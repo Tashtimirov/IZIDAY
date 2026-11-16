@@ -23,9 +23,23 @@ await page.evaluate(() => { setTab("cal"); calStart = null; render() }); await p
 await page.click('[data-do="cal-fam"]'); await page.waitForTimeout(400)
 check(await page.$('.sheet [data-a="les"]'), "в «Календаре семьи» есть кнопка «Уроки детей»")
 await page.click('.sheet [data-a="les"]'); await page.waitForTimeout(500)
+// с фото расписания: Изи разбирает уроки по дням, названия — как в расписании
+const PHOTO = { days: [{ day: 1, start: "8:15", lessons: ["Maths", "English", "Thai Language", "PE"] }, { day: 2, start: "8:15", lessons: ["Science", "Maths", "Music"] },
+  { day: 3, start: "", lessons: ["English", "Art", "ICT"] }, { day: 4, start: "8:15", lessons: ["Maths", "Science", "Thai Culture", "Swimming"] }, { day: 5, start: "8:15", lessons: ["English", "Library", "Maths"] }], note: "" }
+let asked = null
+await page.route("https://api.anthropic.com/**", r => { if (r.request().method() === "OPTIONS") return r.fulfill({ status: 200, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*" } })
+  asked = JSON.parse(r.request().postData() || "{}")
+  r.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify({ content: [{ type: "text", text: JSON.stringify(PHOTO) }], stop_reason: "end_turn" }) }) })
+const [fc] = await Promise.all([page.waitForEvent("filechooser"), page.click('.sheet [data-a="photo"]')])
+await fc.setFiles(new URL("../src/web/icon-512.png", import.meta.url).pathname); await page.waitForTimeout(1500)
+const got = await page.$$eval(".lsday", l => l.map(x => [x.dataset.d, x.querySelector(".ls-t").value, x.querySelector(".ls-l").value]))
+check(got[0][2] === "Maths\nEnglish\nThai Language\nPE" && got[0][1] === "08:15" && got[3][2].includes("Thai Culture") && got[5][2] === "", "с фото: уроки разложены по дням, время начала подставлено, суббота пустая", got)
+check(asked && asked.messages[0].content[0].type === "image" && /не переводи/.test(asked.system), "фото уходит Изи, названия просим не переводить", asked && asked.system)
+await page.evaluate(() => document.querySelector(".sheet .lsday").scrollIntoView({ block: "center" })); await page.waitForTimeout(300)
+await shot(page, SHOTS + `kw-5-photo${DARK ? "-dark" : ""}.png`, ".sheet")
 const L = { 1: "Math\nRussian\nReading\nPE\nScience", 2: "English, Math, Russian, Music", 3: "1. Reading\n2. Math\n3. Art\n4. Russian\n5. Design & Technology",
   4: "Russian\nMath\nEnglish\nPE", 5: "Reading\nScience\nMath" }
-for (const [d, t] of Object.entries(L)) await page.fill(`.lsday[data-d="${d}"] .ls-l`, t)
+for (const [d, t] of Object.entries(L)) { await page.fill(`.lsday[data-d="${d}"] .ls-l`, t); await page.fill(`.lsday[data-d="${d}"] .ls-t`, "08:00") }
 await page.fill('.lsday[data-d="2"] .ls-x', "форма на PE, кроссовки")
 await page.fill('.lsday[data-d="1"] .ls-t', "08:00")
 await page.click('.sheet [data-a="ok"]'); await page.waitForTimeout(600)
