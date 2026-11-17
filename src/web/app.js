@@ -350,6 +350,7 @@ function sync() {
         if (res.snap) { D.snap = res.snap; D.sync.snapAt = res.snap.at }
         migrateRems()
         dropWaterRems()
+        dropMedRems()
         rulesApply()
         for (const o of D.ops) if (o.state === "local" && ops.some(x => x.id === o.id)) o.state = "sent"
         for (const so of res.ops || []) {
@@ -488,10 +489,26 @@ function dropWaterRems() {
   D.waterRemsDropped = true
   save()
 }
-// Один раз: невыполненные напоминания iPhone и ещё не внесённые команды — в напоминания приложения
+// Лекарства и добавки живут только в «Здоровье → Лекарства» (пуш о приёме идёт оттуда), в напоминаниях их не держим
+// (пользователь, 2026-11-17: «Ежовик» и др. были и там, и там). «Купить магний» — обычное дело, его не трогаем.
+const medKey = t => String(t || "").toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9]+/g, " ").trim().replace(/^(принять|прими|принимать|выпить|выпей|пить|попить) /, "")
+function remIsMed(title) {
+  const t = medKey(title)
+  if (!t || /(^| )(купить|заказать|закончил|кончается|заканчивается)( |$)/.test(t)) return false
+  return (D.goals || []).some(m => m && !m.deleted && m.kind === "med" && m.title && (k => k === t || k.startsWith(t + " ") || t.startsWith(k + " "))(medKey(m.title)))
+}
+function dropMedRems() {
+  let n = 0
+  for (const r of live(D.rems)) if (!r.done && remIsMed(r.title)) { remove("rems", r.id); n++ }
+  if (n) save()
+}
+// Один раз: невыполненные напоминания iPhone и ещё не внесённые команды — в напоминания приложения.
+// Удалённое не возвращаем: метка удаления хранит только id (без from), поэтому сверяем и id, и from —
+// иначе на новом устройстве старый снимок iPhone заново заводил удалённые «Ежовик», «Магний» (16.11)
 function migrateRems() {
   if (D.remsMigrated || !D.snap) return
-  for (const r of D.snap.reminders || []) if (!r.completed && !D.rems.some(x => x.from === r.id))
+  const known = new Set(D.rems.flatMap(x => [x.id, x.from]).filter(Boolean).map(String))
+  for (const r of D.snap.reminders || []) if (!r.completed && !known.has(String(r.id)) && !remIsMed(r.title))
     upsert("rems", { id: String(r.id), date: Date.now(), from: r.id, title: r.title, due: r.due || null, done: false })
   for (const o of D.ops) if (o.state === "local" && o.tool === "create_reminder") remAdd(o.input || {})
   D.ops = D.ops.filter(o => !(o.state === "local" && /_reminder$/.test(o.tool)))
@@ -1331,6 +1348,7 @@ async function runTool(name, x) {
     case "create_reminder": {
       if (!String(x.title || "").trim()) return { error: "нужен текст" }
       if (WATER_REM.test(x.title)) return { error: "про воду напоминания не создаются — пользователь не хочет их в списке. Используй plan_day (подсказка-уведомление)" }
+      if (remIsMed(x.title)) return { error: "это лекарство уже есть в «Лекарствах» — пуш о приёме придёт оттуда, напоминание не нужно. Время или дозу меняй через add_med" }
       if (x.due && !parseIso(x.due)) return { error: "срок — YYYY-MM-DDTHH:MM или YYYY-MM-DD" }
       const r = remAdd(x)
       return { ok: true, id: r.id, note: "Сохранено в IZIDAY; уведомление придёт от виджета IZIDAY в срок" }
@@ -2716,6 +2734,7 @@ async function reminderForm() {
   $('[data-a="ok"]', s.el).onclick = () => {
     const title = $("#r-t", s.el).value.trim()
     if (!title) { toast("Напишите, что напомнить"); return }
+    if (remIsMed(title)) { toast("Это уже в «Лекарствах» — напомню о приёме оттуда"); return }
     const wtext = $("#r-w", s.el).value.trim()
     const x = { title }
     if (wtext) {

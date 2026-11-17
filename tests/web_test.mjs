@@ -339,6 +339,24 @@ check(r2().done, "«Сделано» из уведомления отмечае�
 const wr = await page.evaluate(() => { remAdd({ title: "💧 Выпей стакан воды", due: iso(new Date()) }); D.waterRemsDropped = false; dropWaterRems(); return { left: live(D.rems).some(r => /воды/.test(r.title)), tool: runTool("create_reminder", { title: "Выпить стакан воды" }) } })
 const wt = await page.evaluate(() => runTool("create_reminder", { title: "Выпить стакан воды" }))
 check(!wr.left && wt.error, "напоминания про воду убраны и не создаются", wt)
+// лекарства и добавки — только в «Лекарствах»; удалённое напоминание iPhone не возвращается (2026-11-17: «Ежовик» вернулся после удаления)
+const md = await page.evaluate(() => {
+  upsert("goals", { id: "medT1", date: Date.now(), kind: "med", title: "Ежовик гребенчатый", dose: "1 ч. л.", times: ["07:00"], taken: {} })
+  upsert("goals", { id: "medT2", date: Date.now(), kind: "med", title: "Магний", times: ["20:30"], taken: {} })
+  const snap0 = D.snap
+  D.snap = Object.assign({}, snap0, { reminders: [{ id: "RX0", title: "Старое дело из iPhone", due: null, completed: false }, { id: "RX1", title: "Ежовик", due: null, completed: false }] })
+  D.remsMigrated = false; migrateRems()
+  const came = live(D.rems).some(r => r.id === "RX0"), ezh0 = live(D.rems).some(r => r.id === "RX1")
+  remove("rems", "RX0")
+  D.remsMigrated = false; migrateRems()   // новое устройство: перенос из того же снимка iPhone ещё раз
+  remAdd({ title: "Магний", due: iso(new Date()) }); remAdd({ title: "Купить магний" })
+  dropMedRems(); D.snap = snap0
+  const L = live(D.rems)
+  return { came, ezh0, back: L.some(r => r.id === "RX0"), ezh: L.some(r => /ежовик/i.test(r.title)), mag: L.some(r => r.title === "Магний"), buy: L.some(r => r.title === "Купить магний") }
+})
+const mt = await page.evaluate(() => runTool("create_reminder", { title: "Принять ежовик", due: iso(new Date()) }))
+check(md.came && !md.back, "удалённое напоминание iPhone не возвращается при повторном переносе", md)
+check(!md.ezh0 && !md.ezh && !md.mag && md.buy && mt.error, "лекарства не дублируются в напоминаниях («Купить магний» остаётся)", { md, mt })
 // напоминания помощника — в приложении, с повтором
 const cr = await page.evaluate(() => runTool("create_reminder", { title: "Выпить витамины", due: iso(new Date(Date.now() - 3600e3)), repeat: { freq: "daily" } }))
 check(cr.ok && /^r/.test(cr.id), "create_reminder сохраняет в приложении", cr)
