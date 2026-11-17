@@ -5,9 +5,9 @@
 // Скачиваются только изменившиеся файлы: у каждого файла метка содержимого (HASH); файл с той же меткой
 // берётся из кэша прежней версии — обновление весит десятки КБ, а не мегабайт.
 // Запросы к таблице и к Claude идут мимо кэша (другой адрес).
-const CACHE = "myday-3125b5c082"
+const CACHE = "myday-81cb538a43"
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "style.css", "gami.css", "quest.css", "onb.css", "health.css", "fast.css", "family.css", "album.css", "mem.css", "design.css", "feat.css", "plan.css", "order.css", "undo.css", "tablet.css", "kids.css", "i18n.js", "bug.js", "gami.js", "quest.js", "orbcode.js", "family.js", "docread.js", "core.js", "app.js", "stt.js", "friends.js", "grow.js", "onb.js", "health.js", "fast.js", "album.js", "mem.js", "feat.js", "plan.js", "design.js", "order.js", "undo.js", "tablet.js", "kids-data.js", "kids.js", "exit.js", "metrics.js", "settings.js"]   // build_web.py подставляет список файлов из index.html
-const HASH = {"index.html": "4ddcfffb8d7a", "manifest.webmanifest": "594977e0ed42", "icon-180.png": "b3201af1b002", "icon-192.png": "6b378f54a210", "style.css": "214163fd55d3", "gami.css": "5eb0e6be4905", "quest.css": "f7c50cf05637", "onb.css": "011d13c7c520", "health.css": "edd3c2a537e4", "fast.css": "44d97c07493f", "family.css": "8751f33976c1", "album.css": "ad04493c951d", "mem.css": "1358242c99ad", "design.css": "e8858012e4c5", "feat.css": "a52f1e287eb5", "plan.css": "c46ab2a80648", "order.css": "19b6c4cf64e1", "undo.css": "13cb436d1460", "tablet.css": "0736c3075fe6", "kids.css": "4f83e05ef608", "i18n.js": "094e68ff5de1", "bug.js": "bd9f44fdee28", "gami.js": "eb16e40e0a5d", "quest.js": "d6dcaa689064", "orbcode.js": "e82a105c50df", "family.js": "d5f567037b87", "docread.js": "775e70c4b766", "core.js": "30137d67f257", "app.js": "adb0cd116104", "stt.js": "5e9ee50f4f9c", "friends.js": "7542de5b0efc", "grow.js": "9e8dac0bcd0e", "onb.js": "9286d4b40832", "health.js": "92442d415cb7", "fast.js": "8269b640ba68", "album.js": "86b29143159f", "mem.js": "501ad8c9a96d", "feat.js": "8d96bba14134", "plan.js": "d84e367c88d3", "design.js": "e0fc9086a30e", "order.js": "2582db639822", "undo.js": "08a410ed99f6", "tablet.js": "e7e38467fb28", "kids-data.js": "7714348bc829", "kids.js": "a59646ae6c36", "exit.js": "fa2ff54d241e", "metrics.js": "3b76076b8670", "settings.js": "5bb888a964f4", "i18n-en.js": "991bbf6f3dce"}  // build_web.py: файл → метка содержимого
+const HASH = {"index.html": "4ddcfffb8d7a", "manifest.webmanifest": "594977e0ed42", "icon-180.png": "b3201af1b002", "icon-192.png": "6b378f54a210", "style.css": "3ad4fc1a694a", "gami.css": "5eb0e6be4905", "quest.css": "f7c50cf05637", "onb.css": "011d13c7c520", "health.css": "edd3c2a537e4", "fast.css": "44d97c07493f", "family.css": "8751f33976c1", "album.css": "ad04493c951d", "mem.css": "1358242c99ad", "design.css": "e8858012e4c5", "feat.css": "a52f1e287eb5", "plan.css": "c46ab2a80648", "order.css": "19b6c4cf64e1", "undo.css": "13cb436d1460", "tablet.css": "0736c3075fe6", "kids.css": "4f83e05ef608", "i18n.js": "094e68ff5de1", "bug.js": "bd9f44fdee28", "gami.js": "eb16e40e0a5d", "quest.js": "d6dcaa689064", "orbcode.js": "e82a105c50df", "family.js": "d5f567037b87", "docread.js": "775e70c4b766", "core.js": "30137d67f257", "app.js": "87cd6bf51aca", "stt.js": "1760cee662b6", "friends.js": "7542de5b0efc", "grow.js": "9e8dac0bcd0e", "onb.js": "9286d4b40832", "health.js": "92442d415cb7", "fast.js": "8269b640ba68", "album.js": "86b29143159f", "mem.js": "501ad8c9a96d", "feat.js": "8d96bba14134", "plan.js": "d84e367c88d3", "design.js": "e0fc9086a30e", "order.js": "2582db639822", "undo.js": "08a410ed99f6", "tablet.js": "e7e38467fb28", "kids-data.js": "7714348bc829", "kids.js": "a59646ae6c36", "exit.js": "fa2ff54d241e", "metrics.js": "3b76076b8670", "settings.js": "5bb888a964f4", "i18n-en.js": "991bbf6f3dce"}  // build_web.py: файл → метка содержимого
 // Английский словарь нужен только при английском языке: кладём в кэш, если он уже был (и не менялся) или им пользуются
 const OPT = ["i18n-en.js"], EN_FLAG = "lang-en"
 const META = "./__shell-hash__"
@@ -79,8 +79,16 @@ function pretty(x) {
   if (m) return { t: `${e} ${m[1]}`, b: m[2] }
   return b.length <= 60 ? { t: `${e} ${b}`, b: "" } : { t: `${e} ${b.slice(0, 57).replace(/\s+\S*$/, "")}…`, b }
 }
+// Защита от двойных уведомлений. (1) Два пуша почти разом (две подписки одного телефона, повтор с сервера) раньше
+// читали список «показано» одновременно и оба показывали одно и то же: теперь показ идёт строго по очереди.
+// (2) Одинаковый текст (то же событие в двух календарях, тот же пуш с другим id) за 3 часа второй раз не показываем.
+// (3) Нечего показать нового — iPhone всё равно требует уведомление на каждый пуш, иначе снимет подписку; раньше
+// повторяли последнее, а iPhone не заменяет его по tag и показывает дубль. Теперь — тихое служебное, которое тут же закрываем
+let showQ = Promise.resolve()
+const inQueue = f => { const j = showQ.then(f, f); showQ = j.catch(() => {}); return j }
+const txtKey = x => (String(x.title || "") + "|" + String(x.body || "")).replace(/\s+/g, " ").trim()
 self.addEventListener("push", e => e.waitUntil((async () => {
-  let items = []
+  let items = [], got = false
   try {
     const c = await connRead("conn")
     if (c && c.hook) {
@@ -90,20 +98,36 @@ self.addEventListener("push", e => e.waitUntil((async () => {
       try {
         const r = await fetch(c.hook, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, credentials: "omit", cache: "no-store", signal: ab.signal,
           body: JSON.stringify({ secret: c.secret, hub: { from: "app", push: { action: "outbox" } } }) })
-        items = ((await r.json()).push || {}).items || []
+        items = ((await r.json()).push || {}).items || []; got = true
       } finally { clearTimeout(tm) }
     }
   } catch (err) {}
-  const shown = (await connRead("shown").catch(() => null)) || []
-  // старше 40 минут — уже не новость (например, после обновления приложения): не показываем повторно пачкой
-  let fresh = items.filter(x => x && x.id && !shown.includes(x.id) && !(x.at && Date.now() - x.at > 40 * 60e3))
-  // iPhone требует показать уведомление на каждый пуш: нечего нового — повторяем последнее с тем же tag (оно просто заменит прежнее)
-  if (!fresh.length) fresh = items.length ? [items[items.length - 1]] : [{ id: "x" + Date.now(), title: "IZIDAY", body: "Есть напоминание — нажмите, чтобы открыть", url: "./" }]
-  for (const x of fresh.slice(-4)) { const p = pretty(x)
-    // подсказка помощника: нажатие открывает чат с этой подсказкой и сразу микрофон — ответить голосом
-    const url = /#chat$/.test(x.url || "") ? "./#reply=" + encodeURIComponent((p.t + "\n" + p.b).trim()) : x.url
-    await self.registration.showNotification(p.t, { body: p.b, tag: x.id, icon: "icon-192.png", badge: "icon-192.png", data: { url } }) }
-  await connWrite("shown", shown.concat(fresh.map(x => x.id)).slice(-200))
+  await inQueue(async () => {
+    const shown = (await connRead("shown").catch(() => null)) || []
+    const txt = ((await connRead("shownTxt").catch(() => null)) || []).filter(t => t && Date.now() - t.at < 3 * 3600e3)
+    const seen = new Set(txt.map(t => t.k))
+    // старше 40 минут — уже не новость (например, после обновления приложения): не показываем повторно пачкой
+    const fresh = []
+    for (const x of items) {
+      if (!x || !x.id || shown.includes(x.id) || (x.at && Date.now() - x.at > 40 * 60e3)) continue
+      shown.push(x.id)   // и id, и текст отмечаем сразу: дубль в той же пачке тоже отсекается
+      const k = txtKey(x); if (seen.has(k)) continue
+      seen.add(k); txt.push({ k, at: Date.now() }); fresh.push(x)
+    }
+    // таблица не ответила — текст неизвестен, но пуш мог быть важным: общее уведомление
+    if (!fresh.length && !got) fresh.push({ id: "x" + Date.now(), title: "IZIDAY", body: "Есть напоминание — нажмите, чтобы открыть", url: "./" })
+    if (!fresh.length) {
+      // ничего нового: служебное уведомление, сразу закрытое — iPhone доволен, у человека в списке ничего не появляется
+      await self.registration.showNotification("IZIDAY", { body: "", tag: "izi-quiet", silent: true, data: { url: "./" } })
+      try { for (const n of await self.registration.getNotifications({ tag: "izi-quiet" })) n.close() } catch (err) {}
+    }
+    for (const x of fresh.slice(-4)) { const p = pretty(x)
+      // подсказка помощника: нажатие открывает чат с этой подсказкой и сразу микрофон — ответить голосом
+      const url = /#chat$/.test(x.url || "") ? "./#reply=" + encodeURIComponent((p.t + "\n" + p.b).trim()) : x.url
+      await self.registration.showNotification(p.t, { body: p.b, tag: x.id, icon: "icon-192.png", badge: "icon-192.png", data: { url } }) }
+    await connWrite("shown", shown.slice(-200))
+    await connWrite("shownTxt", txt.slice(-100))
+  })
 })()))
 self.addEventListener("notificationclick", e => {
   e.notification.close()
