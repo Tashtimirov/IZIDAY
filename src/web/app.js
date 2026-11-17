@@ -524,12 +524,15 @@ async function geoCached(q) {
   if (g && g.geo && !g.geo.error && (g.geo.results || []).length) GEO_C.set(k, { at: Date.now(), g })
   return g
 }
+// Место уже отдано в этом запуске. iPhone (приложение со значка) спрашивает место заново после каждого запуска,
+// даже если раньше разрешили: поэтому сами, без действия человека, место в новом запуске не берём
+let GEO_LIVE = false
 function whereAmI0() {
   const fromWidget = () => { const l = D.snap && D.snap.loc; return l && l.lat != null ? { lat: l.lat, lng: l.lng, src: `по виджету, ${ago(l.at)}` } : null }
   if (!navigator.geolocation) return Promise.resolve(fromWidget())
   return new Promise(res => {
     const t = setTimeout(() => res(fromWidget()), 9000)
-    navigator.geolocation.getCurrentPosition(p => { clearTimeout(t); res({ lat: p.coords.latitude, lng: p.coords.longitude, src: "сейчас" }) },
+    navigator.geolocation.getCurrentPosition(p => { clearTimeout(t); GEO_LIVE = true; res({ lat: p.coords.latitude, lng: p.coords.longitude, src: "сейчас" }) },
       () => { clearTimeout(t); res(fromWidget()) }, { enableHighAccuracy: false, maximumAge: 120000, timeout: 8000 })
   })
 }
@@ -4596,8 +4599,9 @@ let hereAt = 0
 async function pushHere(force) {
   if (!D.conn || !navigator.geolocation || (!force && Date.now() - hereAt < 10 * 60e3)) return
   try { if (navigator.permissions) { const p = await navigator.permissions.query({ name: "geolocation" }); if (p.state !== "granted" && !force) return } } catch (e) {}
+  if (IS_IOS && !force && !GEO_LIVE) return   // окно «Разрешить место?» сразу при открытии — нет: «пора выезжать» возьмёт точку, когда место понадобится по делу
   hereAt = Date.now()
-  navigator.geolocation.getCurrentPosition(p => { whereLast = { lat: p.coords.latitude, lng: p.coords.longitude, src: "сейчас" }; whereAt = Date.now(); hubPost({ push: { action: "here", lat: p.coords.latitude, lng: p.coords.longitude, at: Date.now() } }).catch(() => {}) },
+  navigator.geolocation.getCurrentPosition(p => { GEO_LIVE = true; whereLast = { lat: p.coords.latitude, lng: p.coords.longitude, src: "сейчас" }; whereAt = Date.now(); hubPost({ push: { action: "here", lat: p.coords.latitude, lng: p.coords.longitude, at: Date.now() } }).catch(() => {}) },
     () => {}, { enableHighAccuracy: false, maximumAge: 300000, timeout: 10000 })
 }
 async function pushCard() {
@@ -5044,15 +5048,30 @@ function fitHeight() {
 fitHeight()
 addEventListener("resize", fitHeight)
 // Клавиатура: поднять строку ввода чата над ней (окно страницы на iPhone при этом не уменьшается)
-if (window.visualViewport) {
-  const kb = () => {
-    const app = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-h")) || innerHeight
-    const hidden = Math.max(0, app - visualViewport.height - visualViewport.offsetTop)
-    document.documentElement.style.setProperty("--kb", hidden > 80 ? hidden + "px" : "0px")
-    document.body.classList.toggle("kb", hidden > 80)
-  }
-  visualViewport.addEventListener("resize", kb); visualViewport.addEventListener("scroll", kb)
+// Нижнее меню прячется только под настоящей клавиатурой: есть поле в фокусе и снизу закрыто больше 150 px.
+// Раньше хватало «закрыто больше 80 px»: iPhone после возврата из фона, после окна разрешения или звонка
+// иногда отдаёт укороченное окно (минус строка состояния и полоска «Домой»), меню пряталось и не возвращалось
+// до перезапуска. Теперь состояние ещё и пересчитывается при возврате в приложение и при уходе из поля
+const kbTyping = () => { const a = document.activeElement; return !!a && a !== document.body && (a.isContentEditable || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.tagName === "INPUT" && !/^(button|checkbox|radio|range|file|submit|reset|color|image|hidden)$/i.test(a.type)) }
+function kbFit() {
+  const vv = window.visualViewport
+  const app = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-h")) || innerHeight
+  const hidden = vv ? Math.max(0, app - vv.height - vv.offsetTop) : 0
+  const on = hidden > 150 && kbTyping()
+  document.documentElement.style.setProperty("--kb", on ? hidden + "px" : "0px")
+  document.body.classList.toggle("kb", on)
+  // пока считаем, что клавиатура открыта, — сверяем раз в секунду: iPhone не всегда сообщает, что она закрылась
+  // (после отправки, выбора фото, окна разрешения), и строка ввода оставалась висеть посреди экрана
+  clearTimeout(kbFit.t); if (on) kbFit.t = setTimeout(kbFit, 1000)
 }
+if (window.visualViewport) { visualViewport.addEventListener("resize", kbFit); visualViewport.addEventListener("scroll", kbFit) }
+addEventListener("focusin", () => setTimeout(kbFit, 350))
+addEventListener("focusout", () => setTimeout(kbFit, 120))
+addEventListener("pointerdown", () => { if (document.body.classList.contains("kb")) setTimeout(kbFit, 400) }, true)
+// возврат в приложение: iOS клавиатуру уже убрал, а поле могло остаться «в фокусе» — снять фокус, чтобы меню вернулось
+const backFit = () => { try { if (kbTyping()) document.activeElement.blur() } catch (e) {} fitHeight(); kbFit(); setTimeout(() => { fitHeight(); kbFit() }, 500) }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") backFit() })
+addEventListener("pageshow", backFit)
 addEventListener("orientationchange", () => setTimeout(fitHeight, 300))
 { const c = document.createElement("canvas"); $("#fab .orb").append(c); silkCanvas(c, "orb") }
 // Все шары Изи в приложении — тот же живой рисунок, что на главной кнопке: холст сам появляется в каждом
