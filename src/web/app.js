@@ -316,6 +316,7 @@ async function hubPostOnce(h, timeout) {
     const r = await fetch(D.conn.hook, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, signal: ctl.signal, credentials: "omit", cache: "no-store",
       body: JSON.stringify({ secret: D.conn.secret, hub: Object.assign({ from: "app" }, h) }) })
     const text = await r.text()
+    netOk()   // таблица ответила — сеть есть, даже если сам ответ с ошибкой
     let j
     try { j = JSON.parse(text) } catch (e) { throw new Error(r.ok ? "таблица ответила не данными — разверните скрипт заново с доступом «Все»" : `таблица ответила ошибкой ${r.status}`) }
     if (!j.ok) throw new Error(j.error === "forbidden" ? "таблица не приняла ключ — подключите приложение заново" : j.error || "ошибка таблицы")
@@ -370,7 +371,7 @@ function sync() {
       calRefresh()   // Google Календарь — отдельным запросом, чтобы не задерживать обмен
       return true
     } catch (e) {
-      D.sync.error = e.name === "AbortError" ? "таблица не ответила" : String(e.message || e)
+      D.sync.error = e.name === "AbortError" ? "таблица не ответила" : String(e.message || e); D.sync.errAt = Date.now()
       save(false)
       renderTop()
       return false
@@ -382,7 +383,18 @@ function sync() {
 // ── Нет сети: человек видит, что запись не потерялась. Записи всегда сначала ложатся на телефон (save), обмен догоняет сам:
 // раз в минуту, при возврате в приложение и сразу, как только телефон сообщает, что сеть появилась (online)
 const NET_ERR = /нет связи|не ответил|Load failed|Failed to fetch|NetworkError|network connection|offline|timed out/i
-function netDown() { try { if (navigator.onLine === false) return true } catch (e) {} return !!(D.conn && D.sync && D.sync.error && NET_ERR.test(D.sync.error)) }
+// Обмен однажды не прошёл (таблица думала дольше минуты, связь мигнула), а следующий запрос — календарь, Изи, дорога — уже
+// получил ответ: сеть есть, «Нет сети» не пишем (раньше строка висела до следующего удачного обмена). Записи догонит обмен
+let netOkAt = 0
+function netOk() {
+  const was = netDown(); netOkAt = Date.now()
+  if (was && !netDown()) { try { renderTop() } catch (e) {} if (!syncing) setTimeout(() => syncSoon(), 1500) }
+}
+function netDown() {
+  try { if (navigator.onLine === false) return true } catch (e) {}
+  const s = D.conn && D.sync
+  return !!(s && s.error && NET_ERR.test(s.error) && !(netOkAt >= (s.errAt || 0)))
+}
 // Сколько изменений ещё не ушло: записи, изменённые после последнего удачного обмена, задачи для iPhone и общие дела семьи
 function unsentCount() {
   if (!D.sync) return 0
@@ -397,6 +409,8 @@ function netLine() {
   const n = unsentCount()
   return n ? `Нет сети. ${n} ${plural(n, "запись", "записи", "записей")} на телефоне, отправлю позже` : "Нет сети. Всё сохранено на телефоне"
 }
+// «Добавить» рядом со строкой ввода — серая, пока строка пустая; зелёная, как только появился текст
+document.addEventListener("input", e => { const i = e.target, l = i && i.closest && i.closest(".add-line"); if (l && i.tagName === "INPUT") { const b = $(".btn", l); if (b) b.disabled = !i.value.trim() } }, true)
 addEventListener("online", () => { renderTop(); setTimeout(() => syncSoon(), 800) })
 addEventListener("offline", () => renderTop())
 
@@ -3053,7 +3067,7 @@ function renderToday() {
   if (D.conn && standalone() && pushAble() && Notification.permission === "default") html += `<div class="banner"><b>${ei("bell")}Включите уведомления</b>Подсказки про воду, «пора выезжать» и напоминания будут приходить пушем.<div class="btns" style="margin-top:8px"><button class="btn primary" data-do="push-on">Включить</button></div></div>`
   const wOff = Math.floor(Math.round((sod(selDay) - t0) / 864e5) / 7), w0 = addDays(t0, wOff * 7)
   const wc = stripCenter || w0, s0 = addDays(wc, -70), s1 = addDays(wc, 77)
-  const shown = v.events.filter(e => evLayer(e) !== "off"), dots = {}   // «Скрыть» в «Цвета и календари» — календаря нет и на «Сегодня»
+  const shown = v.events.filter(evShown), dots = {}   // «Скрыть» в «Цвета и календари» и снятый слой в календаре — событий нет и на «Сегодня»
   for (const e of shown) for (let d = sod(e.s); d < e.e && d < s1; d = addDays(d, 1)) if (d >= s0) { const k = dayKey(d); counts[k] = (counts[k] || 0) + 1; const c = evColor(e); (dots[k] = dots[k] || []).includes(c) || dots[k].push(c) }
   html += `<div class="month wnav"><b id="wk-lbl">${esc(weekLabel(w0))}</b><button class="today-btn" data-do="go-today" ${wOff === 0 && isToday ? "hidden" : ""}>Сегодня</button><button class="cal-open" data-do="cal-open">${tdIco("grid", 16)} Календарь</button></div>`
   html += `<div class="week strip" id="strip" data-start="${+s0}" data-sel="${+wc}">${[...Array(147)].map((_, i) => {
@@ -4139,7 +4153,7 @@ function stepsForm(id) {
     <div style="margin-top:8px">${l.map((x, i) => `<div class="row step"><button class="check ${x.done ? "on" : ""}" data-st="${esc(x.id)}"></button><div class="grow"><div class="t ${x.done ? "struck" : ""}">${i + 1}. ${esc(x.t)}</div>${x.date ? `<div class="s">${esc(stepWhen(x))}${x.cal ? " · в календаре" : ""}</div>` : ""}</div>
       ${x.done ? "" : `<button class="i-btn ${x.date ? "on" : ""}" data-sdate="${esc(x.id)}" aria-label="Дата">${ICO.today}</button><button class="i-btn" data-spomo="${esc(x.id)}" aria-label="Фокус 25 минут">${ICO.timer}</button>`}<button class="x-btn" data-sdel="${esc(x.id)}" aria-label="Убрать">${ICO.x}</button></div>`).join("")
       || '<div class="empty">Разбейте на шаги: что сделать первым, вторым… Каждому шагу можно дать дату и внести в календарь. Не знаете, с чего начать, — «План с помощником».</div>'}</div>
-    <div class="add-line" style="margin-top:12px"><input id="st-t" placeholder="${l.length ? "+ Следующий шаг" : "+ Первый шаг: узнать цены, записаться…"}"><button class="btn primary small" data-a="ok">Добавить</button></div>
+    <div class="add-line" style="margin-top:12px"><input id="st-t" placeholder="${l.length ? "+ Следующий шаг" : "+ Первый шаг: узнать цены, записаться…"}"><button class="btn primary small" data-a="ok" disabled>Добавить</button></div>
     ${noCal.length ? `<button class="btn primary" data-a="cal" style="width:100%;margin-top:10px">Внести план в календарь · ${noCal.length}</button>` : ""}
     <div class="btns" style="margin-top:10px"><button class="btn" data-a="back">‹ ${back}</button><button class="btn" data-a="ai">План с помощником</button></div>`, { onClose: () => render() })
   const again = () => { s.close(); stepsForm(id) }
@@ -4397,7 +4411,7 @@ function itemSheet(title, sub, items, h) {
   const open = items.filter(x => !x.done), done = items.filter(x => x.done)
   const one = x => `<div class="row"><button class="check ${x.done ? "on" : ""}" data-it="${esc(x.id)}"></button><div class="grow"><div class="t ${x.done ? "struck" : ""}">${esc(x.t)}</div>${x.s ? `<div class="s">${esc(x.s)}</div>` : ""}</div>${x.pr ? `<div class="sh-pr">${esc(x.pr)}</div>` : ""}<button class="x-btn" data-ix="${esc(x.id)}" aria-label="Убрать">${ICO.x}</button></div>`
   const s = sheet(`<div class="sh-head">${h.ico ? icoBox(h.ico) : ""}<div class="grow"><h3>${esc(title)}</h3><div class="muted small">${esc(sub)}</div></div></div>
-    ${h.top || ""}<div class="add-line"><input id="it-t" placeholder="+ Добавить пункт" enterkeyhint="done"><button class="btn primary small" data-a="add">Добавить</button></div>
+    ${h.top || ""}<div class="add-line"><input id="it-t" placeholder="+ Добавить пункт" enterkeyhint="done"><button class="btn primary small" data-a="add" disabled>Добавить</button></div>
     <div>${open.map(one).join("") || (done.length ? "" : `<div class="empty">${esc(h.empty)}</div>`)}</div>
     ${done.length ? `<div class="sub-h">Отмечено · ${done.length}</div><div>${done.map(one).join("")}</div>` : ""}
     <div class="btns" style="margin-top:12px">${h.extra || ""}<button class="btn" data-a="no">Готово</button></div>`, { onClose: () => { if (undoRedraw === redraw) undoRedraw = null; render() } })
@@ -5963,7 +5977,7 @@ async function travelCalc(e, k) {
 
 // — 4. «Сейчас»: текущее или следующее событие, когда выезжать, кнопка «Фокус»
 function nowCard(v, now = new Date()) {
-  const evs = v.events.filter(e => !e.all_day && e.e > now && sameDay(e.s, now)).sort((a, b) => a.s - b.s)
+  const evs = v.events.filter(e => !e.all_day && e.e > now && sameDay(e.s, now) && evShown(e)).sort((a, b) => a.s - b.s)
   const e = evs[0]
   if (!e) return ""
   const tr = travelOf(e), going = e.s <= now, mins = Math.round((e.s - now) / 60e3)
@@ -6230,7 +6244,7 @@ function todayTop(v, now = new Date()) {
 }
 function todayBottom(v, now = new Date()) { return tipCard(v, now) + tplCard(now) }
 Object.assign(DO, {
-  "td-focus": () => { const v = iphone(), now = new Date(), e = v.events.filter(e => !e.all_day && e.e > now && sameDay(e.s, now)).sort((a, b) => a.s - b.s)[0]
+  "td-focus": () => { const v = iphone(), now = new Date(), e = v.events.filter(e => !e.all_day && e.e > now && sameDay(e.s, now) && evShown(e)).sort((a, b) => a.s - b.s)[0]
     const t = top3Ids().map(id => v.reminders.find(r => r.id === id)).find(r => r && !r.completed)
     pomoStart(t ? t.title : e ? "Подготовка: " + e.title : "Фокус"); render() },
   "td-top3": () => top3Pick(),
@@ -6288,6 +6302,7 @@ function calS() {
   return c
 }
 const layerOn = k => calS().layers[k] !== 0
+const evShown = e => { const L = evLayer(e); return L !== "off" && layerOn(L) }   // на «Сегодня» — как в календаре: снятый слой не виден нигде
 const name1 = n => String(n || "").trim().split(/\s+/)[0]
 // семья из family.js: близкие (взрослые и подростки, кроме меня) и дети
 const famCal = () => famShare("cal") ? FAM : null   // семья в календаре — только если человек включил «Календарь семьи»
@@ -7155,7 +7170,7 @@ function talkOpen(o = {}) {
   requestAnimationFrame(() => el.classList.add("on"))
   $(".tk-orb", el).onclick = () => talkTap()
   $(".tk-end", el).onclick = () => talkEnd()
-  $(".tk-mic", el).onclick = () => TALK.state === "pause" ? talkListen() : talkPause()
+  $(".tk-mic", el).onclick = () => TALK.state === "pause" ? (talkWake(true), talkListen()) : talkPause()
   $(".tk-chat", el).onclick = () => { talkClose(); setTab("chat") }   // в чат — разговор заканчивается: панели «Изи · Пауза» над строкой ввода больше нет
   $(".tk-cap", el).onclick = () => { if (TALK && TALK.pin) talkPin(false) }
   // Вниз — закончить. Закрепления панелью над меню больше нет (по просьбе пользователя 2026-11-12)
@@ -7274,7 +7289,7 @@ function talkInput(t) {
   ta.onfocus = () => { if (TALK === t && t.state === "listen") talkPause("Пишите — я подожду") }
   ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }
   $(".tk-send", box).onclick = send
-  $(".tk-dict", box).onclick = () => { if (TALK !== t) return; ta.blur(); t.state === "pause" ? (talkWake(), talkListen()) : talkPause() }
+  $(".tk-dict", box).onclick = () => { if (TALK !== t) return; ta.blur(); t.state === "pause" ? (talkWake(true), talkListen()) : talkPause() }
   $(".tk-plus", box).onclick = () => { talkClose(); setTab("chat"); setTimeout(() => { const b = $(".chat-bar .cam"); if (b) plusMenu(b) }, 380) }   // вложения — в чате, разговор остаётся панелью
 }
 // Переписка прямо в окне разговора: те же сообщения, что в чате, — видно, о чём уже говорили.
@@ -7312,11 +7327,14 @@ function talkTap() {
   const t = TALK; if (!t) return
   if (t.state === "say") { ttsStop(); talkLiveCut(); t.cut = talkCutOf(t); return talkListen() }       // перебить
   if (t.state === "listen") { if (t.w && t.rec && t.rec.wav && (t.heard || t.rec.voiced)) { t.force = true; return } if (!t.heard) { tdbg("касание — микрофон заново"); talkWake(); return talkListen(false, t.done) } return talkSendNow() }   // сказали всё — отправить сразу (Whisper: сперва дораспознать)
-  if (t.state === "pause") { tdbg("касание — слушаю"); talkWake(); return talkListen() }
+  if (t.state === "pause") { tdbg("касание — слушаю"); talkWake(true); return talkListen() }
 }
 function talkPause(msg) { const t = TALK; if (!t) return; ttsStop(); talkLiveCut(); talkBargeOff(t, true); clearTimeout(t.timer); clearTimeout(t.idle); t.n++; const r = t.rec; t.rec = null; try { r && r.abort() } catch (e) {}; talkState("pause", null, typeof msg === "string" ? msg : "Нажмите на шар, чтобы продолжить") }
 // Касание — единственное, что iPhone точно разрешает: в нём заново будим звук и берём свежий микрофон
-function talkWake() { try { ttsUnlock(); if (window.STT && STT.on()) STT.prime() } catch (e) {} }   // микрофон не отпускаем: новый поток — новый вопрос iOS; «глухой» поток сменит сторож Whisper
+function talkWake(fresh) {
+  try { ttsUnlock(); if (window.STT && STT.on()) fresh && STT.reset ? STT.reset() : STT.prime() } catch (e) {}
+  if (fresh && TALK) TALK.wtry = 0   // после паузы — всё заново: свежий микрофон
+}   // микрофон не отпускаем: новый поток — новый вопрос iOS; «глухой» поток сменит сторож Whisper
 // Дослушивать: Изи ждёт, пока человек договорит. Пауза для отправки — 2,6 с; если фраза повисла
 // на «и», «что», «потому что», «э», «ну»… — ждём 4,5 с. Safari сам рвёт распознавание на паузах —
 // услышанное не отправляем, а копим и слушаем дальше. Если отправили, а человек продолжил говорить
@@ -7434,7 +7452,12 @@ function talkListen(first, keep) {
   if (t.said && Date.now() - t.saidAt < 600) setTimeout(start, 350); else start()
   // 20 секунд тишины — пауза, чтобы микрофон не висел впустую
   // тишина: сразу после открытия — 20 с; после ответа Изи — 9 с: если iPhone не дал микрофон, человек не ждёт впустую
-  t.idle = setTimeout(() => { if (TALK === t && t.n === my && t.state === "listen" && !t.heard) { tdbg("тишина — жду касания"); talkPause(first ? undefined : "Не слышу. Коснитесь шара и говорите") } }, first ? 20000 : 9000)
+  // Микрофон точно работает (пошёл звук) — человек просто думает: ждём до 40 с, а не 9 (раньше Изи уходила в паузу посреди мысли)
+  const idle = (ms, at) => { t.idle = setTimeout(() => {
+    if (TALK !== t || t.n !== my || t.state !== "listen" || t.heard) return
+    const r = t.rec; if (!first && !at && r && (r.audio || r.words)) return idle(31000, 1)
+    tdbg("тишина — жду касания"); talkPause(first ? undefined : "Не слышу. Коснитесь шара и говорите") }, ms) }
+  idle(first ? 20000 : 9000)
 }
 // Живой разговор с Whisper: запись идёт всё время, пока Изи слушает. На каждой паузе (0,7 с) вся запись
 // распознаётся заново — так видно сказанное и понятно, «висит» ли фраза (talkWait). Отправка — когда
@@ -7510,7 +7533,11 @@ function talkListenW(first, keep) {
     })
   }
   if (pre && !pre.stopped) go(); else if (t.said && Date.now() - t.saidAt < 600) setTimeout(go, 350); else go()
-  t.idle = setTimeout(() => { if (live() && t.state === "listen" && !t.heard && !(t.rec && t.rec.voiced)) { tdbg("тишина — жду касания"); talkPause(first ? undefined : "Не слышу. Коснитесь шара и говорите") } }, first ? 20000 : 9000)
+  const idle = (ms, at) => { t.idle = setTimeout(() => {
+    if (!live() || t.state !== "listen" || t.heard || (t.rec && t.rec.voiced)) return
+    const r = t.rec; if (!first && !at && r && r.frames > 0 && r.peak > 0) return idle(31000, 1)   // микрофон живой — человек думает, ждём до 40 с
+    tdbg("тишина — жду касания"); talkPause(first ? undefined : "Не слышу. Коснитесь шара и говорите") }, ms) }
+  idle(first ? 20000 : 9000)
 }
 function talkSendNow() {
   const t = TALK; if (!t || t.state !== "listen") return

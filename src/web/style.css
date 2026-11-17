@@ -163,6 +163,9 @@ main { padding: 12px 14px calc(var(--tabs) + 90px); }
 .field input, .field textarea, .field select { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; background: var(--bg);
   outline: none; -webkit-user-select: text; user-select: text; }
 .field input:focus, .field textarea:focus { border-color: var(--gold); }
+/* День и время на iPhone: у поля даты своя ширина больше колонки — оно залезало на соседнее «Время». Держим в колонке, текст слева */
+.field input[type=date], .field input[type=time], .field input[type=datetime-local] { min-width: 0; max-width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; text-align: left; min-height: 44px; display: block; }
+.field input[type=date]::-webkit-date-and-time-value, .field input[type=time]::-webkit-date-and-time-value, .field input[type=datetime-local]::-webkit-date-and-time-value { text-align: left; }
 .field input.huge { font-size: 28px; font-weight: 700; text-align: center; }
 .field textarea { min-height: 84px; resize: none; }
 .cmd-list { margin: 6px 0 0; padding: 12px 14px; background: var(--bg); border-radius: 12px; white-space: pre-wrap; font-size: 15px; line-height: 1.6; }
@@ -570,6 +573,7 @@ body.kb #tabs #fab { visibility: hidden; }
 #tabs #fab.on { color: var(--accent); font-weight: 600; }
 .add-line input { min-width: 0; border: 0; border-radius: 14px; padding: 12px 14px; background: var(--card); box-shadow: var(--shadow); font-size: 16px; outline: none; }
 .add-line input:focus { box-shadow: 0 0 0 2px var(--accent); }
+.add-line .btn:disabled { background: var(--track); color: var(--sub); box-shadow: none; opacity: 1; transition: background .2s, color .2s; }
 .sheet { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
 /* окна: стекло, пружина при открытии, смахивание вниз */
 .scrim { background: rgba(0, 0, 0, .26); -webkit-backdrop-filter: blur(4px) saturate(120%); backdrop-filter: blur(4px) saturate(120%); transition: opacity .32s ease; }
@@ -704,6 +708,7 @@ body.kb .plus-menu { bottom: calc(var(--kb) + 56px); }
 .card button.set.water-tg small { color: var(--sub); font-size: 13px; line-height: 1.3; }
 .tip-card .x { border: 0; background: none; color: var(--sub); width: 28px; height: 28px; padding: 4px; flex: none; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid2 > * { min-width: 0; }
 .grid2 .tile { background: var(--track); border-radius: 16px; padding: 11px 12px; }
 .grid2 .tile .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .grid2 .tile .k { font-size: 12px; color: var(--sub); }

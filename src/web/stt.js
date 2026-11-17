@@ -32,7 +32,7 @@
   // Один микрофон на весь живой разговор. iPhone: если отпустить микрофон и через пару секунд (после голоса Изи)
   // взять заново, новый поток в том же звуковом контексте часто отдаёт тишину — одни нули. Поэтому пока
   // разговор открыт, поток держим и только подключаем/отключаем запись; отпускаем — release() при закрытии
-  const alive = st => !!st && st.getAudioTracks().some(t => t.readyState === "live" && t.enabled)
+  const alive = st => !!st && st.getAudioTracks().some(t => t.readyState === "live" && t.enabled && !t.muted)   // muted: iPhone «отобрал» микрофон (пауза, звонок, фон) — поток отдаёт тишину
   async function getStream(ctx) {
     if (alive(STREAM) && SRC && SRC.context === ctx) return { stream: STREAM, src: SRC }
     release()
@@ -50,6 +50,14 @@
     if (!CTX || CTX.state === "closed") CTX = new AC()
     try { if (CTX.state !== "running") CTX.resume() } catch (e) {}
     return CTX
+  }
+  // Продолжить после паузы (касание): свежий микрофон и звуковой контекст. За паузу iPhone мог «заглушить» старый
+  // поток — тогда запись шла одними нулями и Изи больше не слышала. Касание — момент, когда iPhone всё это разрешает
+  function reset() {
+    release()
+    try { if (CTX && CTX.state !== "closed") CTX.close() } catch (e) {}
+    CTX = null; ACTIVE = 0
+    return prime()
   }
   async function record(opts = {}) {
     const ctx = prime()
@@ -196,5 +204,5 @@
     }
   }
 
-  window.STT = { row, sheetOpen, on, prime, record, release, live: () => alive(STREAM), transcribe, clean, key, prompt, JUNK }
+  window.STT = { row, sheetOpen, on, prime, reset, record, release, live: () => alive(STREAM), transcribe, clean, key, prompt, JUNK }
 })()
