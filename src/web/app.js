@@ -555,6 +555,81 @@ async function geoCached(q) {
   if (g && g.geo && !g.geo.error && (g.geo.results || []).length) GEO_C.set(k, { at: Date.now(), g })
   return g
 }
+// Маршрут через несколько точек: from (или текущее место) → via… → to. Места ищем по цепочке (каждое — рядом с предыдущим),
+// участки считаем параллельно тем же запросом маршрута, что и для одной точки (серверу ничего нового не нужно)
+async function routeLeg(from, to, mode) {
+  const rk = [JSON.stringify(from), JSON.stringify(to), mode].join("|"), rc = ROUTE_C.get(rk)
+  if (rc && Date.now() - rc.at < 5 * 60e3) return rc.res.route
+  const res = await hubPost({ route: { from, to, mode } }, 30000)
+  if (!res.route) throw new Error("скрипт таблицы старый: разверните новую версию Code.gs")
+  if (!res.route.error) ROUTE_C.set(rk, { at: Date.now(), res })
+  return res.route
+}
+async function routeMulti(x) {
+  const mode = x.mode || "driving"
+  // Сколько пробыть на точке, если пользователь не сказал: прикидываем по типу места; магазин — по списку покупок (~2 мин на покупку)
+  const SHOP_MIN = () => { const n = shopOpen().length; return n ? Math.min(60, Math.max(15, 10 + 2 * n)) : 30 }
+  const guess = q => {
+    const t = String(q || "").toLowerCase()
+    if (/школ|сад|сад[уа]|сектор|кружок|секци|school|kindergarten|забрать|отвезти|высадить/.test(t)) return { min: 10, why: "забрать/высадить" }
+    if (/аптек|почт|банк|банкомат|atm|pharmacy|заправ|кофе на вынос|химчистк|забрать заказ|пункт выдачи/.test(t)) return { min: 10, why: "быстрое дело" }
+    if (/кафе|ресторан|обед|ужин|cafe|restaurant|бар\b/.test(t)) return { min: 60, why: "еда" }
+    if (/врач|клиник|больниц|стоматолог|hospital|clinic|салон|барбер|парикмах|спортзал|gym|тренировк|встреч|офис|работ/.test(t)) return { min: 45, why: "приём/встреча" }
+    if (/магазин|супермаркет|рынок|market|mall|молл|торгов|central|lotus|big ?c|makro|tops|7-?eleven|декатлон|decathlon|ikea|икеа|покупк|продукт/.test(t)) return { min: SHOP_MIN(), why: shopOpen().length ? `покупки по списку (${shopOpen().length} шт.)` : "покупки" }
+    return { min: 15, why: "обычная остановка" }
+  }
+  const vias = [].concat(x.via || []).map(v => {
+    const o = typeof v === "string" ? { place: v } : v && typeof v === "object" ? v : {}
+    const place = String(o.place || o.name || "").trim()
+    if (+o.stay_min > 0) return { place, stay: Math.round(+o.stay_min) }
+    const g = o.shop ? { min: SHOP_MIN(), why: shopOpen().length ? `покупки по списку (${shopOpen().length} шт.)` : "покупки" } : guess(place)
+    return { place, stay: g.min, est: "примерно, " + g.why }
+  }).filter(v => v.place).slice(0, 8)
+  const names = vias.map(v => v.place).concat(String(x.to || "").trim())
+  if (!names[names.length - 1]) return { error: "не указана конечная точка" }
+  const here = await whereAmI().catch(() => null)
+  if (!x.from && !here) return { error: "не знаю, где пользователь: назовите, откуда начать маршрут (from), или разрешите приложению доступ к геопозиции" }
+  const place = async (q, near) => {
+    try {
+      const g = await geoCached({ query: q, near: near || undefined, km: near ? 60 : undefined })
+      const list = (g.geo && g.geo.results) || [], best = near ? nearest(near, list) : list[0]
+      if (best) return { name: best.name || q, pt: { lat: best.lat, lng: best.lng } }
+    } catch (e) {}
+    return { name: q, pt: q }   // не нашли на карте — отдаём Google Картам как адрес
+  }
+  try {
+    const pts = []
+    let near = here ? { lat: here.lat, lng: here.lng } : null
+    if (x.from) { const p = await place(String(x.from).trim(), near); pts.push(p); if (p.pt.lat != null) near = p.pt }
+    else pts.push({ name: "текущее место", pt: { lat: here.lat, lng: here.lng } })
+    for (const q of names) { const p = await place(q, near); pts.push(p); if (p.pt.lat != null) near = p.pt }
+    const legs = await Promise.all(pts.slice(1).map((p, i) => routeLeg(pts[i].pt, p.pt, mode).catch(e => ({ error: String(e.message || e) }))))
+    const out = { mode, legs: legs.map((l, i) => Object.assign({ from: pts[i].name, to: pts[i + 1].name }, l)) }
+    if (!x.from) out.from_location = here.src
+    const bad = legs.filter(l => l.error)
+    if (bad.length === legs.length) return Object.assign(out, { stops: pts.map(p => p.name), error: "маршрут не найден: " + bad[0].error })
+    // непрерывно: дорога (с пробками, если есть) + стоянки на промежуточных точках
+    const drive = legs.map(l => l.minutes_in_traffic || l.minutes || 0), stays = vias.map(v => v.stay || 0)
+    out.drive_minutes = drive.reduce((a, b) => a + b, 0)
+    out.stay_minutes = stays.reduce((a, b) => a + b, 0)
+    out.total_minutes = out.drive_minutes + out.stay_minutes
+    out.total_km = Math.round(legs.reduce((a, l) => a + (l.km || 0), 0) * 10) / 10
+    const tm = v => { const m = /(\d{4}-\d\d-\d\d)?[T ]?(\d{1,2}):(\d\d)/.exec(String(v || "")); if (!m) return null; const d = m[1] ? new Date(m[1] + "T00:00") : new Date(); d.setHours(+m[2], +m[3], 0, 0); return d }
+    const by = tm(x.arrive_by), t0 = by ? new Date(by - out.total_minutes * 60e3) : tm(x.depart) || new Date()
+    let t = +t0
+    out.stops = pts.map((p, i) => {
+      const st = { place: p.name }
+      if (i) { t += drive[i - 1] * 60e3; st.arrive = hm(new Date(t)) }
+      if (i && i < pts.length - 1) { st.stay_min = stays[i - 1]; if (vias[i - 1].est) st.stay_note = vias[i - 1].est; t += stays[i - 1] * 60e3 }
+      if (i < pts.length - 1) st.leave = hm(new Date(t))
+      return st
+    })
+    out.depart = hm(t0); out.finish = hm(new Date(t))
+    if (by) out.note_time = "выезд рассчитан от arrive_by"
+    if (bad.length) out.note = `не посчитаны участки: ${legs.map((l, i) => l.error ? out.legs[i].from + " → " + out.legs[i].to : "").filter(Boolean).join(", ")} — итог без них, уточните адрес`
+    return out
+  } catch (e) { return { error: String(e.message || e) } }
+}
 // Место уже отдано в этом запуске. iPhone (приложение со значка) спрашивает место заново после каждого запуска,
 // даже если раньше разрешили: поэтому сами, без действия человека, место в новом запуске не берём
 let GEO_LIVE = false
@@ -1173,9 +1248,19 @@ const AGENT_TOOLS = [
       "«Карта» (платежи по банковской карте из писем банка), «Итоги: …», «Еда и активность» и другие. Используй, когда нужны данные старше, чем есть в get_history, или лист, которого нет в других инструментах.",
     input_schema: { type: "object", properties: { sheet: { type: "string" }, from: { type: "string", description: "YYYY-MM-DD" }, to: { type: "string", description: "YYYY-MM-DD" },
       limit: { type: "number", description: "сколько последних строк, по умолчанию 200" } } } },
-  { name: "route_to", description: "Сколько ехать (или идти) от того места, где сейчас пользователь, до точки: минуты и километры по Google Картам. " +
-      "to — название места или адрес («Декатлон», «аэропорт Суварнабхуми», «Central World»).",
-    input_schema: { type: "object", properties: { to: { type: "string" }, mode: { type: "string", enum: ["driving", "walking", "transit"], description: "по умолчанию на машине" } }, required: ["to"] } },
+  { name: "route_to", description: "Сколько ехать (или идти): минуты и километры по Google Картам. По умолчанию — от того места, где сейчас пользователь, до точки to. " +
+      "Маршрут через несколько мест (A→B→C…) — ОДНИМ вызовом: from — начало (если не отсюда), via — промежуточные точки по порядку, to — последняя. " +
+      "Маршрут с остановками: у промежуточной точки можно указать stay_min — сколько пробыть там; если не указано, время стоянки прикинется само по типу места (школа ~10, магазин — по списку покупок). Путь считается от выезда до конца: в ответе legs (участки), stops со временем прибытия и отъезда, " +
+      "total_minutes (всё время с остановками), drive_minutes (только дорога), total_km, depart и finish. Места — название или адрес («Декатлон», «аэропорт Суварнабхуми», «Central World»).",
+    input_schema: { type: "object", properties: { to: { type: "string", description: "конечная точка" },
+      from: { type: "string", description: "откуда начать, если не с текущего места пользователя" },
+      via: { type: "array", description: "промежуточные точки по порядку (до 8): строка-место или {place, stay_min, shop}",
+        items: { anyOf: [{ type: "string" }, { type: "object", properties: { place: { type: "string" },
+          stay_min: { type: "number", description: "сколько минут пробыть на точке (забрать детей 10, покупки 30…)" },
+          shop: { type: "boolean", description: "точка — магазин по списку покупок: если stay_min не назван, время прикинет по длине списка" } }, required: ["place"] }] } },
+      depart: { type: "string", description: "во сколько выезд, HH:MM или YYYY-MM-DDTHH:MM; по умолчанию сейчас" },
+      arrive_by: { type: "string", description: "к какому времени надо быть в конечной точке, HH:MM — тогда посчитаем, во сколько выехать" },
+      mode: { type: "string", enum: ["driving", "walking", "transit"], description: "по умолчанию на машине" } }, required: ["to"] } },
   { name: "remind_near", description: "Напомнить, когда пользователь окажется рядом с местом («напомни заехать в Декатлон, когда буду рядом»). " +
       "Находит точки места рядом с пользователем (у сетей — несколько филиалов). Проверяет виджет примерно раз в 15 минут и присылает уведомление. " +
       "Если место не нашлось — попроси уточнить адрес или район.",
@@ -1478,6 +1563,7 @@ async function runTool(name, x) {
       return { days, note: Object.keys(hd).length ? "шаги и активность с часов есть только за дни, которые прислал виджет (обычно последние 14)" : "данных с часов нет" }
     }
     case "route_to": {
+      if (x.from || (Array.isArray(x.via) && x.via.filter(Boolean).length)) return routeMulti(x)
       const here = await whereAmI()
       if (!here) return { error: "не знаю, где пользователь: разрешите приложению доступ к геопозиции или обновите виджет" }
       try {
@@ -1919,6 +2005,7 @@ ${isFriend() ? "" : `- Письма с темой вида «… → IZIDAY» �
 - У тебя есть доступ ко всем данным пользователя: Google Календарь, напоминания IZIDAY, деньги (и платежи по карте), еда, вода, тренировки, шаги и активность с часов — за сегодня и за прошлые дни.
   История по дням — get_history; любой лист таблицы виджета целиком — read_sheet.
 - «Сколько ехать до …», «далеко ли …» — route_to: ответь минутами и километрами (если есть minutes_in_traffic — с учётом пробок).
+- Маршрут через несколько мест («из дома в школу, потом в офис и в Декатлон», «сколько займёт объехать A, B и C», «от отеля до …, потом …») — ОДИН route_to: from — начало, если пользователь назвал не текущее место; via — промежуточные по порядку; to — последнее. Не считай участки отдельными вызовами и не говори, что умеешь только от текущего места. Маршрут с остановками, считается целиком от выезда до конца: сколько пробыть на точке — в via как {place, stay_min} («забрать детей — 10 минут», «покупки — 30»). Если время на точке не названо — НЕ спрашивай, приложение прикинет само (забрать детей ~10 мин, аптека ~10, магазин — по списку покупок, обычно ~30); магазин по списку можно отметить {place, shop: true}; если по смыслу знаешь лучше (большая закупка, примерка) — поставь свой stay_min. В ответе скажи, какие стоянки взяты примерно, и что их можно поменять. «Во сколько выезжать, чтобы к 18:00 быть дома» — arrive_by. Ответь итогом (total_minutes: дорога + стоянки, total_km), временем выезда и окончания и коротко по точкам: прибытие — отъезд.
 - «Напомни, когда буду рядом с …», «напомни заехать в …» — remind_near. Скажи, какие точки нашлись, и что напомнит виджет при проезде рядом. Не говори, что данных нет, пока не посмотрел. Замечай закономерности (недобор воды, перерасход, мало шагов) и говори о них, когда к месту.
 - Удаление и перенос пользователь подтверждает сам — не спрашивай отдельно «точно удалить?» или «точно перенести?».`
 }
