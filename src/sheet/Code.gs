@@ -455,6 +455,7 @@ function cal_(c) {
   }
   if (a === "update") {
     const e = find(c.id, c.occurrence_start);
+    if (e.isRecurringEvent() && c.occurrence_start) return calPatchOcc_(e, c, parse, fmt);   // повторение серии — только через API Календаря
     if (c.title) e.setTitle(String(c.title));
     if (c.location != null) e.setLocation(String(c.location));
     if (c.notes != null) e.setDescription(String(c.notes));
@@ -469,6 +470,37 @@ function cal_(c) {
     return { ok: true };
   }
   throw new Error("неизвестное действие календаря: " + a);
+}
+
+// Одно повторение серии: CalendarApp меняет название у всей серии, а время повторения не двигает (дата и время оставались прежними).
+// Поэтому правим именно этот экземпляр через API Календаря (токен скрипта): название, место, заметки, время.
+function calPatchOcc_(e, c, parse, fmt) {
+  const api = "https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(e.getOriginalCalendarId()) + "/events";
+  const headers = { Authorization: "Bearer " + ScriptApp.getOAuthToken() };
+  const get = url => { const r = UrlFetchApp.fetch(url, { headers, muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) throw new Error("Календарь не отдал повторение (" + r.getResponseCode() + ") — ничего не изменено"); return JSON.parse(r.getContentText()); };
+  const master = (get(api + "?iCalUID=" + encodeURIComponent(e.getId()) + "&showDeleted=false&maxResults=10").items || []).find(x => x.recurrence && x.recurrence.length);
+  if (!master) throw new Error("не нашёл серию события — ничего не изменено");
+  const occ = parse(c.occurrence_start), t0 = x => x && (x.dateTime ? new Date(x.dateTime) : parse(x.date)).getTime();
+  const items = get(api + "/" + encodeURIComponent(master.id) + "/instances?showDeleted=false&maxResults=10&timeMin=" + encodeURIComponent(new Date(occ.getTime() - 864e5).toISOString())
+    + "&timeMax=" + encodeURIComponent(new Date(occ.getTime() + 2 * 864e5).toISOString())).items || [];
+  const inst = items.find(x => t0(x.start) === occ.getTime()) || items.find(x => t0(x.originalStartTime) === occ.getTime());
+  if (!inst) throw new Error("не нашёл повторение " + c.occurrence_start + " — ничего не изменено");
+  const all = !!inst.start.date, body = {};
+  if (c.title) body.summary = String(c.title);
+  if (c.location != null) body.location = String(c.location);
+  if (c.notes != null) body.description = String(c.notes);
+  if (c.start) { const dur = t0(inst.end) - t0(inst.start), s = parse(c.start);
+    if (all && !/T/.test(c.start)) { const en = c.end ? parse(c.end) : new Date(s.getTime() + dur - 864e5);
+      body.start = { date: fmt(s, true) }; body.end = { date: fmt(new Date(en.getTime() + 864e5 + 3 * 36e5), true) }; }   // +3 ч — на случай перевода часов
+    else { const tzn = inst.start.timeZone || master.start.timeZone || Session.getScriptTimeZone(), en = c.end ? parse(c.end) : new Date(s.getTime() + dur);
+      body.start = { dateTime: s.toISOString(), timeZone: tzn }; body.end = { dateTime: en.toISOString(), timeZone: tzn }; } }
+  const put = UrlFetchApp.fetch(api + "/" + encodeURIComponent(inst.id), { method: "patch", contentType: "application/json", headers, muteHttpExceptions: true, payload: JSON.stringify(body) });
+  if (put.getResponseCode() !== 200) throw new Error("Календарь не принял изменение (" + put.getResponseCode() + ") — ничего не изменено");
+  const r = JSON.parse(put.getContentText()), ra = !!r.start.date, cal = CalendarApp.getCalendarById(e.getOriginalCalendarId());
+  return { ok: true, event: { id: e.getId(), title: r.summary || "", start: fmt(ra ? parse(r.start.date) : new Date(r.start.dateTime), ra),
+    end: fmt(ra ? new Date(parse(r.end.date).getTime() - 864e5) : new Date(r.end.dateTime), ra), all_day: ra, location: r.location || "",
+    notes: String(r.description || "").slice(0, 300), calendar: cal ? cal.getName() : "", recurring: true } };
 }
 
 // «Это и все следующие повторения»: правило повтора обрезается датой повторения (UNTIL), прошлые встречи остаются.
