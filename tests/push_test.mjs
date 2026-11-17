@@ -104,5 +104,18 @@ hub({ from: "app", push: { action: "test" } })
 const st = hub({ from: "app", push: { action: "status" } }).push
 check(st.subs === 1 && st.trigger, "ответ 410 — подписка удалена", st)
 check(hub({ from: "widget", since: 0 }).pushOn === true, "виджет узнаёт, что пуши шлёт таблица")
+// 6. дубли: одинаковый текст под разными id — один пуш; одна установка приложения — одна подписка
+hub({ from: "widget", since: 0, snap: { pushAware: true, events: [] }, lists: { nudges: [{ id: "dupA", date: Date.now() - 30e3, u: Date.now(), title: "🔁 Дубль", text: "Одна и та же подсказка" },
+  { id: "dupB", date: Date.now() - 20e3, u: Date.now(), title: "🔁 Дубль", text: "Одна и та же подсказка" }] } })
+sh.pushTick()
+const dups = hub({ from: "app", push: { action: "outbox" } }).push.items.filter(x => x.title === "🔁 Дубль")
+check(dups.length === 1, "одинаковый текст под двумя id — уходит один пуш", dups.map(x => x.id))
+const subA = e => ({ from: "app", push: { action: "subscribe", sub: { endpoint: "https://push.example/" + e, keys: { p256dh: "x", auth: "y" } }, ua: "iPhone X", dev: "d1" } })
+hub({ from: "app", push: { action: "subscribe", sub: { endpoint: "https://push.example/old-nodev", keys: { p256dh: "x", auth: "y" } }, ua: "iPhone X" } })
+hub({ from: "app", push: { action: "subscribe", sub: { endpoint: "https://push.example/ipad", keys: { p256dh: "x", auth: "y" } }, ua: "iPad Y", dev: "d2" } })
+hub(subA("e1")); const subN = hub({ from: "app", push: { action: "status" } }).push.subs
+hub(subA("e2"))
+const st2 = hub({ from: "app", push: { action: "status" } }).push.subs
+check(st2 === subN && st2 === 3, "новая подписка той же установки заменяет старую (и старую без метки с того же телефона), другое устройство остаётся", { subN, st2 })
 console.log(ok ? "\nPUSH_OK" : "\nPUSH_FAIL")
 process.exit(ok ? 0 : 1)

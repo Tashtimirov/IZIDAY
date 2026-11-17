@@ -950,8 +950,12 @@ function push_(p, from) {
   if (a === "subscribe") {
     const s = p.sub || {};
     if (!/^https:\/\//.test(s.endpoint || "") || !s.keys) throw new Error("нет подписки");
-    const subs = (hubGet_("push_subs") || []).filter(x => x.endpoint !== s.endpoint);
-    subs.push({ endpoint: s.endpoint, keys: s.keys, at: Date.now(), ua: String(p.ua || "").slice(0, 120) });
+    // одно устройство — одна подписка: iPhone иногда выдаёт приложению новую подписку, а старая ещё принимает пуши —
+    // тогда одно уведомление приходило дважды. dev — метка установки приложения, prev — прежняя подписка этой установки;
+    // подписки без метки с тем же телефоном (ua) — от этой же установки до обновления
+    const ua = String(p.ua || "").slice(0, 120), dev = String(p.dev || "").slice(0, 40), prev = String(p.prev || "");
+    const subs = (hubGet_("push_subs") || []).filter(x => x.endpoint !== s.endpoint && !(prev && x.endpoint === prev) && !(dev && (x.dev === dev || (!x.dev && x.ua === ua))));
+    subs.push(Object.assign({ endpoint: s.endpoint, keys: s.keys, at: Date.now(), ua }, dev ? { dev } : {}));
     hubSet_("push_subs", subs.slice(-5));
     if (p.cfg) hubSet_("push_cfg", p.cfg);
     pushTrigger_();
@@ -981,7 +985,10 @@ function pushTick() {
     if (!subs.length) return { subs: 0 };
     const now = Date.now(), from = now - 15 * 60e3;   // окно с запасом на пропущенный запуск; повторы отсекает push_sent
     const sent = hubGet_("push_sent") || {}, items = [];
-    const once = (id, x) => { if (sent[id]) return; sent[id] = now; items.push(Object.assign({ id }, x)); };
+    // повтор отсекается и по id, и по тексту: то же событие в двух календарях или та же подсказка под другим id за 3 часа — один пуш
+    const txtKey = x => (String(x.title || "") + "|" + String(x.body || "")).replace(/\s+/g, " ").trim();
+    const recentTxt = new Set((hubGet_("push_out") || []).filter(x => x && now - x.at < 3 * 3600e3).map(txtKey));
+    const once = (id, x) => { if (sent[id]) return; sent[id] = now; const k = txtKey(x); if (recentTxt.has(k)) return; recentTxt.add(k); items.push(Object.assign({ id }, x)); };
     const snap = hubGet_("snap") || {}, full = !!snap.pushAware;   // старый виджет сам шлёт воду, подсказки и напоминания
     const alive = l => (hubGet_(l) || []).filter(x => x && !x.deleted);
     const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();

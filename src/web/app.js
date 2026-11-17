@@ -4555,16 +4555,24 @@ async function pushEnable() {
     let sub = await reg.pushManager.getSubscription()
     if (sub && D.pushKey && D.pushKey !== key) { await sub.unsubscribe(); sub = null }
     if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(key) })
-    const r = (await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: pushCfg() } })).push || {}
+    const r = (await hubPost(pushSubMsg(sub))).push || {}
     if (r.error) throw new Error(r.error)
     D.pushKey = key; D.pushAt = Date.now(); save(false)
     pushHere(true)
     render(); toast("🔔 Уведомления включены")
   } catch (e) { ui.info("Не получилось включить", String(e.message || e)) }
 }
+// Подписка для таблицы: с меткой установки (dev) и прежней подпиской (prev) — таблица оставит одну подписку на устройство,
+// и одно уведомление не придёт дважды
+function pushSubMsg(sub) {
+  if (!D.pushDev) D.pushDev = "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+  const j = sub.toJSON(), prev = D.pushEnd && D.pushEnd !== j.endpoint ? D.pushEnd : ""
+  D.pushEnd = j.endpoint
+  return { push: { action: "subscribe", sub: j, ua: navigator.userAgent, cfg: pushCfg(), dev: D.pushDev, prev } }
+}
 // Что таблица учитывает в пушах: цель по воде, валюта сводок
 const pushCfg = () => ({ waterGoal: H().waterGoal, currency: core.CONFIG.currency, water: waterTips() ? 1 : 0, off: [...tipsOff()].sort() })
-async function pushCfgSend() { try { if (D.conn && pushAble() && Notification.permission === "granted") { const sub = await pushSub(); if (sub) { await pushConn(); await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: pushCfg() } }) } } } catch (e) {} }
+async function pushCfgSend() { try { if (D.conn && pushAble() && Notification.permission === "granted") { const sub = await pushSub(); if (sub) { await pushConn(); await hubPost(pushSubMsg(sub)) } } } catch (e) {} }
 async function pushTest() {
   try { const r = (await hubPost({ push: { action: "test" } })).push || {}; toast(r.sent ? "🔔 Отправил — сейчас придёт" : `Не дошло: ${(r.errors || [r.error || "нет подписки"]).join("; ")}`) }
   catch (e) { toast("Не получилось: " + e.message) }
@@ -4586,8 +4594,8 @@ async function pushKeep() {
       D.pushKey = key; D.pushAt = 0
       try { window.METRICS && METRICS.act("уведомления: подписка восстановлена") } catch (e) {}
     }
-    if (Date.now() - (D.pushAt || 0) < 864e5) return
-    await pushConn(); await hubPost({ push: { action: "subscribe", sub: sub.toJSON(), ua: navigator.userAgent, cfg: pushCfg() } }); D.pushAt = Date.now(); save(false)
+    if (Date.now() - (D.pushAt || 0) < 864e5 && D.pushDev && D.pushEnd === sub.endpoint) return   // раз в день; новая подписка или первая с меткой — сразу
+    await pushConn(); await hubPost(pushSubMsg(sub)); D.pushAt = Date.now(); save(false)
   } catch (e) {} finally { keepBusy = false }
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") setTimeout(pushKeep, 3000) })

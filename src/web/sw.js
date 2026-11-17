@@ -79,8 +79,16 @@ function pretty(x) {
   if (m) return { t: `${e} ${m[1]}`, b: m[2] }
   return b.length <= 60 ? { t: `${e} ${b}`, b: "" } : { t: `${e} ${b.slice(0, 57).replace(/\s+\S*$/, "")}…`, b }
 }
+// Защита от двойных уведомлений. (1) Два пуша почти разом (две подписки одного телефона, повтор с сервера) раньше
+// читали список «показано» одновременно и оба показывали одно и то же: теперь показ идёт строго по очереди.
+// (2) Одинаковый текст (то же событие в двух календарях, тот же пуш с другим id) за 3 часа второй раз не показываем.
+// (3) Нечего показать нового — iPhone всё равно требует уведомление на каждый пуш, иначе снимет подписку; раньше
+// повторяли последнее, а iPhone не заменяет его по tag и показывает дубль. Теперь — тихое служебное, которое тут же закрываем
+let showQ = Promise.resolve()
+const inQueue = f => { const j = showQ.then(f, f); showQ = j.catch(() => {}); return j }
+const txtKey = x => (String(x.title || "") + "|" + String(x.body || "")).replace(/\s+/g, " ").trim()
 self.addEventListener("push", e => e.waitUntil((async () => {
-  let items = []
+  let items = [], got = false
   try {
     const c = await connRead("conn")
     if (c && c.hook) {
@@ -90,20 +98,36 @@ self.addEventListener("push", e => e.waitUntil((async () => {
       try {
         const r = await fetch(c.hook, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, credentials: "omit", cache: "no-store", signal: ab.signal,
           body: JSON.stringify({ secret: c.secret, hub: { from: "app", push: { action: "outbox" } } }) })
-        items = ((await r.json()).push || {}).items || []
+        items = ((await r.json()).push || {}).items || []; got = true
       } finally { clearTimeout(tm) }
     }
   } catch (err) {}
-  const shown = (await connRead("shown").catch(() => null)) || []
-  // старше 40 минут — уже не новость (например, после обновления приложения): не показываем повторно пачкой
-  let fresh = items.filter(x => x && x.id && !shown.includes(x.id) && !(x.at && Date.now() - x.at > 40 * 60e3))
-  // iPhone требует показать уведомление на каждый пуш: нечего нового — повторяем последнее с тем же tag (оно просто заменит прежнее)
-  if (!fresh.length) fresh = items.length ? [items[items.length - 1]] : [{ id: "x" + Date.now(), title: "IZIDAY", body: "Есть напоминание — нажмите, чтобы открыть", url: "./" }]
-  for (const x of fresh.slice(-4)) { const p = pretty(x)
-    // подсказка помощника: нажатие открывает чат с этой подсказкой и сразу микрофон — ответить голосом
-    const url = /#chat$/.test(x.url || "") ? "./#reply=" + encodeURIComponent((p.t + "\n" + p.b).trim()) : x.url
-    await self.registration.showNotification(p.t, { body: p.b, tag: x.id, icon: "icon-192.png", badge: "icon-192.png", data: { url } }) }
-  await connWrite("shown", shown.concat(fresh.map(x => x.id)).slice(-200))
+  await inQueue(async () => {
+    const shown = (await connRead("shown").catch(() => null)) || []
+    const txt = ((await connRead("shownTxt").catch(() => null)) || []).filter(t => t && Date.now() - t.at < 3 * 3600e3)
+    const seen = new Set(txt.map(t => t.k))
+    // старше 40 минут — уже не новость (например, после обновления приложения): не показываем повторно пачкой
+    const fresh = []
+    for (const x of items) {
+      if (!x || !x.id || shown.includes(x.id) || (x.at && Date.now() - x.at > 40 * 60e3)) continue
+      shown.push(x.id)   // и id, и текст отмечаем сразу: дубль в той же пачке тоже отсекается
+      const k = txtKey(x); if (seen.has(k)) continue
+      seen.add(k); txt.push({ k, at: Date.now() }); fresh.push(x)
+    }
+    // таблица не ответила — текст неизвестен, но пуш мог быть важным: общее уведомление
+    if (!fresh.length && !got) fresh.push({ id: "x" + Date.now(), title: "IZIDAY", body: "Есть напоминание — нажмите, чтобы открыть", url: "./" })
+    if (!fresh.length) {
+      // ничего нового: служебное уведомление, сразу закрытое — iPhone доволен, у человека в списке ничего не появляется
+      await self.registration.showNotification("IZIDAY", { body: "", tag: "izi-quiet", silent: true, data: { url: "./" } })
+      try { for (const n of await self.registration.getNotifications({ tag: "izi-quiet" })) n.close() } catch (err) {}
+    }
+    for (const x of fresh.slice(-4)) { const p = pretty(x)
+      // подсказка помощника: нажатие открывает чат с этой подсказкой и сразу микрофон — ответить голосом
+      const url = /#chat$/.test(x.url || "") ? "./#reply=" + encodeURIComponent((p.t + "\n" + p.b).trim()) : x.url
+      await self.registration.showNotification(p.t, { body: p.b, tag: x.id, icon: "icon-192.png", badge: "icon-192.png", data: { url } }) }
+    await connWrite("shown", shown.slice(-200))
+    await connWrite("shownTxt", txt.slice(-100))
+  })
 })()))
 self.addEventListener("notificationclick", e => {
   e.notification.close()
