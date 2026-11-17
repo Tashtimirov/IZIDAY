@@ -2,7 +2,8 @@
 // участки и итог. Старый вызов (только to, от текущего места) не меняется. Провал — ROUTEMULTI_FAIL
 import { boot2 } from "./today_boot.mjs"
 const root = process.argv[2] || new URL("../dist/web/", import.meta.url).pathname
-const { page, browser, server, sheet } = await boot2({ root, time: new Date("2026-11-05T03:00:00Z") })
+const { page, browser, server, sheet } = await boot2({ root, time: new Date("2026-11-05T03:00:00Z"),
+  events: ({ bkk, iso }) => [{ id: "pick", title: "Забрать детей из школы и домой", start: iso(bkk(0, 15, 40)), end: iso(bkk(0, 16, 15)), calendar: "Личное" }] })
 let fails = 0
 const ok = (c, m) => { if (c) console.log("✓", m); else { fails++; console.log("✗", m) } }
 const PL = { "Отель": [7.80, 98.30], "Школа": [7.85, 98.34], "Офис": [7.89, 98.39], "Декатлон": [7.95, 98.36] }
@@ -37,6 +38,7 @@ const lastTool = () => page.evaluate(() => JSON.parse(REQ[REQ.length - 1].messag
 const sys = await page.evaluate(async () => { SCN.push({ content: [{ type: "text", text: "Да." }], stop_reason: "end_turn" }); await chatSend("привет"); const q = REQ[REQ.length - 1]; return { tool: JSON.stringify(q.tools.find(t => t.name === "route_to")), sys: JSON.stringify(q.system) } })
 ok(/via/.test(sys.tool) && /from/.test(sys.tool), "у route_to есть from и via")
 ok(/Маршрут через несколько мест/.test(sys.sys), "в правилах Изи — маршрут через несколько мест одним вызовом")
+ok(/не пересекаются/.test(sys.sys) && /и домой/.test(sys.sys), "в правилах: события маршрута встык, без наложений, старую остановку поправить")
 // 1. Не от текущего места: Отель → Школа → Офис → Декатлон
 HUB.length = 0
 await page.evaluate(async () => {
@@ -83,6 +85,7 @@ const shopN = await page.evaluate(() => shopOpen().length)
 const est = Math.min(60, Math.max(15, 10 + 2 * shopN))
 ok(r.stay_minutes === 10 + est && r.total_minutes === r.drive_minutes + r.stay_minutes, `стоянки прибавлены: дорога ${r.drive_minutes} + стоянки ${r.stay_minutes} = ${r.total_minutes} (покупок в списке ${shopN})`)
 ok(r.depart === "15:30" && r.stops[1].arrive && r.stops[1].leave && r.stops[1].stay_min === 10 && /списку/.test(r.stops[2].stay_note || ""), "расписание: " + r.stops.map(x => `${x.place} ${x.arrive || ""}–${x.leave || ""}`).join(", ") + " → конец " + r.finish)
+ok((r.busy || []).some(e => e.id === "pick") && /не создавай второе/.test(r.busy_note || ""), "уже стоящее «Забрать детей… и домой» показано Изи как занятое: " + (r.busy || []).map(e => e.title + " " + e.time).join(", "))
 const mins = h => +h.slice(0, 2) * 60 + +h.slice(3)
 ok(mins(r.finish) - mins(r.depart) === r.total_minutes, "выезд + всё время = окончание")
 // 5. «быть к 18:00» — выезд считается назад
