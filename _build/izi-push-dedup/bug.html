@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<title>IZIDAY — сообщить о недочёте</title>
+<link rel="apple-touch-icon" href="icon-180.png?v=5">
+<link rel="icon" href="icon-192.png?v=5">
+<style>
+:root{--bg:#F2F2F7;--card:#fff;--text:#1c1c1e;--sub:#6e6e73;--line:rgba(60,60,67,.12);--navy:#0A9F6E;--gold:#0A9F6E;--gold-d:#0A9F6E;--red:#D7473A;--chip:#F2F2F7;--sh:0 1px 2px rgba(0,0,0,.04),0 8px 24px -12px rgba(0,0,0,.12)}
+@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f2f2f7;--sub:#a1a1a6;--line:rgba(84,84,88,.5);--navy:#12C28A;--gold:#12C28A;--gold-d:#12C28A;--chip:#2c2c2e;--sh:none}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--text);font:17px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:560px;margin:0 auto;padding:calc(14px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom))}
+.top{display:flex;align-items:center;gap:10px;min-height:44px}
+.back{border:0;background:none;color:var(--navy);font:inherit;font-size:17px;padding:8px 0;cursor:pointer;display:flex;align-items:center;gap:2px}
+.back svg{width:20px;height:20px}
+h1{font-weight:700;font-size:32px;line-height:1.15;margin:8px 0 6px;letter-spacing:-.02em}
+.lead{color:var(--sub);margin:0 0 18px;font-size:16px}
+.card{background:var(--card);border-radius:20px;padding:16px;margin:0 0 14px;box-shadow:var(--sh);border:1px solid var(--line)}
+label.h,.h{display:block;font-weight:600;font-size:15px;margin:0 0 8px}
+.h small{font-weight:400;color:var(--sub)}
+textarea,input[type=text],input[type=email]{width:100%;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:14px;padding:12px 14px;font:inherit;font-size:17px;outline:none;transition:border-color .2s,box-shadow .2s;-webkit-appearance:none}
+textarea{min-height:120px;resize:vertical}
+textarea:focus,input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(10,159,110,.18)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);background:var(--chip);color:var(--text);border-radius:999px;padding:8px 14px;font:inherit;font-size:15px;cursor:pointer;transition:transform .15s cubic-bezier(.2,.8,.2,1),background .2s,color .2s}
+.chip:active{transform:scale(.96)}
+.chip.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.shots{display:flex;gap:10px;flex-wrap:wrap}
+.shot{position:relative;width:84px;height:120px;border-radius:12px;overflow:hidden;background:var(--chip);border:1px solid var(--line);animation:pop .3s cubic-bezier(.2,.8,.2,1)}
+.shot img{width:100%;height:100%;object-fit:cover;display:block}
+.shot button{position:absolute;top:4px;right:4px;width:26px;height:26px;border-radius:50%;border:0;background:rgba(0,0,0,.55);color:#fff;font-size:16px;line-height:26px;padding:0;cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.add{width:84px;height:120px;border-radius:12px;border:1.5px dashed var(--gold);background:none;color:var(--gold-d);font:inherit;font-size:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer}
+.add svg{width:26px;height:26px}
+@keyframes pop{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
+details summary{cursor:pointer;color:var(--navy);font-weight:600;font-size:15px;list-style:none}
+details summary::-webkit-details-marker{display:none}
+details[open] summary{margin-bottom:10px}
+.auto{color:var(--sub);font-size:13px;margin:4px 2px 16px}
+.send{width:100%;border:0;border-radius:16px;padding:16px;font:inherit;font-weight:600;font-size:17px;color:#fff;background:var(--navy);cursor:pointer;transition:transform .15s cubic-bezier(.2,.8,.2,1),opacity .2s}
+.send:active{transform:scale(.98)}
+.send[disabled]{opacity:.45}
+.voice{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.rec{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:999px;padding:9px 15px 9px 12px;font:inherit;font-weight:600;font-size:15px;background:rgba(10,159,110,.12);color:var(--navy);cursor:pointer;transition:transform .15s cubic-bezier(.2,.8,.2,1),background .2s}
+.rec svg{width:18px;height:18px}
+.rec:active{transform:scale(.96)}
+.rec.on{background:rgba(215,71,58,.14);color:var(--red)}
+.rec.on .dot{width:10px;height:10px;border-radius:50%;background:var(--red);animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.25}}
+.voice audio{height:36px;max-width:100%;flex:1 1 180px}
+.voice .del{border:0;background:none;color:var(--red);font:inherit;font-size:15px;cursor:pointer;padding:6px}
+.vtxt{flex:1 1 100%;color:var(--sub);font-size:15px;margin:2px 2px 0;white-space:pre-wrap}
+.scr{color:var(--sub);font-size:14px;margin:10px 2px 0}
+.err{color:var(--red);font-size:15px;margin:10px 2px 0;min-height:1em}
+.done{text-align:center;padding:40px 8px 10px;animation:pop .4s cubic-bezier(.2,.8,.2,1)}
+.done .ok{width:72px;height:72px;margin:0 auto 14px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center}
+.done .ok svg{width:36px;height:36px}
+.done p{color:var(--sub)}
+.row{display:flex;gap:10px;margin-top:22px}
+.row button{flex:1}
+.ghost{background:var(--chip);color:var(--text);border:1px solid var(--line)}
+[hidden]{display:none!important}
+</style></head>
+<body><main>
+<div class="top"><button class="back" id="back" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>IZIDAY</button></div>
+
+<form id="f" novalidate>
+<h1>Нашли недочёт?</h1>
+<p class="lead" id="hi">Расскажите, что пошло не так. Любая мелочь помогает сделать IZIDAY лучше.</p>
+
+<div class="card">
+  <label class="h" for="what">Что случилось</label>
+  <textarea id="what" placeholder="Напишите или запишите голосом. Например: нажал «Изи», сказал «напомни завтра в 9», а напоминание не появилось" required></textarea>
+  <div class="voice" id="voice"><button type="button" class="rec" id="rec"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg><span>Записать голосом</span></button></div>
+</div>
+
+<div class="card">
+  <div class="h">Где</div>
+  <div class="chips" id="where"></div>
+  <div class="scr" id="scr" hidden></div>
+</div>
+
+<div class="card">
+  <div class="h">Насколько мешает</div>
+  <div class="chips" id="level"></div>
+</div>
+
+<div class="card">
+  <div class="h">Скриншот или фото <small>— до 3, по желанию</small></div>
+  <div class="shots" id="shots"><button type="button" class="add" id="addShot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="12" cy="12" r="3.2"/><path d="M8 5l1.5-2h5L16 5"/></svg>Добавить</button></div>
+  <input type="file" id="file" accept="image/*" multiple hidden>
+</div>
+
+<div class="card">
+  <details id="more"><summary>Подробнее: как повторить, что ожидали</summary>
+  <textarea id="steps" placeholder="1. Открыл «Деньги»&#10;2. Добавил расход голосом&#10;Ожидал: расход в списке. Получилось: ничего"></textarea>
+  </details>
+</div>
+
+<div class="card" id="whoCard" hidden>
+  <label class="h" for="name">Как вас зовут <small>— чтобы мы могли уточнить</small></label>
+  <input type="text" id="name" autocomplete="name" placeholder="Имя">
+</div>
+
+<div class="auto" id="auto"></div>
+<button class="send" id="send" type="submit">Отправить</button>
+<div class="err" id="err" role="alert"></div>
+</form>
+
+<section class="done" id="done" hidden>
+  <div class="ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+  <h1 id="doneT">Спасибо!</h1>
+  <p id="doneP">Недочёт записан. Мы посмотрим и исправим.</p>
+  <div class="row"><button class="send ghost" id="again" type="button">Сообщить ещё</button><button class="send" id="home" type="button">В IZIDAY</button></div>
+</section>
+</main>
+<script>
+(() => {
+  const HOOK = "https://script.google.com/macros/s/AKfycbwWUs_CHYb_pEga_96QaTnkHDd8GQjxJkonAQMBIi41-JdgvVX2TT9U5kFNvxhHgeFj/exec"
+  const WHERE = ["Сегодня", "Планы", "Изи: чат", "Изи: голос", "Деньги", "Здоровье", "Календарь", "Вход и настройки", "Установка", "Другое"]
+  const LEVEL = ["Мелочь", "Неудобно", "Не могу пользоваться"]
+  const TAB = { today: "Сегодня", plans: "Планы", chat: "Изи: чат", talk: "Изи: голос", money: "Деньги", health: "Здоровье", cal: "Календарь", more: "Вход и настройки" }
+  const DRAFT = "izi.bug.draft", $ = s => document.getElementById(s)
+  const q = new URLSearchParams(location.search)
+  let D = {}; try { D = JSON.parse(localStorage.getItem("myday.web") || "{}") || {} } catch (e) {}
+  const conn = D.conn || {}, me = conn.friend || null
+  const secret = conn.hook === HOOK && conn.secret ? conn.secret : ""
+  const st = { where: TAB[q.get("where")] || "", level: "", shots: [], audio: "", sec: 0, vt: "", vtJob: null }
+  const WIN = String(q.get("win") || "").slice(0, 50)   // окно, открытое в момент нажатия (заголовок)
+  const place = () => [st.where, WIN].filter(Boolean).join(" › ")
+
+  function chips(id, list, key) {
+    const box = $(id)
+    box.innerHTML = list.map(t => `<button type="button" class="chip${st[key] === t ? " on" : ""}">${t}</button>`).join("")
+    box.onclick = e => { const b = e.target.closest(".chip"); if (!b) return
+      st[key] = st[key] === b.textContent ? "" : b.textContent
+      ;[...box.children].forEach(c => c.classList.toggle("on", c.textContent === st[key])); keep() }
+  }
+  chips("where", WHERE, "where"); chips("level", LEVEL, "level")
+  if (st.where || WIN) { $("scr").hidden = false; $("scr").textContent = "Экран, где нажали кнопку: " + (place() || "—") }
+
+  // кто: друг вошёл через Google — имя известно, иначе спросим (необязательно)
+  if (me && me.name) $("hi").textContent = `${me.name.split(" ")[0]}, расскажите, что пошло не так. Любая мелочь помогает сделать IZIDAY лучше.`
+  if (!secret && !(me && me.name)) $("whoCard").hidden = false
+
+  // устройство — пишем сами, чтобы не спрашивать
+  function device() {
+    const ua = navigator.userAgent, d = { w: screen.width, h: screen.height, lang: navigator.language || "" }
+    let m
+    if ((m = ua.match(/(iPhone|iPad|iPod).*? OS (\d+)[_.](\d+)/))) { d.model = m[1]; d.os = `iOS ${m[2]}.${m[3]}` }
+    else if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) { d.model = "iPad"; d.os = "iPadOS" }
+    else if ((m = ua.match(/Android (\d+(?:\.\d+)?);\s*([^;)]+?)(?:\sBuild|\))/))) { d.model = m[2].trim(); d.os = `Android ${m[1]}` }
+    else if (/Mac OS X/.test(ua)) { d.model = "Mac"; d.os = "macOS" }
+    else if (/Windows/.test(ua)) { d.model = "ПК"; d.os = "Windows" }
+    d.browser = /CriOS|Chrome\//.test(ua) && !/Edg/.test(ua) ? "Chrome" : /FxiOS|Firefox/.test(ua) ? "Firefox" : /Edg/.test(ua) ? "Edge" : /Safari/.test(ua) ? "Safari" : ""
+    d.pwa = !!(navigator.standalone || (matchMedia && matchMedia("(display-mode: standalone)").matches))
+    return d
+  }
+  const dev = device()
+  let ver = ""
+  const showAuto = () => { $("auto").textContent = "Вместе с отчётом уйдут: " + [dev.model, dev.os, dev.browser, ver && "версия " + ver].filter(Boolean).join(" · ") + " и последние ошибки приложения — без ваших записей." }
+  showAuto()
+  try { caches.keys().then(k => { const v = k.filter(x => /^myday-/.test(x) && x !== "myday-conn")[0]; if (v) { ver = v.replace(/^myday-/, ""); showAuto() } }).catch(() => {}) } catch (e) {}
+  let errors = []; try { errors = (JSON.parse(localStorage.getItem("izi.errlog") || "[]") || []).map(x => typeof x === "string" ? x : `${x.t || ""} [${x.tab || ""}] ${x.m || ""}`) } catch (e) {}
+
+  // черновик не пропадает, если закрыть страницу
+  function keep() { try { localStorage.setItem(DRAFT, JSON.stringify({ what: $("what").value, steps: $("steps").value, name: $("name").value, where: st.where, level: st.level })) } catch (e) {} }
+  try { const d = JSON.parse(localStorage.getItem(DRAFT) || "null"); if (d) {
+    $("what").value = d.what || ""; $("steps").value = d.steps || ""; $("name").value = d.name || ""
+    if (!st.where && d.where) st.where = d.where; if (d.level) st.level = d.level
+    if (d.steps) $("more").open = true
+    chips("where", WHERE, "where"); chips("level", LEVEL, "level") } } catch (e) {}
+  ;["what", "steps", "name"].forEach(id => $(id).addEventListener("input", keep))
+
+  // скриншоты: сжимаем на телефоне до ~1600 px, чтобы отправка шла быстро
+  function shrink(file) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file), img = new Image()
+      img.onload = () => { const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight))
+        const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k)
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); res(c.toDataURL("image/jpeg", .8)) }
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("не удалось открыть картинку")) }
+      img.src = url
+    })
+  }
+  function drawShots() {
+    const box = $("shots"); box.querySelectorAll(".shot").forEach(n => n.remove())
+    st.shots.forEach((s, i) => { const d = document.createElement("div"); d.className = "shot"
+      d.innerHTML = `<img alt="Скриншот ${i + 1}" src="${s}"><button type="button" aria-label="Убрать">×</button>`
+      d.querySelector("button").onclick = () => { st.shots.splice(i, 1); drawShots() }
+      box.insertBefore(d, $("addShot")) })
+    $("addShot").hidden = st.shots.length >= 3
+  }
+  $("addShot").onclick = () => $("file").click()
+  $("file").onchange = async e => {
+    for (const f of [...e.target.files].slice(0, 3 - st.shots.length)) { try { st.shots.push(await shrink(f)) } catch (err) { $("err").textContent = err.message } }
+    e.target.value = ""; drawShots()
+  }
+
+  // голосовое сообщение: до 3 минут, уходит файлом вместе с отчётом
+  const MAXS = 180
+  let mr = null, chunks = [], tick = null, t0 = 0
+  const recBtn = $("rec"), recTxt = () => recBtn.querySelector("span")
+  const mmss = n => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`
+  function drawVoice() {
+    $("voice").querySelectorAll("audio,.del,.vtxt").forEach(n => n.remove())
+    recBtn.hidden = !!st.audio
+    if (!st.audio) return
+    const a = document.createElement("audio"); a.controls = true; a.src = st.audio; a.preload = "metadata"
+    const d = document.createElement("button"); d.type = "button"; d.className = "del"; d.textContent = "Удалить"
+    d.onclick = () => { st.audio = ""; st.sec = 0; st.vt = ""; st.vtJob = null; drawVoice() }
+    $("voice").append(a, d)
+    if (st.vtJob || st.vt) { const t = document.createElement("div"); t.className = "vtxt"; t.id = "vtxt"
+      t.textContent = st.vt ? "Текстом: " + st.vt : "Расшифровываю…"; $("voice").append(t) }
+  }
+  // расшифровка тем же Whisper (Groq), что и в приложении, если у вас есть ключ; нет — сервер расшифрует сам
+  const sttKey = () => (D.stt && D.stt.key) || ""
+  function whisper(blob) {
+    const fd = new FormData(), ext = /mp4|m4a|aac/.test(blob.type) ? "m4a" : /webm/.test(blob.type) ? "webm" : "ogg"
+    fd.append("file", blob, "voice." + ext); fd.append("model", "whisper-large-v3"); fd.append("language", "ru"); fd.append("response_format", "text")
+    const job = fetch("https://api.groq.com/openai/v1/audio/transcriptions", { method: "POST", headers: { Authorization: "Bearer " + sttKey() }, body: fd })
+      .then(r => r.ok ? r.text() : "").then(t => String(t || "").trim()).catch(() => "")
+      .then(t => { if (st.vtJob === job) { st.vt = t; st.vtJob = null; drawVoice() } return t })
+    return job
+  }
+  // нет ключа Whisper (у друзей) — пока идёт запись, параллельно слушает встроенное распознавание телефона (как в чате Изи)
+  let sr = null, srText = "", srOn = false
+  function srStart() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR || sttKey()) return
+    srText = ""; srOn = true
+    let base = ""
+    const run = () => { if (!srOn) return
+      try { const r = new SR(); sr = r
+        r.lang = (localStorage.getItem("izi-lang") === "en" || /^en/.test(navigator.language || "") && localStorage.getItem("izi-lang") !== "ru") ? "en-US" : "ru-RU"
+        r.continuous = true; r.interimResults = true
+        let fin = ""
+        r.onresult = e => { fin = ""; for (const x of e.results) if (x.isFinal) fin += x[0].transcript + " "; srText = (base + " " + fin).replace(/\s+/g, " ").trim()
+          let all = fin; for (const x of e.results) if (!x.isFinal) all += x[0].transcript; const t = (base + " " + all).replace(/\s+/g, " ").trim()
+          if (t && mr && mr.state === "recording") { const el = $("vlive") || Object.assign(document.createElement("div"), { id: "vlive", className: "vtxt" }); el.textContent = t; if (!el.parentNode) $("voice").append(el) } }
+        r.onend = () => { base = srText; if (srOn) setTimeout(run, 150) }   // iPhone сам останавливает распознавание на паузе — продолжаем
+        r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") srOn = false }
+        r.start() } catch (e) { srOn = false } }
+    run()
+  }
+  function srStop() { srOn = false; try { sr && sr.stop() } catch (e) {} ; const el = $("vlive"); if (el) el.remove() }
+  function stopRec() { if (mr && mr.state !== "inactive") mr.stop() }
+  recBtn.onclick = async () => {
+    if (mr && mr.state === "recording") return stopRec()
+    $("err").textContent = ""
+    if (!navigator.mediaDevices || !window.MediaRecorder) { $("err").textContent = "На этом устройстве запись голоса недоступна — напишите текстом"; return }
+    let stream
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }) } catch (e) { $("err").textContent = "Нет доступа к микрофону — разрешите его или напишите текстом"; return }
+    const type = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || ""
+    mr = new MediaRecorder(stream, type ? { mimeType: type, audioBitsPerSecond: 48000 } : undefined); chunks = []
+    mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data) }
+    mr.onstop = () => {
+      clearInterval(tick); stream.getTracks().forEach(t => t.stop()); srStop()
+      recBtn.classList.remove("on"); recBtn.querySelector(".dot") && recBtn.querySelector(".dot").remove(); recTxt().textContent = "Записать голосом"
+      st.sec = Math.round((Date.now() - t0) / 1000)
+      if (st.sec < 1 || !chunks.length) return
+      const blob = new Blob(chunks, { type: (mr.mimeType || type || "audio/mp4").split(";")[0] })
+      st.vt = ""; st.vtJob = sttKey() ? whisper(blob) : (window.SpeechRecognition || window.webkitSpeechRecognition) ? new Promise(res => setTimeout(() => res(srText), 700)).then(t => { if (st.vtJob === job2) { st.vt = t; st.vtJob = null; drawVoice() } return t }) : null
+      const job2 = st.vtJob
+      const fr = new FileReader(); fr.onload = () => { st.audio = fr.result; drawVoice() }; fr.readAsDataURL(blob)
+    }
+    mr.start(1000); t0 = Date.now(); srStart()
+    recBtn.classList.add("on"); recBtn.insertAdjacentHTML("afterbegin", '<i class="dot"></i>'); recTxt().textContent = "Стоп · 0:00"
+    tick = setInterval(() => { const n = Math.round((Date.now() - t0) / 1000); recTxt().textContent = "Стоп · " + mmss(n); if (n >= MAXS) stopRec() }, 500)
+  }
+
+  $("f").onsubmit = async e => {
+    e.preventDefault(); $("err").textContent = ""
+    const what = $("what").value.trim()
+    if (mr && mr.state === "recording") { stopRec(); for (let i = 0; i < 30 && !st.audio; i++) await new Promise(r => setTimeout(r, 100)) }
+    if (what.length < 3 && !st.audio) { $("err").textContent = "Напишите в двух словах или запишите голосом, что случилось"; $("what").focus(); return }
+    const btn = $("send"); btn.disabled = true; btn.textContent = st.audio ? "Отправляем запись…" : st.shots.length ? "Отправляем скриншоты…" : "Отправляем…"
+    if (st.audio && st.vtJob) { btn.textContent = "Расшифровываю…"; await Promise.race([st.vtJob, new Promise(r => setTimeout(r, 15000))]) }
+    const bug = { what: what || st.vt || "(голосовое сообщение)", audio: st.audio || undefined, sec: st.sec || undefined, voiceText: st.audio && st.vt || undefined, where: place(), level: st.level, steps: $("steps").value.trim(), name: $("name").value.trim() || (me && me.name) || "",
+      email: (me && me.email) || "", shots: st.shots, dev, ver, errors: errors.slice(-8) }
+    try {
+      const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 60000)
+      const r = await fetch(HOOK, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, credentials: "omit", cache: "no-store", signal: ctl.signal,
+        body: JSON.stringify({ bug, secret: secret || undefined }) })
+      clearTimeout(t)
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || "сервер не принял отчёт")
+      try { localStorage.removeItem(DRAFT); localStorage.removeItem("izi.errlog") } catch (e) {}
+      $("doneT").textContent = j.n ? `Спасибо! Это №${j.n}` : "Спасибо!"
+      $("f").hidden = true; $("done").hidden = false; scrollTo(0, 0)
+    } catch (err) {
+      $("err").textContent = (err.name === "AbortError" || /fetch|network|load/i.test(err.message) ? "Нет связи с сервером. Текст сохранён — попробуйте ещё раз чуть позже." : "Не получилось: " + err.message)
+    } finally { btn.disabled = false; btn.textContent = "Отправить" }
+  }
+  const home = () => location.replace("./")
+  $("back").onclick = home; $("home").onclick = home
+  $("again").onclick = () => { $("what").value = ""; $("steps").value = ""; st.shots = []; st.level = ""; st.audio = ""; st.sec = 0; st.vt = ""; st.vtJob = null; drawShots(); drawVoice(); chips("level", LEVEL, "level")
+    $("done").hidden = true; $("f").hidden = false; $("what").focus() }
+})()
+</script>
+</body></html>
