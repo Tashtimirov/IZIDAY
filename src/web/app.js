@@ -6092,20 +6092,35 @@ const wxRain = (s, e) => D.wx && D.wx.h.find(x => x.t + 3600e3 > +s && x.t < +e 
 // Событие-поездка («Отвезти детей в школу»): само событие — дорога, его конец — время прибытия (как TRIP_RE в Code.gs)
 const TRIP_RE = /^\s*(?:\S+\s)?(отвез|завез|подвез|довез|развез|доехать|поехать|поездк|ехать|съездить|дорога(?![а-яё])|выезд|выехать|в путь)/i
 const isTrip = e => !!e && TRIP_RE.test(e.title || "")
-// — Дорога до места события: считает таблица (route), кэш на 20 минут
+// — Дорога до места события: считает таблица (route), кэш на 20 минут.
+// Откуда: место предыдущего события этого дня, если оно ещё не кончилось (после школы в 8:00 на работу едем от школы,
+// а не от того места, где телефон сейчас); если предыдущего нет или оно уже прошло — от текущего места (GPS или виджет)
+const locN = s => String(s || "").toLowerCase().replace(/[^a-zа-яё0-9]+/g, " ").trim()
+let travEvs = { at: 0, list: [] }
+function travFrom(e, now = Date.now()) {
+  if (Date.now() - travEvs.at > 2000) { travEvs = { at: Date.now(), list: [] }
+    try { travEvs.list = iphone().events.filter(x => !x.all_day && x.location && evMine(x)).map(x => ({ x, s: parseIso(x.start), e: parseIso(x.end) })).filter(o => o.s && o.e) } catch (er) {} }
+  const s = parseIso(e.start); if (!s) return ""
+  const p = travEvs.list.filter(o => o.e <= s && +o.e > now && sameDay(o.e, s) && !(o.x.id === e.id && o.x.start === e.start)).sort((a, b) => b.e - a.e)[0]
+  return p ? p.x.location : ""
+}
+const travKey = (e, from) => (e.id || e.title) + "|" + e.start + (from ? "|" + locN(from) : "")
 function travelOf(e) {
   if (!e || !e.location || e.all_day) return null
-  const k = (e.id || e.title) + "|" + e.start, c = (D.trav || {})[k]
+  const from = travFrom(e)
+  if (from && locN(from) === locN(e.location)) return null   // то же место, что и предыдущее событие — ехать не надо
+  const k = travKey(e, from), c = (D.trav || {})[k]
   if (c && Date.now() - c.at < 20 * 60e3) return c
-  if (!travBusy[k] && D.conn) { travBusy[k] = 1; travelCalc(e, k).finally(() => { delete travBusy[k] }) }
+  if (!travBusy[k] && D.conn) { travBusy[k] = 1; travelCalc(e, k, from).finally(() => { delete travBusy[k] }) }
   return c || null
 }
 const travBusy = {}
-async function travelCalc(e, k) {
-  const r = await runTool("route_to", { to: e.location }).catch(() => null)
+async function travelCalc(e, k, from) {
+  const r = await runTool("route_to", from ? { from, to: e.location } : { to: e.location }).catch(() => null)
   D.trav = D.trav || {}
   for (const x of Object.keys(D.trav)) if (Date.now() - D.trav[x].at > 12 * 3600e3) delete D.trav[x]
-  D.trav[k] = r && !r.error && (r.minutes_in_traffic || r.minutes) ? { at: Date.now(), min: Math.round(r.minutes_in_traffic || r.minutes), km: r.km } : { at: Date.now(), min: 0 }
+  const m = r && !r.error ? (from ? r.drive_minutes : r.minutes_in_traffic || r.minutes) : 0
+  D.trav[k] = m ? { at: Date.now(), min: Math.round(m), km: r.total_km != null ? r.total_km : r.km, from: from || "" } : { at: Date.now(), min: 0, from: from || "" }
   save(false); if ((tab === "today" || tab === "cal") && !stack.length) render()
 }
 
@@ -6218,7 +6233,7 @@ function timelineHTML(v, day, evs, now = new Date()) {
   evs.forEach((e, i) => {
     if (e.all_day || e.s < t0) return
     const tr = isT && e.s > now && !isTrip(e) ? travelOf(e) : null   // поездка сама и есть дорога
-    if (tr && tr.min) items.push({ s: new Date(+e.s - tr.min * 60e3), e: e.s, kind: "road", min: tr.min })
+    if (tr && tr.min) items.push({ s: new Date(+e.s - tr.min * 60e3), e: e.s, kind: "road", min: tr.min, from: tr.from })
     items.push({ s: e.s, e: e.e, kind: "ev", ev: e, i })
   })
   const rems = v.reminders.filter(r => !r.completed && remHasTime(r) && sameDay(remDue(r), day))
@@ -6241,7 +6256,7 @@ function timelineHTML(v, day, evs, now = new Date()) {
     const hh = it.s.getHours(), lbl = hh !== lastH && it.kind !== "road" ? `<div class="tl-h">${hm(it.s)}</div>` : ""
     if (it.kind !== "road") lastH = hh
     const past = isT && it.e <= now
-    if (it.kind === "road") html += `<div class="tl-it road">${tdIco("car", 14)} дорога ${it.min} мин · выехать в ${hm(it.s)}</div>`
+    if (it.kind === "road") html += `<div class="tl-it road">${tdIco("car", 14)} дорога ${it.min} мин${it.from ? " от " + esc(String(it.from).split(",")[0].slice(0, 28)) : ""} · выехать в ${hm(it.s)}</div>`
     else if (it.kind === "ev") { const e = it.ev, rain = wxRain(e.s, e.e)
       html += `${lbl}<div class="tl-it ev ${past ? "past" : ""} ${e.pending ? "pending" : ""}" data-ev="${it.i}" style="--c:${esc(evColor(e))}"><b>${esc(e.title || "(без названия)")}</b><small>${hm(e.s)}–${hm(e.e)}${e.location ? " · " + esc(e.location) : ""}${rain ? ` · ${tdIco("rain", 12)} ${rain.mm >= 4 ? "ливень" : "дождь"}` : ""}</small></div>` }
     else if (it.kind === "rem") { const r = it.r
@@ -6576,7 +6591,7 @@ function protHit(s, e) { for (let d = sod(s); d < e; d = addDays(d, 1)) { const 
 
 // — занятость и свободные окна: мои события, совместные из других слоёв («Обед с Олей»), дорога, защищённое время, дела со временем
 const evMine = e => { const L = evLayer(e); return L === "me" || L === "fam" || L !== "off" && /(^|\s)(с|со)\s+\S/i.test(e.title || "") }
-function travCached(e) { if (!e || !e.location || e.all_day) return null; const c = (D.trav || {})[(e.id || e.title) + "|" + e.start]; return c && c.min ? c : null }
+function travCached(e) { if (!e || !e.location || e.all_day) return null; const c = (D.trav || {})[travKey(e, travFrom(e))]; return c && c.min ? c : null }
 const remEst = r => +(D.rems.find(x => x.id === r.id) || {}).est || 30
 function busyOn(v, day) {
   const d0 = sod(day), d1 = addDays(d0, 1), out = []
@@ -6657,7 +6672,7 @@ function calItems(v, d, now) {
     out.push({ kind: "ev", ev: e, s, e: en, L, prot: !!pr })
     if (L === "me" && e.location && !isTrip(e) && e.s > now && e.s - now < 2 * 864e5) {   // поездка сама и есть дорога
       const tr = travelOf(e) || travCached(e)
-      if (tr && tr.min) out.push({ kind: "road", s: new Date(+e.s - tr.min * 60e3), e: e.s, min: tr.min, ev: e })
+      if (tr && tr.min) out.push({ kind: "road", s: new Date(+e.s - tr.min * 60e3), e: e.s, min: tr.min, ev: e, from: tr.from })
     }
   }
   for (const p of prots) if (!p.used) out.push({ kind: "prot", s: p.s, e: p.e, p: p.p })
@@ -6849,7 +6864,7 @@ async function calTap(it) {
   if (it.kind === "prot") return protForm(it.p)
   if (it.kind === "kid") return kidsForm()
   if (it.kind === "ktask") return FAM.isAdult() ? FAM.kidSheet(it.m.id) : ui.info(it.t, "Дела ребёнка на день. Отмечает их сам ребёнок, проверяют взрослые.")
-  if (it.kind === "road") return ui.info(`Дорога ${it.min} мин`, `До «${it.ev.title}»${it.ev.location ? " (" + it.ev.location + ")" : ""}: выехать в ${hm(it.s)}.${it.late ? "\nПредыдущая встреча кончается позже — не успеваете. Сдвиньте одну из встреч." : ""}`)
+  if (it.kind === "road") return ui.info(`Дорога ${it.min} мин`, `${it.from ? `От «${it.from}»` : "От того места, где вы сейчас,"} до «${it.ev.title}»${it.ev.location ? " (" + it.ev.location + ")" : ""}: выехать в ${hm(it.s)}.${it.late ? "\nПредыдущая встреча кончается позже — не успеваете. Сдвиньте одну из встреч." : ""}`)
   if (it.kind === "rem") {
     const i = await ui.choose(it.r.title, `${core.cap(dayWord(it.s))} в ${hm(it.s)}`, ["Выполнено", "Другое время", "Убрать время", "Изменить"])
     if (i === 0) { remSet(it.r.id, { completed: true }); toast("Выполнено") }
