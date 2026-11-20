@@ -12,7 +12,7 @@
 // войти смогут только они и приглашённые с одобрения), AI_DAY (запросов к Claude в день на человека), AI_ALL (в день на всех, по умолчанию 1500),
 // REF_PER / REF_AUTO / REF_ONLY / SITE / SELF_URL — приглашения друзей (см. раздел «Пригласить друга» внизу).
 
-const FR = { client: "__GOOGLE_CLIENT__", max: 30, aiDay: 80, aiAll: 1500, model: "claude-haiku-5-5", maxTokens: 4000,
+const FR = { client: "__GOOGLE_CLIENT__", max: 30, aiDay: 80, aiPlus: 300, aiAll: 1500, model: "claude-haiku-5-5", maxTokens: 4000,
   folder: "IZIDAY Друзья", tokens: 5, pushBudget: 270e3 };
 let CUR = null, CUR_SS = null, COMMON_SS = null;
 const GP_ = () => PropertiesService.getScriptProperties();   // свойства всего скрипта (в общем коде — UP_)
@@ -84,7 +84,7 @@ function doPost(e) {
   const u = userBySecret_(body.secret);
   if (!u) return out_({ ok: false, error: "forbidden" });
   if (body.league) return out_(league_(body.league, true));
-  if (body.family) return out_(family_(body.family, true));
+  if (body.family) { const fr = family_(body.family, true); growFamNew_(u, body.family, fr); return out_(fr); }
   CUR = u; CUR_SS = null;
   if (body.ai) return out_(ai_(u, body.ai));
   if (body.me) return out_({ ok: true, me: meOut_(u) });
@@ -115,6 +115,7 @@ function doPost(e) {
   if (fire) out.fire = { error: "передача задач в Claude Code есть только у владельца" };
   delete out.url;   // таблица лежит на Диске владельца, друг её открыть не сможет
   if (Date.now() - (u.seen || 0) > 3600e3) { u.seen = Date.now(); userPut_(u); }
+  try { growDay_(u, body.fam); } catch (e) { Logger.log("growDay_ " + e); }   // рост: активные дни, бонусы за приглашения
   return out_(out);
 }
 
@@ -194,7 +195,7 @@ function login_(q) {
     GP_().setProperty("t:" + hash, id);
     u.seen = Date.now();
     userPut_(u);
-    if (isNew && refBy) { u.by = refBy.id; userPut_(u); refJoined_(email, q.ref); }
+    if (isNew && refBy) { u.by = refBy.id; userPut_(u); refJoined_(email, q.ref, u.id); }
     if (isNew) try { MailApp.sendEmail(Session.getEffectiveUser().getEmail(), "IZIDAY: новый друг — " + u.name,
       `${u.name} (${email}) вошёл в IZIDAY. Всего друзей: ${users_().length} из ${FR.max}.`); } catch (e) {}
     return { ok: true, secret, isNew, me: meOut_(u) };
@@ -229,11 +230,13 @@ function deleteMe_(u) {
   CUR = null; CUR_SS = null;
   return { ok: true, deleted: true };
 }
-function meOut_(u) { const g = gcalGet_(u); return { id: u.id, name: u.name, email: u.email, pic: u.pic, left: aiLeft_(u), gcal: g ? g.email || "Google" : "" }; }
+function meOut_(u) { const g = gcalGet_(u), pl = plusOf_(u); return { id: u.id, name: u.name, email: u.email, pic: u.pic, left: aiLeft_(u), limit: aiLimit_(u), gcal: g ? g.email || "Google" : "",
+  plus: pl.on ? { until: pl.forever ? 0 : pl.until, forever: pl.forever, fam: pl.fam } : null }; }
 
 // ── Изи: запросы к Claude через ключ владельца, с дневным лимитом ──
-const aiLimit_ = () => Number(GP_().getProperty("AI_DAY")) || FR.aiDay;
-function aiLeft_(u) { return Math.max(0, aiLimit_() - (Number(GP_().getProperty("ai:" + FDAY_() + ":" + u.id)) || 0)); }
+// Плюс (бонусные дни за приглашения, статус, семья) — больше запросов в день: свойство AI_PLUS, по умолчанию FR.aiPlus
+const aiLimit_ = u => (u && plusOf_(u).on ? Number(GP_().getProperty("AI_PLUS")) || FR.aiPlus : 0) || Number(GP_().getProperty("AI_DAY")) || FR.aiDay;
+function aiLeft_(u) { return Math.max(0, aiLimit_(u) - (Number(GP_().getProperty("ai:" + FDAY_() + ":" + u.id)) || 0)); }
 function ai_(u, b) {
   const key = GP_().getProperty("ANTHROPIC_KEY");
   if (!key) return { type: "error", error: { type: "nokey", message: "Изи ещё не подключён: владелец не добавил ключ Claude" } };
@@ -243,7 +246,7 @@ function ai_(u, b) {
   try {
     const p = GP_(), day = FDAY_(), kd = "ai:" + day + ":" + u.id, kt = "ai:" + day + ":*";
     const nd = Number(p.getProperty(kd)) || 0, nt = Number(p.getProperty(kt)) || 0;
-    if (nd >= aiLimit_()) return { type: "error", error: { type: "limit", message: "На сегодня Изи устал: дневной лимит исчерпан. Завтра снова на связи." } };
+    if (nd >= aiLimit_(u)) return { type: "error", error: { type: "limit", message: "На сегодня Изи устал: дневной лимит исчерпан. Завтра снова на связи." } };
     if (nt >= (Number(p.getProperty("AI_ALL")) || FR.aiAll)) return { type: "error", error: { type: "limit", message: "Сегодня Изи очень занят — попробуйте завтра." } };
     p.setProperty(kd, String(nd + 1)); p.setProperty(kt, String(nt + 1));
     if (!nt) for (const k of p.getKeys()) if (/^ai:/.test(k) && k.indexOf("ai:" + day + ":") !== 0) p.deleteProperty(k);   // вчерашние счётчики
@@ -866,24 +869,27 @@ function lead_(q, u) {
 
 // ── Приглашения ──
 function refCode_(u) {
+  const pc = partnerCode_(u);   // партнёр (блогер, коуч): свой понятный код из свойства PARTNERS
+  if (pc && u.ref !== pc && (!GP_().getProperty("r:" + pc) || GP_().getProperty("r:" + pc) === u.id)) { u.ref = pc; GP_().setProperty("r:" + pc, u.id); userPut_(u); }
   if (u.ref && GP_().getProperty("r:" + u.ref) === u.id) return u.ref;
   let c = "";
   for (let i = 0; i < 6 && !c; i++) { const t = Utilities.getUuid().replace(/-/g, "").slice(0, 6); if (!GP_().getProperty("r:" + t)) c = t; }
   u.ref = c; GP_().setProperty("r:" + c, u.id); userPut_(u);
   return c;
 }
-const refUsed_ = u => (u.inv || []).filter(x => x.st !== "no").length;
+const refUsed_ = u => (u.inv || []).filter(x => x.st !== "no").length + (u.invOld || 0);
+const refPer_ = u => partnerCode_(u) ? 9999 : growPer_() + (GROWTH.lv[growLv_(u)] || {}).inv;
 const refPending_ = () => GP_().getKeys().filter(k => /^rq:/.test(k)).length;
 function refOut_(u) {
-  const per = growPer_();
-  return { ok: true, code: refCode_(u), link: growSite_() + "?r=" + u.ref, per, left: Math.max(0, per - refUsed_(u)),
-    list: (u.inv || []).slice(-10).map(x => ({ name: x.n, st: x.st, at: x.at })) };
+  const per = refPer_(u);
+  return Object.assign({ ok: true, code: refCode_(u), link: growSite_() + "?r=" + u.ref, per, left: Math.max(0, per - refUsed_(u)),
+    list: (u.inv || []).slice(-10).map(x => ({ name: x.n, st: x.act ? "act" : x.st, at: x.at, d: x.id ? growDaysOf_(x.id) : 0 })) }, growOut_(u));
 }
 //   {secret, ref:{op:"get"}} → {ok, code, link, per, left, list:[{name, st, at}]}
 function ref_(u, q) { return refOut_(u); }
 function refOwner_(code) {
   const c = String(code || "").toLowerCase();
-  if (!/^[0-9a-f]{6}$/.test(c)) return null;
+  if (!/^[0-9a-z]{3,16}$/.test(c)) return null;
   const id = GP_().getProperty("r:" + c);
   return id ? userGet_(id) : null;
 }
@@ -891,10 +897,11 @@ function refOwner_(code) {
 function refAsk_(by, email, name, auto) {
   const p = GP_(), old = p.getProperty("rqe:" + email);
   if (old && p.getProperty("rq:" + old)) return { ok: false, wait: true, error: `Заявка уже у создателя IZIDAY. Когда он откроет доступ, на ${email} придёт письмо — тогда нажмите «Войти через Google» ещё раз.` };
-  if (refUsed_(by) >= growPer_()) return { ok: false, error: `У ${by.name} закончились приглашения. Попросите его написать создателю IZIDAY.` };
+  if (refUsed_(by) >= refPer_(by)) return { ok: false, error: `У ${by.name} закончились приглашения. Попросите его написать создателю IZIDAY.` };
   if (users_().length + refPending_() >= FR.max) return { ok: false, error: "мест пока нет — напишите тому, кто прислал приложение" };
   if (!growBump_("refask", GROW.askHour)) return { ok: false, error: "слишком много заявок за час — попробуйте позже" };
   const sh = growTab_("Приглашения");
+  if (partnerCode_(by)) auto = true;   // подписчиков блогера владелец не одобряет по одному: пускаем в пределах мест
   if (auto) {   // REF_AUTO=1: без одобрения, но в пределах REF_PER и мест
     sh.appendRow([new Date(), by.name, by.email, bugTxt_(name, 60), email, GROW.st.ok]);
     p.setProperty("ok:" + email, "1");
@@ -914,7 +921,7 @@ function refAsk_(by, email, name, auto) {
   base = p.getProperty("SELF_URL") || base;
   try { MailApp.sendEmail(Session.getEffectiveUser().getEmail(), `IZIDAY: ${by.name} приглашает ${name}`,
     `${by.name} (${by.email}) пригласил(а) в IZIDAY: ${name} (${email}).\n` +
-    `Занято мест: ${users_().length} из ${FR.max}, ждут одобрения: ${refPending_()}. У ${by.name} осталось приглашений: ${Math.max(0, growPer_() - refUsed_(by))}.\n\n` +
+    `Занято мест: ${users_().length} из ${FR.max}, ждут одобрения: ${refPending_()}. У ${by.name} осталось приглашений: ${Math.max(0, refPer_(by) - refUsed_(by))}.\n\n` +
     `Открыть доступ: ${base}?ok=${token}&a=yes\nОтказать: ${base}?ok=${token}&a=no\n\nВсе приглашения: ${sh.getParent().getUrl()}`); } catch (e) { Logger.log(e) }
   return { ok: false, wait: true, error: `Создатель IZIDAY получил заявку. Когда он откроет доступ, на ${email} придёт письмо — тогда нажмите «Войти через Google» ещё раз.` };
 }
@@ -938,10 +945,10 @@ function refDecide_(token, yes) {
   return yes ? `Готово: ${rq.name || rq.email} может войти в IZIDAY. Ему ушло письмо.` : `Отказано: ${rq.name || rq.email} не войдёт.`;
 }
 // Человек вошёл после одобрения — отмечаем у пригласившего
-function refJoined_(email, refCode) {
+function refJoined_(email, refCode, id) {
   const by = refOwner_(refCode);
   if (!by || !(by.inv || []).some(x => x.e === email)) return;
-  by.inv = by.inv.map(x => x.e === email ? Object.assign(x, { st: "in" }) : x);
+  by.inv = by.inv.map(x => x.e === email ? Object.assign(x, { st: "in", id: id || x.id }) : x);
   userPut_(by);
   try { const sh = growTab_("Приглашения"), v = sh.getRange(2, 5, Math.max(1, sh.getLastRow() - 1), 1).getValues();
     for (let i = v.length - 1; i >= 0; i--) if (String(v[i][0]).toLowerCase() === email) { sh.getRange(i + 2, 6).setValue(GROW.st["in"]); break; } } catch (e) {}
@@ -950,4 +957,151 @@ function growPage_(msg) {
   const html = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>IZIDAY</title>` +
     `<div style="font:17px -apple-system,system-ui,sans-serif;max-width:460px;margin:60px auto;padding:0 20px;color:#1d1d1f"><h2 style="margin:0 0 12px">IZIDAY</h2><p>${String(msg).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</p></div>`;
   return HtmlService.createHtmlOutput(html).setTitle("IZIDAY");
+}
+
+// ═════════════ Рост: бонус за приглашение, второй уровень, статусы, партнёры, семья, лига приглашений ═════════════
+// Всё начисляется ДНЯМИ IZIDAY Плюс, не деньгами (деньги — только партнёрам по договору, вне приложения).
+//  • Двусторонний бонус: приглашённый был в IZIDAY GROWTH.days разных дней (обмен с сервером хотя бы раз в день) →
+//    ему GROWTH.invitee дней Плюса, пригласившему GROWTH.inviter. За регистрацию ничего не даём (правила App Store, 3.2.2).
+//  • Второй уровень (и только он): тот, кто пригласил пригласившего, получает GROWTH.l2 дня. Глубже — ничего.
+//  • Статусы по числу активных приглашённых: Друг → Проводник → Амбассадор. Статус добавляет приглашений,
+//    Амбассадор получает Плюс навсегда и ранний доступ.
+//  • Партнёры (блогеры, коучи): свойство PARTNERS = "почта=КОД, почта2=КОД2". Ссылка iziday.pages.dev/?r=КОД,
+//    подписчики входят без одобрения (в пределах мест FR.max), партнёру Плюс навсегда. Учёт — лист «Партнёры»; выплаты — по договору.
+//  • Семья: создавший семью со своего аккаунта — глава. Плюс главы действует на всю семью; за каждого взрослого из семьи,
+//    кто был активен GROWTH.days дней, глава получает GROWTH.fam дней.
+//  • Лига приглашений: рейтинг месяца по активным приглашённым; топ-3 прошлого месяца получают GROWTH.prize дней.
+// Свойства: GROW_OFF=1 — выключить начисления (данные копятся, ничего не выдаётся); GROW_INVITEE=0 — без бонуса приглашённому
+// (если App Review попросит); AI_PLUS — запросов к Изи в день с Плюсом.
+const GROWTH = { days: 7, invitee: 30, inviter: 30, l2: 3, fam: 7, prize: [30, 14, 7], famMax: 6, maxPlusDays: 730,
+  lv: [{ n: "", inv: 0, need: 0 }, { n: "Друг", inv: 2, need: 1 }, { n: "Проводник", inv: 5, need: 3 }, { n: "Амбассадор", inv: 20, need: 10 }] };
+const growOff_ = () => GP_().getProperty("GROW_OFF") === "1";
+const growMonth_ = (d) => Utilities.formatDate(d || new Date(), "Asia/Bangkok", "yyyy-MM");
+function partnerCode_(u) {
+  if (!u || !u.email) return "";
+  for (const part of String(GP_().getProperty("PARTNERS") || "").split(/[,;\n]+/)) {
+    const m = part.trim().match(/^([^=\s]+)\s*=\s*([0-9A-Za-z]{3,16})$/);
+    if (m && m[1].toLowerCase() === u.email) return m[2].toLowerCase();
+  }
+  return "";
+}
+const growLv_ = u => { const a = u.act || 0; let lv = 0; GROWTH.lv.forEach((x, i) => { if (i && a >= x.need) lv = i; }); return lv; };
+function growDaysOf_(id) { const v = userGet_(id); return v ? Math.min(GROWTH.days, v.nd || 0) : 0; }
+// Плюс человека: свой (бонусные дни / навсегда) или главы его семьи
+function plusOf_(u, deep) {
+  const now = Date.now(), forever = !!(u.pf || partnerCode_(u)), until = Number(u.plus) || 0;
+  if (forever || until > now) return { on: true, forever, until, fam: false };
+  if (!deep && u.fam) {
+    const hid = GP_().getProperty("fh:" + u.fam), h = hid && hid !== u.id ? userGet_(hid) : null;
+    if (h && h.fam === u.fam && plusOf_(h, true).on && growFamRank_(u.fam, u.id) < GROWTH.famMax) { const hp = plusOf_(h, true); return { on: true, forever: hp.forever, until: hp.until, fam: true }; }
+  }
+  return { on: false, forever: false, until, fam: false };
+}
+// место в семье по времени входа: Плюс главы — на первых GROWTH.famMax человек
+function growFamRank_(code, id) { return users_().filter(x => x.fam === code).sort((a, b) => (a.famAt || 0) - (b.famAt || 0)).map(x => x.id).indexOf(id); }
+function plusAdd_(u, days, why) {
+  if (!u || !(days > 0) || growOff_()) return;
+  const now = Date.now(), from = Math.max(now, Number(u.plus) || 0);
+  u.plus = Math.min(from + days * 864e5, now + GROWTH.maxPlusDays * 864e5);
+  u.bon = (u.bon || []).concat([{ d: days, w: String(why).slice(0, 80), at: now }]).slice(-12);
+  userPut_(u);
+}
+// Семью создали с аккаунта друзей — этот человек глава
+function growFamNew_(u, q, r) {
+  if (!q || q.op !== "new" || !r || !r.ok || !r.family) return;
+  const code = r.family.code;
+  GP_().setProperty("fh:" + code, u.id);
+  const v = userGet_(u.id) || u; v.fam = code; v.famAt = Date.now(); userPut_(v);
+}
+// Один раз в день на человека (при обмене): +1 активный день, проверка бонусов
+function growDay_(u0, fam) {
+  const day = FDAY_(), u = userGet_(u0.id);
+  if (!u) return;
+  let dirty = false;
+  if (fam && /^[0-9a-f]{14}$/.test(String(fam)) && u.fam !== fam) { u.fam = String(fam); u.famAt = Date.now(); u.famNd = u.nd || 0; dirty = true; }   // бонус главе — один раз за человека, за 7 дней уже в семье
+  if (u.ld !== day) { u.ld = day; u.nd = (u.nd || 0) + 1; dirty = true; }
+  if (dirty) userPut_(u);
+  if ((u.nd || 0) < GROWTH.days || (u.rw || !u.by) && (u.famRw || !u.fam)) return;
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const v = userGet_(u.id);
+    if (v.by && !v.rw) growReward_(v);
+    if (v.fam && !v.famRw && (v.nd || 0) - (v.famNd || 0) >= GROWTH.days) growFamReward_(v);
+  } finally { lock.releaseLock(); }
+}
+function growReward_(u) {
+  u.rw = Date.now(); userPut_(u);
+  const by = userGet_(u.by);
+  if (!by) return;
+  const name = String(u.name || "").split(" ")[0];
+  if (GP_().getProperty("GROW_INVITEE") !== "0") plusAdd_(u, GROWTH.invitee, `Вы ${GROWTH.days} дней в IZIDAY по приглашению`);
+  const lv0 = growLv_(by);
+  by.act = (by.act || 0) + 1;
+  by.inv = (by.inv || []).map(x => x.id === u.id || x.e === u.email ? Object.assign(x, { act: Date.now() }) : x);
+  userPut_(by);
+  const pc = partnerCode_(by);
+  if (!pc) plusAdd_(by, GROWTH.inviter, `${name} с вами ${GROWTH.days} дней`);
+  const lv = growLv_(by);
+  if (lv === 3 && !by.pf) { by.pf = true; by.early = true; userPut_(by); }
+  if (lv > lv0) by.lvAt = Date.now(), userPut_(by);
+  // лига приглашений месяца
+  const mk = "lm:" + growMonth_(), lm = JSON.parse(GP_().getProperty(mk) || "{}");
+  lm[by.id] = (lm[by.id] || 0) + 1; GP_().setProperty(mk, JSON.stringify(lm));
+  // второй уровень — только один шаг вверх
+  const top = by.by ? userGet_(by.by) : null;
+  if (top && top.id !== u.id) { plusAdd_(top, GROWTH.l2, `${name} — друг вашего друга ${String(by.name || "").split(" ")[0]}`); top.l2 = (top.l2 || 0) + 1; userPut_(top); }
+  try {
+    const sh = growTab_("Активные");
+    if (sh.getLastRow() < 1) sh.appendRow(["Когда", "Кто", "Почта", "Пригласил(а)", "Почта пригласившего", "Партнёр", "Статус пригласившего"]);
+    sh.appendRow([new Date(), u.name, u.email, by.name, by.email, pc ? pc.toUpperCase() : "", GROWTH.lv[lv].n]);
+  } catch (e) {}
+  if (pc) try {
+    const sh = growTab_("Партнёры");
+    if (sh.getLastRow() < 1) sh.appendRow(["Месяц", "Код", "Партнёр", "Почта", "Активный приглашённый", "Почта приглашённого"]);
+    sh.appendRow([growMonth_(), pc.toUpperCase(), by.name, by.email, u.name, u.email]);
+  } catch (e) {}
+}
+function growFamReward_(u) {
+  u.famRw = Date.now(); userPut_(u);
+  const hid = GP_().getProperty("fh:" + u.fam);
+  if (!hid || hid === u.id) return;
+  const h = userGet_(hid);
+  if (h && h.fam === u.fam) plusAdd_(h, GROWTH.fam, `${String(u.name || "").split(" ")[0]} в вашей семье ${GROWTH.days} дней`);
+}
+// Призы лиги прошлого месяца — один раз, при первом запросе в новом месяце
+function growPrizes_() {
+  const d = new Date(); d.setDate(1); d.setDate(0);
+  const pm = growMonth_(d), done = "lw:" + pm;
+  if (GP_().getProperty(done)) return;
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    if (GP_().getProperty(done)) return;
+    GP_().setProperty(done, "1");
+    const lm = JSON.parse(GP_().getProperty("lm:" + pm) || "{}");
+    Object.keys(lm).sort((a, b) => lm[b] - lm[a]).slice(0, GROWTH.prize.length).forEach((id, i) => {
+      const w = userGet_(id); if (w) plusAdd_(w, GROWTH.prize[i], `${i + 1}-е место в лиге приглашений`);
+    });
+  } finally { lock.releaseLock(); }
+}
+function growLeague_(u) {
+  const lm = JSON.parse(GP_().getProperty("lm:" + growMonth_()) || "{}");
+  const ids = Object.keys(lm).sort((a, b) => lm[b] - lm[a] || (a < b ? -1 : 1));
+  const top = ids.slice(0, 5).map(id => { const w = userGet_(id); return { n: id === u.id ? "" : String((w && w.name) || "—").split(" ")[0], c: lm[id], me: id === u.id }; });
+  return { month: growMonth_(), top, place: ids.indexOf(u.id) + 1, mine: lm[u.id] || 0, prize: GROWTH.prize };
+}
+function growOut_(u) {
+  try { growPrizes_(); } catch (e) {}
+  u = userGet_(u.id) || u;
+  const lv = growLv_(u), next = GROWTH.lv[lv + 1] || null, pl = plusOf_(u), pc = partnerCode_(u);
+  const head = u.fam && GP_().getProperty("fh:" + u.fam) === u.id;
+  return {
+    days: GROWTH.days, invitee: GP_().getProperty("GROW_INVITEE") === "0" ? 0 : GROWTH.invitee, inviter: GROWTH.inviter, l2days: GROWTH.l2, famDays: GROWTH.fam,
+    act: u.act || 0, l2: u.l2 || 0, lv, status: GROWTH.lv[lv].n, next: next ? { n: next.n, need: next.need } : null, early: !!u.early,
+    plus: pl.on ? { until: pl.forever ? 0 : pl.until, forever: pl.forever, fam: pl.fam } : null,
+    myDays: u.by && !u.rw ? Math.min(GROWTH.days, u.nd || 0) : null,
+    bon: (u.bon || []).slice(-6).reverse(),
+    fam: u.fam ? { head, n: head ? users_().filter(x => x.fam === u.fam).length : 0, max: GROWTH.famMax } : null,
+    partner: pc ? { code: pc.toUpperCase(), joined: (u.inv || []).filter(x => x.st === "in" || x.act).length, active: u.act || 0 } : null,
+    league: growLeague_(u),
+  };
 }

@@ -1368,6 +1368,29 @@ body.voice .chat-bar .att-tray { bottom: calc(100% + 92px); }
 /* IZIDAY Плюс (заявка) и «Пригласить друга» — grow.js */
 .grow-price { font-size: 22px; font-weight: 700; letter-spacing: -.2px; margin: 2px 0 6px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .grow-price span { font-size: 13px; font-weight: 600; color: var(--sub); }
+/* Рост: приглашения, статусы, лига, карточка дня (grow.js) */
+.gr-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gr-head h2 { margin-bottom: 4px; }
+.gr-lv { font-size: 12px; font-weight: 700; letter-spacing: .2px; padding: 4px 10px; border-radius: 12px; background: var(--track); color: var(--text); white-space: nowrap; }
+.gr-lv.lv2 { background: color-mix(in srgb, var(--accent, #0A9F6E) 18%, transparent); color: var(--accent, #0A9F6E); }
+.gr-lv.lv3 { background: linear-gradient(135deg, color-mix(in srgb, var(--accent, #0A9F6E) 30%, transparent), color-mix(in srgb, var(--gold, #E9C25A) 30%, transparent)); }
+.gr-bar { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; margin: 2px 0 8px; }
+.gr-bar i { display: block; height: 100%; border-radius: 3px; background: var(--accent, #0A9F6E); transition: width .5s ease; }
+.gr-next { margin-top: 6px; }
+.gr-note { margin-top: 8px; }
+.gr-partner { margin: 8px 0 4px; padding: 10px 12px; border-radius: 14px; background: var(--sand); }
+.gr-partner b { letter-spacing: 1px; }
+.gr-links { margin-top: 6px; }
+.gr-links .btn { background: transparent; }
+.gr-rule { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.gr-rule b { font-size: 15px; }
+.gr-rule span { font-size: 14px; color: var(--sub); line-height: 1.4; }
+.gr-lgs { margin: 10px 0; }
+.gr-lg { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--line); }
+.gr-lg .pl { width: 22px; text-align: center; font-weight: 700; color: var(--sub); }
+.gr-lg .grow { flex: 1; }
+.gr-lg.me { font-weight: 700; }
+.gr-img { width: 100%; border-radius: 18px; margin: 6px 0 8px; display: block; box-shadow: 0 6px 24px rgba(0,0,0,.12); }
 /* ═════════════ Экраны и тексты до теста (14.11) ═════════════ */
 /* Сжатая шапка при прокрутке: название и кнопки, без строки «Обновлено» и плашки «Сообщить об ошибке» */
 #top-title, #top-title .dt { transition: font-size .25s cubic-bezier(.2,.8,.2,1), margin .25s; }

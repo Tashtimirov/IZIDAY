@@ -314,7 +314,8 @@ async function hubPostOnce(h, timeout) {
   const t = setTimeout(() => ctl.abort(), timeout)
   try {
     const r = await fetch(D.conn.hook, { method: "POST", headers: { "content-type": "text/plain;charset=utf-8" }, signal: ctl.signal, credentials: "omit", cache: "no-store",
-      body: JSON.stringify({ secret: D.conn.secret, hub: Object.assign({ from: "app" }, h) }) })
+      body: JSON.stringify({ secret: D.conn.secret, hub: Object.assign({ from: "app" }, h),
+        fam: D.conn.friend && D.fam && D.fam.code && D.fam.url === D.conn.hook ? D.fam.code : undefined }) })   // семья на сервере друзей: Плюс главы на всю семью
     const text = await r.text()
     netOk()   // таблица ответила — сеть есть, даже если сам ответ с ошибкой
     let j
