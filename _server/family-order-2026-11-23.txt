@@ -1,0 +1,67 @@
+diff --git a/src/sheet/Code.gs b/src/sheet/Code.gs
+index d22c9fb..bca85c5 100644
+--- a/src/sheet/Code.gs
++++ b/src/sheet/Code.gs
+@@ -179,7 +179,7 @@ function advice() { ensureSheets_(); writeAdvice_(); }
+ // Виджет присылает снимок того, что видит только iPhone (календарь, напоминания, часы), и выполняет
+ // очередь команд приложения (создать или перенести событие, отметить напоминание). Каждая запись хранит
+ // s — время, когда таблица её приняла: клиент получает только записи новее своего прошлого запроса.
+-const HUB = { name: "_hub", lists: { money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90, goals: 0, log: 90, bdays: 0 },   // сколько дней хранить (0 — всё); bdays — дни рождения, внесённые в приложении; rems — напоминания IZIDAY; budgets, recur, habits, hlog, weight — лимиты, регулярные платежи, привычки, вес; shop — покупки, kids — дела детей, fast — голодание
++const HUB = { name: "_hub", lists: { famrec: 0, money: 0, food: 120, water: 60, workouts: 400, places: 0, memory: 0, locs: 60, nudges: 3, rems: 0, skips: 60, budgets: 0, recur: 0, habits: 0, hlog: 400, weight: 0, shop: 0, kids: 0, fast: 90, goals: 0, log: 90, bdays: 0 },   // сколько дней хранить (0 — всё); bdays — дни рождения, внесённые в приложении; rems — напоминания IZIDAY; budgets, recur, habits, hlog, weight — лимиты, регулярные платежи, привычки, вес; shop — покупки, kids — дела детей, fast — голодание
+   tomb: 90, chunk: 45000, opsKeep: 3 };
+ const ROUTE_URL = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/;
+ 
+@@ -1463,6 +1463,12 @@ function family_(q, owner) {
+     const code = clean(q.code, 20), raw = /^[0-9a-f]{14}$/.test(code) && famLoad_(code);
+     if (!raw) return { ok: false, error: "нет такой семьи" };
+     const fam = JSON.parse(raw), id = clean(q.id, 30), now = Date.now();
++    // Порядок в семье (2026-11-23): кто вышел или кого убрали — в past (место и баллы целы), id в gone: без входа по коду
++    // (q.join) такой телефон назад не пускаем — раньше он сам возвращал себя при обмене. Закрытая хозяином семья не отвечает
++    fam.past = fam.past || {}; fam.gone = fam.gone || {};
++    if (fam.closed) return { ok: false, error: "семья закрыта", gone: true, closed: true };
++    const famOut_ = (mid) => { const m = fam.members[mid]; if (!m) return; m.left = now; fam.past[mid] = m; delete fam.members[mid]; fam.gone[mid] = now;
++      const ks = Object.keys(fam.past).sort((a, b) => (fam.past[a].left || 0) - (fam.past[b].left || 0)); while (ks.length > 30) { const k = ks.shift(); delete fam.past[k]; delete fam.gone[k]; } };
+     // Общий ключ Claude семьи: кладёт только хозяин таблицы; телефоны семьи его не видят
+     if (q.op === "key") {
+       if (!owner) return { ok: false, error: "forbidden" };
+@@ -1474,7 +1480,14 @@ function family_(q, owner) {
+     if (q.op === "ask") { lock.releaseLock(); return famAsk_(code, fam, id, q); }
+     if (q.op === "ai") { lock.releaseLock(); return famAi_(code, fam, id, q); }
+     let changed = false;
++    if (q.op === "close") {   // хозяин закрывает семью: все телефоны семьи при следующем обмене её забывают
++      if (!owner || !fam.members[id] || !fam.members[id].owner) return { ok: false, error: "forbidden" };
++      fam.closed = now; famSave_(code, JSON.stringify(fam)); return { ok: true, closed: true };
++    }
+     if (q.op === "put" && id) {
++      if (!fam.members[id] && fam.gone[id] && !q.join) return { ok: false, error: "вас убрали из семьи", gone: true };
++      if (!fam.members[id] && fam.past[id] && q.join) { const back = fam.past[id]; delete back.left; fam.members[id] = back; }
++      delete fam.past[id]; delete fam.gone[id];
+       const known = !!fam.members[id];
+       if (!known && Object.keys(fam.members).length >= FAMILY.max) return { ok: false, error: "в семье уже " + FAMILY.max + " человек" };
+       const me = q.me || {};
+@@ -1484,6 +1497,7 @@ function family_(q, owner) {
+       if (me.age != null) m.age = Math.max(0, Math.min(99, Math.round(+me.age || 0)));
+       if (me.color) m.color = clean(me.color, 9);
+       if (me.owner && !known) m.owner = !!owner;
++      else if (me.owner && owner && !m.owner && !Object.keys(fam.members).some(k => fam.members[k].owner)) m.owner = true;   // старая семья без отметки хозяина
+       if (me.pts && typeof me.pts === "object") {
+         for (const k in me.pts) if (/^\d{4}-\d\d-\d\d$/.test(k)) m.pts[k] = Math.max(0, Math.round(+me.pts[k] || 0));
+         const keys = Object.keys(m.pts).sort(); while (keys.length > FAMILY.keepDays) delete m.pts[keys.shift()];
+@@ -1497,7 +1511,7 @@ function family_(q, owner) {
+         fam.members[xid] = { joined: now, pts: {}, name: clean(x.name, 24) || "Ребёнок", role: ["kid", "teen", "adult"].indexOf(x.role) >= 0 ? x.role : "kid", age: Math.round(+x.age || 0), color: clean(x.color, 9), at: 0 };
+       }
+       if (q.set && typeof q.set === "object") for (const k in q.set) if (fam.members[k]) fam.set[k] = Object.assign(fam.set[k] || {}, q.set[k]);
+-      if (q.drop && fam.members[clean(q.drop, 30)] && fam.members[id] && fam.members[id].role === "adult") { delete fam.members[clean(q.drop, 30)]; }
++      if (q.drop && fam.members[clean(q.drop, 30)] && fam.members[id] && fam.members[id].role === "adult" && !fam.members[clean(q.drop, 30)].owner) famOut_(clean(q.drop, 30));
+       for (const L in FAMILY.lists) {
+         const items = q[L];
+         if (!Array.isArray(items) || !items.length) continue;
+@@ -1515,7 +1529,7 @@ function family_(q, owner) {
+       }
+       changed = true;
+     }
+-    if (q.op === "leave" && id && fam.members[id]) { delete fam.members[id]; changed = true; }
++    if (q.op === "leave" && id && fam.members[id]) { famOut_(id); changed = true; }
+     if (changed) {
+       let s = JSON.stringify(fam);
+       // не больше ~400 000 знаков на семью: старое в журналах уходит первым
