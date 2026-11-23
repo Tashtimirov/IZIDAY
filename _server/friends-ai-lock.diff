@@ -1,0 +1,30 @@
+diff --git a/src/friends/Friends.gs b/src/friends/Friends.gs
+index ce55868..5261da4 100644
+--- a/src/friends/Friends.gs
++++ b/src/friends/Friends.gs
+@@ -238,8 +238,10 @@ function ai_(u, b) {
+   const key = GP_().getProperty("ANTHROPIC_KEY");
+   if (!key) return { type: "error", error: { type: "nokey", message: "Изи ещё не подключён: владелец не добавил ключ Claude" } };
+   if (!b || !Array.isArray(b.messages)) return { type: "error", error: { type: "bad", message: "bad request" } };
++  // Нет замка за 15 с (сервер занят журналом и обменами других) — понятная ошибка «перегружен», телефон тихо повторит.
++  // Раньше waitLock бросал исключение, Google отдавал страницу ошибки, и у человека было «нет связи с Claude»
+   const lock = LockService.getScriptLock();
+-  lock.waitLock(15000);
++  if (!lock.tryLock(15000)) return { type: "error", error: { type: "overloaded_error", message: "сервер Изи занят" } };
+   try {
+     const p = GP_(), day = FDAY_(), kd = "ai:" + day + ":" + u.id, kt = "ai:" + day + ":*";
+     const nd = Number(p.getProperty(kd)) || 0, nt = Number(p.getProperty(kt)) || 0;
+@@ -253,8 +255,11 @@ function ai_(u, b) {
+   delete body.stream; delete body.fallbacks; delete body.thinking; delete body.output_config;
+   body.model = GP_().getProperty("MODEL") || FR.model;
+   body.max_tokens = Math.min(Number(body.max_tokens) || 2000, FR.maxTokens);
+-  const res = UrlFetchApp.fetch("https://api.anthropic.com/v1/messages", { method: "post", contentType: "application/json", muteHttpExceptions: true,
+-    headers: { "x-api-key": key, "anthropic-version": "2023-06-01" }, payload: JSON.stringify(body) });
++  let res;
++  try {
++    res = UrlFetchApp.fetch("https://api.anthropic.com/v1/messages", { method: "post", contentType: "application/json", muteHttpExceptions: true,
++      headers: { "x-api-key": key, "anthropic-version": "2023-06-01" }, payload: JSON.stringify(body) });
++  } catch (e) { return { type: "error", error: { type: "api_error", message: "сервер Изи не достучался до Claude" } }; }   // сбой сети Google — тоже тихий повтор на телефоне
+   try { return JSON.parse(res.getContentText()); } catch (e) { return { type: "error", error: { type: "bad", message: "Claude не ответил" } }; }
+ }
+ 
