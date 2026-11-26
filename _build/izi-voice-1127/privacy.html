@@ -5,7 +5,7 @@
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}main{max-width:720px;margin:0 auto;padding:28px 16px 48px}
 h1{font-size:28px;margin:0 0 6px}h2{font-size:19px;margin:26px 0 6px}p,li{color:var(--fg)}.mut{color:var(--mut);font-size:14px}section{background:var(--card);border-radius:16px;padding:4px 18px 14px;margin-top:16px}</style></head>
 <body><main>
-<h1>Конфиденциальность IZIDAY</h1><p class="mut">Обновлено 20 ноября 2026 · English below</p>
+<h1>Конфиденциальность IZIDAY</h1><p class="mut">Обновлено 26 ноября 2026 · English below</p>
 <section>
 <h2>Что мы получаем при входе через Google</h2>
 <p>Только ваше имя, адрес почты и фото профиля (области openid, email, profile). Доступа к вашей почте, Диску и контактам Google приложение не получает.</p>
@@ -18,6 +18,8 @@ h1{font-size:28px;margin:0 0 6px}h2{font-size:19px;margin:26px 0 6px}p,li{color:
 <p>Ваши записи (дела, события, траты, здоровье, разговоры с Изи) хранятся в отдельной таблице на сервере IZIDAY (Google Apps Script) и на вашем телефоне. Сокровенная память Изи шифруется на телефоне. Записи не продаются и не передаются третьим лицам.</p>
 <h2>Помощник Изи</h2>
 <p>Сообщения Изи обрабатывает модель Claude (Anthropic) — только чтобы ответить вам. Anthropic не использует эти данные для обучения моделей.</p>
+<h2>Голос</h2>
+<p>Когда вы говорите с Изи голосом или диктуете, запись фразы передаётся на сервер IZIDAY в Cloudflare и распознаётся моделью Whisper (Cloudflare Workers AI) — только чтобы превратить речь в текст. IZIDAY звук не сохраняет: после распознавания остаётся только текст. Если сервер недоступен, речь распознаёт сам телефон (распознавание речи Apple в Safari).</p>
 <h2>Статистика использования</h2>
 <p>Чтобы улучшать приложение, IZIDAY отправляет обезличенную статистику: какие разделы открываются, какие виды действий выполняются (например, «напоминание добавлено»), сколько длятся загрузки и ответы Изи, какие ошибки случаются, модель телефона. Тексты записей, суммы, фото, разговоры и календарь в статистику не попадают. Выключить: Настройки → «Улучшение приложения».</p>
 <h2>Защита данных</h2>
@@ -35,5 +37,6 @@ h1{font-size:28px;margin:0 0 6px}h2{font-size:19px;margin:26px 0 6px}p,li{color:
 <p><b>Data protection.</b> All data is transmitted only over encrypted connections (HTTPS). The Google Calendar access token is stored only on the IZIDAY server (Google Apps Script) and is never sent to your phone. Only the app's author has access to the server and spreadsheets.</p>
 <p><b>Retention and deletion.</b> Google Calendar events are not stored permanently on the server: they are fetched when needed and cached only on your phone. When you disconnect Google Calendar, IZIDAY revokes its access with Google, deletes the token from the server and clears calendar events on your phone. Other entries are kept while you have an account. Settings → Account → “Delete account” immediately deletes all your data from the server and your phone; you can also email realtashtimirov@gmail.com and your data will be deleted within 30 days.</p>
 <p> Your entries are stored in a separate spreadsheet on the IZIDAY server (Google Apps Script) and on your phone; private memory is encrypted on the phone. Data is never sold or shared. Assistant messages are processed by Claude (Anthropic) only to answer you. To delete your data, email realtashtimirov@gmail.com.</p>
+<p><b>Voice.</b> When you talk to the assistant or dictate, the recorded phrase is sent to the IZIDAY server on Cloudflare and transcribed by the Whisper model (Cloudflare Workers AI) solely to turn speech into text. IZIDAY does not store the audio; only the text remains. If the server is unavailable, speech is recognised by the phone itself (Apple speech recognition in Safari).</p>
 </section>
 </main></body></html>
