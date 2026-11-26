@@ -1,0 +1,55 @@
+ВСТАВКА cal-new-owner 2026-11-26 (ветка widget cal-new-owner 8091067, от stable 6ad1340). ТОЛЬКО ВЛАДЕЛЕЦ (решение пользователя 26.11).
+Изи: создать календарь Google (create_calendar, +цвет) и перенести туда события (move_event).
+Нужны: сайт + новая версия скрипта таблицы владельца. Сервер «IZIDAY Друзья» и OAuth consent НЕ трогаем (у друзей инструменты скрыты, CAL_NEW_FRIENDS=false).
+Живой Code.js целиком НЕ заменять: в cal_ перед throw «неизвестное действие календаря» — 2 строки, после cal_ — calNew_ и calMove_. Разрешения скрипта прежние.
+
+diff --git a/src/sheet/Code.gs b/src/sheet/Code.gs
+index bca85c5..8c0d81f 100644
+--- a/src/sheet/Code.gs
++++ b/src/sheet/Code.gs
+@@ -469,9 +469,43 @@ function cal_(c) {
+     e.deleteEvent();
+     return { ok: true };
+   }
++  if (a === "cal_new") return calNew_(c);
++  if (a === "move") return calMove_(c, find, cals);
+   throw new Error("неизвестное действие календаря: " + a);
+ }
+ 
++// Новый календарь Google (Изи: create_calendar). Такой уже есть — отдаём его, второй не создаём. Цвет — #rrggbb
++function calNew_(c) {
++  const name = String(c.name || "").replace(/\s+/g, " ").trim().slice(0, 60);
++  if (!name) throw new Error("нужно название календаря");
++  const color = /^#[0-9a-f]{6}$/i.test(String(c.color || "")) ? String(c.color).toUpperCase() : "";
++  let k = CalendarApp.getAllOwnedCalendars().find(x => x.getName().trim().toLowerCase() === name.toLowerCase());
++  const existed = !!k;
++  if (!k) k = CalendarApp.createCalendar(name, color ? { color } : {});
++  else { if (k.isHidden()) k.setHidden(false); if (color) try { k.setColor(color); } catch (e) {} }
++  try { if (!k.isSelected()) k.setSelected(true); } catch (e) {}
++  return { ok: true, existed, calendar: { name: k.getName(), color: k.getColor() } };
++}
++
++// Перенести событие в другой календарь (Изи: move_event). У CalendarApp переноса нет — через API Календаря (токен скрипта).
++// Повторяющееся событие переезжает всей серией: API переносит событие целиком, не отдельное повторение
++function calMove_(c, find, cals) {
++  const to = cals().find(x => x.getName() === c.calendar);
++  if (!to) throw new Error("нет календаря «" + c.calendar + "»");
++  const e = find(c.id, c.occurrence_start), from = e.getOriginalCalendarId();
++  if (from === to.getId()) return { ok: true, same: true, calendar: to.getName() };
++  const api = "https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(from) + "/events";
++  const headers = { Authorization: "Bearer " + ScriptApp.getOAuthToken() };
++  const r0 = UrlFetchApp.fetch(api + "?iCalUID=" + encodeURIComponent(e.getId()) + "&showDeleted=false&maxResults=10", { headers, muteHttpExceptions: true });
++  if (r0.getResponseCode() !== 200) throw new Error("Календарь не отдал событие (" + r0.getResponseCode() + ") — ничего не перенесено");
++  const items = JSON.parse(r0.getContentText()).items || [], m = items.find(x => x.recurrence && x.recurrence.length) || items[0];
++  if (!m) throw new Error("не нашёл событие — ничего не перенесено");
++  const r = UrlFetchApp.fetch(api + "/" + encodeURIComponent(m.id) + "/move?destination=" + encodeURIComponent(to.getId()), { method: "post", headers, muteHttpExceptions: true });
++  if (r.getResponseCode() !== 200) { let msg = ""; try { msg = JSON.parse(r.getContentText()).error.message; } catch (x) {}
++    throw new Error("Календарь не перенёс событие (" + r.getResponseCode() + (msg ? ": " + msg : "") + ")"); }
++  return { ok: true, series: !!(m.recurrence && m.recurrence.length), calendar: to.getName() };
++}
++
+ // Одно повторение серии: CalendarApp меняет название у всей серии, а время повторения не двигает (дата и время оставались прежними).
+ // Поэтому правим именно этот экземпляр через API Календаря (токен скрипта): название, место, заметки, время.
+ function calPatchOcc_(e, c, parse, fmt) {
+
+Полный вариант с друзьями (scope calendar.app.created, пуш GCAL_MORE_PUSH) — ветка cal-new fe28379, НЕ выкладывать без просьбы пользователя.
