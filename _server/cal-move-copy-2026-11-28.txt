@@ -1,0 +1,37 @@
+ВСТАВКА cal-move-copy 2026-11-28 (ветка widget cal-move-copy 0675796, от stable 5c0f104). Только скрипт таблицы владельца, сайт не меняется.
+В живом Code.js заменить хвост функции calMove_ (после строки const r = UrlFetchApp.fetch(... /move?destination= ...)) на новый. Разрешения прежние.
+
+diff --git a/src/sheet/Code.gs b/src/sheet/Code.gs
+index 8c0d81f..e1a66f3 100644
+--- a/src/sheet/Code.gs
++++ b/src/sheet/Code.gs
+@@ -501,9 +501,26 @@ function calMove_(c, find, cals) {
+   const items = JSON.parse(r0.getContentText()).items || [], m = items.find(x => x.recurrence && x.recurrence.length) || items[0];
+   if (!m) throw new Error("не нашёл событие — ничего не перенесено");
+   const r = UrlFetchApp.fetch(api + "/" + encodeURIComponent(m.id) + "/move?destination=" + encodeURIComponent(to.getId()), { method: "post", headers, muteHttpExceptions: true });
+-  if (r.getResponseCode() !== 200) { let msg = ""; try { msg = JSON.parse(r.getContentText()).error.message; } catch (x) {}
+-    throw new Error("Календарь не перенёс событие (" + r.getResponseCode() + (msg ? ": " + msg : "") + ")"); }
+-  return { ok: true, series: !!(m.recurrence && m.recurrence.length), calendar: to.getName() };
++  const series = !!(m.recurrence && m.recurrence.length);
++  if (r.getResponseCode() === 200) return { ok: true, series, calendar: to.getName() };
++  // Google не даёт «move» из части календарей (28.11: «Семейная группа» — 403, хотя владелец тот же).
++  // Тогда переносим копией: та же серия в новом календаре, потом старая удаляется без писем участникам. Не удалилась — копию убираем
++  const errOf = x => { try { return JSON.parse(x.getContentText()).error.message; } catch (z) { return ""; } };
++  if (!/^(400|403)$/.test(String(r.getResponseCode()))) throw new Error("Календарь не перенёс событие (" + r.getResponseCode() + (errOf(r) ? ": " + errOf(r) : "") + ")");
++  // копией — только простые события: без гостей, вложений и изменённых повторений (их копия потеряла бы, а гости получили бы отмену)
++  if ((m.attendees || []).length > 1 || (m.attachments || []).length || items.length > 1)
++    throw new Error("Google не даёт перенести это событие (" + r.getResponseCode() + "), а копией нельзя: у него есть гости, вложения или изменённые повторения — ничего не изменено");
++  const body = {};
++  for (const k of ["summary", "description", "location", "start", "end", "recurrence", "reminders", "colorId", "transparency", "visibility"]) if (m[k] != null) body[k] = m[k];
++  const dst = "https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(to.getId()) + "/events";
++  const ins = UrlFetchApp.fetch(dst, { method: "post", headers, contentType: "application/json", payload: JSON.stringify(body), muteHttpExceptions: true });
++  if (ins.getResponseCode() !== 200) throw new Error("Календарь не перенёс событие (" + ins.getResponseCode() + (errOf(ins) ? ": " + errOf(ins) : "") + ") — ничего не изменено");
++  const del = UrlFetchApp.fetch(api + "/" + encodeURIComponent(m.id) + "?sendUpdates=none", { method: "delete", headers, muteHttpExceptions: true });
++  if (!/^(200|204|410)$/.test(String(del.getResponseCode()))) {
++    UrlFetchApp.fetch(dst + "/" + encodeURIComponent(JSON.parse(ins.getContentText()).id) + "?sendUpdates=none", { method: "delete", headers, muteHttpExceptions: true });
++    throw new Error("Из календаря «" + (CalendarApp.getCalendarById(from) || { getName: () => from }).getName() + "» нельзя удалять (" + del.getResponseCode() + ") — ничего не изменено");
++  }
++  return { ok: true, series, copied: true, calendar: to.getName() };
+ }
+ 
+ // Одно повторение серии: CalendarApp меняет название у всей серии, а время повторения не двигает (дата и время оставались прежними).
